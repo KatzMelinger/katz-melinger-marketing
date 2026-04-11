@@ -10,16 +10,24 @@ import {
   YAxis,
 } from "recharts";
 
-const data = [
-  { name: "Google Ads", calls: 89 },
-  { name: "Organic Search", calls: 67 },
-  { name: "Referral", calls: 45 },
-  { name: "Direct", calls: 28 },
-  { name: "Avvo", calls: 18 },
-  { name: "FindLaw", calls: 12 },
-];
+export type CallsBySourceDatum = { name: string; calls: number };
 
-export function CallsBySourceChart() {
+type Props = {
+  data: CallsBySourceDatum[];
+};
+
+export function CallsBySourceChart({ data }: Props) {
+  if (!data.length) {
+    return (
+      <div
+        className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed border-white/10 text-sm text-slate-400"
+        style={{ backgroundColor: "rgba(15, 23, 41, 0.35)" }}
+      >
+        No call data by source yet.
+      </div>
+    );
+  }
+
   return (
     <ResponsiveContainer
       width="100%"
