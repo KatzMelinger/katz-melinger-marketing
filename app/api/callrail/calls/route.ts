@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { fetchCallRailCallsPage } from "@/lib/callrail-fetch";
+import { fetchAllCallRailCalls } from "@/lib/callrail-fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function GET() {
     });
   }
 
-  const result = await fetchCallRailCallsPage(apiKey, accountId, 1);
+  const result = await fetchAllCallRailCalls(apiKey, accountId);
 
   if (!result.ok) {
     return NextResponse.json({ calls: [], error: result.error });

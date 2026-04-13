@@ -14,51 +14,13 @@ export const metadata: Metadata = {
 
 const navItems = [
   { label: "Dashboard", href: "/" },
-  { label: "Calls", href: "#calls" },
+  { label: "Calls", href: "/calls" },
   { label: "SEO", href: "/seo" },
   { label: "Social", href: "#social" },
   { label: "Reviews", href: "#reviews" },
   { label: "Content", href: "#content" },
   { label: "Attribution", href: "#attribution" },
 ] as const;
-
-const attributionRows = [
-  {
-    source: "Google Ads",
-    totalCalls: 89,
-    intakes: 24,
-    matters: 9,
-    settlementValue: 2_450_000,
-  },
-  {
-    source: "Organic Search",
-    totalCalls: 67,
-    intakes: 18,
-    matters: 7,
-    settlementValue: 1_820_000,
-  },
-  {
-    source: "Referral",
-    totalCalls: 45,
-    intakes: 14,
-    matters: 6,
-    settlementValue: 1_340_000,
-  },
-  {
-    source: "Direct",
-    totalCalls: 28,
-    intakes: 8,
-    matters: 3,
-    settlementValue: 620_000,
-  },
-  {
-    source: "Avvo",
-    totalCalls: 18,
-    intakes: 5,
-    matters: 2,
-    settlementValue: 280_000,
-  },
-];
 
 type SummaryJson = {
   totalCalls?: number;
@@ -67,6 +29,11 @@ type SummaryJson = {
   avgDuration?: number;
   callsBySource?: { name: string; value: number }[];
   error?: string;
+};
+
+type IntakeBySourceRow = {
+  source: string;
+  count: number;
 };
 
 type CallsJson = {
@@ -156,6 +123,32 @@ async function fetchCalls(): Promise<CallsJson> {
   }
 }
 
+async function fetchIntakesBySource(): Promise<IntakeBySourceRow[]> {
+  try {
+    const base = await getRequestOrigin();
+    const path = encodeURIComponent("/api/v1/intakes/by-source");
+    const res = await fetch(`${base}/api/cms?path=${path}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const json: unknown = await res.json();
+    if (!Array.isArray(json)) {
+      return [];
+    }
+    return json.filter(
+      (x): x is IntakeBySourceRow =>
+        x != null &&
+        typeof x === "object" &&
+        typeof (x as { source?: unknown }).source === "string" &&
+        typeof (x as { count?: unknown }).count === "number",
+    );
+  } catch {
+    return [];
+  }
+}
+
 function DashboardSkeleton() {
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -201,9 +194,10 @@ function DashboardSkeleton() {
 }
 
 async function DashboardMain() {
-  const [summary, callsPayload] = await Promise.all([
+  const [summary, callsPayload, intakeBySource] = await Promise.all([
     fetchSummary(),
     fetchCalls(),
+    fetchIntakesBySource(),
   ]);
 
   const totalCalls = summary.totalCalls ?? 0;
@@ -224,6 +218,30 @@ async function DashboardMain() {
     (a, b) =>
       new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
   );
+
+  const intakeMap = new Map(
+    intakeBySource.map((r) => [r.source, r.count] as const),
+  );
+  const sourceNames = new Set<string>();
+  for (const c of chartData) {
+    sourceNames.add(c.name);
+  }
+  for (const r of intakeBySource) {
+    sourceNames.add(r.source);
+  }
+  const attributionRows = [...sourceNames]
+    .map((source) => {
+      const totalCalls =
+        summary.callsBySource?.find((x) => x.name === source)?.value ?? 0;
+      return {
+        source,
+        totalCalls,
+        intakes: intakeMap.get(source) ?? 0,
+        matters: 0,
+        settlementValue: 0,
+      };
+    })
+    .sort((a, b) => b.totalCalls - a.totalCalls);
 
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
