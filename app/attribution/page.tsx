@@ -1,13 +1,19 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import { headers } from "next/headers";
+
+import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
+import {
+  buildAttributionRows,
+  type CallSummary,
+  type CmsAttributionBreakdown,
+  type CmsIntakeSource,
+} from "@/lib/attribution-merge";
 
 export const dynamic = "force-dynamic";
 
-type BreakdownRow = {
-  area_of_law: string;
-  total_settlement_value: number;
-  settlement_count: number;
+export const metadata: Metadata = {
+  title: "Attribution | Katz Melinger Marketing",
 };
 
 async function getRequestOrigin(): Promise<string> {
@@ -25,40 +31,6 @@ async function getRequestOrigin(): Promise<string> {
   return fromEnv ?? "http://localhost:3000";
 }
 
-async function fetchAttribution(): Promise<BreakdownRow[]> {
-  try {
-    const base = await getRequestOrigin();
-    const path = encodeURIComponent("/api/v1/revenue/attribution");
-    const res = await fetch(`${base}/api/cms?path=${path}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    const j: unknown = await res.json();
-    if (!j || typeof j !== "object" || !Array.isArray((j as { breakdown?: unknown }).breakdown)) {
-      return [];
-    }
-    const arr = (j as { breakdown: unknown[] }).breakdown;
-    return arr
-      .filter(
-        (x): x is BreakdownRow =>
-          x != null &&
-          typeof x === "object" &&
-          typeof (x as { area_of_law?: unknown }).area_of_law === "string" &&
-          typeof (x as { total_settlement_value?: unknown }).total_settlement_value ===
-            "number" &&
-          typeof (x as { settlement_count?: unknown }).settlement_count ===
-            "number",
-      )
-      .map((x) => ({
-        area_of_law: (x as BreakdownRow).area_of_law,
-        total_settlement_value: (x as BreakdownRow).total_settlement_value,
-        settlement_count: (x as BreakdownRow).settlement_count,
-      }));
-  } catch {
-    return [];
-  }
-}
-
 function fmtUsd(n: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -68,20 +40,51 @@ function fmtUsd(n: number) {
 }
 
 export default async function AttributionPage() {
-  const breakdown = await fetchAttribution();
-  const totalRev = breakdown.reduce((s, r) => s + r.total_settlement_value, 0);
-  const rows = breakdown.map((r) => {
-    const avg =
-      r.settlement_count > 0
-        ? r.total_settlement_value / r.settlement_count
-        : 0;
-    const pct = totalRev > 0 ? (r.total_settlement_value / totalRev) * 100 : 0;
-    return { ...r, avg, pct };
-  });
+  const base = await getRequestOrigin();
+  const [sumRes, attrRes, intakeRes] = await Promise.all([
+    fetch(`${base}/api/callrail/summary`, { cache: "no-store" }),
+    fetch(`${base}/api/cms/attribution`, { cache: "no-store" }),
+    fetch(`${base}/api/cms/intakes-by-source`, { cache: "no-store" }),
+  ]);
+
+  const summary = sumRes.ok
+    ? ((await sumRes.json()) as CallSummary)
+    : ({} as CallSummary);
+  const attrJson = attrRes.ok ? ((await attrRes.json()) as { breakdown?: unknown }) : {};
+  const breakdown: CmsAttributionBreakdown[] = Array.isArray(attrJson.breakdown)
+    ? (attrJson.breakdown as CmsAttributionBreakdown[]).filter(
+        (x) =>
+          x &&
+          typeof x.area_of_law === "string" &&
+          typeof x.total_settlement_value === "number" &&
+          typeof x.settlement_count === "number",
+      )
+    : [];
+
+  const intakesRaw = intakeRes.ok ? ((await intakeRes.json()) as unknown) : [];
+  const intakesBySource: CmsIntakeSource[] = Array.isArray(intakesRaw)
+    ? intakesRaw.filter(
+        (x): x is CmsIntakeSource =>
+          x != null &&
+          typeof x === "object" &&
+          typeof (x as { source?: unknown }).source === "string" &&
+          typeof (x as { count?: unknown }).count === "number",
+      )
+    : [];
+
+  const rows = buildAttributionRows(summary, breakdown, intakesBySource);
+
+  const totalCalls = summary.totalCalls ?? 0;
+  const totalIntakes = intakesBySource.reduce((s, r) => s + r.count, 0);
+  const totalMatters = rows.reduce((s, r) => s + r.mattersOpened, 0);
+  const totalSettlement = rows.reduce(
+    (s, r) => s + r.totalSettlementValue,
+    0,
+  );
 
   const pieData = rows
-    .filter((r) => r.total_settlement_value > 0)
-    .map((r) => ({ name: r.area_of_law, value: r.total_settlement_value }));
+    .filter((r) => r.totalSettlementValue > 0)
+    .map((r) => ({ name: r.source, value: r.totalSettlementValue }));
 
   return (
     <div
@@ -91,108 +94,94 @@ export default async function AttributionPage() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <header
-        className="sticky top-0 z-10 border-b border-[#2a3f5f]"
-        style={{ backgroundColor: "#0f1729" }}
-      >
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight"
-            style={{ color: "#185FA5" }}
-          >
-            KatzMelinger Marketing
-          </Link>
-          <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
-            <Link
-              href="/"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/calls"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              Calls
-            </Link>
-            <Link
-              href="/seo"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              SEO
-            </Link>
-            <Link
-              href="/reviews"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              Reviews
-            </Link>
-            <Link
-              href="/attribution"
-              className="rounded-md bg-[#1a2540] px-3 py-2 text-sm text-white"
-            >
-              Attribution
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <MarketingNav />
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Revenue attribution</h1>
+          <h1 className="text-2xl font-semibold text-white">Attribution</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Settlement value by practice area from the CMS API (
-            <code className="text-slate-300">/api/v1/revenue/attribution</code>).
+            CallRail calls + CMS intakes and settlement data by source /
+            practice area.
           </p>
         </div>
 
-        {breakdown.length === 0 ? (
-          <div
-            className="rounded-xl border border-amber-900/40 p-4 text-sm text-amber-100"
-            style={{ backgroundColor: "#1a2540" }}
-          >
-            No attribution data returned. Set <code className="text-white">CMS_API_URL</code> and{" "}
-            <code className="text-white">CMS_API_SECRET_KEY</code> (or{" "}
-            <code className="text-white">API_SECRET_KEY</code>) on this app to match the CMS.
-          </div>
-        ) : null}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: "Total calls", value: String(totalCalls), bg: "#185FA5" },
+            { label: "Total intakes", value: String(totalIntakes), bg: "#166534" },
+            { label: "Matters (settlements)", value: String(totalMatters), bg: "#b45309" },
+            {
+              label: "Total settlement value",
+              value: fmtUsd(totalSettlement),
+              bg: "#475569",
+            },
+          ].map((c) => (
+            <article
+              key={c.label}
+              className="rounded-xl border border-white/5 p-5 shadow-sm"
+              style={{ backgroundColor: c.bg }}
+            >
+              <p className="text-sm font-medium text-white/90">{c.label}</p>
+              <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight">
+                {c.value}
+              </p>
+            </article>
+          ))}
+        </section>
 
         <section
           className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
           style={{ backgroundColor: "#1a2540" }}
         >
           <h2 className="mb-4 text-lg font-semibold text-white">
-            Settlement value by practice area
+            Full attribution
           </h2>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[960px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-[#2a3f5f] text-slate-400">
-                  <th className="pb-3 pr-4 font-medium">Area of law</th>
-                  <th className="pb-3 pr-4 font-medium">Total matters</th>
-                  <th className="pb-3 pr-4 font-medium">Total settlement value</th>
-                  <th className="pb-3 pr-4 font-medium">Average settlement</th>
-                  <th className="pb-3 font-medium">% of total revenue</th>
+                  <th className="pb-3 pr-4 font-medium">Source</th>
+                  <th className="pb-3 pr-4 font-medium">Total calls</th>
+                  <th className="pb-3 pr-4 font-medium">Intakes created</th>
+                  <th className="pb-3 pr-4 font-medium">Matters opened</th>
+                  <th className="pb-3 pr-4 font-medium">Settlement value</th>
+                  <th className="pb-3 pr-4 font-medium">Conversion</th>
+                  <th className="pb-3 font-medium">Avg settlement</th>
                 </tr>
               </thead>
               <tbody className="text-slate-200">
-                {rows.map((r) => (
-                  <tr
-                    key={r.area_of_law}
-                    className="border-b border-[#2a3f5f]/60 last:border-0"
-                  >
-                    <td className="py-3 pr-4 font-medium text-white">
-                      {r.area_of_law}
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      No attribution rows. Configure CMS and CallRail.
                     </td>
-                    <td className="py-3 pr-4 tabular-nums">{r.settlement_count}</td>
-                    <td className="py-3 pr-4 tabular-nums font-medium text-white">
-                      {fmtUsd(r.total_settlement_value)}
-                    </td>
-                    <td className="py-3 pr-4 tabular-nums">{fmtUsd(r.avg)}</td>
-                    <td className="py-3 tabular-nums">{r.pct.toFixed(1)}%</td>
                   </tr>
-                ))}
+                ) : (
+                  rows.map((row) => (
+                    <tr
+                      key={row.source}
+                      className="border-b border-[#2a3f5f]/60 last:border-0"
+                    >
+                      <td className="py-3 pr-4 font-medium text-white">
+                        {row.source}
+                      </td>
+                      <td className="py-3 pr-4 tabular-nums">{row.totalCalls}</td>
+                      <td className="py-3 pr-4 tabular-nums">{row.intakes}</td>
+                      <td className="py-3 pr-4 tabular-nums">
+                        {row.mattersOpened}
+                      </td>
+                      <td className="py-3 pr-4 tabular-nums font-medium text-white">
+                        {fmtUsd(row.totalSettlementValue)}
+                      </td>
+                      <td className="py-3 pr-4 tabular-nums">
+                        {row.conversionRate.toFixed(1)}%
+                      </td>
+                      <td className="py-3 tabular-nums">
+                        {fmtUsd(row.avgSettlement)}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -202,7 +191,9 @@ export default async function AttributionPage() {
           className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
           style={{ backgroundColor: "#1a2540" }}
         >
-          <h2 className="mb-4 text-lg font-semibold text-white">Practice area mix</h2>
+          <h2 className="mb-4 text-lg font-semibold text-white">
+            Settlement value by source
+          </h2>
           <RechartsPie data={pieData} />
         </section>
       </main>

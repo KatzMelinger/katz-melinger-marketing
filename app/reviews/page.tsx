@@ -1,6 +1,6 @@
-import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase-server";
+import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
+import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +13,17 @@ function fmtUsd(n: number) {
 }
 
 export default async function MarketingReviewsPage() {
-  const { data, error } = await supabaseServer
-    .from("reviews")
-    .select("*")
-    .order("review_date", { ascending: false, nullsFirst: false })
-    .limit(500);
+  const sb = getSupabaseServer();
+  const { data, error } = sb
+    ? await sb
+        .from("reviews")
+        .select("*")
+        .order("review_date", { ascending: false, nullsFirst: false })
+        .limit(500)
+    : { data: null, error: null };
 
   const rows = data ?? [];
+  const configError = !sb ? "Supabase is not configured (missing URL or service role key)." : null;
   const total = rows.length;
   const avg =
     total > 0
@@ -60,52 +64,7 @@ export default async function MarketingReviewsPage() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <header
-        className="sticky top-0 z-10 border-b border-[#2a3f5f]"
-        style={{ backgroundColor: "#0f1729" }}
-      >
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight"
-            style={{ color: "#185FA5" }}
-          >
-            KatzMelinger Marketing
-          </Link>
-          <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
-            <Link
-              href="/"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/calls"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              Calls
-            </Link>
-            <Link
-              href="/seo"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              SEO
-            </Link>
-            <Link
-              href="/reviews"
-              className="rounded-md bg-[#1a2540] px-3 py-2 text-sm text-white"
-            >
-              Reviews
-            </Link>
-            <Link
-              href="/attribution"
-              className="rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-[#1a2540] hover:text-white"
-            >
-              Attribution
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <MarketingNav />
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
@@ -115,6 +74,11 @@ export default async function MarketingReviewsPage() {
           </p>
         </div>
 
+        {configError ? (
+          <div className="rounded-xl border border-amber-900/50 bg-amber-950/40 p-4 text-sm text-amber-200">
+            {configError}
+          </div>
+        ) : null}
         {error ? (
           <div className="rounded-xl border border-rose-900/50 bg-rose-950/40 p-4 text-sm text-rose-200">
             Could not load reviews: {error.message}

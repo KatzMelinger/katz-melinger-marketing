@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { Suspense } from "react";
+
+import { MarketingNav } from "@/components/marketing-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -10,16 +11,6 @@ export const metadata: Metadata = {
   description:
     "Organic search performance for katzmelinger.com via Semrush (US).",
 };
-
-const navItems = [
-  { label: "Dashboard", href: "/" },
-  { label: "Calls", href: "/calls" },
-  { label: "SEO", href: "/seo" },
-  { label: "Social", href: "/#social" },
-  { label: "Reviews", href: "/reviews" },
-  { label: "Content", href: "/#content" },
-  { label: "Attribution", href: "/attribution" },
-] as const;
 
 async function getRequestOrigin(): Promise<string> {
   const h = await headers();
@@ -345,35 +336,7 @@ export default async function SeoPage() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <header
-        className="sticky top-0 z-10 border-b border-[#2a3f5f]"
-        style={{ backgroundColor: "#0f1729" }}
-      >
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight"
-            style={{ color: "#185FA5" }}
-          >
-            KatzMelinger Marketing
-          </Link>
-          <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`rounded-md px-3 py-2 text-sm transition-colors hover:bg-[#1a2540] hover:text-white ${
-                  item.href === "/seo"
-                    ? "bg-[#1a2540] text-white"
-                    : "text-slate-300"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </header>
+      <MarketingNav />
 
       <Suspense fallback={<SeoSkeleton />}>
         <SeoDashboardContent />

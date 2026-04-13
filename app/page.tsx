@@ -3,7 +3,14 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { Suspense } from "react";
 import { CallsBySourceChart } from "@/components/calls-by-source-chart";
-import { supabaseServer } from "@/lib/supabase-server";
+import { MarketingNav } from "@/components/marketing-nav";
+import {
+  buildAttributionRows,
+  type CallSummary,
+  type CmsAttributionBreakdown,
+  type CmsIntakeSource,
+} from "@/lib/attribution-merge";
+import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +20,6 @@ export const metadata: Metadata = {
     "Marketing analytics dashboard for Katz Melinger PLLC, plaintiff employment law in NYC.",
 };
 
-const navItems = [
-  { label: "Dashboard", href: "/" },
-  { label: "Calls", href: "/calls" },
-  { label: "SEO", href: "/seo" },
-  { label: "Social", href: "#social" },
-  { label: "Reviews", href: "/reviews" },
-  { label: "Content", href: "#content" },
-  { label: "Attribution", href: "/attribution" },
-] as const;
-
 type SummaryJson = {
   totalCalls?: number;
   answeredCalls?: number;
@@ -30,12 +27,7 @@ type SummaryJson = {
   avgDuration?: number;
   callsBySource?: { name: string; value: number }[];
   error?: string;
-};
-
-type IntakeBySourceRow = {
-  source: string;
-  count: number;
-};
+} & CallSummary;
 
 type CallsJson = {
   calls?: Array<{
@@ -131,7 +123,11 @@ async function fetchReputationSnapshot(): Promise<{
   responseRatePct: number;
 } | null> {
   try {
-    const { data, error } = await supabaseServer.from("reviews").select("platform, rating, status, review_date, created_at");
+    const sb = getSupabaseServer();
+    if (!sb) return null;
+    const { data, error } = await sb
+      .from("reviews")
+      .select("platform, rating, status, review_date, created_at");
     if (error || !data) return null;
     const rows = data as {
       platform?: string;
@@ -172,11 +168,10 @@ async function fetchReputationSnapshot(): Promise<{
   }
 }
 
-async function fetchIntakesBySource(): Promise<IntakeBySourceRow[]> {
+async function fetchIntakesBySource(): Promise<CmsIntakeSource[]> {
   try {
     const base = await getRequestOrigin();
-    const path = encodeURIComponent("/api/v1/intakes/by-source");
-    const res = await fetch(`${base}/api/cms?path=${path}`, {
+    const res = await fetch(`${base}/api/cms/intakes-by-source`, {
       cache: "no-store",
     });
     if (!res.ok) {
@@ -187,11 +182,32 @@ async function fetchIntakesBySource(): Promise<IntakeBySourceRow[]> {
       return [];
     }
     return json.filter(
-      (x): x is IntakeBySourceRow =>
+      (x): x is CmsIntakeSource =>
         x != null &&
         typeof x === "object" &&
         typeof (x as { source?: unknown }).source === "string" &&
         typeof (x as { count?: unknown }).count === "number",
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function fetchCmsAttribution(): Promise<CmsAttributionBreakdown[]> {
+  try {
+    const base = await getRequestOrigin();
+    const res = await fetch(`${base}/api/cms/attribution`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const j = (await res.json()) as { breakdown?: unknown };
+    if (!Array.isArray(j.breakdown)) return [];
+    return (j.breakdown as CmsAttributionBreakdown[]).filter(
+      (x) =>
+        x &&
+        typeof x.area_of_law === "string" &&
+        typeof x.total_settlement_value === "number" &&
+        typeof x.settlement_count === "number",
     );
   } catch {
     return [];
@@ -243,12 +259,14 @@ function DashboardSkeleton() {
 }
 
 async function DashboardMain() {
-  const [summary, callsPayload, intakeBySource, reputation] = await Promise.all([
-    fetchSummary(),
-    fetchCalls(),
-    fetchIntakesBySource(),
-    fetchReputationSnapshot(),
-  ]);
+  const [summary, callsPayload, intakeBySource, attributionBreakdown, reputation] =
+    await Promise.all([
+      fetchSummary(),
+      fetchCalls(),
+      fetchIntakesBySource(),
+      fetchCmsAttribution(),
+      fetchReputationSnapshot(),
+    ]);
 
   const totalCalls = summary.totalCalls ?? 0;
   const answeredCalls = summary.answeredCalls ?? 0;
@@ -269,29 +287,11 @@ async function DashboardMain() {
       new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
   );
 
-  const intakeMap = new Map(
-    intakeBySource.map((r) => [r.source, r.count] as const),
+  const attributionRows = buildAttributionRows(
+    summary,
+    attributionBreakdown,
+    intakeBySource,
   );
-  const sourceNames = new Set<string>();
-  for (const c of chartData) {
-    sourceNames.add(c.name);
-  }
-  for (const r of intakeBySource) {
-    sourceNames.add(r.source);
-  }
-  const attributionRows = [...sourceNames]
-    .map((source) => {
-      const totalCalls =
-        summary.callsBySource?.find((x) => x.name === source)?.value ?? 0;
-      return {
-        source,
-        totalCalls,
-        intakes: intakeMap.get(source) ?? 0,
-        matters: 0,
-        settlementValue: 0,
-      };
-    })
-    .sort((a, b) => b.totalCalls - a.totalCalls);
 
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -444,14 +444,16 @@ async function DashboardMain() {
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-[#2a3f5f] text-slate-400">
                 <th className="pb-3 pr-4 font-medium">Source</th>
                 <th className="pb-3 pr-4 font-medium">Total calls</th>
                 <th className="pb-3 pr-4 font-medium">Intakes created</th>
                 <th className="pb-3 pr-4 font-medium">Matters opened</th>
-                <th className="pb-3 font-medium">Settlement value</th>
+                <th className="pb-3 pr-4 font-medium">Settlement value</th>
+                <th className="pb-3 pr-4 font-medium">Conversion</th>
+                <th className="pb-3 font-medium">Avg settlement</th>
               </tr>
             </thead>
             <tbody className="text-slate-200">
@@ -465,9 +467,17 @@ async function DashboardMain() {
                   </td>
                   <td className="py-3 pr-4 tabular-nums">{row.totalCalls}</td>
                   <td className="py-3 pr-4 tabular-nums">{row.intakes}</td>
-                  <td className="py-3 pr-4 tabular-nums">{row.matters}</td>
-                  <td className="py-3 font-medium tabular-nums text-white">
-                    {formatCurrency(row.settlementValue)}
+                  <td className="py-3 pr-4 tabular-nums">
+                    {row.mattersOpened}
+                  </td>
+                  <td className="py-3 pr-4 font-medium tabular-nums text-white">
+                    {formatCurrency(row.totalSettlementValue)}
+                  </td>
+                  <td className="py-3 pr-4 tabular-nums">
+                    {row.conversionRate.toFixed(1)}%
+                  </td>
+                  <td className="py-3 tabular-nums">
+                    {formatCurrency(row.avgSettlement)}
                   </td>
                 </tr>
               ))}
@@ -532,35 +542,7 @@ export default async function Home() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <header
-        className="sticky top-0 z-10 border-b border-[#2a3f5f]"
-        style={{ backgroundColor: "#0f1729" }}
-      >
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight"
-            style={{ color: "#185FA5" }}
-          >
-            KatzMelinger Marketing
-          </Link>
-          <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`rounded-md px-3 py-2 text-sm transition-colors hover:bg-[#1a2540] hover:text-white ${
-                  item.href === "/"
-                    ? "bg-[#1a2540] text-white"
-                    : "text-slate-300"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </header>
+      <MarketingNav />
 
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardMain />

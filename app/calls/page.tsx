@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+import { MarketingNav } from "@/components/marketing-nav";
 
 type CallRow = {
   id: string;
@@ -30,14 +31,6 @@ function formatStartTime(iso: string): string {
     timeStyle: "short",
   }).format(d);
 }
-
-const navItems = [
-  { label: "Dashboard", href: "/" },
-  { label: "Calls", href: "/calls" },
-  { label: "SEO", href: "/seo" },
-  { label: "Reviews", href: "/reviews" },
-  { label: "Attribution", href: "/attribution" },
-] as const;
 
 export default function CallsPage() {
   const [calls, setCalls] = useState<CallRow[]>([]);
@@ -109,38 +102,6 @@ export default function CallsPage() {
   const durSum = filtered.reduce((s, c) => s + (c.duration ?? 0), 0);
   const avgDuration = totalCalls ? durSum / totalCalls : 0;
 
-  const header = (
-    <header
-      className="sticky top-0 z-10 border-b border-[#2a3f5f]"
-      style={{ backgroundColor: "#0f1729" }}
-    >
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-        <Link
-          href="/"
-          className="text-lg font-semibold tracking-tight"
-          style={{ color: "#185FA5" }}
-        >
-          KatzMelinger Marketing
-        </Link>
-        <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`rounded-md px-3 py-2 text-sm transition-colors hover:bg-[#1a2540] hover:text-white ${
-                item.href === "/calls"
-                  ? "bg-[#1a2540] text-white"
-                  : "text-slate-300"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
-    </header>
-  );
-
   return (
     <div
       className="min-h-full text-white"
@@ -149,7 +110,7 @@ export default function CallsPage() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      {header}
+      <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-white">
