@@ -3,6 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { Suspense } from "react";
 import { CallsBySourceChart } from "@/components/calls-by-source-chart";
+import { supabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +18,9 @@ const navItems = [
   { label: "Calls", href: "/calls" },
   { label: "SEO", href: "/seo" },
   { label: "Social", href: "#social" },
-  { label: "Reviews", href: "#reviews" },
+  { label: "Reviews", href: "/reviews" },
   { label: "Content", href: "#content" },
-  { label: "Attribution", href: "#attribution" },
+  { label: "Attribution", href: "/attribution" },
 ] as const;
 
 type SummaryJson = {
@@ -123,6 +124,54 @@ async function fetchCalls(): Promise<CallsJson> {
   }
 }
 
+async function fetchReputationSnapshot(): Promise<{
+  googleAvg: number | null;
+  totalReviews: number;
+  reviewsThisMonth: number;
+  responseRatePct: number;
+} | null> {
+  try {
+    const { data, error } = await supabaseServer.from("reviews").select("platform, rating, status, review_date, created_at");
+    if (error || !data) return null;
+    const rows = data as {
+      platform?: string;
+      rating?: number;
+      status?: string;
+      review_date?: string;
+      created_at?: string;
+    }[];
+    const total = rows.length;
+    const google = rows.filter((r) =>
+      String(r.platform ?? "")
+        .toLowerCase()
+        .includes("google"),
+    );
+    const googleAvg =
+      google.length > 0
+        ? google.reduce((s, r) => s + (Number(r.rating) || 0), 0) / google.length
+        : null;
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const reviewsThisMonth = rows.filter((r) => {
+      const d = r.review_date
+        ? new Date(r.review_date)
+        : r.created_at
+          ? new Date(r.created_at)
+          : null;
+      return d && !Number.isNaN(d.getTime()) && d >= monthStart;
+    }).length;
+    const responded = rows.filter((r) =>
+      String(r.status ?? "")
+        .toLowerCase()
+        .includes("responded"),
+    ).length;
+    const responseRatePct = total ? Math.round((responded / total) * 100) : 0;
+    return { googleAvg, totalReviews: total, reviewsThisMonth, responseRatePct };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchIntakesBySource(): Promise<IntakeBySourceRow[]> {
   try {
     const base = await getRequestOrigin();
@@ -194,10 +243,11 @@ function DashboardSkeleton() {
 }
 
 async function DashboardMain() {
-  const [summary, callsPayload, intakeBySource] = await Promise.all([
+  const [summary, callsPayload, intakeBySource, reputation] = await Promise.all([
     fetchSummary(),
     fetchCalls(),
     fetchIntakesBySource(),
+    fetchReputationSnapshot(),
   ]);
 
   const totalCalls = summary.totalCalls ?? 0;
@@ -424,6 +474,50 @@ async function DashboardMain() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section
+        id="reputation"
+        className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
+        style={{ backgroundColor: "#1a2540" }}
+      >
+        <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Reputation snapshot</h2>
+            <p className="text-sm text-slate-400">From Supabase reviews (same data as CMS)</p>
+          </div>
+          <Link href="/reviews" className="text-sm text-sky-300 hover:text-white">
+            Reviews dashboard →
+          </Link>
+        </div>
+        {reputation ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#185FA5" }}>
+              <p className="text-xs font-medium text-white/90">Avg Google rating</p>
+              <p className="mt-2 text-2xl font-semibold text-white">
+                {reputation.googleAvg != null ? reputation.googleAvg.toFixed(2) : "—"}
+              </p>
+            </article>
+            <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#166534" }}>
+              <p className="text-xs font-medium text-white/90">Total reviews</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{reputation.totalReviews}</p>
+            </article>
+            <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#b45309" }}>
+              <p className="text-xs font-medium text-white/90">Reviews this month</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{reputation.reviewsThisMonth}</p>
+            </article>
+            <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#475569" }}>
+              <p className="text-xs font-medium text-white/90">Response rate</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{reputation.responseRatePct}%</p>
+            </article>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">
+            Reviews could not be loaded. Configure{" "}
+            <code className="text-slate-200">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+            <code className="text-slate-200">SUPABASE_SERVICE_ROLE_KEY</code> for this app.
+          </p>
+        )}
       </section>
     </main>
   );
