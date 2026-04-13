@@ -13,12 +13,12 @@ export const metadata: Metadata = {
 
 const navItems = [
   { label: "Dashboard", href: "/" },
-  { label: "Calls", href: "/#calls" },
+  { label: "Calls", href: "/calls" },
   { label: "SEO", href: "/seo" },
   { label: "Social", href: "/#social" },
-  { label: "Reviews", href: "/#reviews" },
+  { label: "Reviews", href: "/reviews" },
   { label: "Content", href: "/#content" },
-  { label: "Attribution", href: "/#attribution" },
+  { label: "Attribution", href: "/attribution" },
 ] as const;
 
 async function getRequestOrigin(): Promise<string> {

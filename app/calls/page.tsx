@@ -35,6 +35,8 @@ const navItems = [
   { label: "Dashboard", href: "/" },
   { label: "Calls", href: "/calls" },
   { label: "SEO", href: "/seo" },
+  { label: "Reviews", href: "/reviews" },
+  { label: "Attribution", href: "/attribution" },
 ] as const;
 
 export default function CallsPage() {
