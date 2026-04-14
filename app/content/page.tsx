@@ -8,6 +8,9 @@ const CARD = "#1a2540";
 const BORDER = "#2a3f5f";
 const ACCENT = "#185FA5";
 
+const DEFAULT_BRAND_VOICE =
+  "Katz Melinger PLLC is a plaintiff-side employment law firm in New York City. We represent workers in wage theft, discrimination, harassment, and wrongful termination cases. Our tone is professional but approachable, empathetic to workers, and focused on justice. We avoid legal jargon when communicating with clients. We are aggressive advocates but communicate with warmth and clarity.";
+
 const PRACTICE_AREAS = [
   "Wage & Hour",
   "Discrimination",
@@ -36,7 +39,8 @@ export default function ContentPage() {
   const loadBrand = useCallback(async () => {
     const res = await fetch("/api/content/brand-voice");
     const j = await res.json();
-    if (typeof j.context === "string") setBrandVoice(j.context);
+    const ctx = typeof j.context === "string" ? j.context.trim() : "";
+    setBrandVoice(ctx || DEFAULT_BRAND_VOICE);
   }, []);
 
   useEffect(() => {

@@ -33,6 +33,9 @@ function formatTraffic(n: number) {
   }).format(n);
 }
 
+const SEMRUSH_SETUP =
+  "Add SEMRUSH_API_KEY to your environment (for example .env.local in development or your host’s env vars in production), then restart the dev server or redeploy.";
+
 function positionBadgeClass(position: number): string {
   if (position >= 1 && position <= 3) {
     return "bg-emerald-500/20 text-emerald-300 ring-emerald-500/35";
@@ -43,7 +46,41 @@ function positionBadgeClass(position: number): string {
   return "bg-slate-500/25 text-slate-300 ring-slate-500/35";
 }
 
-async function SeoDashboardContent() {
+async function SeoDashboardContent({
+  semrushConfigured,
+}: {
+  semrushConfigured: boolean;
+}) {
+  if (!semrushConfigured) {
+    const checkedAt = new Date();
+    return (
+      <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-white">
+            SEO overview
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">
+            katzmelinger.com · Semrush · US database
+          </p>
+        </div>
+        <div
+          className="rounded-xl border border-amber-800/50 p-6 text-sm text-amber-100"
+          style={{ backgroundColor: "#1a2540" }}
+        >
+          <p className="text-lg font-semibold text-white">Semrush not configured</p>
+          <p className="mt-2 text-slate-300">{SEMRUSH_SETUP}</p>
+        </div>
+        <p className="text-xs text-slate-500">
+          Last checked:{" "}
+          {checkedAt.toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}
+        </p>
+      </main>
+    );
+  }
+
   const base = await getRequestOrigin();
 
   let overview = {
@@ -118,14 +155,25 @@ async function SeoDashboardContent() {
     /* empty aggregates */
   }
 
+  const dataFetchedAt = new Date();
+
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-white">
-          SEO overview
-        </h1>
-        <p className="mt-1 text-sm text-slate-400">
-          katzmelinger.com · Semrush · US database
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-white">
+            SEO overview
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">
+            katzmelinger.com · Semrush · US database
+          </p>
+        </div>
+        <p className="text-xs text-slate-500 sm:text-right">
+          Last updated:{" "}
+          {dataFetchedAt.toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}
         </p>
       </div>
 
@@ -328,6 +376,8 @@ function SeoSkeleton() {
 }
 
 export default async function SeoPage() {
+  const semrushConfigured = Boolean(process.env.SEMRUSH_API_KEY?.trim());
+
   return (
     <div
       className="min-h-full text-white"
@@ -339,7 +389,7 @@ export default async function SeoPage() {
       <MarketingNav />
 
       <Suspense fallback={<SeoSkeleton />}>
-        <SeoDashboardContent />
+        <SeoDashboardContent semrushConfigured={semrushConfigured} />
       </Suspense>
     </div>
   );

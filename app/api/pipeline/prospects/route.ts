@@ -18,6 +18,20 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   if (error) {
+    const msg = error.message.toLowerCase();
+    const missingTable =
+      msg.includes("does not exist") ||
+      msg.includes("schema cache") ||
+      msg.includes("could not find the table") ||
+      (msg.includes("relation") && msg.includes("does not exist"));
+    if (missingTable) {
+      return NextResponse.json({
+        prospects: [] as unknown[],
+        needsSchema: true as const,
+        message:
+          "The prospects table was not found. Run scripts/pipeline-schema.sql in the Supabase SQL editor.",
+      });
+    }
     return NextResponse.json({ error: error.message, prospects: [] }, { status: 500 });
   }
   return NextResponse.json({ prospects: data ?? [] });

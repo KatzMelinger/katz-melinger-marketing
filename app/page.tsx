@@ -24,6 +24,7 @@ type SummaryJson = {
   totalCalls?: number;
   answeredCalls?: number;
   missedCalls?: number;
+  firstTimeCalls?: number;
   avgDuration?: number;
   callsBySource?: { name: string; value: number }[];
   error?: string;
@@ -270,7 +271,7 @@ async function DashboardMain() {
 
   const totalCalls = summary.totalCalls ?? 0;
   const answeredCalls = summary.answeredCalls ?? 0;
-  const missedCalls = summary.missedCalls ?? 0;
+  const newIntakes = summary.firstTimeCalls ?? 0;
   const avgDuration = summary.avgDuration ?? 0;
 
   const chartData =
@@ -327,9 +328,12 @@ async function DashboardMain() {
           className="rounded-xl border border-white/5 p-5 shadow-sm"
           style={{ backgroundColor: "#b45309" }}
         >
-          <p className="text-sm font-medium text-white/90">Missed calls</p>
+          <p className="text-sm font-medium text-white/90">New intakes</p>
           <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight">
-            {missedCalls}
+            {newIntakes}
+          </p>
+          <p className="mt-1 text-xs text-white/70">
+            First-time callers (CallRail)
           </p>
         </article>
         <article
@@ -525,7 +529,8 @@ async function DashboardMain() {
           <p className="text-sm text-slate-400">
             Reviews could not be loaded. Configure{" "}
             <code className="text-slate-200">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-            <code className="text-slate-200">SUPABASE_SERVICE_ROLE_KEY</code> for this app.
+            <code className="text-slate-200">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
+            (or service role for server-only paths).
           </p>
         )}
       </section>

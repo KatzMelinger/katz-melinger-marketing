@@ -1,8 +1,42 @@
 "use client";
 
+/**
+ * Pipeline data lives in Supabase (`prospects`, `sales_activities`).
+ * Before first use, run `scripts/pipeline-schema.sql` in the Supabase SQL editor
+ * so those tables and RLS policies exist.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
+
+const PIPELINE_SCHEMA_SNIPPET = `CREATE TABLE IF NOT EXISTS public.prospects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  firm_name text,
+  contact_name text,
+  email text,
+  phone text,
+  firm_size integer,
+  current_tools text,
+  stage text DEFAULT 'Lead',
+  estimated_mrr numeric,
+  source text,
+  trial_firm_id uuid,
+  trial_started date,
+  last_activity date,
+  notes text,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.sales_activities (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id uuid REFERENCES public.prospects (id) ON DELETE CASCADE,
+  type text,
+  notes text,
+  next_followup date,
+  staff_member text,
+  created_at timestamptz DEFAULT now()
+);`;
 
 const CARD = "#1a2540";
 const BORDER = "#2a3f5f";
@@ -74,6 +108,7 @@ function fmtMrr(n: number | null | undefined): string {
 export default function PipelinePage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [needsSchema, setNeedsSchema] = useState(false);
   const [selected, setSelected] = useState<Prospect | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -102,6 +137,13 @@ export default function PipelinePage() {
     try {
       const res = await fetch("/api/pipeline/prospects");
       const j = await res.json();
+      if (j.needsSchema) {
+        setNeedsSchema(true);
+        setLoadErr(null);
+        setProspects([]);
+        return;
+      }
+      setNeedsSchema(false);
       if (!res.ok) {
         setLoadErr(j.error ?? "Failed to load prospects");
         setProspects([]);
@@ -273,14 +315,36 @@ export default function PipelinePage() {
             </button>
           </div>
 
-          {loadErr ? (
+          {needsSchema ? (
+            <div
+              className="rounded-xl border border-sky-800/40 p-6 text-sm text-slate-200"
+              style={{ backgroundColor: CARD }}
+            >
+              <p className="text-base font-semibold text-white">
+                Set up the pipeline tables
+              </p>
+              <p className="mt-2 text-slate-400">
+                The <code className="text-slate-200">prospects</code> table was not found.
+                In the Supabase SQL editor, run the full file{" "}
+                <code className="text-sky-300">scripts/pipeline-schema.sql</code> (or paste
+                the excerpt below), then refresh this page.
+              </p>
+              <pre
+                className="mt-4 max-h-64 overflow-auto rounded-lg border border-[#2a3f5f] bg-[#0f1729] p-4 text-xs leading-relaxed text-slate-300"
+                tabIndex={0}
+              >
+                {PIPELINE_SCHEMA_SNIPPET}
+              </pre>
+            </div>
+          ) : null}
+
+          {loadErr && !needsSchema ? (
             <div
               className="rounded-lg border border-rose-800/50 p-4 text-sm text-rose-100"
               style={{ backgroundColor: CARD }}
             >
-              {loadErr} — run{" "}
-              <code className="text-white">scripts/pipeline-schema.sql</code> in
-              Supabase.
+              {loadErr} — if the table is missing, run{" "}
+              <code className="text-white">scripts/pipeline-schema.sql</code> in Supabase.
             </div>
           ) : null}
 

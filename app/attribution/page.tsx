@@ -50,7 +50,12 @@ export default async function AttributionPage() {
   const summary = sumRes.ok
     ? ((await sumRes.json()) as CallSummary)
     : ({} as CallSummary);
-  const attrJson = attrRes.ok ? ((await attrRes.json()) as { breakdown?: unknown }) : {};
+
+  const cmsUnavailable = !attrRes.ok;
+
+  const attrJson = attrRes.ok
+    ? ((await attrRes.json()) as { breakdown?: unknown })
+    : {};
   const breakdown: CmsAttributionBreakdown[] = Array.isArray(attrJson.breakdown)
     ? (attrJson.breakdown as CmsAttributionBreakdown[]).filter(
         (x) =>
@@ -72,9 +77,22 @@ export default async function AttributionPage() {
       )
     : [];
 
-  const rows = buildAttributionRows(summary, breakdown, intakesBySource);
+  const rows = cmsUnavailable
+    ? []
+    : buildAttributionRows(summary, breakdown, intakesBySource);
 
   const totalCalls = summary.totalCalls ?? 0;
+  const callsBySource = summary.callsBySource ?? [];
+  const fallbackRows = callsBySource.map((c) => ({
+    source: c.name,
+    calls: c.value,
+    pct: totalCalls > 0 ? Math.round((c.value / totalCalls) * 1000) / 10 : 0,
+  }));
+  const pieCalls = callsBySource.map((c) => ({
+    name: c.name,
+    value: c.value,
+  }));
+
   const totalIntakes = intakesBySource.reduce((s, r) => s + r.count, 0);
   const totalMatters = rows.reduce((s, r) => s + r.mattersOpened, 0);
   const totalSettlement = rows.reduce(
@@ -105,97 +123,199 @@ export default async function AttributionPage() {
           </p>
         </div>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { label: "Total calls", value: String(totalCalls), bg: "#185FA5" },
-            { label: "Total intakes", value: String(totalIntakes), bg: "#166534" },
-            { label: "Matters (settlements)", value: String(totalMatters), bg: "#b45309" },
-            {
-              label: "Total settlement value",
-              value: fmtUsd(totalSettlement),
-              bg: "#475569",
-            },
-          ].map((c) => (
-            <article
-              key={c.label}
-              className="rounded-xl border border-white/5 p-5 shadow-sm"
-              style={{ backgroundColor: c.bg }}
-            >
-              <p className="text-sm font-medium text-white/90">{c.label}</p>
-              <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight">
-                {c.value}
-              </p>
-            </article>
-          ))}
-        </section>
+        {cmsUnavailable ? (
+          <div
+            className="rounded-xl border border-amber-800/40 p-5 text-sm text-amber-100"
+            style={{ backgroundColor: "#1a2540" }}
+          >
+            <p className="font-semibold text-white">CMS attribution unavailable</p>
+            <p className="mt-2 text-slate-300">
+              Full attribution (intakes, matters, settlement value by source) comes from
+              your CMS API. The CMS request did not succeed, so settlement and intake columns
+              are hidden below. CallRail call volume by source is shown as a fallback.
+            </p>
+          </div>
+        ) : null}
 
-        <section
-          className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-          style={{ backgroundColor: "#1a2540" }}
-        >
-          <h2 className="mb-4 text-lg font-semibold text-white">
-            Full attribution
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-[#2a3f5f] text-slate-400">
-                  <th className="pb-3 pr-4 font-medium">Source</th>
-                  <th className="pb-3 pr-4 font-medium">Total calls</th>
-                  <th className="pb-3 pr-4 font-medium">Intakes created</th>
-                  <th className="pb-3 pr-4 font-medium">Matters opened</th>
-                  <th className="pb-3 pr-4 font-medium">Settlement value</th>
-                  <th className="pb-3 pr-4 font-medium">Conversion</th>
-                  <th className="pb-3 font-medium">Avg settlement</th>
-                </tr>
-              </thead>
-              <tbody className="text-slate-200">
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
-                      No attribution rows. Configure CMS and CallRail.
-                    </td>
+        {!cmsUnavailable ? (
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Total calls", value: String(totalCalls), bg: "#185FA5" },
+              { label: "Total intakes", value: String(totalIntakes), bg: "#166534" },
+              {
+                label: "Matters (settlements)",
+                value: String(totalMatters),
+                bg: "#b45309",
+              },
+              {
+                label: "Total settlement value",
+                value: fmtUsd(totalSettlement),
+                bg: "#475569",
+              },
+            ].map((c) => (
+              <article
+                key={c.label}
+                className="rounded-xl border border-white/5 p-5 shadow-sm"
+                style={{ backgroundColor: c.bg }}
+              >
+                <p className="text-sm font-medium text-white/90">{c.label}</p>
+                <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight">
+                  {c.value}
+                </p>
+              </article>
+            ))}
+          </section>
+        ) : (
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+            {[
+              { label: "Total calls (CallRail)", value: String(totalCalls), bg: "#185FA5" },
+              {
+                label: "Tracked sources",
+                value: String(callsBySource.length),
+                bg: "#475569",
+              },
+            ].map((c) => (
+              <article
+                key={c.label}
+                className="rounded-xl border border-white/5 p-5 shadow-sm"
+                style={{ backgroundColor: c.bg }}
+              >
+                <p className="text-sm font-medium text-white/90">{c.label}</p>
+                <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight">
+                  {c.value}
+                </p>
+              </article>
+            ))}
+          </section>
+        )}
+
+        {cmsUnavailable ? (
+          <>
+            <section
+              className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
+              style={{ backgroundColor: "#1a2540" }}
+            >
+              <h2 className="mb-4 text-lg font-semibold text-white">
+                Calls by source (CallRail fallback)
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[480px] border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-[#2a3f5f] text-slate-400">
+                      <th className="pb-3 pr-4 font-medium">Source</th>
+                      <th className="pb-3 pr-4 font-medium">Total calls</th>
+                      <th className="pb-3 font-medium">% of calls</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-200">
+                    {fallbackRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="py-8 text-center text-slate-400">
+                          No CallRail source data.
+                        </td>
+                      </tr>
+                    ) : (
+                      fallbackRows.map((row) => (
+                        <tr
+                          key={row.source}
+                          className="border-b border-[#2a3f5f]/60 last:border-0"
+                        >
+                          <td className="py-3 pr-4 font-medium text-white">
+                            {row.source}
+                          </td>
+                          <td className="py-3 pr-4 tabular-nums">{row.calls}</td>
+                          <td className="py-3 tabular-nums">{row.pct}%</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section
+              className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
+              style={{ backgroundColor: "#1a2540" }}
+            >
+              <h2 className="mb-4 text-lg font-semibold text-white">
+                Calls by source (share)
+              </h2>
+              <RechartsPie data={pieCalls} valueMode="number" />
+            </section>
+          </>
+        ) : null}
+
+        {!cmsUnavailable ? (
+          <section
+            className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
+            style={{ backgroundColor: "#1a2540" }}
+          >
+            <h2 className="mb-4 text-lg font-semibold text-white">
+              Full attribution
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#2a3f5f] text-slate-400">
+                    <th className="pb-3 pr-4 font-medium">Source</th>
+                    <th className="pb-3 pr-4 font-medium">Total calls</th>
+                    <th className="pb-3 pr-4 font-medium">Intakes created</th>
+                    <th className="pb-3 pr-4 font-medium">Matters opened</th>
+                    <th className="pb-3 pr-4 font-medium">Settlement value</th>
+                    <th className="pb-3 pr-4 font-medium">Conversion</th>
+                    <th className="pb-3 font-medium">Avg settlement</th>
                   </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr
-                      key={row.source}
-                      className="border-b border-[#2a3f5f]/60 last:border-0"
-                    >
-                      <td className="py-3 pr-4 font-medium text-white">
-                        {row.source}
-                      </td>
-                      <td className="py-3 pr-4 tabular-nums">{row.totalCalls}</td>
-                      <td className="py-3 pr-4 tabular-nums">{row.intakes}</td>
-                      <td className="py-3 pr-4 tabular-nums">
-                        {row.mattersOpened}
-                      </td>
-                      <td className="py-3 pr-4 tabular-nums font-medium text-white">
-                        {fmtUsd(row.totalSettlementValue)}
-                      </td>
-                      <td className="py-3 pr-4 tabular-nums">
-                        {row.conversionRate.toFixed(1)}%
-                      </td>
-                      <td className="py-3 tabular-nums">
-                        {fmtUsd(row.avgSettlement)}
+                </thead>
+                <tbody className="text-slate-200">
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                        No attribution rows. Configure CMS and CallRail.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  ) : (
+                    rows.map((row) => (
+                      <tr
+                        key={row.source}
+                        className="border-b border-[#2a3f5f]/60 last:border-0"
+                      >
+                        <td className="py-3 pr-4 font-medium text-white">
+                          {row.source}
+                        </td>
+                        <td className="py-3 pr-4 tabular-nums">{row.totalCalls}</td>
+                        <td className="py-3 pr-4 tabular-nums">{row.intakes}</td>
+                        <td className="py-3 pr-4 tabular-nums">
+                          {row.mattersOpened}
+                        </td>
+                        <td className="py-3 pr-4 tabular-nums font-medium text-white">
+                          {fmtUsd(row.totalSettlementValue)}
+                        </td>
+                        <td className="py-3 pr-4 tabular-nums">
+                          {row.conversionRate.toFixed(1)}%
+                        </td>
+                        <td className="py-3 tabular-nums">
+                          {fmtUsd(row.avgSettlement)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
 
-        <section
-          className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-          style={{ backgroundColor: "#1a2540" }}
-        >
-          <h2 className="mb-4 text-lg font-semibold text-white">
-            Settlement value by source
-          </h2>
-          <RechartsPie data={pieData} />
-        </section>
+        {!cmsUnavailable ? (
+          <section
+            className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
+            style={{ backgroundColor: "#1a2540" }}
+          >
+            <h2 className="mb-4 text-lg font-semibold text-white">
+              Settlement value by source
+            </h2>
+            <RechartsPie data={pieData} />
+          </section>
+        ) : null}
       </main>
     </div>
   );

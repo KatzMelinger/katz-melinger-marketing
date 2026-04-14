@@ -21,7 +21,13 @@ const COLORS = [
 
 type Row = { name: string; value: number };
 
-export function RechartsPie({ data }: { data: Row[] }) {
+type Props = {
+  data: Row[];
+  /** How values are shown in the tooltip (default: USD for settlement-style charts). */
+  valueMode?: "currency" | "number";
+};
+
+export function RechartsPie({ data, valueMode = "currency" }: Props) {
   if (!data.length) {
     return (
       <p className="text-sm text-slate-400">No data for chart.</p>
@@ -47,15 +53,17 @@ export function RechartsPie({ data }: { data: Row[] }) {
             ))}
           </Pie>
           <Tooltip
-            formatter={(v) =>
-              typeof v === "number"
-                ? v.toLocaleString("en-US", {
-                    style: "currency",
-                    currency: "USD",
-                    maximumFractionDigits: 0,
-                  })
-                : String(v ?? "")
-            }
+            formatter={(v) => {
+              if (typeof v !== "number") return String(v ?? "");
+              if (valueMode === "number") {
+                return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+              }
+              return v.toLocaleString("en-US", {
+                style: "currency",
+                currency: "USD",
+                maximumFractionDigits: 0,
+              });
+            }}
           />
         </PieChart>
       </ResponsiveContainer>
