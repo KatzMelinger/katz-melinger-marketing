@@ -1,26 +1,53 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
-import { getSupabaseAnon } from "@/lib/supabase-public";
 
 export const dynamic = "force-dynamic";
 
+type ReviewRow = {
+  id: string;
+  platform?: string;
+  reviewer_name?: string;
+  rating?: number;
+  review_date?: string;
+  status?: string;
+  review_text?: string;
+};
+
+async function getRequestOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  if (host) {
+    const proto =
+      h.get("x-forwarded-proto") ??
+      (host.includes("localhost") ? "http" : "https");
+    return `${proto}://${host}`;
+  }
+  const fromEnv =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+  return fromEnv ?? "http://localhost:3000";
+}
+
 export default async function MarketingReviewsPage() {
-  const sb = getSupabaseAnon();
-  const configError = !sb
-    ? "Configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to load reviews."
-    : null;
+  const base = await getRequestOrigin();
+  let rows: ReviewRow[] = [];
+  let errorMessage: string | null = null;
+  try {
+    const res = await fetch(`${base}/api/reviews`, { cache: "no-store" });
+    const json = (await res.json()) as {
+      reviews?: unknown;
+      error?: string;
+    };
+    rows = Array.isArray(json.reviews) ? (json.reviews as ReviewRow[]) : [];
+    errorMessage = json.error ?? null;
+  } catch {
+    rows = [];
+    errorMessage = "Network error while loading reviews.";
+  }
 
-  const { data, error } = sb
-    ? await sb
-        .from("reviews")
-        .select("*")
-        .order("review_date", { ascending: false, nullsFirst: false })
-        .limit(500)
-    : { data: null, error: null };
-
-  const rows = data ?? [];
   const total = rows.length;
   const avg =
     total > 0
@@ -71,18 +98,13 @@ export default async function MarketingReviewsPage() {
           <h1 className="text-2xl font-semibold text-white">Reviews overview</h1>
           <p className="mt-1 text-sm text-slate-400">
             Reputation snapshot from Supabase <code className="text-slate-300">reviews</code>{" "}
-            (NEXT_PUBLIC_SUPABASE_URL + anon key).
+            (via secure server API route).
           </p>
         </div>
 
-        {configError ? (
-          <div className="rounded-xl border border-amber-900/50 bg-amber-950/40 p-4 text-sm text-amber-200">
-            {configError}
-          </div>
-        ) : null}
-        {error ? (
+        {errorMessage ? (
           <div className="rounded-xl border border-rose-900/50 bg-rose-950/40 p-4 text-sm text-rose-200">
-            Could not load reviews: {error.message}
+            Could not load reviews: {errorMessage}
           </div>
         ) : null}
 
@@ -124,7 +146,7 @@ export default async function MarketingReviewsPage() {
             </article>
           </div>
 
-          {!configError && !error && total === 0 ? (
+          {!errorMessage && total === 0 ? (
             <div className="mt-8 rounded-lg border border-dashed border-white/15 bg-[#0f1729]/60 p-8 text-center">
               <p className="text-sm text-slate-300">
                 No reviews yet. Add rows to the <code className="text-slate-200">reviews</code> table
@@ -190,15 +212,7 @@ export default async function MarketingReviewsPage() {
                 </thead>
                 <tbody>
                   {rows.slice(0, 25).map((r) => {
-                    const row = r as {
-                      id: string;
-                      platform?: string;
-                      reviewer_name?: string;
-                      rating?: number;
-                      review_date?: string;
-                      status?: string;
-                      review_text?: string;
-                    };
+                    const row = r;
                     const excerpt = (row.review_text ?? "").slice(0, 120);
                     return (
                       <tr
