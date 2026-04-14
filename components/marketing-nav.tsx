@@ -55,7 +55,7 @@ export function MarketingNav() {
                 <span className="text-base leading-none" aria-hidden>
                   {item.icon}
                 </span>
-                <span className="hidden sm:inline">{item.label}</span>
+                <span>{item.label}</span>
               </Link>
             );
           })}

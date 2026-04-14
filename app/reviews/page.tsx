@@ -97,8 +97,7 @@ export default async function MarketingReviewsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-white">Reviews overview</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Reputation snapshot from Supabase <code className="text-slate-300">reviews</code>{" "}
-            (via secure server API route).
+            Reputation snapshot from your review database.
           </p>
         </div>
 
