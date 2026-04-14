@@ -31,14 +31,14 @@ export function MarketingNav() {
       className="sticky top-0 z-20 border-b border-[#2a3f5f]"
       style={{ backgroundColor: "#0f1729" }}
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <Link
           href="/"
           className="shrink-0 text-lg font-semibold tracking-tight text-[#185FA5]"
         >
           KatzMelinger Marketing
         </Link>
-        <nav className="flex flex-1 flex-wrap items-center justify-end gap-1 sm:gap-0.5 md:gap-1">
+        <nav className="flex flex-wrap items-center gap-1">
           {MARKETING_NAV.map((item) => {
             const active = isActive(pathname, item.href);
             return (
