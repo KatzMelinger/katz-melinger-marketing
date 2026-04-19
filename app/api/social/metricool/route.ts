@@ -2,6 +2,44 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+/** Metricool app API (REST v2) — same base as working Replit integration */
+const METRICOOL_API_BASE = "https://app.metricool.com/api";
+
+function metricoolV2Url(
+  path: string,
+  userId: string,
+  blogId: string,
+  extraParams?: Record<string, string>,
+): string {
+  const url = new URL(
+    `${METRICOOL_API_BASE}${path.startsWith("/") ? path : `/${path}`}`,
+  );
+  url.searchParams.set("userId", userId);
+  url.searchParams.set("blogId", blogId);
+  if (extraParams) {
+    for (const [k, v] of Object.entries(extraParams)) {
+      url.searchParams.set(k, v);
+    }
+  }
+  return url.toString();
+}
+
+function metricoolFetch(
+  path: string,
+  token: string,
+  userId: string,
+  blogId: string,
+  extraParams?: Record<string, string>,
+): Promise<Response> {
+  return fetch(metricoolV2Url(path, userId, blogId, extraParams), {
+    cache: "no-store",
+    headers: {
+      "X-Mc-Auth": token,
+      "Content-Type": "application/json",
+    },
+  });
+}
+
 type PlatformName = "Facebook" | "Instagram" | "Twitter" | "LinkedIn";
 
 type PlatformOverview = {
@@ -113,37 +151,22 @@ function toIsoDate(value: unknown): string {
 }
 
 export async function GET() {
-  const apiKey = process.env.METRICOOL_API_KEY?.trim();
+  const token = process.env.METRICOOL_API_TOKEN?.trim();
   const userId = process.env.METRICOOL_USER_ID?.trim();
-  if (!apiKey || !userId) {
+  const blogId = process.env.METRICOOL_BLOG_ID?.trim();
+  if (!token || !userId || !blogId) {
     return NextResponse.json(
-      mockPayload("Missing METRICOOL_API_KEY or METRICOOL_USER_ID"),
+      mockPayload(
+        "Missing METRICOOL_API_TOKEN, METRICOOL_USER_ID, or METRICOOL_BLOG_ID",
+      ),
     );
   }
 
   try {
     const [overviewRes, postsRes, scheduleRes] = await Promise.all([
-      fetch(
-        `https://app.metricool.com/api/v2/analytics/overview?userId=${encodeURIComponent(userId)}`,
-        {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${apiKey}` },
-        },
-      ),
-      fetch(
-        `https://app.metricool.com/api/v2/posts?userId=${encodeURIComponent(userId)}&limit=12`,
-        {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${apiKey}` },
-        },
-      ),
-      fetch(
-        `https://app.metricool.com/api/v2/planner?userId=${encodeURIComponent(userId)}&range=14d`,
-        {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${apiKey}` },
-        },
-      ),
+      metricoolFetch("/v2/analytics/overview", token, userId, blogId),
+      metricoolFetch("/v2/posts", token, userId, blogId, { limit: "12" }),
+      metricoolFetch("/v2/planner", token, userId, blogId, { range: "14d" }),
     ]);
 
     const [overviewJson, postsJson, scheduleJson] = await Promise.all([
@@ -152,9 +175,22 @@ export async function GET() {
       scheduleRes.json(),
     ]);
 
+    const authFailed = [overviewRes, postsRes, scheduleRes].some(
+      (r) => r.status === 401 || r.status === 403,
+    );
+    if (authFailed) {
+      return NextResponse.json(
+        mockPayload(
+          "Metricool authentication failed. Verify METRICOOL_API_TOKEN and that userId/blogId match your Metricool workspace.",
+        ),
+      );
+    }
+
     if (!overviewRes.ok && !postsRes.ok && !scheduleRes.ok) {
       return NextResponse.json(
-        mockPayload("Metricool API request failed. Verify API key and user id."),
+        mockPayload(
+          "Metricool API request failed. Verify METRICOOL_API_TOKEN, METRICOOL_USER_ID, and METRICOOL_BLOG_ID.",
+        ),
       );
     }
 
@@ -241,7 +277,9 @@ export async function GET() {
     } satisfies MetricoolResponse);
   } catch {
     return NextResponse.json(
-      mockPayload("Metricool API request failed. Verify API key and user id."),
+      mockPayload(
+        "Metricool API request failed. Verify METRICOOL_API_TOKEN, METRICOOL_USER_ID, and METRICOOL_BLOG_ID.",
+      ),
     );
   }
 }
