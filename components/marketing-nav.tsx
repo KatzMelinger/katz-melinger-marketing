@@ -12,7 +12,6 @@ export const MARKETING_NAV = [
   { label: "SEO", href: "/seo", icon: "◎" },
   { label: "Content", href: "/content", icon: "✎" },
   { label: "Social", href: "/social", icon: "♺" },
-  { label: "Social Media", href: "/social-media", icon: "⎙" },
   { label: "Email", href: "/email", icon: "✉" },
   { label: "Local SEO", href: "/local-seo", icon: "⌖" },
   { label: "Reviews", href: "/reviews", icon: "★" },
