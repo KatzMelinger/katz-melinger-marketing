@@ -3,18 +3,38 @@ import { headers } from "next/headers";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
-import {
-  buildAttributionRows,
-  type CallSummary,
-  type CmsAttributionBreakdown,
-  type CmsIntakeSource,
-} from "@/lib/attribution-merge";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Attribution | Katz Melinger Marketing",
 };
+
+type CallSummary = {
+  totalCalls?: number;
+  callsBySource?: { name: string; value: number }[];
+};
+
+type FunnelRow = {
+  source: string;
+  intakes: number;
+  matters: number;
+  settlements: number;
+  revenue: number;
+  spend: number;
+};
+
+function fmtUsd(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function fmtPct(n: number): string {
+  return `${n.toFixed(1)}%`;
+}
 
 async function getRequestOrigin(): Promise<string> {
   const h = await headers();
@@ -31,78 +51,89 @@ async function getRequestOrigin(): Promise<string> {
   return fromEnv ?? "http://localhost:3000";
 }
 
-function fmtUsd(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
 export default async function AttributionPage() {
   const base = await getRequestOrigin();
-  const [sumRes, attrRes, intakeRes] = await Promise.all([
+  const [sumRes, funnelRes] = await Promise.all([
     fetch(`${base}/api/callrail/summary`, { cache: "no-store" }),
-    fetch(`${base}/api/cms/attribution`, { cache: "no-store" }),
-    fetch(`${base}/api/cms/intakes-by-source`, { cache: "no-store" }),
+    fetch(`${base}/api/cms/funnel-by-source`, { cache: "no-store" }),
   ]);
 
-  const summary = sumRes.ok
-    ? ((await sumRes.json()) as CallSummary)
-    : ({} as CallSummary);
-
-  const cmsUnavailable = !attrRes.ok;
-
-  const attrJson = attrRes.ok
-    ? ((await attrRes.json()) as { breakdown?: unknown })
+  const summary = sumRes.ok ? ((await sumRes.json()) as CallSummary) : {};
+  const funnelJson = funnelRes.ok
+    ? ((await funnelRes.json()) as { rows?: unknown })
     : {};
-  const breakdown: CmsAttributionBreakdown[] = Array.isArray(attrJson.breakdown)
-    ? (attrJson.breakdown as CmsAttributionBreakdown[]).filter(
-        (x) =>
-          x &&
-          typeof x.area_of_law === "string" &&
-          typeof x.total_settlement_value === "number" &&
-          typeof x.settlement_count === "number",
+  const funnelRows: FunnelRow[] = Array.isArray(funnelJson.rows)
+    ? (funnelJson.rows as FunnelRow[]).filter(
+        (row) =>
+          row &&
+          typeof row.source === "string" &&
+          typeof row.intakes === "number" &&
+          typeof row.matters === "number" &&
+          typeof row.settlements === "number" &&
+          typeof row.revenue === "number" &&
+          typeof row.spend === "number",
       )
     : [];
 
-  const intakesRaw = intakeRes.ok ? ((await intakeRes.json()) as unknown) : [];
-  const intakesBySource: CmsIntakeSource[] = Array.isArray(intakesRaw)
-    ? intakesRaw.filter(
-        (x): x is CmsIntakeSource =>
-          x != null &&
-          typeof x === "object" &&
-          typeof (x as { source?: unknown }).source === "string" &&
-          typeof (x as { count?: unknown }).count === "number",
-      )
-    : [];
-
-  const rows = cmsUnavailable
-    ? []
-    : buildAttributionRows(summary, breakdown, intakesBySource);
-
-  const totalCalls = summary.totalCalls ?? 0;
   const callsBySource = summary.callsBySource ?? [];
-  const fallbackRows = callsBySource.map((c) => ({
-    source: c.name,
-    calls: c.value,
-    pct: totalCalls > 0 ? Math.round((c.value / totalCalls) * 1000) / 10 : 0,
-  }));
-  const pieCalls = callsBySource.map((c) => ({
-    name: c.name,
-    value: c.value,
-  }));
+  const callMap = new Map(callsBySource.map((row) => [row.name, row.value] as const));
+  const keys = new Set<string>();
+  for (const row of callsBySource) keys.add(row.name);
+  for (const row of funnelRows) keys.add(row.source);
 
-  const totalIntakes = intakesBySource.reduce((s, r) => s + r.count, 0);
-  const totalMatters = rows.reduce((s, r) => s + r.mattersOpened, 0);
-  const totalSettlement = rows.reduce(
-    (s, r) => s + r.totalSettlementValue,
-    0,
+  const combinedRows = [...keys]
+    .map((source) => {
+      const funnel = funnelRows.find((row) => row.source === source);
+      const calls = callMap.get(source) ?? 0;
+      const intakes = funnel?.intakes ?? 0;
+      const matters = funnel?.matters ?? 0;
+      const settlements = funnel?.settlements ?? 0;
+      const revenue = funnel?.revenue ?? 0;
+      const spend = funnel?.spend ?? 0;
+      const roiPct = spend > 0 ? ((revenue - spend) / spend) * 100 : 0;
+      const cpa = intakes > 0 ? spend / intakes : 0;
+      const ltv = settlements > 0 ? revenue / settlements : 0;
+      const spendEfficiency = spend > 0 ? revenue / spend : 0;
+      return {
+        source,
+        calls,
+        intakes,
+        matters,
+        settlements,
+        revenue,
+        spend,
+        roiPct,
+        cpa,
+        ltv,
+        spendEfficiency,
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue || b.calls - a.calls);
+
+  const totals = combinedRows.reduce(
+    (acc, row) => ({
+      calls: acc.calls + row.calls,
+      intakes: acc.intakes + row.intakes,
+      matters: acc.matters + row.matters,
+      settlements: acc.settlements + row.settlements,
+      revenue: acc.revenue + row.revenue,
+      spend: acc.spend + row.spend,
+    }),
+    { calls: 0, intakes: 0, matters: 0, settlements: 0, revenue: 0, spend: 0 },
   );
 
-  const pieData = rows
-    .filter((r) => r.totalSettlementValue > 0)
-    .map((r) => ({ name: r.source, value: r.totalSettlementValue }));
+  const globalRoiPct =
+    totals.spend > 0 ? ((totals.revenue - totals.spend) / totals.spend) * 100 : 0;
+  const globalCpa = totals.intakes > 0 ? totals.spend / totals.intakes : 0;
+  const globalLtv = totals.settlements > 0 ? totals.revenue / totals.settlements : 0;
+  const globalEfficiency = totals.spend > 0 ? totals.revenue / totals.spend : 0;
+
+  const revenuePie = combinedRows
+    .filter((row) => row.revenue > 0)
+    .map((row) => ({ name: row.source, value: row.revenue }));
+  const spendPie = combinedRows
+    .filter((row) => row.spend > 0)
+    .map((row) => ({ name: row.source, value: row.spend }));
 
   return (
     <div
@@ -118,204 +149,135 @@ export default async function AttributionPage() {
         <div>
           <h1 className="text-2xl font-semibold text-white">Attribution</h1>
           <p className="mt-1 text-sm text-slate-400">
-            CallRail calls + CMS intakes and settlement data by source /
-            practice area.
+            Complete funnel: CallRail calls to CMS intakes, matters, settlements,
+            and channel economics.
           </p>
         </div>
 
-        {cmsUnavailable ? (
-          <div
-            className="rounded-xl border border-amber-800/40 p-5 text-sm text-amber-100"
-            style={{ backgroundColor: "#1a2540" }}
-          >
-            <p className="font-semibold text-white">CMS attribution unavailable</p>
-            <p className="mt-2 text-slate-300">
-              Full attribution (intakes, matters, settlement value by source) comes from
-              your CMS API. The CMS request did not succeed, so settlement and intake columns
-              are hidden below. CallRail call volume by source is shown as a fallback.
-            </p>
-          </div>
-        ) : null}
-
-        {!cmsUnavailable ? (
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { label: "Total calls", value: String(totalCalls), bg: "#185FA5" },
-              { label: "Total intakes", value: String(totalIntakes), bg: "#166534" },
-              {
-                label: "Matters (settlements)",
-                value: String(totalMatters),
-                bg: "#b45309",
-              },
-              {
-                label: "Total settlement value",
-                value: fmtUsd(totalSettlement),
-                bg: "#475569",
-              },
-            ].map((c) => (
-              <article
-                key={c.label}
-                className="rounded-xl border border-white/5 p-5 shadow-sm"
-                style={{ backgroundColor: c.bg }}
-              >
-                <p className="text-sm font-medium text-white/90">{c.label}</p>
-                <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight">
-                  {c.value}
-                </p>
-              </article>
-            ))}
-          </section>
-        ) : (
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
-            {[
-              { label: "Total calls (CallRail)", value: String(totalCalls), bg: "#185FA5" },
-              {
-                label: "Tracked sources",
-                value: String(callsBySource.length),
-                bg: "#475569",
-              },
-            ].map((c) => (
-              <article
-                key={c.label}
-                className="rounded-xl border border-white/5 p-5 shadow-sm"
-                style={{ backgroundColor: c.bg }}
-              >
-                <p className="text-sm font-medium text-white/90">{c.label}</p>
-                <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight">
-                  {c.value}
-                </p>
-              </article>
-            ))}
-          </section>
-        )}
-
-        {cmsUnavailable ? (
-          <>
-            <section
-              className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-              style={{ backgroundColor: "#1a2540" }}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: "Total calls", value: String(totals.calls), bg: "#185FA5" },
+            { label: "Total intakes", value: String(totals.intakes), bg: "#166534" },
+            { label: "Total settlements", value: String(totals.settlements), bg: "#b45309" },
+            { label: "Settlement revenue", value: fmtUsd(totals.revenue), bg: "#475569" },
+          ].map((card) => (
+            <article
+              key={card.label}
+              className="rounded-xl border border-white/5 p-5 shadow-sm"
+              style={{ backgroundColor: card.bg }}
             >
-              <h2 className="mb-4 text-lg font-semibold text-white">
-                Calls by source (CallRail fallback)
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[480px] border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-[#2a3f5f] text-slate-400">
-                      <th className="pb-3 pr-4 font-medium">Source</th>
-                      <th className="pb-3 pr-4 font-medium">Total calls</th>
-                      <th className="pb-3 font-medium">% of calls</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-slate-200">
-                    {fallbackRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="py-8 text-center text-slate-400">
-                          No CallRail source data.
-                        </td>
-                      </tr>
-                    ) : (
-                      fallbackRows.map((row) => (
-                        <tr
-                          key={row.source}
-                          className="border-b border-[#2a3f5f]/60 last:border-0"
-                        >
-                          <td className="py-3 pr-4 font-medium text-white">
-                            {row.source}
-                          </td>
-                          <td className="py-3 pr-4 tabular-nums">{row.calls}</td>
-                          <td className="py-3 tabular-nums">{row.pct}%</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+              <p className="text-sm font-medium text-white/90">{card.label}</p>
+              <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight">
+                {card.value}
+              </p>
+            </article>
+          ))}
+        </section>
 
-            <section
-              className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-              style={{ backgroundColor: "#1a2540" }}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: "ROI (all channels)", value: fmtPct(globalRoiPct), bg: "#1a2540" },
+            { label: "CPA", value: fmtUsd(globalCpa), bg: "#1a2540" },
+            { label: "Lifetime value", value: fmtUsd(globalLtv), bg: "#1a2540" },
+            {
+              label: "Spend efficiency",
+              value: `${globalEfficiency.toFixed(2)}x`,
+              bg: "#1a2540",
+            },
+          ].map((metric) => (
+            <article
+              key={metric.label}
+              className="rounded-xl border border-[#2a3f5f] p-5 shadow-sm"
+              style={{ backgroundColor: metric.bg }}
             >
-              <h2 className="mb-4 text-lg font-semibold text-white">
-                Calls by source (share)
-              </h2>
-              <RechartsPie data={pieCalls} valueMode="number" />
-            </section>
-          </>
-        ) : null}
+              <p className="text-sm font-medium text-slate-300">{metric.label}</p>
+              <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight text-white">
+                {metric.value}
+              </p>
+            </article>
+          ))}
+        </section>
 
-        {!cmsUnavailable ? (
-          <section
-            className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-            style={{ backgroundColor: "#1a2540" }}
-          >
-            <h2 className="mb-4 text-lg font-semibold text-white">
-              Full attribution
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[960px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#2a3f5f] text-slate-400">
-                    <th className="pb-3 pr-4 font-medium">Source</th>
-                    <th className="pb-3 pr-4 font-medium">Total calls</th>
-                    <th className="pb-3 pr-4 font-medium">Intakes created</th>
-                    <th className="pb-3 pr-4 font-medium">Matters opened</th>
-                    <th className="pb-3 pr-4 font-medium">Settlement value</th>
-                    <th className="pb-3 pr-4 font-medium">Conversion</th>
-                    <th className="pb-3 font-medium">Avg settlement</th>
+        <section
+          className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
+          style={{ backgroundColor: "#1a2540" }}
+        >
+          <h2 className="mb-4 text-lg font-semibold text-white">
+            Source funnel and economics
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-[#2a3f5f] text-slate-400">
+                  <th className="pb-3 pr-4 font-medium">Source</th>
+                  <th className="pb-3 pr-4 font-medium">Calls</th>
+                  <th className="pb-3 pr-4 font-medium">Intakes</th>
+                  <th className="pb-3 pr-4 font-medium">Matters</th>
+                  <th className="pb-3 pr-4 font-medium">Settlements</th>
+                  <th className="pb-3 pr-4 font-medium">Revenue</th>
+                  <th className="pb-3 pr-4 font-medium">Spend</th>
+                  <th className="pb-3 pr-4 font-medium">ROI</th>
+                  <th className="pb-3 pr-4 font-medium">CPA</th>
+                  <th className="pb-3 pr-4 font-medium">LTV</th>
+                  <th className="pb-3 font-medium">Spend efficiency</th>
+                </tr>
+              </thead>
+              <tbody className="text-slate-200">
+                {combinedRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-8 text-center text-slate-400">
+                      No funnel rows. Confirm CallRail and CMS endpoints.
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="text-slate-200">
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-400">
-                        No attribution rows. Configure CMS and CallRail.
+                ) : (
+                  combinedRows.map((row) => (
+                    <tr
+                      key={row.source}
+                      className="border-b border-[#2a3f5f]/60 last:border-0"
+                    >
+                      <td className="py-3 pr-4 font-medium text-white">{row.source}</td>
+                      <td className="py-3 pr-4 tabular-nums">{row.calls}</td>
+                      <td className="py-3 pr-4 tabular-nums">{row.intakes}</td>
+                      <td className="py-3 pr-4 tabular-nums">{row.matters}</td>
+                      <td className="py-3 pr-4 tabular-nums">{row.settlements}</td>
+                      <td className="py-3 pr-4 tabular-nums font-medium text-white">
+                        {fmtUsd(row.revenue)}
+                      </td>
+                      <td className="py-3 pr-4 tabular-nums">{fmtUsd(row.spend)}</td>
+                      <td className="py-3 pr-4 tabular-nums">{fmtPct(row.roiPct)}</td>
+                      <td className="py-3 pr-4 tabular-nums">{fmtUsd(row.cpa)}</td>
+                      <td className="py-3 pr-4 tabular-nums">{fmtUsd(row.ltv)}</td>
+                      <td className="py-3 tabular-nums">
+                        {row.spendEfficiency.toFixed(2)}x
                       </td>
                     </tr>
-                  ) : (
-                    rows.map((row) => (
-                      <tr
-                        key={row.source}
-                        className="border-b border-[#2a3f5f]/60 last:border-0"
-                      >
-                        <td className="py-3 pr-4 font-medium text-white">
-                          {row.source}
-                        </td>
-                        <td className="py-3 pr-4 tabular-nums">{row.totalCalls}</td>
-                        <td className="py-3 pr-4 tabular-nums">{row.intakes}</td>
-                        <td className="py-3 pr-4 tabular-nums">
-                          {row.mattersOpened}
-                        </td>
-                        <td className="py-3 pr-4 tabular-nums font-medium text-white">
-                          {fmtUsd(row.totalSettlementValue)}
-                        </td>
-                        <td className="py-3 pr-4 tabular-nums">
-                          {row.conversionRate.toFixed(1)}%
-                        </td>
-                        <td className="py-3 tabular-nums">
-                          {fmtUsd(row.avgSettlement)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        ) : null}
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-        {!cmsUnavailable ? (
+        <div className="grid gap-6 lg:grid-cols-2">
           <section
             className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
             style={{ backgroundColor: "#1a2540" }}
           >
             <h2 className="mb-4 text-lg font-semibold text-white">
-              Settlement value by source
+              Revenue by marketing channel
             </h2>
-            <RechartsPie data={pieData} />
+            <RechartsPie data={revenuePie} />
           </section>
-        ) : null}
+          <section
+            className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
+            style={{ backgroundColor: "#1a2540" }}
+          >
+            <h2 className="mb-4 text-lg font-semibold text-white">
+              Marketing spend by channel
+            </h2>
+            <RechartsPie data={spendPie} />
+          </section>
+        </div>
       </main>
     </div>
   );

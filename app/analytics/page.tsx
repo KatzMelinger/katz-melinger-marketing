@@ -17,6 +17,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { GoogleServiceAccountSetup } from "@/components/google-service-account-setup";
 import { MarketingNav } from "@/components/marketing-nav";
 
 const CARD = "#1a2540";
@@ -45,6 +46,8 @@ export default function AnalyticsPage() {
     bounceRate: number;
     averageSessionDuration: number;
     screenPageViews: number;
+    segments?: { name: string; sessions: number }[];
+    segmentWarning?: string;
     error?: string;
   } | null>(null);
   const [days, setDays] = useState<
@@ -60,27 +63,40 @@ export default function AnalyticsPage() {
     { name: string; sessions: number }[]
   >([]);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [setupRequired, setSetupRequired] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [o, d, s, p, n] = await Promise.all([
-          fetch("/api/analytics/overview").then((r) => r.json()),
-          fetch("/api/analytics/by-day").then((r) => r.json()),
-          fetch("/api/analytics/traffic-sources").then((r) => r.json()),
-          fetch("/api/analytics/pages").then((r) => r.json()),
-          fetch("/api/analytics/new-vs-returning").then((r) => r.json()),
+        const setup = (await fetch("/api/google-service-account/status").then((r) =>
+          r.json(),
+        )) as { configured?: boolean };
+        if (cancelled) return;
+        if (!setup.configured) {
+          setSetupRequired(true);
+          setLoadErr(null);
+          return;
+        }
+
+        const [o, t, p] = await Promise.all([
+          fetch("/api/google-analytics?action=overview").then((r) => r.json()),
+          fetch("/api/google-analytics?action=traffic").then((r) => r.json()),
+          fetch("/api/google-analytics?action=pages").then((r) => r.json()),
         ]);
         if (cancelled) return;
         setOverview(o);
-        setDays(Array.isArray(d.days) ? d.days : []);
-        setSources(Array.isArray(s.sources) ? s.sources : []);
+        setDays(Array.isArray(t.days) ? t.days : []);
+        setSources(Array.isArray(t.sources) ? t.sources : []);
         setPages(Array.isArray(p.pages) ? p.pages : []);
-        setSegments(Array.isArray(n.segments) ? n.segments : []);
-        const errs = [o.error, d.error, s.error, p.error, n.error].filter(
-          Boolean,
-        );
+        setSegments(Array.isArray(o.segments) ? o.segments : []);
+        const errs = [
+          o.error,
+          t.error,
+          p.error,
+          o.segmentWarning,
+        ].filter(Boolean);
+        setSetupRequired(false);
         if (errs.length) setLoadErr(errs.join(" · "));
       } catch {
         if (!cancelled) setLoadErr("Failed to load analytics");
@@ -119,26 +135,35 @@ export default function AnalyticsPage() {
           </div>
         ) : null}
 
+        {setupRequired ? (
+          <GoogleServiceAccountSetup contextLabel="GA4 reporting" />
+        ) : null}
+
+        {!setupRequired ? (
+          <>
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             {
-              label: "Total sessions",
+              label: "Sessions",
               value: overview?.sessions ?? "—",
               bg: ACCENT,
             },
             {
-              label: "Active users",
+              label: "Users",
               value: overview?.activeUsers ?? "—",
               bg: "#166534",
             },
             {
-              label: "New users",
-              value: overview?.newUsers ?? "—",
+              label: "Page views",
+              value: overview?.screenPageViews ?? "—",
               bg: "#b45309",
             },
             {
-              label: "Avg session duration",
-              value: fmtDuration(overview?.averageSessionDuration ?? 0),
+              label: "Bounce rate",
+              value:
+                overview?.bounceRate != null && Number.isFinite(overview.bounceRate)
+                  ? `${(overview.bounceRate * 100).toFixed(1)}%`
+                  : "—",
               bg: "#475569",
             },
           ].map((c) => (
@@ -290,6 +315,8 @@ export default function AnalyticsPage() {
             </table>
           </div>
         </section>
+          </>
+        ) : null}
       </main>
     </div>
   );

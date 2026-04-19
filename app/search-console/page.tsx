@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { GoogleServiceAccountSetup } from "@/components/google-service-account-setup";
 import { MarketingNav } from "@/components/marketing-nav";
 
 const CARD = "#1a2540";
@@ -33,10 +34,12 @@ function formatGscDate(d: string): string {
 
 export default function SearchConsolePage() {
   const [overview, setOverview] = useState<{
+    propertyUrl?: string;
     totalClicks: number;
     totalImpressions: number;
     avgCtr: number;
     avgPosition: number;
+    timelineWarning?: string;
     error?: string;
   } | null>(null);
   const [keywords, setKeywords] = useState<
@@ -55,23 +58,39 @@ export default function SearchConsolePage() {
     { date: string; clicks: number; impressions: number }[]
   >([]);
   const [err, setErr] = useState<string | null>(null);
+  const [setupRequired, setSetupRequired] = useState(false);
 
   useEffect(() => {
     let c = false;
     (async () => {
       try {
-        const [o, k, p, d] = await Promise.all([
-          fetch("/api/search-console/overview").then((r) => r.json()),
-          fetch("/api/search-console/keywords").then((r) => r.json()),
-          fetch("/api/search-console/pages").then((r) => r.json()),
-          fetch("/api/search-console/by-day").then((r) => r.json()),
+        const setup = (await fetch("/api/google-service-account/status").then((r) =>
+          r.json(),
+        )) as { configured?: boolean };
+        if (c) return;
+        if (!setup.configured) {
+          setSetupRequired(true);
+          setErr(null);
+          return;
+        }
+
+        const [o, k, p] = await Promise.all([
+          fetch("/api/search-console?action=overview").then((r) => r.json()),
+          fetch("/api/search-console?action=queries").then((r) => r.json()),
+          fetch("/api/search-console?action=pages").then((r) => r.json()),
         ]);
         if (c) return;
         setOverview(o);
         setKeywords(Array.isArray(k.keywords) ? k.keywords : []);
         setPages(Array.isArray(p.pages) ? p.pages : []);
-        setDays(Array.isArray(d.days) ? d.days : []);
-        const parts = [o.error, k.error, p.error, d.error].filter(Boolean);
+        setDays(Array.isArray(o.days) ? o.days : []);
+        const parts = [
+          o.error,
+          k.error,
+          p.error,
+          o.timelineWarning,
+        ].filter(Boolean);
+        setSetupRequired(false);
         if (parts.length) setErr(parts.join(" · "));
       } catch {
         if (!c) setErr("Failed to load Search Console data");
@@ -96,7 +115,12 @@ export default function SearchConsolePage() {
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-2xl font-semibold text-white">Search Console</h1>
-          <p className="mt-1 text-sm text-slate-400">Last 28 days · katzmelinger.com</p>
+          <p className="mt-1 text-sm text-slate-400">
+            Last 28 days
+            {overview?.propertyUrl ? (
+              <span className="text-slate-500"> · {overview.propertyUrl}</span>
+            ) : null}
+          </p>
         </div>
 
         {err ? (
@@ -108,6 +132,12 @@ export default function SearchConsolePage() {
           </div>
         ) : null}
 
+        {setupRequired ? (
+          <GoogleServiceAccountSetup contextLabel="Search Console reporting" />
+        ) : null}
+
+        {!setupRequired ? (
+          <>
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             {
@@ -266,6 +296,8 @@ export default function SearchConsolePage() {
             </table>
           </div>
         </section>
+          </>
+        ) : null}
       </main>
     </div>
   );
