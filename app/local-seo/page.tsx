@@ -14,6 +14,17 @@ const REFRESH_MS = 30_000;
 export type LocalSeoTabId = "gbp" | "reviews" | "rankings" | "citations";
 
 /** GET `/api/local-seo/google-business?action=dashboard` JSON (subset). */
+/** Structured Google API error (when the Business Profile API returns non-2xx). */
+export interface GoogleApiErrorDetail {
+  message: string;
+  httpStatus: number;
+  httpStatusText?: string;
+  googleCode?: number;
+  googleStatus?: string;
+  details?: unknown;
+  rawBody?: string;
+}
+
 export interface GbpDashboardApiResponse {
   business: LocalBusinessInfo;
   gbpReviews: GbpReviewRow[];
@@ -21,6 +32,8 @@ export interface GbpDashboardApiResponse {
   photos: GbpPhotoRow[];
   warnings?: string[];
   error?: string;
+  googleError?: GoogleApiErrorDetail;
+  googleBusinessDebug?: unknown;
 }
 
 export interface LocalBusinessInfo {
@@ -114,13 +127,28 @@ export interface LocalSeoDashboardData {
   warnings: string[];
 }
 
+const isDev = process.env.NODE_ENV === "development";
+
 async function fetchLocalSeoDashboard(): Promise<LocalSeoDashboardData> {
-  const res = await fetch("/api/local-seo/google-business?action=dashboard", {
+  const qs =
+    isDev ? "?action=dashboard&debug=1" : "?action=dashboard";
+  const res = await fetch(`/api/local-seo/google-business${qs}`, {
     cache: "no-store",
   });
   const data = (await res.json()) as GbpDashboardApiResponse;
   if (!res.ok) {
-    throw new Error(data.error ?? "Failed to load Google Business Profile data");
+    console.warn("[Local SEO] GBP API error response:", {
+      status: res.status,
+      error: data.error,
+      googleError: data.googleError,
+      googleBusinessDebug: data.googleBusinessDebug,
+    });
+    const base = data.error ?? "Failed to load Google Business Profile data";
+    const extra =
+      data.googleError?.message && !base.includes(data.googleError.message)
+        ? ` — ${data.googleError.message}`
+        : "";
+    throw new Error(`${base}${extra}`);
   }
   const platformReviews: PlatformReviewRow[] = [
     ...data.gbpReviews.map((r, i) => ({
@@ -326,6 +354,27 @@ export default function LocalSeoPlatformPage() {
   const [gbpWarnings, setGbpWarnings] = useState<string[]>([]);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  const [saStatus, setSaStatus] = useState<unknown>(null);
+  const [gbpTest, setGbpTest] = useState<unknown>(null);
+  const [gbpTestLoading, setGbpTestLoading] = useState(false);
+
+  useEffect(() => {
+    console.log(
+      "[Local SEO] Client: GOOGLE_SERVICE_ACCOUNT_JSON is only read on the server (API routes).",
+    );
+    void (async () => {
+      try {
+        const r = await fetch("/api/google-service-account/status", {
+          cache: "no-store",
+        });
+        const j: unknown = await r.json();
+        console.log("[Local SEO] GET /api/google-service-account/status →", j);
+        setSaStatus(j);
+      } catch (e) {
+        console.error("[Local SEO] service account status failed:", e);
+      }
+    })();
+  }, []);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
@@ -493,6 +542,69 @@ export default function LocalSeoPlatformPage() {
           >
             {error}
           </div>
+        ) : null}
+
+        {isDev ? (
+          <section
+            className="rounded-xl border border-dashed border-slate-600 p-4 text-sm"
+            style={{ backgroundColor: "#0c1220" }}
+          >
+            <h2 className="font-semibold text-slate-200">
+              Google Business Profile debug (dev only)
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Terminal logs (with GOOGLE_DEBUG_AUTH=1) show full GBP request URLs. Required
+              OAuth scope for these APIs:{" "}
+              <code className="text-slate-400">
+                https://www.googleapis.com/auth/business.manage
+              </code>
+            </p>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-medium text-slate-400">
+                Service account JSON (server-side check)
+              </p>
+              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                {saStatus != null
+                  ? JSON.stringify(saStatus, null, 2)
+                  : "Loading…"}
+              </pre>
+              <button
+                type="button"
+                disabled={gbpTestLoading}
+                className="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 disabled:opacity-50"
+                onClick={() => {
+                  void (async () => {
+                    setGbpTestLoading(true);
+                    try {
+                      const r = await fetch("/api/local-seo/google-business/test", {
+                        cache: "no-store",
+                      });
+                      const j: unknown = await r.json();
+                      console.log(
+                        "[Local SEO] GET /api/local-seo/google-business/test →",
+                        j,
+                      );
+                      setGbpTest(j);
+                    } catch (e) {
+                      console.error("[Local SEO] GBP test failed:", e);
+                      setGbpTest({ error: String(e) });
+                    } finally {
+                      setGbpTestLoading(false);
+                    }
+                  })();
+                }}
+              >
+                {gbpTestLoading
+                  ? "Running…"
+                  : "Run GBP credential test (Account Management + v4 location)"}
+              </button>
+              {gbpTest != null ? (
+                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                  {JSON.stringify(gbpTest, null, 2)}
+                </pre>
+              ) : null}
+            </div>
+          </section>
         ) : null}
 
         {!error && gbpWarnings.length > 0 ? (

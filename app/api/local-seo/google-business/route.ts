@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 
+import type { ParsedGoogleApiError } from "@/lib/google-api-errors";
+import { parseGoogleApiErrorResponse } from "@/lib/google-api-errors";
+import {
+  GBP_MYBUSINESS_V4_BASE,
+  GBP_OAUTH_SCOPE,
+  gbpFetch,
+} from "@/lib/gbp-http";
 import { getGoogleAccessToken } from "@/lib/google-access-token";
+import { describeServiceAccountJson } from "@/lib/google-service-account";
 
 export const dynamic = "force-dynamic";
-
-const SCOPE = "https://www.googleapis.com/auth/business.manage";
-const BASE = "https://mybusiness.googleapis.com/v4";
-
-type GoogleJsonError = {
-  error?: { code?: number; message?: string; status?: string };
-};
 
 function stripAccountPrefix(id: string): string {
   const t = id.trim();
@@ -25,33 +26,28 @@ function stripLocationPrefix(id: string): string {
   return t.startsWith("locations/") ? t.slice("locations/".length) : t;
 }
 
-async function readGoogleErrorMessage(res: Response): Promise<string> {
-  try {
-    const j = (await res.json()) as GoogleJsonError;
-    const msg = j?.error?.message;
-    if (msg) return msg;
-    const status = j?.error?.status;
-    if (status) return status;
-  } catch {
-    /* ignore */
-  }
-  return res.statusText || "Google API request failed";
-}
-
-function friendlyHttpError(status: number, message: string): string {
+function friendlyUserMessage(status: number, g: ParsedGoogleApiError): string {
+  const detail = g.message;
   if (status === 404) {
-    return "Location not found. Check GOOGLE_BUSINESS_ACCOUNT_ID and GOOGLE_BUSINESS_LOCATION_ID.";
+    return `Not found (404): ${detail}. Confirm GOOGLE_BUSINESS_ACCOUNT_ID and GOOGLE_BUSINESS_LOCATION_ID match the Google Business Profile (numeric location id under the same account).`;
   }
   if (status === 403) {
-    return `Access denied (${message}). Ensure the service account is granted access to this Business Profile location and has the business.manage scope.`;
+    return `Forbidden (403): ${detail}. Invite the service account’s client_email as a user (Manager/Owner) on this Business Profile and retry.`;
   }
   if (status === 429) {
-    return "Google rate limit reached. Wait a few minutes and try again.";
+    return `Rate limited (429): ${detail}. Wait and retry.`;
   }
   if (status === 401) {
-    return "Google authentication failed. Verify GOOGLE_SERVICE_ACCOUNT_JSON.";
+    return `Authentication failed (401): ${detail}. Fix GOOGLE_SERVICE_ACCOUNT_JSON (ensure private_key newlines are valid PEM), enable "Google My Business API" in GCP, use scope ${GBP_OAUTH_SCOPE}, and grant the service account access to the profile.`;
   }
-  return message || `Google API error (${status})`;
+  return detail || `Google API error (${status})`;
+}
+
+async function jsonErrorPayload(
+  res: Response,
+): Promise<{ friendly: string; parsed: ParsedGoogleApiError }> {
+  const parsed = await parseGoogleApiErrorResponse(res);
+  return { friendly: friendlyUserMessage(res.status, parsed), parsed };
 }
 
 function mapStarRating(starRating: unknown): number {
@@ -133,30 +129,40 @@ function mediaKind(
   return "interior";
 }
 
-async function authorizedFetch(
-  url: string,
-  token: string,
-  init?: RequestInit,
-): Promise<Response> {
-  const headers = new Headers(init?.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  if (init?.body != null && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  return fetch(url, {
-    ...init,
-    cache: "no-store",
-    headers,
-  });
-}
-
 export async function GET(req: Request) {
-  const auth = await getGoogleAccessToken([SCOPE]);
-  if ("error" in auth) {
-    return NextResponse.json({ error: auth.error }, { status: 500 });
+  const { searchParams } = new URL(req.url);
+  const debug =
+    searchParams.get("debug") === "1" || process.env.GOOGLE_DEBUG_AUTH === "1";
+
+  if (debug) {
+    const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
+    console.log(
+      "[GBP] service account (safe):",
+      describeServiceAccountJson(raw || undefined),
+    );
+    console.log("[GBP] required OAuth scope:", GBP_OAUTH_SCOPE);
   }
 
-  const { searchParams } = new URL(req.url);
+  const auth = await getGoogleAccessToken([GBP_OAUTH_SCOPE]);
+  if ("error" in auth) {
+    return NextResponse.json(
+      {
+        error: auth.error,
+        ...(debug
+          ? {
+              googleBusinessDebug: {
+                serviceAccount: describeServiceAccountJson(
+                  process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim() || undefined,
+                ),
+                scope: GBP_OAUTH_SCOPE,
+              },
+            }
+          : {}),
+      },
+      { status: 500 },
+    );
+  }
+
   const action = searchParams.get("action") ?? "dashboard";
   const accountId = stripAccountPrefix(
     searchParams.get("accountId")?.trim() ??
@@ -169,6 +175,8 @@ export async function GET(req: Request) {
       "",
   );
 
+  console.log("[GBP] GET", { action, accountId, locationId, debug });
+
   if (!accountId) {
     return NextResponse.json(
       { error: "Missing GOOGLE_BUSINESS_ACCOUNT_ID (or accountId query)." },
@@ -180,12 +188,12 @@ export async function GET(req: Request) {
 
   try {
     if (action === "locations") {
-      const url = `${BASE}/accounts/${acc}/locations?pageSize=100`;
-      const res = await authorizedFetch(url, auth.token);
+      const url = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations?pageSize=100`;
+      const res = await gbpFetch("get-locations", url, auth.token);
       if (!res.ok) {
-        const msg = await readGoogleErrorMessage(res);
+        const { friendly, parsed } = await jsonErrorPayload(res);
         return NextResponse.json(
-          { error: friendlyHttpError(res.status, msg) },
+          { error: friendly, googleError: parsed },
           { status: res.status >= 500 ? 502 : res.status },
         );
       }
@@ -201,15 +209,15 @@ export async function GET(req: Request) {
     }
 
     const loc = encodeURIComponent(locationId);
-    const locationName = `${BASE}/accounts/${acc}/locations/${loc}`;
+    const locationName = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}`;
 
     if (action === "reviews") {
       const url = `${locationName}/reviews`;
-      const res = await authorizedFetch(url, auth.token);
+      const res = await gbpFetch("get-reviews", url, auth.token);
       if (!res.ok) {
-        const msg = await readGoogleErrorMessage(res);
+        const { friendly, parsed } = await jsonErrorPayload(res);
         return NextResponse.json(
-          { error: friendlyHttpError(res.status, msg) },
+          { error: friendly, googleError: parsed },
           { status: res.status >= 500 ? 502 : res.status },
         );
       }
@@ -218,11 +226,11 @@ export async function GET(req: Request) {
 
     if (action === "media") {
       const url = `${locationName}/media`;
-      const res = await authorizedFetch(url, auth.token);
+      const res = await gbpFetch("get-media", url, auth.token);
       if (!res.ok) {
-        const msg = await readGoogleErrorMessage(res);
+        const { friendly, parsed } = await jsonErrorPayload(res);
         return NextResponse.json(
-          { error: friendlyHttpError(res.status, msg) },
+          { error: friendly, googleError: parsed },
           { status: res.status >= 500 ? 502 : res.status },
         );
       }
@@ -231,11 +239,11 @@ export async function GET(req: Request) {
 
     if (action === "localPosts") {
       const url = `${locationName}/localPosts`;
-      const res = await authorizedFetch(url, auth.token);
+      const res = await gbpFetch("get-local-posts", url, auth.token);
       if (!res.ok) {
-        const msg = await readGoogleErrorMessage(res);
+        const { friendly, parsed } = await jsonErrorPayload(res);
         return NextResponse.json(
-          { error: friendlyHttpError(res.status, msg) },
+          { error: friendly, googleError: parsed },
           { status: res.status >= 500 ? 502 : res.status },
         );
       }
@@ -244,16 +252,32 @@ export async function GET(req: Request) {
 
     if (action === "dashboard") {
       const [locRes, revRes, mediaRes, postsRes] = await Promise.all([
-        authorizedFetch(locationName, auth.token),
-        authorizedFetch(`${locationName}/reviews?pageSize=50`, auth.token),
-        authorizedFetch(`${locationName}/media?pageSize=50`, auth.token),
-        authorizedFetch(`${locationName}/localPosts?pageSize=50`, auth.token),
+        gbpFetch("dashboard-location", locationName, auth.token),
+        gbpFetch(
+          "dashboard-reviews",
+          `${locationName}/reviews?pageSize=50`,
+          auth.token,
+        ),
+        gbpFetch(
+          "dashboard-media",
+          `${locationName}/media?pageSize=50`,
+          auth.token,
+        ),
+        gbpFetch(
+          "dashboard-local-posts",
+          `${locationName}/localPosts?pageSize=50`,
+          auth.token,
+        ),
       ]);
 
       if (!locRes.ok) {
-        const msg = await readGoogleErrorMessage(locRes);
+        const { friendly, parsed } = await jsonErrorPayload(locRes);
         return NextResponse.json(
-          { error: friendlyHttpError(locRes.status, msg) },
+          {
+            error: friendly,
+            googleError: parsed,
+            ...(debug ? { googleBusinessDebug: { locationUrl: locationName } } : {}),
+          },
           { status: locRes.status >= 500 ? 502 : locRes.status },
         );
       }
@@ -398,13 +422,16 @@ export async function GET(req: Request) {
 
       const warnings: string[] = [];
       if (!revRes.ok) {
-        warnings.push(`Reviews: ${friendlyHttpError(revRes.status, await readGoogleErrorMessage(revRes))}`);
+        const { friendly } = await jsonErrorPayload(revRes);
+        warnings.push(`Reviews: ${friendly}`);
       }
       if (!mediaRes.ok) {
-        warnings.push(`Photos: ${friendlyHttpError(mediaRes.status, await readGoogleErrorMessage(mediaRes))}`);
+        const { friendly } = await jsonErrorPayload(mediaRes);
+        warnings.push(`Photos: ${friendly}`);
       }
       if (!postsRes.ok) {
-        warnings.push(`Posts: ${friendlyHttpError(postsRes.status, await readGoogleErrorMessage(postsRes))}`);
+        const { friendly } = await jsonErrorPayload(postsRes);
+        warnings.push(`Posts: ${friendly}`);
       }
 
       return NextResponse.json({
@@ -413,6 +440,18 @@ export async function GET(req: Request) {
         posts,
         photos,
         warnings,
+        ...(debug
+          ? {
+              googleBusinessDebug: {
+                requests: [
+                  { label: "location", url: locationName },
+                  { label: "reviews", url: `${locationName}/reviews?pageSize=50` },
+                  { label: "media", url: `${locationName}/media?pageSize=50` },
+                  { label: "localPosts", url: `${locationName}/localPosts?pageSize=50` },
+                ],
+              },
+            }
+          : {}),
       });
     }
 
@@ -434,7 +473,7 @@ type PostBody = {
 };
 
 export async function POST(req: Request) {
-  const auth = await getGoogleAccessToken([SCOPE]);
+  const auth = await getGoogleAccessToken([GBP_OAUTH_SCOPE]);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: 500 });
   }
@@ -463,7 +502,7 @@ export async function POST(req: Request) {
 
   const acc = encodeURIComponent(accountId);
   const loc = encodeURIComponent(locationId);
-  const parent = `${BASE}/accounts/${acc}/locations/${loc}/localPosts`;
+  const parent = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}/localPosts`;
 
   const languageCode = "en";
 
@@ -505,15 +544,15 @@ export async function POST(req: Request) {
     };
   }
 
-  const res = await authorizedFetch(parent, auth.token, {
+  const res = await gbpFetch("create-local-post", parent, auth.token, {
     method: "POST",
     body: JSON.stringify(basePayload),
   });
 
   if (!res.ok) {
-    const msg = await readGoogleErrorMessage(res);
+    const { friendly, parsed } = await jsonErrorPayload(res);
     return NextResponse.json(
-      { error: friendlyHttpError(res.status, msg) },
+      { error: friendly, googleError: parsed },
       { status: res.status >= 500 ? 502 : res.status },
     );
   }

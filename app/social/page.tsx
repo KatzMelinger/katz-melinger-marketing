@@ -51,26 +51,70 @@ type SocialPayload = {
     content: string;
   }[];
   trend: { date: string; engagementRate: number; followers: number }[];
+  /** Present when `?debug=1` or METRICOOL_DEBUG=1 on the API route. */
+  metricoolDebug?: unknown;
 };
 
 function fmtPct(value: number): string {
   return `${value.toFixed(2)}%`;
 }
 
+const isDev = process.env.NODE_ENV === "development";
+
 export default function SocialPage() {
   const [data, setData] = useState<SocialPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [envDebug, setEnvDebug] = useState<unknown>(null);
+  const [testOutput, setTestOutput] = useState<unknown>(null);
+  const [testLoading, setTestLoading] = useState(false);
+
+  useEffect(() => {
+    console.log(
+      "[Social page] Client: Metricool secrets are not available in the browser. Only the API route reads METRICOOL_API_TOKEN / USER_ID / BLOG_ID.",
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
-        const res = await fetch("/api/social/metricool", { cache: "no-store" });
+        const res = await fetch("/api/social/metricool/debug-env", {
+          cache: "no-store",
+        });
+        const json: unknown = await res.json();
+        if (cancelled) return;
+        console.log("[Social page] GET /api/social/metricool/debug-env →", json);
+        setEnvDebug(json);
+      } catch (e) {
+        console.error("[Social page] debug-env request failed:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const qs = isDev ? "?debug=1" : "";
+        const res = await fetch(`/api/social/metricool${qs}`, {
+          cache: "no-store",
+        });
         const json = (await res.json()) as SocialPayload;
         if (cancelled) return;
+        console.log(
+          `[Social page] GET /api/social/metricool${qs} status=${res.status}`,
+          json,
+        );
+        if (json.error) {
+          console.warn("[Social page] Metricool error field:", json.error);
+        }
         setData(json);
         setError(json.error ?? null);
-      } catch {
+      } catch (e) {
+        console.error("[Social page] Metricool dashboard fetch failed:", e);
         if (!cancelled) setError("Failed to load Metricool data");
       }
     })();
@@ -111,7 +155,76 @@ export default function SocialPage() {
             style={{ backgroundColor: CARD }}
           >
             {error}
+            {isDev && data?.metricoolDebug ? (
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">
+                {JSON.stringify(data.metricoolDebug, null, 2)}
+              </pre>
+            ) : null}
           </div>
+        ) : null}
+
+        {isDev ? (
+          <section
+            className="rounded-xl border border-dashed border-slate-600 p-4 text-sm"
+            style={{ backgroundColor: "#0c1220" }}
+          >
+            <h2 className="font-semibold text-slate-200">Metricool debug (dev only)</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Server logs (terminal running Next.js) contain full request/response traces.
+              This panel shows safe env snapshot and optional API test results.
+            </p>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-medium text-slate-400">Env as seen by server</p>
+              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                {envDebug != null
+                  ? JSON.stringify(envDebug, null, 2)
+                  : "Loading…"}
+              </pre>
+              <button
+                type="button"
+                disabled={testLoading}
+                className="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 disabled:opacity-50"
+                onClick={() => {
+                  void (async () => {
+                    setTestLoading(true);
+                    try {
+                      const r = await fetch("/api/social/metricool/test", {
+                        cache: "no-store",
+                      });
+                      const j: unknown = await r.json();
+                      console.log(
+                        "[Social page] GET /api/social/metricool/test →",
+                        j,
+                      );
+                      setTestOutput(j);
+                    } catch (e) {
+                      console.error("[Social page] test endpoint failed:", e);
+                      setTestOutput({ error: String(e) });
+                    } finally {
+                      setTestLoading(false);
+                    }
+                  })();
+                }}
+              >
+                {testLoading ? "Running…" : "Run credential test (single API call)"}
+              </button>
+              {testOutput != null ? (
+                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                  {JSON.stringify(testOutput, null, 2)}
+                </pre>
+              ) : null}
+            </div>
+            {data?.metricoolDebug && !error ? (
+              <div className="mt-4">
+                <p className="text-xs font-medium text-slate-400">
+                  Last dashboard response (debug=1)
+                </p>
+                <pre className="mt-1 max-h-48 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                  {JSON.stringify(data.metricoolDebug, null, 2)}
+                </pre>
+              </div>
+            ) : null}
+          </section>
         ) : null}
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
