@@ -55,7 +55,7 @@ export function readMetricoolEnv(): MetricoolEnvResult {
   return { ok: true, token, userId, blogId };
 }
 
-export function metricoolV2Url(
+export function metricoolUrl(
   path: string,
   userId: string,
   blogId: string,
@@ -95,7 +95,7 @@ export async function metricoolFetchLogged(
   blogId: string,
   extraParams?: Record<string, string>,
 ): Promise<{ response: Response; log: MetricoolRequestLog }> {
-  const url = metricoolV2Url(path, userId, blogId, extraParams);
+  const url = metricoolUrl(path, userId, blogId, extraParams);
   const headers: Record<string, string> = {
     "X-Mc-Auth": token,
     "Content-Type": "application/json",

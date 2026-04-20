@@ -172,15 +172,15 @@ export async function GET(request: Request) {
     const [overviewR, postsR, scheduleR] = await Promise.all([
       metricoolFetchLogged(
         "overview",
-        "/v2/analytics/overview",
+        "/analytics/overview",
         token,
         userId,
         blogId,
       ),
-      metricoolFetchLogged("posts", "/v2/posts", token, userId, blogId, {
+      metricoolFetchLogged("posts", "/posts", token, userId, blogId, {
         limit: "12",
       }),
-      metricoolFetchLogged("planner", "/v2/planner", token, userId, blogId, {
+      metricoolFetchLogged("planner", "/planner", token, userId, blogId, {
         range: "14d",
       }),
     ]);

@@ -33,7 +33,7 @@ export async function GET() {
   try {
     const { response, log } = await metricoolFetchLogged(
       "test-overview",
-      "/v2/analytics/overview",
+      "/analytics/overview",
       token,
       userId,
       blogId,
