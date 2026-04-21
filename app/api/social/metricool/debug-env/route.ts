@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { maskSecret, readMetricoolEnv } from "@/lib/metricool-app-api";
+import { maskSecret, readMetricoolEnv } from "@/lib/metricool";
 
 export const dynamic = "force-dynamic";
 

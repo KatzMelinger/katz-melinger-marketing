@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
 import {
-  logMetricoolEnvSnapshot,
-  metricoolFetchLogged,
+  getPosts,
+  getSocialOverview,
+  getTimeline,
   readMetricoolEnv,
-  type MetricoolRequestLog,
-} from "@/lib/metricool-app-api";
+  timelineToTrendPoints,
+  transformPostsPayload,
+  type SocialNetworkSlug,
+} from "@/lib/metricool";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +52,10 @@ type MetricoolDebugPayload = {
     METRICOOL_BLOG_ID: boolean;
   };
   hint?: string;
-  requests?: MetricoolRequestLog[];
+  dateRange?: { from: string; to: string };
+  overviewErrors?: string[];
+  postsErrors?: string[];
+  trendError?: string;
   caughtError?: string;
 };
 
@@ -63,95 +69,76 @@ type MetricoolResponse = {
   metricoolDebug?: MetricoolDebugPayload;
 };
 
-const PLATFORMS: PlatformName[] = [
-  "Facebook",
-  "Instagram",
-  "Twitter",
-  "LinkedIn",
-];
-
 function mockPayload(error?: string): MetricoolResponse {
+  const zeros: PlatformOverview[] = [
+    "Facebook",
+    "Instagram",
+    "Twitter",
+    "LinkedIn",
+  ].map((platform) => ({
+    platform: platform as PlatformName,
+    followers: 0,
+    engagementRate: 0,
+    postsThisMonth: 0,
+  }));
   return {
     connected: false,
     error,
-    overview: [
-      {
-        platform: "Facebook",
-        followers: 0,
-        engagementRate: 0,
-        postsThisMonth: 0,
-      },
-      {
-        platform: "Instagram",
-        followers: 0,
-        engagementRate: 0,
-        postsThisMonth: 0,
-      },
-      {
-        platform: "Twitter",
-        followers: 0,
-        engagementRate: 0,
-        postsThisMonth: 0,
-      },
-      {
-        platform: "LinkedIn",
-        followers: 0,
-        engagementRate: 0,
-        postsThisMonth: 0,
-      },
-    ],
+    overview: zeros,
     posts: [],
     schedule: [],
     trend: [],
   };
 }
 
-function extractNumber(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
+function utcDayBoundary(daysBack: number): { from: string; to: string } {
+  const end = new Date();
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - daysBack);
+  const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    from: `${isoDate(start)}T00:00:00.000Z`,
+    to: `${isoDate(end)}T23:59:59.999Z`,
+  };
+}
+
+function parseRange(request: Request): { from: string; to: string } {
+  const url = new URL(request.url);
+  const from = url.searchParams.get("from")?.trim();
+  const to = url.searchParams.get("to")?.trim();
+  if (from && to) {
+    return {
+      from: from.includes("T") ? from : `${from}T00:00:00.000Z`,
+      to: to.includes("T") ? to : `${to}T23:59:59.999Z`,
+    };
   }
-  return 0;
+  return utcDayBoundary(30);
 }
 
-function normalizePlatform(value: string): PlatformName {
-  const normalized = value.toLowerCase();
-  if (normalized.includes("insta")) return "Instagram";
-  if (normalized.includes("twitter") || normalized.includes("x")) return "Twitter";
-  if (normalized.includes("linkedin")) return "LinkedIn";
-  return "Facebook";
-}
-
-function toIsoDate(value: unknown): string {
-  if (typeof value === "string" && value.trim().length > 0) {
-    const d = new Date(value);
-    if (!Number.isNaN(d.getTime())) return d.toISOString();
-  }
-  return new Date().toISOString();
-}
-
-async function safeJson(res: Response): Promise<unknown> {
-  const text = await res.text();
-  if (!text?.trim()) return null;
+async function safeJsonResponse(res: Response): Promise<unknown> {
+  const t = await res.text();
+  if (!t?.trim()) return null;
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(t) as unknown;
   } catch {
-    return { _parseError: true as const, raw: text };
+    return null;
   }
 }
+
+const POST_NETWORKS: SocialNetworkSlug[] = [
+  "instagram",
+  "facebook",
+  "linkedin",
+  "twitter",
+];
 
 export async function GET(request: Request) {
   const debug =
     new URL(request.url).searchParams.get("debug") === "1" ||
     process.env.METRICOOL_DEBUG === "1";
 
-  console.log("[Metricool] GET /api/social/metricool", { debug });
-  logMetricoolEnvSnapshot();
-
   const env = readMetricoolEnv();
   if (!env.ok) {
-    console.error("[Metricool] missing env:", env.present);
     const base = mockPayload(env.error);
     if (debug) {
       return NextResponse.json({
@@ -159,7 +146,7 @@ export async function GET(request: Request) {
         metricoolDebug: {
           present: env.present,
           hint:
-            "Vars must be available to the Node server (e.g. .env.local). Restart `next dev` after changes.",
+            "Set METRICOOL_API_TOKEN, METRICOOL_USER_ID, METRICOOL_BLOG_ID in the server environment (.env.local). Restart Next.js after changes.",
         },
       } satisfies MetricoolResponse);
     }
@@ -167,176 +154,164 @@ export async function GET(request: Request) {
   }
 
   const { token, userId, blogId } = env;
+  const range = parseRange(request);
+  const timezone =
+    new URL(request.url).searchParams.get("timezone")?.trim() ||
+    process.env.METRICOOL_TIMEZONE?.trim() ||
+    undefined;
 
   try {
-    const [overviewR, postsR, scheduleR] = await Promise.all([
-      metricoolFetchLogged(
-        "overview",
-        "/analytics/overview",
-        token,
-        userId,
-        blogId,
-      ),
-      metricoolFetchLogged("posts", "/posts", token, userId, blogId, {
-        limit: "12",
+    const overviewRows = await getSocialOverview(token, userId, blogId, {
+      ...range,
+      timezone,
+    });
+
+    const overview: PlatformOverview[] = overviewRows.map((row) => ({
+      platform: row.network === "instagram"
+        ? "Instagram"
+        : row.network === "twitter"
+          ? "Twitter"
+          : row.network === "linkedin"
+            ? "LinkedIn"
+            : "Facebook",
+      followers: row.followers,
+      engagementRate: row.engagementRate,
+      postsThisMonth: row.postsThisMonth,
+    }));
+
+    const postsResults = await Promise.all(
+      POST_NETWORKS.map(async (network) => {
+        const res = await getPosts(token, userId, blogId, {
+          network,
+          metric: "impressions",
+          subject: "posts",
+          from: range.from,
+          to: range.to,
+          timezone,
+        });
+        const text = await res.text();
+        let json: unknown = null;
+        try {
+          json = text ? (JSON.parse(text) as unknown) : null;
+        } catch {
+          json = { _parseError: true as const, raw: text };
+        }
+        return { network, ok: res.ok, status: res.status, json };
       }),
-      metricoolFetchLogged("planner", "/planner", token, userId, blogId, {
-        range: "14d",
-      }),
-    ]);
+    );
 
-    const [overviewRes, postsRes, scheduleRes] = [
-      overviewR.response,
-      postsR.response,
-      scheduleR.response,
-    ];
+    const posts: PostPerformance[] = [];
+    const postsErrors: string[] = [];
+    for (const r of postsResults) {
+      if (!r.ok) {
+        postsErrors.push(`${r.network}: HTTP ${r.status}`);
+        continue;
+      }
+      posts.push(...transformPostsPayload(r.network, r.json));
+    }
+    posts.sort(
+      (a, b) =>
+        new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+    );
+    const postsTop = posts.slice(0, 12);
 
-    const [overviewJson, postsJson, scheduleJson] = await Promise.all([
-      safeJson(overviewRes),
-      safeJson(postsRes),
-      safeJson(scheduleRes),
-    ]);
+    let trend: TrendPoint[] = [];
+    let trendError: string | undefined;
+    try {
+      const [engRes, folRes] = await Promise.all([
+        getTimeline(token, userId, blogId, {
+          network: "instagram",
+          metric: "engagement",
+          subject: "posts",
+          from: range.from,
+          to: range.to,
+          timezone,
+        }),
+        getTimeline(token, userId, blogId, {
+          network: "instagram",
+          metric: "followers",
+          subject: "account",
+          from: range.from,
+          to: range.to,
+          timezone,
+        }),
+      ]);
+      const [engJson, folJson] = await Promise.all([
+        safeJsonResponse(engRes),
+        safeJsonResponse(folRes),
+      ]);
+      if (!engRes.ok || !folRes.ok) {
+        trendError = `timeline HTTP ${engRes.status} / ${folRes.status}`;
+      } else {
+        trend = timelineToTrendPoints(engJson, folJson);
+      }
+    } catch (e) {
+      trendError = e instanceof Error ? e.message : String(e);
+    }
 
-    const logs = [overviewR.log, postsR.log, scheduleR.log];
+    const overviewErrors = overviewRows
+      .map((row) => {
+        const raw = row.raw?.accountTimeline;
+        if (raw && typeof raw === "object" && "error" in (raw as object)) {
+          return `${row.network}: ${String((raw as { error?: unknown }).error)}`;
+        }
+        return null;
+      })
+      .filter((x): x is string => Boolean(x));
 
-    const authFailed = [overviewRes, postsRes, scheduleRes].some(
+    const allPostsAuthDenied = postsResults.every(
       (r) => r.status === 401 || r.status === 403,
     );
-    if (authFailed) {
-      const msg =
-        "Metricool authentication failed. Verify METRICOOL_API_TOKEN and that userId/blogId match your Metricool workspace.";
-      const base = mockPayload(msg);
-      console.error("[Metricool] auth failed", {
-        statuses: logs.map((l) => l.status),
-      });
-      if (debug) {
-        return NextResponse.json({
-          ...base,
-          metricoolDebug: { requests: logs },
-        } satisfies MetricoolResponse);
-      }
-      return NextResponse.json(base);
-    }
-
-    if (!overviewRes.ok && !postsRes.ok && !scheduleRes.ok) {
+    if (allPostsAuthDenied) {
       const base = mockPayload(
-        "Metricool API request failed. Verify METRICOOL_API_TOKEN, METRICOOL_USER_ID, and METRICOOL_BLOG_ID.",
+        "Metricool authentication failed. Verify METRICOOL_API_TOKEN and that userId/blogId match your Metricool workspace.",
       );
-      console.error("[Metricool] all endpoints failed", {
-        statuses: logs.map((l) => ({ label: l.label, status: l.status })),
-      });
       if (debug) {
         return NextResponse.json({
           ...base,
-          metricoolDebug: { requests: logs },
+          metricoolDebug: {
+            dateRange: range,
+            postsErrors,
+            trendError,
+          },
         } satisfies MetricoolResponse);
       }
       return NextResponse.json(base);
     }
 
-    const overviewRaw: unknown[] = Array.isArray(
-      (overviewJson as { platforms?: unknown })?.platforms,
-    )
-      ? ((overviewJson as { platforms?: unknown[] }).platforms ?? [])
-      : [];
-    const overviewMap = new Map<PlatformName, PlatformOverview>();
-    for (const p of PLATFORMS) {
-      overviewMap.set(p, {
-        platform: p,
-        followers: 0,
-        engagementRate: 0,
-        postsThisMonth: 0,
-      });
-    }
-    for (const row of overviewRaw) {
-      if (!row || typeof row !== "object") continue;
-      const src = row as Record<string, unknown>;
-      const platform = normalizePlatform(String(src.platform ?? "facebook"));
-      overviewMap.set(platform, {
-        platform,
-        followers: extractNumber(src.followers),
-        engagementRate: extractNumber(src.engagementRate),
-        postsThisMonth: extractNumber(src.posts),
-      });
-    }
-    const overview = [...overviewMap.values()];
-
-    const postsRaw: unknown[] = Array.isArray(
-      (postsJson as { data?: unknown })?.data,
-    )
-      ? ((postsJson as { data?: unknown[] }).data ?? [])
-      : [];
-    const posts: PostPerformance[] = postsRaw.slice(0, 12).map((row, index) => {
-      const src = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-      const id = String(src.id ?? `post-${index}`);
-      return {
-        id,
-        platform: normalizePlatform(String(src.platform ?? "facebook")),
-        title: String(src.caption ?? src.title ?? "Untitled post"),
-        publishedAt: toIsoDate(src.publishedAt ?? src.date),
-        impressions: extractNumber(src.impressions),
-        engagements: extractNumber(src.engagements ?? src.interactions),
-        clicks: extractNumber(src.clicks),
-      };
-    });
-
-    const scheduleRaw: unknown[] = Array.isArray(
-      (scheduleJson as { events?: unknown })?.events,
-    )
-      ? ((scheduleJson as { events?: unknown[] }).events ?? [])
-      : [];
-    const schedule: ScheduleItem[] = scheduleRaw.slice(0, 12).map((row, index) => {
-      const src = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-      return {
-        id: String(src.id ?? `schedule-${index}`),
-        platform: normalizePlatform(String(src.platform ?? "facebook")),
-        date: toIsoDate(src.date ?? src.scheduledAt),
-        status: String(src.status ?? "scheduled").toLowerCase() === "draft"
-          ? "draft"
-          : "scheduled",
-        content: String(src.content ?? src.caption ?? "Scheduled social post"),
-      };
-    });
-
-    const trend = posts
-      .slice(0, 7)
-      .reverse()
-      .map((post, idx): TrendPoint => ({
-        date: post.publishedAt.slice(0, 10),
-        engagementRate:
-          post.impressions > 0
-            ? Number(((post.engagements / post.impressions) * 100).toFixed(2))
-            : 0,
-        followers: overview.reduce((sum, item) => sum + item.followers, 0) + idx * 5,
-      }));
-
-    const success = {
+    const success: MetricoolResponse = {
       connected: true,
       overview,
-      posts,
-      schedule,
+      posts: postsTop,
+      schedule: [],
       trend,
-    } satisfies MetricoolResponse;
+    };
 
     if (debug) {
-      console.log("[Metricool] success; attaching debug request logs");
       return NextResponse.json({
         ...success,
-        metricoolDebug: { requests: logs },
+        metricoolDebug: {
+          dateRange: range,
+          overviewErrors: overviewErrors.length ? overviewErrors : undefined,
+          postsErrors: postsErrors.length ? postsErrors : undefined,
+          trendError,
+        },
       });
     }
 
     return NextResponse.json(success);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    console.error("[Metricool] GET handler error:", e);
     const base = mockPayload(
-      `Metricool API request failed. Verify METRICOOL_API_TOKEN, METRICOOL_USER_ID, and METRICOOL_BLOG_ID. (${message})`,
+      `Metricool API request failed. (${message})`,
     );
     if (debug) {
       return NextResponse.json({
         ...base,
-        metricoolDebug: { caughtError: message },
+        metricoolDebug: {
+          caughtError: message,
+          dateRange: parseRange(request),
+        },
       } satisfies MetricoolResponse);
     }
     return NextResponse.json(base);
