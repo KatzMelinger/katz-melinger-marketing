@@ -19,6 +19,7 @@ const BG = "#0f1729";
 const CARD = "#1a2540";
 const BORDER = "#2a3f5f";
 const ACCENT = "#185FA5";
+const CC_BRAND = "#F47B20";
 
 const SYNC_STORAGE_PREFIX = "constant-contact-list-sync:";
 const ACTIVITY_LOG_KEY = "constant-contact-activity-log";
@@ -57,7 +58,34 @@ export interface ListsApiResponse {
 export interface ApiErrorJson {
   error?: string;
   status?: number;
+  needsAuth?: boolean;
+  authUrl?: string;
   details?: unknown;
+}
+
+function buildOauthStartUrl(nextPath = "/constant-contact"): string {
+  const params = new URLSearchParams({ next: nextPath });
+  return `/api/constant-contact/oauth/start?${params.toString()}`;
+}
+
+function resolveAuthUrl(input: string | undefined): string {
+  const fallback = buildOauthStartUrl("/constant-contact");
+  if (!input?.trim()) return fallback;
+  try {
+    if (input.startsWith("http://") || input.startsWith("https://")) {
+      const u = new URL(input);
+      if (u.pathname !== "/api/constant-contact/oauth/start") return fallback;
+      if (!u.searchParams.get("next")) u.searchParams.set("next", "/constant-contact");
+      return `${u.pathname}${u.search}`;
+    }
+    if (typeof window === "undefined") return fallback;
+    const u = new URL(input, window.location.origin);
+    if (u.pathname !== "/api/constant-contact/oauth/start") return fallback;
+    if (!u.searchParams.get("next")) u.searchParams.set("next", "/constant-contact");
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return fallback;
+  }
 }
 
 const AUTOMATION_TRIGGERS = [
@@ -272,6 +300,12 @@ function clickRateColor(rate: number): string {
 
 export default function ConstantContactPage() {
   const [activeTab, setActiveTab] = useState<TabId>("campaigns");
+  const [authActionUrl, setAuthActionUrl] = useState<string>(
+    buildOauthStartUrl("/constant-contact"),
+  );
+  const [authPrompt, setAuthPrompt] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
+  const [oauthStarting, setOauthStarting] = useState(false);
 
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(true);
@@ -322,8 +356,47 @@ export default function ConstantContactPage() {
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [clientActivityTick, setClientActivityTick] = useState(0);
 
+  const markUnauthorized = useCallback(
+    (json: ApiErrorJson, fallbackMessage: string, httpStatus?: number) => {
+      const msg = json.error ?? fallbackMessage;
+      const unauthorized =
+        httpStatus === 401 ||
+        json.needsAuth === true ||
+        json.status === 401 ||
+        /unauthori[sz]ed|token expired|reconnect|authentication failed|access denied/i.test(
+          msg,
+        );
+      if (!unauthorized) return false;
+
+      setOauthStarting(false);
+      setAuthSuccess(null);
+      setAuthPrompt(msg);
+      setAuthActionUrl(resolveAuthUrl(json.authUrl));
+      return true;
+    },
+    [],
+  );
+
+  const markUnauthorizedFromMessage = useCallback((message: string) => {
+    if (
+      !/unauthori[sz]ed|token expired|reconnect|authentication failed|access denied/i.test(
+        message,
+      )
+    ) {
+      return;
+    }
+    setOauthStarting(false);
+    setAuthSuccess(null);
+    setAuthPrompt(message);
+    setAuthActionUrl(buildOauthStartUrl("/constant-contact"));
+  }, []);
+
   const mergedSyncActivity = useMemo(
-    () => mergeSyncActivity(analyticsSyncServer, readClientActivityLog()),
+    () => {
+      // Forces recompute after localStorage writes.
+      void clientActivityTick;
+      return mergeSyncActivity(analyticsSyncServer, readClientActivityLog());
+    },
     [analyticsSyncServer, clientActivityTick],
   );
 
@@ -364,11 +437,14 @@ export default function ConstantContactPage() {
       const json = (await res.json()) as CampaignsApiResponse & ApiErrorJson;
 
       if (!res.ok) {
+        const needsReconnect = markUnauthorized(json, `Request failed (${res.status})`, res.status);
         setCampaignsError(
-          json.error ??
-            (typeof json.details === "object" && json.details !== null
-              ? JSON.stringify(json.details)
-              : `Request failed (${res.status})`),
+          needsReconnect
+            ? "Reconnect Constant Contact to load campaigns."
+            : (json.error ??
+                (typeof json.details === "object" && json.details !== null
+                  ? JSON.stringify(json.details)
+                  : `Request failed (${res.status})`)),
         );
         setCampaigns([]);
         return;
@@ -376,12 +452,14 @@ export default function ConstantContactPage() {
 
       setCampaigns(Array.isArray(json.campaigns) ? json.campaigns : []);
     } catch (e) {
-      setCampaignsError(e instanceof Error ? e.message : "Failed to load campaigns");
+      const msg = e instanceof Error ? e.message : "Failed to load campaigns";
+      markUnauthorizedFromMessage(msg);
+      setCampaignsError(msg);
       setCampaigns([]);
     } finally {
       setCampaignsLoading(false);
     }
-  }, []);
+  }, [markUnauthorized, markUnauthorizedFromMessage]);
 
   const loadContactLists = useCallback(async () => {
     setListsLoading(true);
@@ -393,11 +471,14 @@ export default function ConstantContactPage() {
       const json = (await res.json()) as ListsApiResponse & ApiErrorJson;
 
       if (!res.ok) {
+        const needsReconnect = markUnauthorized(json, `Request failed (${res.status})`, res.status);
         setListsError(
-          json.error ??
-            (typeof json.details === "object" && json.details !== null
-              ? JSON.stringify(json.details)
-              : `Request failed (${res.status})`),
+          needsReconnect
+            ? "Reconnect Constant Contact to load lists."
+            : (json.error ??
+                (typeof json.details === "object" && json.details !== null
+                  ? JSON.stringify(json.details)
+                  : `Request failed (${res.status})`)),
         );
         setContactLists([]);
         return;
@@ -417,12 +498,14 @@ export default function ConstantContactPage() {
         return next;
       });
     } catch (e) {
-      setListsError(e instanceof Error ? e.message : "Failed to load contact lists");
+      const msg = e instanceof Error ? e.message : "Failed to load contact lists";
+      markUnauthorizedFromMessage(msg);
+      setListsError(msg);
       setContactLists([]);
     } finally {
       setListsLoading(false);
     }
-  }, []);
+  }, [markUnauthorized, markUnauthorizedFromMessage]);
 
   const loadAutomation = useCallback(async () => {
     setAutomationLoading(true);
@@ -438,11 +521,14 @@ export default function ConstantContactPage() {
       };
 
       if (!res.ok) {
+        const needsReconnect = markUnauthorized(json, `Request failed (${res.status})`, res.status);
         setAutomationError(
-          json.error ??
-            (typeof json.details === "object" && json.details !== null
-              ? JSON.stringify(json.details)
-              : `Request failed (${res.status})`),
+          needsReconnect
+            ? "Reconnect Constant Contact to load automation."
+            : (json.error ??
+                (typeof json.details === "object" && json.details !== null
+                  ? JSON.stringify(json.details)
+                  : `Request failed (${res.status})`)),
         );
         setAutomationRules([]);
         return;
@@ -453,12 +539,14 @@ export default function ConstantContactPage() {
         setAutomationError(json.message);
       }
     } catch (e) {
-      setAutomationError(e instanceof Error ? e.message : "Failed to load automation rules");
+      const msg = e instanceof Error ? e.message : "Failed to load automation rules";
+      markUnauthorizedFromMessage(msg);
+      setAutomationError(msg);
       setAutomationRules([]);
     } finally {
       setAutomationLoading(false);
     }
-  }, []);
+  }, [markUnauthorized, markUnauthorizedFromMessage]);
 
   const loadAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
@@ -475,11 +563,14 @@ export default function ConstantContactPage() {
       };
 
       if (!res.ok) {
+        const needsReconnect = markUnauthorized(json, `Request failed (${res.status})`, res.status);
         setAnalyticsError(
-          json.error ??
-            (typeof json.details === "object" && json.details !== null
-              ? JSON.stringify(json.details)
-              : `Request failed (${res.status})`),
+          needsReconnect
+            ? "Reconnect Constant Contact to load analytics."
+            : (json.error ??
+                (typeof json.details === "object" && json.details !== null
+                  ? JSON.stringify(json.details)
+                  : `Request failed (${res.status})`)),
         );
         setAnalyticsSummary(null);
         setAnalyticsCampaigns([]);
@@ -498,13 +589,36 @@ export default function ConstantContactPage() {
       );
       setClientActivityTick((t) => t + 1);
     } catch (e) {
-      setAnalyticsError(e instanceof Error ? e.message : "Failed to load analytics");
+      const msg = e instanceof Error ? e.message : "Failed to load analytics";
+      markUnauthorizedFromMessage(msg);
+      setAnalyticsError(msg);
       setAnalyticsSummary(null);
       setAnalyticsCampaigns([]);
       setAnalyticsSyncServer([]);
       setAnalyticsGeneratedAt(null);
     } finally {
       setAnalyticsLoading(false);
+    }
+  }, [markUnauthorized, markUnauthorizedFromMessage]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auth_success") === "1") {
+      setOauthStarting(false);
+      setAuthPrompt(null);
+      setAuthSuccess("Constant Contact reconnected. Tokens were refreshed.");
+    }
+    const authErr = params.get("auth_error");
+    if (authErr) {
+      setOauthStarting(false);
+      setAuthSuccess(null);
+      setAuthPrompt(authErr);
+    }
+    if (params.has("auth_success") || params.has("auth_error")) {
+      params.delete("auth_success");
+      params.delete("auth_error");
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+      window.history.replaceState({}, "", next);
     }
   }, []);
 
@@ -569,9 +683,12 @@ export default function ConstantContactPage() {
       };
 
       if (!res.ok) {
+        const needsReconnect = markUnauthorized(json, `Sync failed (${res.status})`, res.status);
         setSyncBanner({
           type: "err",
-          text: json.error ?? `Sync failed (${res.status})`,
+          text: needsReconnect
+            ? "Reconnect Constant Contact before syncing."
+            : (json.error ?? `Sync failed (${res.status})`),
         });
         return;
       }
@@ -595,9 +712,11 @@ export default function ConstantContactPage() {
       });
       setClientActivityTick((t) => t + 1);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "Sync failed";
+      markUnauthorizedFromMessage(msg);
       setSyncBanner({
         type: "err",
-        text: e instanceof Error ? e.message : "Sync failed",
+        text: msg,
       });
     } finally {
       setSyncingListId(null);
@@ -656,9 +775,12 @@ export default function ConstantContactPage() {
       };
 
       if (!res.ok) {
+        const needsReconnect = markUnauthorized(json, `Create failed (${res.status})`, res.status);
         setCreateError(
-          json.error ??
-            (json.details ? JSON.stringify(json.details) : `Create failed (${res.status})`),
+          needsReconnect
+            ? "Reconnect Constant Contact before creating a campaign."
+            : (json.error ??
+                (json.details ? JSON.stringify(json.details) : `Create failed (${res.status})`)),
         );
         return;
       }
@@ -674,7 +796,9 @@ export default function ConstantContactPage() {
       setSelectedListIds([]);
       await loadCampaigns();
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Failed to create campaign");
+      const msg = err instanceof Error ? err.message : "Failed to create campaign";
+      markUnauthorizedFromMessage(msg);
+      setCreateError(msg);
     } finally {
       setCreateLoading(false);
     }
@@ -701,7 +825,12 @@ export default function ConstantContactPage() {
       };
 
       if (!res.ok) {
-        setCreateRuleError(json.error ?? `Create failed (${res.status})`);
+        const needsReconnect = markUnauthorized(json, `Create failed (${res.status})`, res.status);
+        setCreateRuleError(
+          needsReconnect
+            ? "Reconnect Constant Contact before creating automation."
+            : (json.error ?? `Create failed (${res.status})`),
+        );
         return;
       }
 
@@ -712,7 +841,9 @@ export default function ConstantContactPage() {
       setRuleActive(true);
       await loadAutomation();
     } catch (err) {
-      setCreateRuleError(err instanceof Error ? err.message : "Failed to create rule");
+      const msg = err instanceof Error ? err.message : "Failed to create rule";
+      markUnauthorizedFromMessage(msg);
+      setCreateRuleError(msg);
     } finally {
       setCreateRuleLoading(false);
     }
@@ -752,6 +883,54 @@ export default function ConstantContactPage() {
             {tabBtn("analytics", "Analytics")}
           </div>
         </div>
+
+        {authSuccess ? (
+          <div
+            className="rounded-lg border border-emerald-900/50 bg-emerald-950/30 p-4 text-sm text-emerald-100"
+            role="status"
+          >
+            {authSuccess}
+          </div>
+        ) : null}
+
+        {authPrompt ? (
+          <div
+            className="rounded-lg border p-4 text-sm"
+            style={{ backgroundColor: "#22170f", borderColor: "#f59e0b66", color: "#fef3c7" }}
+            role="alert"
+          >
+            <p className="font-medium text-amber-200">Constant Contact connection required</p>
+            <p className="mt-1">{authPrompt}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOauthStarting(true);
+                  window.location.assign(authActionUrl || buildOauthStartUrl("/constant-contact"));
+                }}
+                disabled={oauthStarting}
+                className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: CC_BRAND }}
+              >
+                {oauthStarting ? "Redirecting to Constant Contact..." : "Connect to Constant Contact"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthSuccess(null);
+                  setOauthStarting(false);
+                  void loadCampaigns();
+                }}
+                className="inline-flex items-center rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200 hover:bg-[#1a2540]"
+              >
+                Retry check
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-amber-200/80">
+              You will be redirected to Constant Contact OAuth and returned to this page.
+            </p>
+          </div>
+        ) : null}
 
         {activeTab === "campaigns" && campaignsError ? (
           <div

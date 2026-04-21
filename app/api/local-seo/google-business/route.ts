@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { ParsedGoogleApiError } from "@/lib/google-api-errors";
 import { parseGoogleApiErrorResponse } from "@/lib/google-api-errors";
 import {
+  GBP_ACCOUNT_MANAGEMENT_V1_BASE,
   GBP_MYBUSINESS_V4_BASE,
   GBP_OAUTH_SCOPE,
   gbpFetch,
@@ -11,6 +12,18 @@ import { getGoogleAccessToken } from "@/lib/google-access-token";
 import { describeServiceAccountJson } from "@/lib/google-service-account";
 
 export const dynamic = "force-dynamic";
+
+type GbpLocationRow = {
+  name: string;
+  locationId: string;
+  title: string;
+  storefrontAddress?: {
+    addressLines?: string[];
+    locality?: string;
+    administrativeArea?: string;
+    postalCode?: string;
+  };
+};
 
 function stripAccountPrefix(id: string): string {
   const t = id.trim();
@@ -26,19 +39,19 @@ function stripLocationPrefix(id: string): string {
   return t.startsWith("locations/") ? t.slice("locations/".length) : t;
 }
 
-function friendlyUserMessage(status: number, g: ParsedGoogleApiError): string {
-  const detail = g.message;
+function toReadableError(status: number, parsed: ParsedGoogleApiError): string {
+  const detail = parsed.message;
   if (status === 404) {
-    return `Not found (404): ${detail}. Confirm GOOGLE_BUSINESS_ACCOUNT_ID and GOOGLE_BUSINESS_LOCATION_ID match the Google Business Profile (numeric location id under the same account).`;
+    return `Location not found (404). The selected location ID may be invalid for this account. Use location discovery to select a valid location. Details: ${detail}`;
   }
   if (status === 403) {
-    return `Forbidden (403): ${detail}. Invite the service account’s client_email as a user (Manager/Owner) on this Business Profile and retry.`;
+    return `Forbidden (403). Ensure the service account has Business Profile access (Manager/Owner) and both APIs are enabled. Details: ${detail}`;
   }
   if (status === 429) {
-    return `Rate limited (429): ${detail}. Wait and retry.`;
+    return `Rate limited (429). Retrying may be required. Details: ${detail}`;
   }
   if (status === 401) {
-    return `Authentication failed (401): ${detail}. Fix GOOGLE_SERVICE_ACCOUNT_JSON (ensure private_key newlines are valid PEM), enable "Google My Business API" in GCP, use scope ${GBP_OAUTH_SCOPE}, and grant the service account access to the profile.`;
+    return `Authentication failed (401). Verify GOOGLE_SERVICE_ACCOUNT_JSON and required scope ${GBP_OAUTH_SCOPE}. Details: ${detail}`;
   }
   return detail || `Google API error (${status})`;
 }
@@ -47,25 +60,7 @@ async function jsonErrorPayload(
   res: Response,
 ): Promise<{ friendly: string; parsed: ParsedGoogleApiError }> {
   const parsed = await parseGoogleApiErrorResponse(res);
-  return { friendly: friendlyUserMessage(res.status, parsed), parsed };
-}
-
-function mapStarRating(starRating: unknown): number {
-  if (typeof starRating === "number") {
-    return Math.min(5, Math.max(0, starRating));
-  }
-  const map: Record<string, number> = {
-    ONE: 1,
-    TWO: 2,
-    THREE: 3,
-    FOUR: 4,
-    FIVE: 5,
-    STAR_RATING_UNSPECIFIED: 0,
-  };
-  if (typeof starRating === "string" && starRating in map) {
-    return map[starRating] ?? 0;
-  }
-  return 0;
+  return { friendly: toReadableError(res.status, parsed), parsed };
 }
 
 function formatAddress(addr: {
@@ -83,38 +78,17 @@ function formatAddress(addr: {
   return lines.join(", ");
 }
 
-function formatHoursSummary(location: {
-  regularHours?: {
-    periods?: Array<{
-      openDay?: string;
-      closeDay?: string;
-      openTime?: { hours?: number; minutes?: number };
-      closeTime?: { hours?: number; minutes?: number };
-    }>;
+function mapStarRating(starRating: unknown): number {
+  if (typeof starRating === "number") return Math.min(5, Math.max(0, starRating));
+  const map: Record<string, number> = {
+    ONE: 1,
+    TWO: 2,
+    THREE: 3,
+    FOUR: 4,
+    FIVE: 5,
+    STAR_RATING_UNSPECIFIED: 0,
   };
-}): string {
-  const periods = location.regularHours?.periods;
-  if (!periods?.length) return "—";
-  const fmt = (t: { hours?: number; minutes?: number } | undefined) => {
-    if (!t) return "";
-    const h = t.hours ?? 0;
-    const m = t.minutes ?? 0;
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    return d.toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: m ? "2-digit" : undefined,
-    });
-  };
-  return periods
-    .slice(0, 14)
-    .map((p) => {
-      const open = fmt(p.openTime);
-      const close = fmt(p.closeTime);
-      const day = (p.openDay ?? "?").replace("DAY_OF_WEEK_", "");
-      return open && close ? `${day}: ${open}–${close}` : day;
-    })
-    .join(" · ");
+  return typeof starRating === "string" && starRating in map ? map[starRating] : 0;
 }
 
 function mediaKind(
@@ -129,41 +103,143 @@ function mediaKind(
   return "interior";
 }
 
+function formatHoursSummary(location: {
+  regularHours?: {
+    periods?: Array<{
+      openDay?: string;
+      closeDay?: string;
+      openTime?: { hours?: number; minutes?: number };
+      closeTime?: { hours?: number; minutes?: number };
+    }>;
+  };
+}): string {
+  const periods = location.regularHours?.periods;
+  if (!periods?.length) return "—";
+  const fmt = (t: { hours?: number; minutes?: number } | undefined) => {
+    if (!t) return "";
+    const d = new Date();
+    d.setHours(t.hours ?? 0, t.minutes ?? 0, 0, 0);
+    return d.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: (t.minutes ?? 0) ? "2-digit" : undefined,
+    });
+  };
+  return periods
+    .slice(0, 14)
+    .map((p) => {
+      const open = fmt(p.openTime);
+      const close = fmt(p.closeTime);
+      const day = (p.openDay ?? "?").replace("DAY_OF_WEEK_", "");
+      return open && close ? `${day}: ${open}–${close}` : day;
+    })
+    .join(" · ");
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+async function waitMs(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function retryDelayMs(res: Response, attempt: number): number {
+  const retryAfter = res.headers.get("retry-after");
+  if (retryAfter) {
+    const sec = Number(retryAfter);
+    if (Number.isFinite(sec) && sec > 0) return sec * 1000;
+  }
+  return 300 * Math.pow(2, attempt);
+}
+
+async function gbpFetchWithRetry(
+  label: string,
+  url: string,
+  token: string,
+  init?: RequestInit,
+  retries = 2,
+): Promise<Response> {
+  let res = await gbpFetch(label, url, token, init);
+  let attempt = 0;
+  while (attempt < retries && isRetryableStatus(res.status)) {
+    const delay = retryDelayMs(res, attempt);
+    await waitMs(delay);
+    attempt += 1;
+    res = await gbpFetch(`${label}-retry${attempt}`, url, token, init);
+  }
+  return res;
+}
+
+async function fetchAccounts(
+  token: string,
+): Promise<{ ok: true; accounts: Array<{ accountId: string; name: string }> } | {
+  ok: false;
+  error: string;
+  googleError: ParsedGoogleApiError;
+  status: number;
+}> {
+  const url = `${GBP_ACCOUNT_MANAGEMENT_V1_BASE}/accounts`;
+  const res = await gbpFetchWithRetry("accounts-list", url, token);
+  if (!res.ok) {
+    const { friendly, parsed } = await jsonErrorPayload(res);
+    return { ok: false, error: friendly, googleError: parsed, status: res.status };
+  }
+  const json = (await res.json()) as {
+    accounts?: Array<{ name?: string; accountName?: string }>;
+  };
+  const accounts = (json.accounts ?? [])
+    .map((a) => ({
+      accountId: stripAccountPrefix(String(a.name ?? "")),
+      name: String(a.accountName ?? a.name ?? "Business account"),
+    }))
+    .filter((a) => Boolean(a.accountId));
+  return { ok: true, accounts };
+}
+
+async function fetchLocations(
+  token: string,
+  accountId: string,
+  pageToken?: string,
+): Promise<{ ok: true; locations: GbpLocationRow[]; nextPageToken?: string } | {
+  ok: false;
+  error: string;
+  googleError: ParsedGoogleApiError;
+  status: number;
+}> {
+  const acc = encodeURIComponent(accountId);
+  const base = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations?pageSize=100`;
+  const url = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
+  const res = await gbpFetchWithRetry("locations-list", url, token);
+  if (!res.ok) {
+    const { friendly, parsed } = await jsonErrorPayload(res);
+    return { ok: false, error: friendly, googleError: parsed, status: res.status };
+  }
+  const json = (await res.json()) as {
+    locations?: Array<{
+      name?: string;
+      title?: string;
+      storefrontAddress?: GbpLocationRow["storefrontAddress"];
+    }>;
+    nextPageToken?: string;
+  };
+  const locations: GbpLocationRow[] = (json.locations ?? []).map((l) => ({
+    name: String(l.name ?? ""),
+    locationId: stripLocationPrefix(String(l.name ?? "")),
+    title: String(l.title ?? "Location"),
+    storefrontAddress: l.storefrontAddress,
+  }));
+  return { ok: true, locations, nextPageToken: json.nextPageToken };
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const debug =
     searchParams.get("debug") === "1" || process.env.GOOGLE_DEBUG_AUTH === "1";
-
-  if (debug) {
-    const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
-    console.log(
-      "[GBP] service account (safe):",
-      describeServiceAccountJson(raw || undefined),
-    );
-    console.log("[GBP] required OAuth scope:", GBP_OAUTH_SCOPE);
-  }
-
-  const auth = await getGoogleAccessToken([GBP_OAUTH_SCOPE]);
-  if ("error" in auth) {
-    return NextResponse.json(
-      {
-        error: auth.error,
-        ...(debug
-          ? {
-              googleBusinessDebug: {
-                serviceAccount: describeServiceAccountJson(
-                  process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim() || undefined,
-                ),
-                scope: GBP_OAUTH_SCOPE,
-              },
-            }
-          : {}),
-      },
-      { status: 500 },
-    );
-  }
-
   const action = searchParams.get("action") ?? "dashboard";
+  const pageToken = searchParams.get("pageToken")?.trim() || undefined;
+
   const accountId = stripAccountPrefix(
     searchParams.get("accountId")?.trim() ??
       process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim() ??
@@ -175,45 +251,90 @@ export async function GET(req: Request) {
       "",
   );
 
-  console.log("[GBP] GET", { action, accountId, locationId, debug });
+  if (debug) {
+    console.log(
+      "[GBP] service account (safe):",
+      describeServiceAccountJson(process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim() || undefined),
+    );
+  }
+
+  const auth = await getGoogleAccessToken([GBP_OAUTH_SCOPE]);
+  if ("error" in auth) {
+    return NextResponse.json(
+      {
+        error: auth.error,
+        setupHints: [
+          "Enable Google Business Profile APIs in Google Cloud Console.",
+          "Grant service account Manager/Owner access in Business Profile settings.",
+          `Ensure requested scope is ${GBP_OAUTH_SCOPE}`,
+        ],
+      },
+      { status: 500 },
+    );
+  }
+
+  if (action === "accounts") {
+    const accounts = await fetchAccounts(auth.token);
+    if (!accounts.ok) {
+      return NextResponse.json(
+        { error: accounts.error, googleError: accounts.googleError },
+        { status: accounts.status >= 500 ? 502 : accounts.status },
+      );
+    }
+    return NextResponse.json({ accounts: accounts.accounts });
+  }
 
   if (!accountId) {
     return NextResponse.json(
-      { error: "Missing GOOGLE_BUSINESS_ACCOUNT_ID (or accountId query)." },
+      {
+        error: "Missing Google Business account ID.",
+        needsAccountSelection: true,
+        setupHints: ["Select account from discovery or set GOOGLE_BUSINESS_ACCOUNT_ID."],
+      },
       { status: 400 },
     );
   }
 
-  const acc = encodeURIComponent(accountId);
-
-  try {
-    if (action === "locations") {
-      const url = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations?pageSize=100`;
-      const res = await gbpFetch("get-locations", url, auth.token);
-      if (!res.ok) {
-        const { friendly, parsed } = await jsonErrorPayload(res);
-        return NextResponse.json(
-          { error: friendly, googleError: parsed },
-          { status: res.status >= 500 ? 502 : res.status },
-        );
-      }
-      const data = (await res.json()) as { locations?: unknown[]; nextPageToken?: string };
-      return NextResponse.json(data);
-    }
-
-    if (!locationId) {
+  if (action === "locations") {
+    const locations = await fetchLocations(auth.token, accountId, pageToken);
+    if (!locations.ok) {
       return NextResponse.json(
-        { error: "Missing GOOGLE_BUSINESS_LOCATION_ID (or locationId query)." },
-        { status: 400 },
+        { error: locations.error, googleError: locations.googleError },
+        { status: locations.status >= 500 ? 502 : locations.status },
       );
     }
+    return NextResponse.json({
+      accountId,
+      locations: locations.locations,
+      nextPageToken: locations.nextPageToken ?? null,
+    });
+  }
 
-    const loc = encodeURIComponent(locationId);
-    const locationName = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}`;
+  if (!locationId) {
+    const discovered = await fetchLocations(auth.token, accountId);
+    return NextResponse.json(
+      {
+        error: "No valid location selected. Use discovery to select a Business Profile location.",
+        needsLocationSelection: true,
+        accountId,
+        locations: discovered.ok ? discovered.locations : [],
+        discoveryError: discovered.ok ? null : discovered.error,
+      },
+      { status: 200 },
+    );
+  }
 
+  const acc = encodeURIComponent(accountId);
+  const loc = encodeURIComponent(locationId);
+  const locationName = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}`;
+
+  try {
     if (action === "reviews") {
-      const url = `${locationName}/reviews`;
-      const res = await gbpFetch("get-reviews", url, auth.token);
+      const res = await gbpFetchWithRetry(
+        "get-reviews",
+        `${locationName}/reviews`,
+        auth.token,
+      );
       if (!res.ok) {
         const { friendly, parsed } = await jsonErrorPayload(res);
         return NextResponse.json(
@@ -225,8 +346,7 @@ export async function GET(req: Request) {
     }
 
     if (action === "media") {
-      const url = `${locationName}/media`;
-      const res = await gbpFetch("get-media", url, auth.token);
+      const res = await gbpFetchWithRetry("get-media", `${locationName}/media`, auth.token);
       if (!res.ok) {
         const { friendly, parsed } = await jsonErrorPayload(res);
         return NextResponse.json(
@@ -238,8 +358,11 @@ export async function GET(req: Request) {
     }
 
     if (action === "localPosts") {
-      const url = `${locationName}/localPosts`;
-      const res = await gbpFetch("get-local-posts", url, auth.token);
+      const res = await gbpFetchWithRetry(
+        "get-local-posts",
+        `${locationName}/localPosts`,
+        auth.token,
+      );
       if (!res.ok) {
         const { friendly, parsed } = await jsonErrorPayload(res);
         return NextResponse.json(
@@ -250,218 +373,223 @@ export async function GET(req: Request) {
       return NextResponse.json(await res.json());
     }
 
-    if (action === "dashboard") {
-      const [locRes, revRes, mediaRes, postsRes] = await Promise.all([
-        gbpFetch("dashboard-location", locationName, auth.token),
-        gbpFetch(
-          "dashboard-reviews",
-          `${locationName}/reviews?pageSize=50`,
-          auth.token,
-        ),
-        gbpFetch(
-          "dashboard-media",
-          `${locationName}/media?pageSize=50`,
-          auth.token,
-        ),
-        gbpFetch(
-          "dashboard-local-posts",
-          `${locationName}/localPosts?pageSize=50`,
-          auth.token,
-        ),
-      ]);
-
-      if (!locRes.ok) {
-        const { friendly, parsed } = await jsonErrorPayload(locRes);
-        return NextResponse.json(
-          {
-            error: friendly,
-            googleError: parsed,
-            ...(debug ? { googleBusinessDebug: { locationUrl: locationName } } : {}),
-          },
-          { status: locRes.status >= 500 ? 502 : locRes.status },
-        );
-      }
-
-      const location = (await locRes.json()) as Record<string, unknown>;
-      const primary = (location.categories as { primaryCategory?: { displayName?: string } })
-        ?.primaryCategory?.displayName;
-      const additional =
-        (location.categories as { additionalCategories?: { displayName?: string }[] })
-          ?.additionalCategories?.map((c) => c.displayName).filter(Boolean) ?? [];
-      const categories = [primary, ...additional].filter(
-        (x): x is string => typeof x === "string" && x.length > 0,
+    if (action !== "dashboard") {
+      return NextResponse.json(
+        { error: `Unknown action "${action}". Use accounts, locations, reviews, media, localPosts, or dashboard.` },
+        { status: 400 },
       );
-
-      const storefront = location.storefrontAddress as Parameters<
-        typeof formatAddress
-      >[0];
-      const business = {
-        name: String(
-          (location.title as string | undefined) ||
-            formatAddress(storefront) ||
-            "Business",
-        ),
-        address: formatAddress(storefront),
-        phone: String(
-          (location.phoneNumbers as { primaryPhone?: string })?.primaryPhone ?? "—",
-        ),
-        website: String(location.websiteUri ?? "—"),
-        hoursSummary: formatHoursSummary(
-          location as Parameters<typeof formatHoursSummary>[0],
-        ),
-        categories: categories.length ? categories : ["—"],
-      };
-
-      let gbpReviews: Array<{
-        id: string;
-        author: string;
-        rating: number;
-        comment: string;
-        date: string;
-        responded: boolean;
-      }> = [];
-      if (revRes.ok) {
-        const revJson = (await revRes.json()) as {
-          reviews?: Array<{
-            reviewId?: string;
-            reviewer?: { displayName?: string };
-            starRating?: unknown;
-            comment?: string;
-            createTime?: string;
-            updateTime?: string;
-            reviewReply?: { comment?: string };
-          }>;
-        };
-        gbpReviews =
-          revJson.reviews?.map((r) => ({
-            id: String(r.reviewId ?? r.createTime ?? Math.random().toString(36)),
-            author: String(r.reviewer?.displayName ?? "Google user"),
-            rating: mapStarRating(r.starRating),
-            comment: String(r.comment ?? ""),
-            date: r.createTime
-              ? String(r.createTime).slice(0, 10)
-              : r.updateTime
-                ? String(r.updateTime).slice(0, 10)
-                : "",
-            responded: Boolean(r.reviewReply?.comment),
-          })) ?? [];
-      }
-
-      let photos: Array<{
-        id: string;
-        label: string;
-        kind: "logo" | "cover" | "interior" | "team";
-        addedAt: string;
-      }> = [];
-      if (mediaRes.ok) {
-        const mediaJson = (await mediaRes.json()) as {
-          mediaItems?: Array<{
-            googleUrl?: string;
-            mediaFormat?: string;
-            locationAssociation?: { category?: string };
-            createTime?: string;
-            name?: string;
-          }>;
-        };
-        photos =
-          mediaJson.mediaItems?.map((m, i) => ({
-            id: String(m.name ?? m.googleUrl ?? `media-${i}`),
-            label: m.locationAssociation?.category
-              ? String(m.locationAssociation.category).replace(/_/g, " ")
-              : m.mediaFormat === "VIDEO"
-                ? "Video"
-                : "Photo",
-            kind: mediaKind(m.mediaFormat, m.locationAssociation?.category),
-            addedAt: m.createTime ? String(m.createTime).slice(0, 10) : "—",
-          })) ?? [];
-      }
-
-      let posts: Array<{
-        id: string;
-        type: "announcement" | "event" | "offer";
-        title: string;
-        status: "scheduled" | "live" | "ended";
-        startsAt: string;
-      }> = [];
-      if (postsRes.ok) {
-        const postsJson = (await postsRes.json()) as {
-          localPosts?: Array<{
-            name?: string;
-            summary?: string;
-            topicType?: string;
-            state?: string;
-            createTime?: string;
-            event?: { title?: string };
-            searchUrl?: string;
-          }>;
-        };
-        const mapTopic = (t: string | undefined): "announcement" | "event" | "offer" => {
-          if (t === "EVENT") return "event";
-          if (t === "OFFER") return "offer";
-          return "announcement";
-        };
-        const mapState = (s: string | undefined): "scheduled" | "live" | "ended" => {
-          if (s === "REJECTED" || s === "PROCESSING") return "scheduled";
-          if (s === "LIVE") return "live";
-          if (s === "EXPIRED" || s === "DELETED") return "ended";
-          return "live";
-        };
-        posts =
-          postsJson.localPosts?.map((p) => ({
-            id: String(p.name ?? p.searchUrl ?? p.summary ?? Math.random().toString(36)),
-            type: mapTopic(p.topicType),
-            title: String(
-              p.event?.title ?? p.summary?.slice(0, 120) ?? "Local post",
-            ),
-            status: mapState(p.state),
-            startsAt: p.createTime
-              ? String(p.createTime).slice(0, 10)
-              : new Date().toISOString().slice(0, 10),
-          })) ?? [];
-      }
-
-      const warnings: string[] = [];
-      if (!revRes.ok) {
-        const { friendly } = await jsonErrorPayload(revRes);
-        warnings.push(`Reviews: ${friendly}`);
-      }
-      if (!mediaRes.ok) {
-        const { friendly } = await jsonErrorPayload(mediaRes);
-        warnings.push(`Photos: ${friendly}`);
-      }
-      if (!postsRes.ok) {
-        const { friendly } = await jsonErrorPayload(postsRes);
-        warnings.push(`Posts: ${friendly}`);
-      }
-
-      return NextResponse.json({
-        business,
-        gbpReviews,
-        posts,
-        photos,
-        warnings,
-        ...(debug
-          ? {
-              googleBusinessDebug: {
-                requests: [
-                  { label: "location", url: locationName },
-                  { label: "reviews", url: `${locationName}/reviews?pageSize=50` },
-                  { label: "media", url: `${locationName}/media?pageSize=50` },
-                  { label: "localPosts", url: `${locationName}/localPosts?pageSize=50` },
-                ],
-              },
-            }
-          : {}),
-      });
     }
 
-    return NextResponse.json(
-      { error: `Unknown action "${action}". Use locations, reviews, media, localPosts, or dashboard.` },
-      { status: 400 },
+    const [locRes, revRes, mediaRes, postsRes] = await Promise.all([
+      gbpFetchWithRetry("dashboard-location", locationName, auth.token),
+      gbpFetchWithRetry("dashboard-reviews", `${locationName}/reviews?pageSize=50`, auth.token),
+      gbpFetchWithRetry("dashboard-media", `${locationName}/media?pageSize=50`, auth.token),
+      gbpFetchWithRetry(
+        "dashboard-local-posts",
+        `${locationName}/localPosts?pageSize=50`,
+        auth.token,
+      ),
+    ]);
+
+    if (!locRes.ok) {
+      const { friendly, parsed } = await jsonErrorPayload(locRes);
+      const discovered = await fetchLocations(auth.token, accountId);
+      return NextResponse.json(
+        {
+          error: friendly,
+          googleError: parsed,
+          needsLocationSelection: true,
+          accountId,
+          locationId,
+          locations: discovered.ok ? discovered.locations : [],
+          discoveryError: discovered.ok ? null : discovered.error,
+          ...(debug ? { googleBusinessDebug: { locationUrl: locationName } } : {}),
+        },
+        { status: 200 },
+      );
+    }
+
+    const location = (await locRes.json()) as Record<string, unknown>;
+    const primary = (location.categories as { primaryCategory?: { displayName?: string } })
+      ?.primaryCategory?.displayName;
+    const additional =
+      (location.categories as { additionalCategories?: { displayName?: string }[] })
+        ?.additionalCategories?.map((c) => c.displayName).filter(Boolean) ?? [];
+    const categories = [primary, ...additional].filter(
+      (x): x is string => typeof x === "string" && x.length > 0,
     );
+
+    const storefront = location.storefrontAddress as Parameters<typeof formatAddress>[0];
+    const business = {
+      name: String(
+        (location.title as string | undefined) ||
+          formatAddress(storefront) ||
+          "Business",
+      ),
+      address: formatAddress(storefront),
+      phone: String(
+        (location.phoneNumbers as { primaryPhone?: string })?.primaryPhone ?? "—",
+      ),
+      website: String(location.websiteUri ?? "—"),
+      hoursSummary: formatHoursSummary(
+        location as Parameters<typeof formatHoursSummary>[0],
+      ),
+      categories: categories.length ? categories : ["—"],
+    };
+
+    let gbpReviews: Array<{
+      id: string;
+      author: string;
+      rating: number;
+      comment: string;
+      date: string;
+      responded: boolean;
+    }> = [];
+    if (revRes.ok) {
+      const revJson = (await revRes.json()) as {
+        reviews?: Array<{
+          reviewId?: string;
+          reviewer?: { displayName?: string };
+          starRating?: unknown;
+          comment?: string;
+          createTime?: string;
+          updateTime?: string;
+          reviewReply?: { comment?: string };
+        }>;
+      };
+      gbpReviews =
+        revJson.reviews?.map((r) => ({
+          id: String(r.reviewId ?? r.createTime ?? Math.random().toString(36)),
+          author: String(r.reviewer?.displayName ?? "Google user"),
+          rating: mapStarRating(r.starRating),
+          comment: String(r.comment ?? ""),
+          date: r.createTime
+            ? String(r.createTime).slice(0, 10)
+            : r.updateTime
+              ? String(r.updateTime).slice(0, 10)
+              : "",
+          responded: Boolean(r.reviewReply?.comment),
+        })) ?? [];
+    }
+
+    let photos: Array<{
+      id: string;
+      label: string;
+      kind: "logo" | "cover" | "interior" | "team";
+      addedAt: string;
+    }> = [];
+    if (mediaRes.ok) {
+      const mediaJson = (await mediaRes.json()) as {
+        mediaItems?: Array<{
+          googleUrl?: string;
+          mediaFormat?: string;
+          locationAssociation?: { category?: string };
+          createTime?: string;
+          name?: string;
+        }>;
+      };
+      photos =
+        mediaJson.mediaItems?.map((m, i) => ({
+          id: String(m.name ?? m.googleUrl ?? `media-${i}`),
+          label: m.locationAssociation?.category
+            ? String(m.locationAssociation.category).replace(/_/g, " ")
+            : m.mediaFormat === "VIDEO"
+              ? "Video"
+              : "Photo",
+          kind: mediaKind(m.mediaFormat, m.locationAssociation?.category),
+          addedAt: m.createTime ? String(m.createTime).slice(0, 10) : "—",
+        })) ?? [];
+    }
+
+    let posts: Array<{
+      id: string;
+      type: "announcement" | "event" | "offer";
+      title: string;
+      status: "scheduled" | "live" | "ended";
+      startsAt: string;
+    }> = [];
+    if (postsRes.ok) {
+      const postsJson = (await postsRes.json()) as {
+        localPosts?: Array<{
+          name?: string;
+          summary?: string;
+          topicType?: string;
+          state?: string;
+          createTime?: string;
+          event?: { title?: string };
+          searchUrl?: string;
+        }>;
+      };
+      const mapTopic = (t: string | undefined): "announcement" | "event" | "offer" => {
+        if (t === "EVENT") return "event";
+        if (t === "OFFER") return "offer";
+        return "announcement";
+      };
+      const mapState = (s: string | undefined): "scheduled" | "live" | "ended" => {
+        if (s === "REJECTED" || s === "PROCESSING") return "scheduled";
+        if (s === "LIVE") return "live";
+        if (s === "EXPIRED" || s === "DELETED") return "ended";
+        return "live";
+      };
+      posts =
+        postsJson.localPosts?.map((p) => ({
+          id: String(p.name ?? p.searchUrl ?? p.summary ?? Math.random().toString(36)),
+          type: mapTopic(p.topicType),
+          title: String(p.event?.title ?? p.summary?.slice(0, 120) ?? "Local post"),
+          status: mapState(p.state),
+          startsAt: p.createTime
+            ? String(p.createTime).slice(0, 10)
+            : new Date().toISOString().slice(0, 10),
+        })) ?? [];
+    }
+
+    const warnings: string[] = [];
+    if (!revRes.ok) {
+      const { friendly } = await jsonErrorPayload(revRes);
+      warnings.push(`Reviews: ${friendly}`);
+    }
+    if (!mediaRes.ok) {
+      const { friendly } = await jsonErrorPayload(mediaRes);
+      warnings.push(`Photos: ${friendly}`);
+    }
+    if (!postsRes.ok) {
+      const { friendly } = await jsonErrorPayload(postsRes);
+      warnings.push(`Posts: ${friendly}`);
+    }
+
+    return NextResponse.json({
+      business,
+      gbpReviews,
+      posts,
+      photos,
+      warnings,
+      accountId,
+      locationId,
+      ...(debug
+        ? {
+            googleBusinessDebug: {
+              requests: [
+                { label: "location", url: locationName },
+                { label: "reviews", url: `${locationName}/reviews?pageSize=50` },
+                { label: "media", url: `${locationName}/media?pageSize=50` },
+                { label: "localPosts", url: `${locationName}/localPosts?pageSize=50` },
+              ],
+            },
+          }
+        : {}),
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Google Business Profile request failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json(
+      {
+        error: message,
+        setupHints: [
+          "Confirm service-account access in Business Profile settings.",
+          "Confirm account and location IDs match selected profile.",
+        ],
+      },
+      { status: 502 },
+    );
   }
 }
 
@@ -470,21 +598,14 @@ type PostBody = {
   summary?: string;
   title?: string;
   websiteUrl?: string;
+  accountId?: string;
+  locationId?: string;
 };
 
 export async function POST(req: Request) {
   const auth = await getGoogleAccessToken([GBP_OAUTH_SCOPE]);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: 500 });
-  }
-
-  const accountId = stripAccountPrefix(process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim() ?? "");
-  const locationId = stripLocationPrefix(process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim() ?? "");
-  if (!accountId || !locationId) {
-    return NextResponse.json(
-      { error: "GOOGLE_BUSINESS_ACCOUNT_ID and GOOGLE_BUSINESS_LOCATION_ID must be set." },
-      { status: 400 },
-    );
   }
 
   let body: PostBody;
@@ -494,29 +615,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const accountId = stripAccountPrefix(
+    body.accountId?.trim() || process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim() || "",
+  );
+  const locationId = stripLocationPrefix(
+    body.locationId?.trim() || process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim() || "",
+  );
+  if (!accountId || !locationId) {
+    return NextResponse.json(
+      {
+        error: "Select an account and location before creating posts.",
+        needsLocationSelection: true,
+      },
+      { status: 400 },
+    );
+  }
+
   const topic = body.topicType ?? "STANDARD";
   const summary = body.summary?.trim();
   if (!summary) {
     return NextResponse.json({ error: "summary is required" }, { status: 400 });
   }
 
-  const acc = encodeURIComponent(accountId);
-  const loc = encodeURIComponent(locationId);
-  const parent = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}/localPosts`;
-
-  const languageCode = "en";
-
-  const basePayload: Record<string, unknown> = {
-    languageCode,
+  const parent = `${GBP_MYBUSINESS_V4_BASE}/accounts/${encodeURIComponent(accountId)}/locations/${encodeURIComponent(locationId)}/localPosts`;
+  const payload: Record<string, unknown> = {
+    languageCode: "en",
     summary,
     topicType: topic,
   };
-
   if (topic === "EVENT") {
     const title = body.title?.trim() ?? summary.slice(0, 80);
     const start = new Date();
     start.setDate(start.getDate() + 1);
-    basePayload.event = {
+    payload.event = {
       title,
       schedule: {
         startDate: {
@@ -534,21 +665,18 @@ export async function POST(req: Request) {
       },
     };
   }
-
   if (topic === "OFFER") {
-    const url = body.websiteUrl?.trim() || "https://www.google.com";
-    basePayload.offer = {
+    payload.offer = {
       couponCode: "SEE_STORE",
-      redeemOnlineUrl: url,
+      redeemOnlineUrl: body.websiteUrl?.trim() || "https://www.google.com",
       termsConditions: "See business for details.",
     };
   }
 
-  const res = await gbpFetch("create-local-post", parent, auth.token, {
+  const res = await gbpFetchWithRetry("create-local-post", parent, auth.token, {
     method: "POST",
-    body: JSON.stringify(basePayload),
+    body: JSON.stringify(payload),
   });
-
   if (!res.ok) {
     const { friendly, parsed } = await jsonErrorPayload(res);
     return NextResponse.json(
@@ -556,7 +684,5 @@ export async function POST(req: Request) {
       { status: res.status >= 500 ? 502 : res.status },
     );
   }
-
-  const created = (await res.json()) as Record<string, unknown>;
-  return NextResponse.json({ ok: true, localPost: created });
+  return NextResponse.json({ ok: true, localPost: await res.json() });
 }

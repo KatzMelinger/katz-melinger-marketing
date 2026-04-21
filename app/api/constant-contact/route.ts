@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
-  authHeaders,
-  CONSTANT_CONTACT_API_BASE,
+  ccAuthedFetch,
   fetchContactListsResponse,
   getAuthConfig,
+  getConstantContactAuthUrl,
   parseJsonSafe,
   syncContactsToList,
+  CONSTANT_CONTACT_API_BASE,
   type ConstantContactApiErrorBody,
 } from "@/lib/constant-contact-server";
 import {
@@ -17,7 +18,6 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
-/** Subset of fields returned for email campaigns in list responses. */
 export type EmailCampaignSummary = {
   campaign_id?: string;
   name?: string;
@@ -28,7 +28,6 @@ export type EmailCampaignSummary = {
   [key: string]: unknown;
 };
 
-/** Typical GET /emails JSON body from Constant Contact v3. */
 export type EmailsListApiResponse = {
   email_campaigns?: EmailCampaignSummary[];
   campaigns?: EmailCampaignSummary[];
@@ -36,7 +35,6 @@ export type EmailsListApiResponse = {
   [key: string]: unknown;
 };
 
-/** Activity object for POST /emails (custom code and other formats). */
 export type EmailCampaignActivityInput = {
   format_type: number;
   from_name: string;
@@ -49,14 +47,12 @@ export type EmailCampaignActivityInput = {
   [key: string]: unknown;
 };
 
-/** Body for creating a campaign via POST /emails. */
 export type CreateEmailCampaignBody = {
   name: string;
   email_campaign_activities: EmailCampaignActivityInput[];
   [key: string]: unknown;
 };
 
-/** Successful create response (subset). */
 export type CreateEmailCampaignResponse = {
   campaign_id?: string;
   name?: string;
@@ -90,6 +86,19 @@ function countSequenceLines(sequence: string): number {
 
 function isAutomationTrigger(v: string): v is AutomationTrigger {
   return (AUTOMATION_TRIGGERS as readonly string[]).includes(v);
+}
+
+function authFailure(message: string, details?: unknown) {
+  return NextResponse.json(
+    {
+      error: message,
+      status: 401,
+      needsAuth: true,
+      authUrl: getConstantContactAuthUrl("cc-reconnect"),
+      ...(details !== undefined ? { details } : {}),
+    },
+    { status: 401 },
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -172,11 +181,7 @@ export async function GET(request: NextRequest) {
   const url = `${CONSTANT_CONTACT_API_BASE}/emails`;
 
   try {
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: authHeaders(config.accessToken),
-    });
-
+    const res = await ccAuthedFetch(url);
     const body = await parseJsonSafe(res);
 
     if (!res.ok) {
@@ -185,6 +190,9 @@ export async function GET(request: NextRequest) {
         err?.error_message ??
         (typeof err?.error_key === "string" ? err.error_key : null) ??
         `Constant Contact API error (${res.status})`;
+      if (res.status === 401) {
+        return authFailure(message, body);
+      }
       return NextResponse.json(
         {
           error: message,
@@ -322,6 +330,9 @@ export async function POST(request: Request) {
 
     const result = await syncContactsToList(listId);
     if (!result.ok) {
+      if (result.needsAuth) {
+        return authFailure(result.error, { authUrl: result.authUrl ?? null });
+      }
       return NextResponse.json({ error: result.error }, { status: 502 });
     }
 
@@ -344,10 +355,8 @@ export async function POST(request: Request) {
   const url = `${CONSTANT_CONTACT_API_BASE}/emails`;
 
   try {
-    const res = await fetch(url, {
+    const res = await ccAuthedFetch(url, {
       method: "POST",
-      cache: "no-store",
-      headers: authHeaders(config.accessToken),
       body: JSON.stringify(payload),
     });
 
@@ -359,6 +368,9 @@ export async function POST(request: Request) {
         err?.error_message ??
         (typeof err?.error_key === "string" ? err.error_key : null) ??
         `Constant Contact API error (${res.status})`;
+      if (res.status === 401) {
+        return authFailure(message, body);
+      }
       return NextResponse.json(
         {
           error: message,

@@ -26,13 +26,21 @@ export interface GoogleApiErrorDetail {
 }
 
 export interface GbpDashboardApiResponse {
-  business: LocalBusinessInfo;
-  gbpReviews: GbpReviewRow[];
-  posts: GbpPostRow[];
-  photos: GbpPhotoRow[];
+  business?: LocalBusinessInfo;
+  gbpReviews?: GbpReviewRow[];
+  posts?: GbpPostRow[];
+  photos?: GbpPhotoRow[];
   warnings?: string[];
   error?: string;
   googleError?: GoogleApiErrorDetail;
+  accountId?: string;
+  locationId?: string;
+  needsAccountSelection?: boolean;
+  needsLocationSelection?: boolean;
+  locations?: Array<{ locationId: string; title: string; name: string }>;
+  accounts?: Array<{ accountId: string; name: string }>;
+  setupHints?: string[];
+  discoveryError?: string | null;
   googleBusinessDebug?: unknown;
 }
 
@@ -129,13 +137,23 @@ export interface LocalSeoDashboardData {
 
 const isDev = process.env.NODE_ENV === "development";
 
-async function fetchLocalSeoDashboard(): Promise<LocalSeoDashboardData> {
-  const qs =
-    isDev ? "?action=dashboard&debug=1" : "?action=dashboard";
-  const res = await fetch(`/api/local-seo/google-business${qs}`, {
+async function fetchLocalSeoDashboard(opts?: {
+  accountId?: string | null;
+  locationId?: string | null;
+}): Promise<{ data?: LocalSeoDashboardData; recovery?: GbpDashboardApiResponse; error?: string }> {
+  const params = new URLSearchParams();
+  params.set("action", "dashboard");
+  if (isDev) params.set("debug", "1");
+  if (opts?.accountId) params.set("accountId", opts.accountId);
+  if (opts?.locationId) params.set("locationId", opts.locationId);
+
+  const res = await fetch(`/api/local-seo/google-business?${params.toString()}`, {
     cache: "no-store",
   });
   const data = (await res.json()) as GbpDashboardApiResponse;
+  if (data.needsAccountSelection || data.needsLocationSelection) {
+    return { recovery: data };
+  }
   if (!res.ok) {
     console.warn("[Local SEO] GBP API error response:", {
       status: res.status,
@@ -148,10 +166,13 @@ async function fetchLocalSeoDashboard(): Promise<LocalSeoDashboardData> {
       data.googleError?.message && !base.includes(data.googleError.message)
         ? ` — ${data.googleError.message}`
         : "";
-    throw new Error(`${base}${extra}`);
+    return { error: `${base}${extra}` };
+  }
+  if (!data.business) {
+    return { error: "Google Business Profile dashboard payload is missing business data." };
   }
   const platformReviews: PlatformReviewRow[] = [
-    ...data.gbpReviews.map((r, i) => ({
+    ...(data.gbpReviews ?? []).map((r, i) => ({
       id: `google-${r.id}-${i}`,
       platform: "google" as const,
       author: r.author,
@@ -164,16 +185,18 @@ async function fetchLocalSeoDashboard(): Promise<LocalSeoDashboardData> {
     ...MOCK_NON_GOOGLE_PLATFORM_REVIEWS,
   ];
   return {
+    data: {
     business: data.business,
-    gbpReviews: data.gbpReviews,
-    posts: data.posts,
-    photos: data.photos,
+    gbpReviews: data.gbpReviews ?? [],
+    posts: data.posts ?? [],
+    photos: data.photos ?? [],
     platformReviews,
     responseTemplates: MOCK_TEMPLATES,
     keywordRankings: MOCK_KEYWORD_RANKINGS,
     competitors: MOCK_COMPETITORS,
     citations: MOCK_CITATIONS,
     warnings: data.warnings ?? [],
+    },
   };
 }
 
@@ -352,6 +375,12 @@ export default function LocalSeoPlatformPage() {
   const [citations, setCitations] = useState<CitationRow[]>([]);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [gbpWarnings, setGbpWarnings] = useState<string[]>([]);
+  const [recoveryState, setRecoveryState] = useState<GbpDashboardApiResponse | null>(null);
+  const [accounts, setAccounts] = useState<Array<{ accountId: string; name: string }>>([]);
+  const [locations, setLocations] = useState<Array<{ locationId: string; title: string; name: string }>>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("");
+  const [discoveringLocations, setDiscoveringLocations] = useState(false);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [saStatus, setSaStatus] = useState<unknown>(null);
@@ -386,19 +415,37 @@ export default function LocalSeoPlatformPage() {
       setPostError(null);
     }
     try {
-      const data = await fetchLocalSeoDashboard();
-      setBusiness(data.business);
-      setGbpReviews(data.gbpReviews);
-      setPosts(data.posts);
-      setPhotos(data.photos);
-      setPlatformReviews(data.platformReviews);
-      setTemplates(data.responseTemplates);
-      setKeywordRankings(data.keywordRankings);
-      setCompetitors(data.competitors);
-      setCitations(data.citations);
-      setGbpWarnings(data.warnings);
-      setLastLoadedAt(new Date().toISOString());
-      if (silent) setError(null);
+      const result = await fetchLocalSeoDashboard({
+        accountId: selectedAccountId || null,
+        locationId: selectedLocationId || null,
+      });
+      if (result.error) {
+        setError(result.error);
+        if (!silent) setBusiness(null);
+      } else if (result.recovery) {
+        setRecoveryState(result.recovery);
+        setAccounts(result.recovery.accounts ?? []);
+        setLocations(result.recovery.locations ?? []);
+        if (result.recovery.accountId) setSelectedAccountId(result.recovery.accountId);
+        if (result.recovery.locationId) setSelectedLocationId(result.recovery.locationId);
+        setError(result.recovery.error ?? "Choose a valid account and location.");
+        if (!silent) setBusiness(null);
+      } else if (result.data) {
+        const data = result.data;
+        setRecoveryState(null);
+        setBusiness(data.business);
+        setGbpReviews(data.gbpReviews);
+        setPosts(data.posts);
+        setPhotos(data.photos);
+        setPlatformReviews(data.platformReviews);
+        setTemplates(data.responseTemplates);
+        setKeywordRankings(data.keywordRankings);
+        setCompetitors(data.competitors);
+        setCitations(data.citations);
+        setGbpWarnings(data.warnings);
+        setLastLoadedAt(new Date().toISOString());
+        if (silent) setError(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load local SEO data");
       if (!silent) setBusiness(null);
@@ -406,7 +453,66 @@ export default function LocalSeoPlatformPage() {
       if (silent) setIsRefreshing(false);
       else setLoading(false);
     }
-  }, []);
+  }, [selectedAccountId, selectedLocationId]);
+
+  const discoverAccounts = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set("action", "accounts");
+      if (isDev) params.set("debug", "1");
+      const res = await fetch(`/api/local-seo/google-business?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const json = (await res.json()) as {
+        accounts?: Array<{ accountId: string; name: string }>;
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(json.error ?? `Failed to discover accounts (${res.status})`);
+        return;
+      }
+      const rows = Array.isArray(json.accounts) ? json.accounts : [];
+      setAccounts(rows);
+      if (rows.length && !selectedAccountId) {
+        setSelectedAccountId(rows[0]?.accountId ?? "");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to discover accounts");
+    }
+  }, [selectedAccountId]);
+
+  const discoverLocations = useCallback(async (accountId: string) => {
+    if (!accountId) return;
+    setDiscoveringLocations(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("action", "locations");
+      params.set("accountId", accountId);
+      if (isDev) params.set("debug", "1");
+      const res = await fetch(`/api/local-seo/google-business?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const json = (await res.json()) as {
+        locations?: Array<{ locationId: string; title: string; name: string }>;
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(json.error ?? `Failed to discover locations (${res.status})`);
+        setLocations([]);
+        return;
+      }
+      const rows = Array.isArray(json.locations) ? json.locations : [];
+      setLocations(rows);
+      if (rows.length && !selectedLocationId) {
+        setSelectedLocationId(rows[0]?.locationId ?? "");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to discover locations");
+      setLocations([]);
+    } finally {
+      setDiscoveringLocations(false);
+    }
+  }, [selectedLocationId]);
 
   const createLocalPost = useCallback(
     async (topicType: "STANDARD" | "EVENT" | "OFFER") => {
@@ -437,6 +543,8 @@ export default function LocalSeoPlatformPage() {
               business?.website && business.website !== "—"
                 ? business.website
                 : undefined,
+            accountId: selectedAccountId || undefined,
+            locationId: selectedLocationId || undefined,
           }),
         });
         const payload = (await res.json()) as { error?: string };
@@ -450,12 +558,29 @@ export default function LocalSeoPlatformPage() {
         setPosting(false);
       }
     },
-    [business?.website, load],
+    [business?.website, load, selectedAccountId, selectedLocationId],
   );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if ((recoveryState?.needsAccountSelection || !accounts.length) && !selectedAccountId) {
+      void discoverAccounts();
+    }
+  }, [
+    accounts.length,
+    discoverAccounts,
+    recoveryState?.needsAccountSelection,
+    selectedAccountId,
+  ]);
+
+  useEffect(() => {
+    if (selectedAccountId) {
+      void discoverLocations(selectedAccountId);
+    }
+  }, [discoverLocations, selectedAccountId]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -542,6 +667,77 @@ export default function LocalSeoPlatformPage() {
           >
             {error}
           </div>
+        ) : null}
+
+        {recoveryState?.needsAccountSelection || recoveryState?.needsLocationSelection ? (
+          <section
+            className="rounded-xl border p-6"
+            style={{ backgroundColor: CARD, borderColor: BORDER }}
+          >
+            <h2 className="text-lg font-semibold text-white">Select Business Profile location</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              The configured location ID is missing or invalid. Choose an account and location from discovery.
+            </p>
+            {recoveryState?.discoveryError ? (
+              <p className="mt-2 text-sm text-rose-300">{recoveryState.discoveryError}</p>
+            ) : null}
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="block text-sm">
+                <span className="text-xs text-slate-400">Business account</span>
+                <select
+                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  value={selectedAccountId}
+                  onChange={(e) => {
+                    setSelectedAccountId(e.target.value);
+                    setSelectedLocationId("");
+                  }}
+                >
+                  <option value="">Select account</option>
+                  {accounts.map((a) => (
+                    <option key={a.accountId} value={a.accountId}>
+                      {a.name} ({a.accountId})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="text-xs text-slate-400">Location</span>
+                <select
+                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  value={selectedLocationId}
+                  onChange={(e) => setSelectedLocationId(e.target.value)}
+                  disabled={!selectedAccountId || discoveringLocations}
+                >
+                  <option value="">
+                    {discoveringLocations ? "Loading locations..." : "Select location"}
+                  </option>
+                  {locations.map((l) => (
+                    <option key={l.locationId} value={l.locationId}>
+                      {l.title} ({l.locationId})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-md px-3 py-2 text-sm font-medium text-white"
+                style={{ backgroundColor: ACCENT }}
+                onClick={() => void load()}
+                disabled={!selectedAccountId || !selectedLocationId || loading}
+              >
+                Apply selection
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200 hover:bg-[#1a2540]"
+                onClick={() => void discoverAccounts()}
+              >
+                Rediscover accounts
+              </button>
+            </div>
+          </section>
         ) : null}
 
         {isDev ? (

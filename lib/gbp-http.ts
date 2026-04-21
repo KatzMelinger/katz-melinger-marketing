@@ -4,7 +4,9 @@
  * Required OAuth scope for these APIs:
  *   https://www.googleapis.com/auth/business.manage
  *
- * Enable in GCP: "Google My Business API" (and Account Management API as needed).
+ * Enable in GCP:
+ * - mybusiness.googleapis.com
+ * - mybusinessaccountmanagement.googleapis.com
  * The service account email must be added as a user on the Business Profile / location.
  */
 

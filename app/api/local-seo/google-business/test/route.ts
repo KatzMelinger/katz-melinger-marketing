@@ -39,8 +39,12 @@ export async function GET() {
     detail: {
       ...desc,
       requiredScope: GBP_OAUTH_SCOPE,
+      requiredApis: [
+        "mybusiness.googleapis.com (Business Profile API v4)",
+        "mybusinessaccountmanagement.googleapis.com (Account Management API v1)",
+      ],
       note:
-        "Enable Google My Business API in GCP. Add the service account client_email as a user (Owner/Manager) on the Google Business Profile.",
+        "Add service account client_email as Manager/Owner on the Business Profile account.",
     },
   });
 
@@ -48,7 +52,11 @@ export async function GET() {
   if ("error" in auth) {
     steps.push({ step: "access_token", ok: false, detail: { error: auth.error } });
     return NextResponse.json(
-      { ok: false, steps, summary: "Could not obtain OAuth access token." },
+      {
+        ok: false,
+        steps,
+        summary: "Could not obtain OAuth access token.",
+      },
       { status: 200 },
     );
   }
@@ -61,98 +69,110 @@ export async function GET() {
 
   const listUrl = `${GBP_ACCOUNT_MANAGEMENT_V1_BASE}/accounts`;
   const listRes = await gbpFetch("test-list-accounts", listUrl, auth.token);
-  const listBody = await listRes.text();
-  const listParsed = parseGoogleApiErrorJson(
-    listRes.status,
-    listRes.statusText,
-    listBody,
-  );
-  let accountsJson: unknown = null;
+  const listText = await listRes.text();
+  const listParsed = parseGoogleApiErrorJson(listRes.status, listRes.statusText, listText);
+  let listJson: unknown = null;
   try {
-    accountsJson = listBody ? JSON.parse(listBody) : null;
+    listJson = listText ? JSON.parse(listText) : null;
   } catch {
-    accountsJson = { raw: listBody.slice(0, 500) };
+    listJson = { raw: listText.slice(0, 500) };
   }
+  const accounts = ((listJson as { accounts?: Array<{ name?: string; accountName?: string }> })?.accounts ?? [])
+    .map((a) => ({
+      accountId: stripAccountPrefix(String(a.name ?? "")),
+      name: String(a.accountName ?? a.name ?? "Business account"),
+    }))
+    .filter((a) => Boolean(a.accountId));
 
   steps.push({
     step: "account_management_list_accounts",
     ok: listRes.ok,
     detail: listRes.ok
-      ? {
-          status: listRes.status,
-          accounts:
-            (accountsJson as { accounts?: { name?: string }[] })?.accounts?.map(
-              (a) => a.name,
-            ) ?? accountsJson,
-        }
-      : {
-          status: listRes.status,
-          googleError: listParsed,
-        },
+      ? { status: listRes.status, accounts }
+      : { status: listRes.status, googleError: listParsed },
   });
 
-  const accountId = stripAccountPrefix(
-    process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim() ?? "",
-  );
-  const locationId = stripLocationPrefix(
-    process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim() ?? "",
-  );
+  const accountId = stripAccountPrefix(process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim() ?? "");
+  const locationId = stripLocationPrefix(process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim() ?? "");
 
   if (!accountId) {
     steps.push({
-      step: "location_probe_skipped",
+      step: "configured_account_missing",
       ok: false,
-      detail: { reason: "GOOGLE_BUSINESS_ACCOUNT_ID not set" },
+      detail: { message: "GOOGLE_BUSINESS_ACCOUNT_ID is not configured." },
     });
     return NextResponse.json({
       ok: listRes.ok,
       steps,
-      summary:
-        "Token and account list checked. Set GOOGLE_BUSINESS_ACCOUNT_ID and GOOGLE_BUSINESS_LOCATION_ID to test the v4 location GET.",
+      discoveredAccounts: accounts,
+      summary: "Account discovery succeeded, but no default account ID is configured.",
     });
   }
+
+  const locationsUrl = `${GBP_MYBUSINESS_V4_BASE}/accounts/${encodeURIComponent(accountId)}/locations?pageSize=100`;
+  const locsRes = await gbpFetch("test-list-locations", locationsUrl, auth.token);
+  const locsText = await locsRes.text();
+  const locsParsed = parseGoogleApiErrorJson(locsRes.status, locsRes.statusText, locsText);
+  let locsJson: unknown = null;
+  try {
+    locsJson = locsText ? JSON.parse(locsText) : null;
+  } catch {
+    locsJson = { raw: locsText.slice(0, 500) };
+  }
+  const discoveredLocations = ((locsJson as {
+    locations?: Array<{ name?: string; title?: string }>;
+  })?.locations ?? []).map((l) => ({
+    locationId: stripLocationPrefix(String(l.name ?? "")),
+    title: String(l.title ?? "Location"),
+    name: String(l.name ?? ""),
+  }));
+
+  steps.push({
+    step: "list_locations_for_configured_account",
+    ok: locsRes.ok,
+    detail: locsRes.ok
+      ? { status: locsRes.status, count: discoveredLocations.length }
+      : { status: locsRes.status, googleError: locsParsed },
+  });
 
   if (!locationId) {
     steps.push({
-      step: "location_probe_skipped",
+      step: "configured_location_missing",
       ok: false,
-      detail: { reason: "GOOGLE_BUSINESS_LOCATION_ID not set", accountId },
+      detail: { message: "GOOGLE_BUSINESS_LOCATION_ID is not configured." },
     });
     return NextResponse.json({
-      ok: listRes.ok,
+      ok: listRes.ok && locsRes.ok,
       steps,
+      discoveredAccounts: accounts,
+      discoveredLocations,
       summary:
-        "Account list succeeded but location id missing — set GOOGLE_BUSINESS_LOCATION_ID.",
+        "Account and location discovery executed. Configure or select a valid location ID.",
     });
   }
 
-  const acc = encodeURIComponent(accountId);
-  const loc = encodeURIComponent(locationId);
-  const locationUrl = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}`;
-  const locRes = await gbpFetch("test-get-location-v4", locationUrl, auth.token);
-  const locBody = await locRes.text();
-  const locParsed = parseGoogleApiErrorJson(
-    locRes.status,
-    locRes.statusText,
-    locBody,
-  );
+  const locationUrl = `${GBP_MYBUSINESS_V4_BASE}/accounts/${encodeURIComponent(accountId)}/locations/${encodeURIComponent(locationId)}`;
+  const oneRes = await gbpFetch("test-get-location", locationUrl, auth.token);
+  const oneText = await oneRes.text();
+  const oneParsed = parseGoogleApiErrorJson(oneRes.status, oneRes.statusText, oneText);
 
   steps.push({
-    step: "mybusiness_v4_get_location",
-    ok: locRes.ok,
-    detail: locRes.ok
-      ? { status: locRes.status, url: locationUrl }
-      : { status: locRes.status, url: locationUrl, googleError: locParsed },
+    step: "get_configured_location",
+    ok: oneRes.ok,
+    detail: oneRes.ok
+      ? { status: oneRes.status, accountId, locationId }
+      : { status: oneRes.status, googleError: oneParsed, accountId, locationId },
   });
 
-  const ok = Boolean(listRes.ok && locRes.ok);
-
+  const ok = Boolean(listRes.ok && locsRes.ok && oneRes.ok);
   return NextResponse.json({
     ok,
     steps,
-    summary: ok
-      ? "Service account authentication and location lookup succeeded."
-      : "One or more steps failed — inspect steps[].detail.googleError for Google API messages.",
+    discoveredAccounts: accounts,
+    discoveredLocations,
     resolved: { accountId, locationId },
+    summary: ok
+      ? "Authentication and configured account/location checks succeeded."
+      : "Some checks failed. Use discovered accounts/locations and verify permissions/API enablement.",
   });
 }

@@ -20,6 +20,46 @@ const PRACTICE_AREAS = [
   "General",
 ] as const;
 
+const TEMPLATE_OPTIONS = {
+  blog: [
+    { id: "blog_general", label: "General legal explainer" },
+    { id: "case_study", label: "Case study" },
+    { id: "newsletter", label: "Newsletter article" },
+  ],
+  social: [{ id: "social_post", label: "Social post" }],
+  email: [
+    { id: "newsletter", label: "Newsletter" },
+    { id: "case_study", label: "Case update" },
+  ],
+} as const;
+
+type BrandVoiceProfile = {
+  tone: string[];
+  stylePreferences: string[];
+  legalTerms: string[];
+  commonPhrases: string[];
+  disclaimers: string[];
+  messagingPatterns: string[];
+  guidelinesSummary: string;
+  sourceDocumentCount: number;
+  updatedAt: string;
+};
+
+type BrandVoiceDoc = {
+  id: string;
+  filename: string;
+  document_type: "brand" | "sample";
+  text_excerpt: string;
+  text_length: number;
+  uploaded_at: string;
+};
+
+type BrandVoiceResponse = {
+  context?: string;
+  profile?: BrandVoiceProfile | null;
+  documents?: BrandVoiceDoc[];
+};
+
 export default function ContentPage() {
   const [tab, setTab] = useState<"blog" | "social" | "email">("blog");
   const [topic, setTopic] = useState("");
@@ -35,17 +75,34 @@ export default function ContentPage() {
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [brandVoice, setBrandVoice] = useState("");
   const [brandLoading, setBrandLoading] = useState(false);
+  const [templateKey, setTemplateKey] = useState<string>("blog_general");
+  const [useBrandVoice, setUseBrandVoice] = useState(true);
+
+  const [profile, setProfile] = useState<BrandVoiceProfile | null>(null);
+  const [documents, setDocuments] = useState<BrandVoiceDoc[]>([]);
+  const [docMessage, setDocMessage] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [brandFiles, setBrandFiles] = useState<FileList | null>(null);
+  const [sampleFiles, setSampleFiles] = useState<FileList | null>(null);
+  const [uploadingType, setUploadingType] = useState<"brand" | "sample" | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
 
   const loadBrand = useCallback(async () => {
-    const res = await fetch("/api/content/brand-voice");
-    const j = await res.json();
+    const res = await fetch("/api/content/brand-voice", { cache: "no-store" });
+    const j = (await res.json()) as BrandVoiceResponse;
     const ctx = typeof j.context === "string" ? j.context.trim() : "";
     setBrandVoice(ctx || DEFAULT_BRAND_VOICE);
+    setProfile(j.profile ?? null);
+    setDocuments(Array.isArray(j.documents) ? j.documents : []);
   }, []);
 
   useEffect(() => {
     void loadBrand();
   }, [loadBrand]);
+
+  useEffect(() => {
+    setTemplateKey(tab === "blog" ? "blog_general" : tab === "social" ? "social_post" : "newsletter");
+  }, [tab]);
 
   async function generate() {
     setLoading(true);
@@ -58,6 +115,8 @@ export default function ContentPage() {
         practice_area: practiceArea,
         tone,
         length: tab === "blog" ? length : "short",
+        template_key: templateKey,
+        use_brand_voice: useBrandVoice,
       };
       if (tab === "social") body.platform = platform;
       if (tab === "email") body.campaign_type = campaignType;
@@ -82,6 +141,54 @@ export default function ContentPage() {
       setErr(e instanceof Error ? e.message : "Error");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function uploadDocs(type: "brand" | "sample") {
+    const files = type === "brand" ? brandFiles : sampleFiles;
+    if (!files || files.length === 0) {
+      setDocError(`Choose at least one PDF for ${type} upload.`);
+      return;
+    }
+    setUploadingType(type);
+    setUploadProgress("Uploading files...");
+    setDocError(null);
+    setDocMessage(null);
+    try {
+      const form = new FormData();
+      form.set("documentType", type);
+      for (const file of Array.from(files)) {
+        form.append("files", file);
+      }
+      setUploadProgress("Extracting and analyzing PDF text...");
+      const res = await fetch("/api/content/brand-documents", {
+        method: "POST",
+        body: form,
+      });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        message?: string;
+        failures?: Array<{ filename: string; error: string }>;
+        profile?: BrandVoiceProfile | null;
+      };
+      if (!res.ok || !j.ok) {
+        const failureText =
+          Array.isArray(j.failures) && j.failures.length
+            ? ` ${j.failures.map((f) => `${f.filename}: ${f.error}`).join(" | ")}`
+            : "";
+        setDocError((j.message || "Upload failed.") + failureText);
+        return;
+      }
+      setDocMessage(j.message ?? "Documents uploaded.");
+      setProfile(j.profile ?? null);
+      await loadBrand();
+      if (type === "brand") setBrandFiles(null);
+      else setSampleFiles(null);
+    } catch (e) {
+      setDocError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploadingType(null);
+      setUploadProgress("");
     }
   }
 
@@ -208,6 +315,26 @@ export default function ContentPage() {
             </label>
 
             <label className="block text-sm">
+              <span className="text-xs text-slate-400">Template</span>
+              <select
+                className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                value={templateKey}
+                onChange={(e) => setTemplateKey(e.target.value)}
+              >
+                {(tab === "blog"
+                  ? TEMPLATE_OPTIONS.blog
+                  : tab === "social"
+                    ? TEMPLATE_OPTIONS.social
+                    : TEMPLATE_OPTIONS.email
+                ).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm">
               <span className="text-xs text-slate-400">Practice area</span>
               <select
                 className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
@@ -265,6 +392,16 @@ export default function ContentPage() {
                 </select>
               </label>
             )}
+
+            <label className="flex cursor-pointer items-center gap-2 rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                checked={useBrandVoice}
+                onChange={(e) => setUseBrandVoice(e.target.checked)}
+                className="h-4 w-4 rounded border-[#2a3f5f] bg-[#0f1729] text-[#185FA5]"
+              />
+              Generate with brand voice
+            </label>
 
             {err ? <p className="text-sm text-rose-300">{err}</p> : null}
 
@@ -341,6 +478,99 @@ export default function ContentPage() {
           >
             {brandLoading ? "Saving…" : "Save brand voice"}
           </button>
+          {profile ? (
+            <div className="mt-4 rounded border border-[#2a3f5f] bg-[#0f1729] p-4 text-sm text-slate-200">
+              <p className="font-semibold text-white">Guidelines summary</p>
+              <p className="mt-2 text-slate-300">{profile.guidelinesSummary}</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Tone</p>
+                  <p className="mt-1 text-slate-300">{profile.tone.join(", ") || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Legal terms</p>
+                  <p className="mt-1 text-slate-300">{profile.legalTerms.join(", ") || "—"}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
+          <h2 className="text-lg font-semibold text-white">Upload brand documents</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Upload PDF assets used to train writing style and legal messaging.
+          </p>
+          {docError ? <p className="mt-3 text-sm text-rose-300">{docError}</p> : null}
+          {docMessage ? <p className="mt-3 text-sm text-emerald-300">{docMessage}</p> : null}
+          {uploadProgress ? <p className="mt-2 text-xs text-slate-400">{uploadProgress}</p> : null}
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded border border-[#2a3f5f] bg-[#0f1729] p-4">
+              <p className="font-medium text-white">Firm brand documents (PDF)</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Upload brand voice guides, website copy decks, and legal content standards.
+              </p>
+              <input
+                className="mt-3 block w-full text-sm text-slate-300"
+                type="file"
+                accept=".pdf,application/pdf"
+                multiple
+                onChange={(e) => setBrandFiles(e.target.files)}
+              />
+              <button
+                type="button"
+                disabled={uploadingType !== null}
+                onClick={() => void uploadDocs("brand")}
+                className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                style={{ backgroundColor: ACCENT }}
+              >
+                {uploadingType === "brand" ? "Processing..." : "Train brand voice from PDFs"}
+              </button>
+            </div>
+            <div className="rounded border border-[#2a3f5f] bg-[#0f1729] p-4">
+              <p className="font-medium text-white">Sample marketing content (PDF)</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Upload past newsletters, social exports, and campaign writeups for pattern analysis.
+              </p>
+              <input
+                className="mt-3 block w-full text-sm text-slate-300"
+                type="file"
+                accept=".pdf,application/pdf"
+                multiple
+                onChange={(e) => setSampleFiles(e.target.files)}
+              />
+              <button
+                type="button"
+                disabled={uploadingType !== null}
+                onClick={() => void uploadDocs("sample")}
+                className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                style={{ backgroundColor: "#1d9e75" }}
+              >
+                {uploadingType === "sample" ? "Processing..." : "Analyze sample marketing PDFs"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <p className="text-sm font-medium text-white">Uploaded documents</p>
+            <ul className="mt-2 space-y-2">
+              {documents.slice(0, 10).map((doc) => (
+                <li
+                  key={doc.id}
+                  className="rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-xs text-slate-300"
+                >
+                  <span className="font-medium text-slate-200">{doc.filename}</span>
+                  <span className="ml-2 text-slate-500">
+                    ({doc.document_type}, {doc.text_length.toLocaleString()} chars)
+                  </span>
+                </li>
+              ))}
+              {!documents.length ? (
+                <li className="text-xs text-slate-500">No uploaded documents yet.</li>
+              ) : null}
+            </ul>
+          </div>
         </section>
       </main>
     </div>
