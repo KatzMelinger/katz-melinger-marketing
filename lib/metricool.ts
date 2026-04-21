@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { logger } from "./logger";
 
 const METRICOOL_API_BASE = "https://app.metricool.com/api";
