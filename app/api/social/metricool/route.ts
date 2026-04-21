@@ -115,16 +115,6 @@ function parseRange(request: Request): { from: string; to: string } {
   return utcDayBoundary(30);
 }
 
-async function safeJsonResponse(res: Response): Promise<unknown> {
-  const t = await res.text();
-  if (!t?.trim()) return null;
-  try {
-    return JSON.parse(t) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 const POST_NETWORKS: SocialNetworkSlug[] = [
   "instagram",
   "facebook",
@@ -218,33 +208,12 @@ export async function GET(request: Request) {
     let trend: TrendPoint[] = [];
     let trendError: string | undefined;
     try {
-      const [engRes, folRes] = await Promise.all([
-        getTimeline(token, userId, blogId, {
-          network: "instagram",
-          metric: "engagement",
-          subject: "posts",
-          from: range.from,
-          to: range.to,
-          timezone,
-        }),
-        getTimeline(token, userId, blogId, {
-          network: "instagram",
-          metric: "followers",
-          subject: "account",
-          from: range.from,
-          to: range.to,
-          timezone,
-        }),
+      const opts = { from: range.from, to: range.to, timezone };
+      const [engData, folData] = await Promise.all([
+        getTimeline("instagram", "engagement", "posts", opts),
+        getTimeline("instagram", "followers", "account", opts),
       ]);
-      const [engJson, folJson] = await Promise.all([
-        safeJsonResponse(engRes),
-        safeJsonResponse(folRes),
-      ]);
-      if (!engRes.ok || !folRes.ok) {
-        trendError = `timeline HTTP ${engRes.status} / ${folRes.status}`;
-      } else {
-        trend = timelineToTrendPoints(engJson, folJson);
-      }
+      trend = timelineToTrendPoints(engData, folData);
     } catch (e) {
       trendError = e instanceof Error ? e.message : String(e);
     }

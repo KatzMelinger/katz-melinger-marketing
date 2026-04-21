@@ -128,7 +128,8 @@ export function timelinesQuery(
   return { ...base, subject };
 }
 
-export async function getTimeline(
+/** Raw GET to `/v2/analytics/timelines` (use when you already have token / userId / blogId). */
+export async function fetchTimeline(
   token: string,
   userId: string,
   blogId: string,
@@ -141,6 +142,82 @@ export async function getTimeline(
     blogId,
     timelinesQuery(params),
   );
+}
+
+export type MetricoolTimelinePoint = {
+  dateTime: string;
+  value: number;
+};
+
+export type MetricoolTimelinePayload = {
+  data: Array<{
+    values: MetricoolTimelinePoint[];
+  }>;
+};
+
+export type GetTimelineOptions = {
+  from?: string;
+  to?: string;
+  timezone?: string;
+};
+
+/** Last N UTC days as Metricool `from` / `to` ISO strings (inclusive end-of-day). */
+export function defaultMetricoolDateRange(days = 30): { from: string; to: string } {
+  const end = new Date();
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - days);
+  const ymd = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    from: `${ymd(start)}T00:00:00.000Z`,
+    to: `${ymd(end)}T23:59:59.999Z`,
+  };
+}
+
+/**
+ * Convenience API (reads METRICOOL_* from the environment).
+ * @example const data = await getTimeline("instagram", "followers", "account");
+ */
+export async function getTimeline(
+  network: string,
+  metric: string,
+  subject: string,
+  options?: GetTimelineOptions,
+): Promise<MetricoolTimelinePayload> {
+  const env = readMetricoolEnv();
+  if (!env.ok) {
+    throw new Error(env.error);
+  }
+  const { from, to } =
+    options?.from != null && options?.to != null
+      ? { from: options.from, to: options.to }
+      : defaultMetricoolDateRange(30);
+
+  const res = await fetchTimeline(env.token, env.userId, env.blogId, {
+    network,
+    metric,
+    subject,
+    from,
+    to,
+    timezone: options?.timezone,
+  });
+
+  const text = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = text ? (JSON.parse(text) as unknown) : null;
+  } catch {
+    throw new Error(
+      `Metricool timelines: response was not JSON (HTTP ${res.status})`,
+    );
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      `Metricool timelines HTTP ${res.status}: ${typeof parsed === "object" && parsed != null ? JSON.stringify(parsed).slice(0, 400) : String(text).slice(0, 400)}`,
+    );
+  }
+
+  return parsed as MetricoolTimelinePayload;
 }
 
 export async function getPosts(
@@ -250,17 +327,17 @@ export async function getSocialOverview(
   const tasks = OVERVIEW_NETWORKS.map(async (spec) => {
     const common = { from, to, timezone, network: spec.network };
     const [accountRes, engRes, countRes] = await Promise.all([
-      getTimeline(token, userId, blogId, {
+      fetchTimeline(token, userId, blogId, {
         ...common,
         metric: spec.accountMetric,
         subject: "account",
       }),
-      getTimeline(token, userId, blogId, {
+      fetchTimeline(token, userId, blogId, {
         ...common,
         metric: spec.postsEngagementMetric,
         subject: "posts",
       }),
-      getTimeline(token, userId, blogId, {
+      fetchTimeline(token, userId, blogId, {
         ...common,
         metric: "count",
         subject: "posts",
