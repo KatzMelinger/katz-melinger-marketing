@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 
 import { NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
 
 import {
   getLatestBrandProfile,
@@ -10,6 +9,35 @@ import {
   recomputeAndSaveBrandProfile,
   type BrandDocumentType,
 } from "@/lib/content-brand-voice";
+
+type PdfParseCtor = new (opts: { data: Buffer }) => {
+  getText: () => Promise<{ text?: string }>;
+  destroy: () => Promise<void> | void;
+};
+
+async function loadPdfParse(): Promise<
+  | { ok: true; PDFParse: PdfParseCtor }
+  | { ok: false; error: string }
+> {
+  try {
+    const specifier = "pdf-parse";
+    const mod = (await import(/* webpackIgnore: true */ specifier)) as {
+      PDFParse?: PdfParseCtor;
+    };
+    if (!mod.PDFParse) {
+      return { ok: false, error: "pdf-parse module is missing PDFParse export." };
+    }
+    return { ok: true, PDFParse: mod.PDFParse };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error
+          ? `pdf-parse is not available: ${e.message}`
+          : "pdf-parse is not available in this deployment.",
+    };
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -66,10 +94,24 @@ export async function POST(request: Request) {
   const uploaded: Array<{ filename: string; chars: number }> = [];
   const failures: Array<{ filename: string; error: string }> = [];
 
+  const pdfModule = await loadPdfParse();
+  if (!pdfModule.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        uploaded,
+        failures: accepted.map((file) => ({ filename: file.name, error: pdfModule.error })),
+        profile: await getLatestBrandProfile(),
+        message: pdfModule.error,
+      },
+      { status: 503 },
+    );
+  }
+
   for (const file of accepted) {
     try {
       const arr = await file.arrayBuffer();
-      const parser = new PDFParse({ data: Buffer.from(arr) });
+      const parser = new pdfModule.PDFParse({ data: Buffer.from(arr) });
       const parsed = await parser.getText();
       await parser.destroy();
       const text = (parsed.text ?? "").trim();
