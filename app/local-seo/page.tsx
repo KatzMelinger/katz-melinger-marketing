@@ -10,6 +10,11 @@ const BORDER = "#2a3f5f";
 const ACCENT = "#185FA5";
 
 const REFRESH_MS = 30_000;
+const DISCOVERY_CACHE_TTL_MS = 10 * 60_000;
+const GBP_ACCOUNTS_CACHE_KEY = "gbp:accounts:cache:v1";
+const GBP_LOCATIONS_CACHE_PREFIX = "gbp:locations:cache:v1:";
+const GBP_SELECTED_ACCOUNT_KEY = "gbp:selected-account:v1";
+const GBP_SELECTED_LOCATION_KEY = "gbp:selected-location:v1";
 
 export type LocalSeoTabId = "gbp" | "reviews" | "rankings" | "citations";
 
@@ -41,7 +46,46 @@ export interface GbpDashboardApiResponse {
   accounts?: Array<{ accountId: string; name: string }>;
   setupHints?: string[];
   discoveryError?: string | null;
+  rateLimited?: boolean;
+  retryAfterSeconds?: number | null;
   googleBusinessDebug?: unknown;
+}
+
+type TimedCache<T> = {
+  savedAt: number;
+  items: T;
+};
+
+function readTimedCache<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as TimedCache<T>;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.savedAt !== "number" ||
+      !("items" in parsed)
+    ) {
+      return null;
+    }
+    if (Date.now() - parsed.savedAt > DISCOVERY_CACHE_TTL_MS) return null;
+    return parsed.items;
+  } catch {
+    return null;
+  }
+}
+
+function writeTimedCache<T>(key: string, items: T): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(
+    key,
+    JSON.stringify({
+      savedAt: Date.now(),
+      items,
+    } satisfies TimedCache<T>),
+  );
 }
 
 export interface LocalBusinessInfo {
@@ -140,7 +184,13 @@ const isDev = process.env.NODE_ENV === "development";
 async function fetchLocalSeoDashboard(opts?: {
   accountId?: string | null;
   locationId?: string | null;
-}): Promise<{ data?: LocalSeoDashboardData; recovery?: GbpDashboardApiResponse; error?: string }> {
+}): Promise<{
+  data?: LocalSeoDashboardData;
+  recovery?: GbpDashboardApiResponse;
+  error?: string;
+  rateLimited?: boolean;
+  retryAfterSeconds?: number | null;
+}> {
   const params = new URLSearchParams();
   params.set("action", "dashboard");
   if (isDev) params.set("debug", "1");
@@ -152,7 +202,11 @@ async function fetchLocalSeoDashboard(opts?: {
   });
   const data = (await res.json()) as GbpDashboardApiResponse;
   if (data.needsAccountSelection || data.needsLocationSelection) {
-    return { recovery: data };
+    return {
+      recovery: data,
+      rateLimited: data.rateLimited === true,
+      retryAfterSeconds: data.retryAfterSeconds ?? null,
+    };
   }
   if (!res.ok) {
     console.warn("[Local SEO] GBP API error response:", {
@@ -166,7 +220,11 @@ async function fetchLocalSeoDashboard(opts?: {
       data.googleError?.message && !base.includes(data.googleError.message)
         ? ` — ${data.googleError.message}`
         : "";
-    return { error: `${base}${extra}` };
+    return {
+      error: `${base}${extra}`,
+      rateLimited: data.rateLimited === true,
+      retryAfterSeconds: data.retryAfterSeconds ?? null,
+    };
   }
   if (!data.business) {
     return { error: "Google Business Profile dashboard payload is missing business data." };
@@ -380,7 +438,11 @@ export default function LocalSeoPlatformPage() {
   const [locations, setLocations] = useState<Array<{ locationId: string; title: string; name: string }>>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
+  const [discoveringAccounts, setDiscoveringAccounts] = useState(false);
   const [discoveringLocations, setDiscoveringLocations] = useState(false);
+  const [useCachedDiscovery, setUseCachedDiscovery] = useState(true);
+  const [rateLimitRetryAt, setRateLimitRetryAt] = useState<number | null>(null);
+  const [retryCountdownSec, setRetryCountdownSec] = useState(0);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [saStatus, setSaStatus] = useState<unknown>(null);
@@ -405,8 +467,31 @@ export default function LocalSeoPlatformPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const cachedAccount = localStorage.getItem(GBP_SELECTED_ACCOUNT_KEY) ?? "";
+    const cachedLocation = localStorage.getItem(GBP_SELECTED_LOCATION_KEY) ?? "";
+    if (cachedAccount) setSelectedAccountId(cachedAccount);
+    if (cachedLocation) setSelectedLocationId(cachedLocation);
+
+    const cachedAccounts = readTimedCache<Array<{ accountId: string; name: string }>>(
+      GBP_ACCOUNTS_CACHE_KEY,
+    );
+    if (cachedAccounts?.length) setAccounts(cachedAccounts);
+
+    if (cachedAccount) {
+      const cachedLocations = readTimedCache<
+        Array<{ locationId: string; title: string; name: string }>
+      >(`${GBP_LOCATIONS_CACHE_PREFIX}${cachedAccount}`);
+      if (cachedLocations?.length) setLocations(cachedLocations);
+    }
+  }, []);
+
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
+    if (silent && rateLimitRetryAt && Date.now() < rateLimitRetryAt) {
+      return;
+    }
     if (silent) setIsRefreshing(true);
     else {
       setLoading(true);
@@ -419,6 +504,11 @@ export default function LocalSeoPlatformPage() {
         accountId: selectedAccountId || null,
         locationId: selectedLocationId || null,
       });
+      if (result.rateLimited && result.retryAfterSeconds) {
+        setRateLimitRetryAt(Date.now() + result.retryAfterSeconds * 1000);
+      } else if (!result.rateLimited) {
+        setRateLimitRetryAt(null);
+      }
       if (result.error) {
         setError(result.error);
         if (!silent) setBusiness(null);
@@ -426,8 +516,21 @@ export default function LocalSeoPlatformPage() {
         setRecoveryState(result.recovery);
         setAccounts(result.recovery.accounts ?? []);
         setLocations(result.recovery.locations ?? []);
-        if (result.recovery.accountId) setSelectedAccountId(result.recovery.accountId);
-        if (result.recovery.locationId) setSelectedLocationId(result.recovery.locationId);
+        if (result.recovery.accountId) {
+          setSelectedAccountId(result.recovery.accountId);
+        } else if (result.recovery.accounts?.length && !selectedAccountId) {
+          setSelectedAccountId(result.recovery.accounts[0]?.accountId ?? "");
+        }
+        if (result.recovery.locations?.length) {
+          const hasCurrent = result.recovery.locations.some(
+            (row) => row.locationId === selectedLocationId,
+          );
+          if (!hasCurrent) {
+            setSelectedLocationId(result.recovery.locations[0]?.locationId ?? "");
+          }
+        } else if (result.recovery.locationId) {
+          setSelectedLocationId(result.recovery.locationId);
+        }
         setError(result.recovery.error ?? "Choose a valid account and location.");
         if (!silent) setBusiness(null);
       } else if (result.data) {
@@ -453,9 +556,21 @@ export default function LocalSeoPlatformPage() {
       if (silent) setIsRefreshing(false);
       else setLoading(false);
     }
-  }, [selectedAccountId, selectedLocationId]);
+  }, [rateLimitRetryAt, selectedAccountId, selectedLocationId]);
 
-  const discoverAccounts = useCallback(async () => {
+  const discoverAccounts = useCallback(async (opts?: { forceNetwork?: boolean }) => {
+    const forceNetwork = opts?.forceNetwork === true;
+    if (useCachedDiscovery && !forceNetwork) {
+      const cached = readTimedCache<Array<{ accountId: string; name: string }>>(
+        GBP_ACCOUNTS_CACHE_KEY,
+      );
+      if (cached?.length) {
+        setAccounts(cached);
+        if (!selectedAccountId) setSelectedAccountId(cached[0]?.accountId ?? "");
+        return;
+      }
+    }
+    setDiscoveringAccounts(true);
     try {
       const params = new URLSearchParams();
       params.set("action", "accounts");
@@ -466,23 +581,43 @@ export default function LocalSeoPlatformPage() {
       const json = (await res.json()) as {
         accounts?: Array<{ accountId: string; name: string }>;
         error?: string;
+        rateLimited?: boolean;
+        retryAfterSeconds?: number | null;
       };
       if (!res.ok) {
         setError(json.error ?? `Failed to discover accounts (${res.status})`);
+        if (json.rateLimited && json.retryAfterSeconds) {
+          setRateLimitRetryAt(Date.now() + json.retryAfterSeconds * 1000);
+        }
         return;
       }
       const rows = Array.isArray(json.accounts) ? json.accounts : [];
       setAccounts(rows);
+      writeTimedCache(GBP_ACCOUNTS_CACHE_KEY, rows);
+      setRateLimitRetryAt(null);
       if (rows.length && !selectedAccountId) {
         setSelectedAccountId(rows[0]?.accountId ?? "");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to discover accounts");
+    } finally {
+      setDiscoveringAccounts(false);
     }
-  }, [selectedAccountId]);
+  }, [selectedAccountId, useCachedDiscovery]);
 
-  const discoverLocations = useCallback(async (accountId: string) => {
+  const discoverLocations = useCallback(async (accountId: string, opts?: { forceNetwork?: boolean }) => {
     if (!accountId) return;
+    const forceNetwork = opts?.forceNetwork === true;
+    if (useCachedDiscovery && !forceNetwork) {
+      const cached = readTimedCache<Array<{ locationId: string; title: string; name: string }>>(
+        `${GBP_LOCATIONS_CACHE_PREFIX}${accountId}`,
+      );
+      if (cached?.length) {
+        setLocations(cached);
+        if (!selectedLocationId) setSelectedLocationId(cached[0]?.locationId ?? "");
+        return;
+      }
+    }
     setDiscoveringLocations(true);
     try {
       const params = new URLSearchParams();
@@ -495,14 +630,21 @@ export default function LocalSeoPlatformPage() {
       const json = (await res.json()) as {
         locations?: Array<{ locationId: string; title: string; name: string }>;
         error?: string;
+        rateLimited?: boolean;
+        retryAfterSeconds?: number | null;
       };
       if (!res.ok) {
         setError(json.error ?? `Failed to discover locations (${res.status})`);
+        if (json.rateLimited && json.retryAfterSeconds) {
+          setRateLimitRetryAt(Date.now() + json.retryAfterSeconds * 1000);
+        }
         setLocations([]);
         return;
       }
       const rows = Array.isArray(json.locations) ? json.locations : [];
       setLocations(rows);
+      writeTimedCache(`${GBP_LOCATIONS_CACHE_PREFIX}${accountId}`, rows);
+      setRateLimitRetryAt(null);
       if (rows.length && !selectedLocationId) {
         setSelectedLocationId(rows[0]?.locationId ?? "");
       }
@@ -512,7 +654,7 @@ export default function LocalSeoPlatformPage() {
     } finally {
       setDiscoveringLocations(false);
     }
-  }, [selectedLocationId]);
+  }, [selectedLocationId, useCachedDiscovery]);
 
   const createLocalPost = useCallback(
     async (topicType: "STANDARD" | "EVENT" | "OFFER") => {
@@ -547,8 +689,15 @@ export default function LocalSeoPlatformPage() {
             locationId: selectedLocationId || undefined,
           }),
         });
-        const payload = (await res.json()) as { error?: string };
+        const payload = (await res.json()) as {
+          error?: string;
+          rateLimited?: boolean;
+          retryAfterSeconds?: number | null;
+        };
         if (!res.ok) {
+          if (payload.rateLimited && payload.retryAfterSeconds) {
+            setRateLimitRetryAt(Date.now() + payload.retryAfterSeconds * 1000);
+          }
           throw new Error(payload.error ?? "Failed to create post");
         }
         await load();
@@ -564,6 +713,16 @@ export default function LocalSeoPlatformPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (selectedAccountId) localStorage.setItem(GBP_SELECTED_ACCOUNT_KEY, selectedAccountId);
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (selectedLocationId) localStorage.setItem(GBP_SELECTED_LOCATION_KEY, selectedLocationId);
+  }, [selectedLocationId]);
 
   useEffect(() => {
     if ((recoveryState?.needsAccountSelection || !accounts.length) && !selectedAccountId) {
@@ -588,6 +747,21 @@ export default function LocalSeoPlatformPage() {
     }, REFRESH_MS);
     return () => window.clearInterval(id);
   }, [load]);
+
+  useEffect(() => {
+    if (!rateLimitRetryAt) {
+      setRetryCountdownSec(0);
+      return;
+    }
+    const tick = () => {
+      const seconds = Math.max(0, Math.ceil((rateLimitRetryAt - Date.now()) / 1000));
+      setRetryCountdownSec(seconds);
+      if (seconds <= 0) setRateLimitRetryAt(null);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [rateLimitRetryAt]);
 
   const overallRating = useMemo(
     () => aggregateRating(platformReviews),
@@ -652,12 +826,35 @@ export default function LocalSeoPlatformPage() {
           </button>
         </div>
 
+        <label className="inline-flex items-center gap-2 text-xs text-slate-400">
+          <input
+            type="checkbox"
+            checked={useCachedDiscovery}
+            onChange={(e) => setUseCachedDiscovery(e.target.checked)}
+            className="h-4 w-4 rounded border-[#2a3f5f] bg-[#0f1729] text-[#185FA5] focus:ring-[#185FA5]"
+          />
+          Use cached account/location discovery when available (reduces Google API calls)
+        </label>
+
         <div className="flex flex-wrap gap-2 border-b border-[#2a3f5f] pb-3">
           {tabBtn("gbp", "Google Business Profile")}
           {tabBtn("reviews", "Reviews")}
           {tabBtn("rankings", "Rankings")}
           {tabBtn("citations", "Citations")}
         </div>
+
+        {rateLimitRetryAt ? (
+          <div
+            className="rounded-lg border border-amber-700/60 bg-amber-950/30 p-4 text-sm text-amber-100"
+            role="status"
+          >
+            Google Business Profile API quota is temporarily rate-limited. Retrying in{" "}
+            <span className="font-semibold tabular-nums">{retryCountdownSec}s</span>.
+            <span className="ml-2 text-amber-200/80">
+              Tip: keep "Use cached account/location discovery" enabled to reduce calls.
+            </span>
+          </div>
+        ) : null}
 
         {error ? (
           <div
@@ -691,6 +888,7 @@ export default function LocalSeoPlatformPage() {
                     setSelectedAccountId(e.target.value);
                     setSelectedLocationId("");
                   }}
+                  disabled={discoveringAccounts}
                 >
                   <option value="">Select account</option>
                   {accounts.map((a) => (
@@ -725,16 +923,41 @@ export default function LocalSeoPlatformPage() {
                 className="rounded-md px-3 py-2 text-sm font-medium text-white"
                 style={{ backgroundColor: ACCENT }}
                 onClick={() => void load()}
-                disabled={!selectedAccountId || !selectedLocationId || loading}
+                disabled={
+                  !selectedAccountId ||
+                  !selectedLocationId ||
+                  loading ||
+                  discoveringAccounts ||
+                  discoveringLocations
+                }
               >
                 Apply selection
               </button>
               <button
                 type="button"
                 className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200 hover:bg-[#1a2540]"
-                onClick={() => void discoverAccounts()}
+                onClick={() => void discoverAccounts({ forceNetwork: true })}
+                disabled={discoveringAccounts || discoveringLocations}
               >
-                Rediscover accounts
+                {discoveringAccounts ? "Discovering accounts..." : "Rediscover accounts"}
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200 hover:bg-[#1a2540]"
+                onClick={() => {
+                  const cachedAccounts = readTimedCache<
+                    Array<{ accountId: string; name: string }>
+                  >(GBP_ACCOUNTS_CACHE_KEY);
+                  const cachedLocations = selectedAccountId
+                    ? readTimedCache<
+                        Array<{ locationId: string; title: string; name: string }>
+                      >(`${GBP_LOCATIONS_CACHE_PREFIX}${selectedAccountId}`)
+                    : null;
+                  if (cachedAccounts?.length) setAccounts(cachedAccounts);
+                  if (cachedLocations?.length) setLocations(cachedLocations);
+                }}
+              >
+                Use cached data
               </button>
             </div>
           </section>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
+import { getAuthConfig } from "@/lib/constant-contact-server";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ function getFallback(error?: string): ConstantContactPayload {
 }
 
 export async function GET() {
-  const accessToken = process.env.CONSTANT_CONTACT_ACCESS_TOKEN?.trim();
+  const auth = await getAuthConfig();
   const listId = process.env.CONSTANT_CONTACT_LIST_ID?.trim();
 
   const cmsLeadData =
@@ -71,8 +72,8 @@ export async function GET() {
       "/api/v1/leads/summary",
     )) ?? null;
 
-  if (!accessToken) {
-    const payload = getFallback("Missing CONSTANT_CONTACT_ACCESS_TOKEN");
+  if ("error" in auth) {
+    const payload = getFallback(auth.error);
     payload.dashboard.contacts = extractNumber(cmsLeadData?.totalLeads);
     payload.dashboard.monthlyGrowth = extractNumber(cmsLeadData?.monthlyGrowth);
     return NextResponse.json(payload);
@@ -82,13 +83,13 @@ export async function GET() {
     const [campaignRes, contactRes] = await Promise.all([
       fetch("https://api.cc.email/v3/emails?limit=10", {
         cache: "no-store",
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${auth.accessToken}` },
       }),
       fetch(
         `https://api.cc.email/v3/contacts${listId ? `?list_ids=${encodeURIComponent(listId)}` : ""}`,
         {
           cache: "no-store",
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: { Authorization: `Bearer ${auth.accessToken}` },
         },
       ),
     ]);

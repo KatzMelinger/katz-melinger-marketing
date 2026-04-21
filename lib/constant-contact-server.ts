@@ -1,9 +1,7 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
-
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const CONSTANT_CONTACT_API_BASE = "https://api.cc.email/v3";
 const CONSTANT_CONTACT_AUTH_BASE =
@@ -47,6 +45,12 @@ type OAuthConfig = {
   redirectUri: string;
 };
 
+type StoredCcTokens = {
+  accessToken: string;
+  refreshToken: string | null;
+  expiresAt: string | null;
+};
+
 export type CcAuthFailureJson = {
   error: string;
   status: 401;
@@ -55,16 +59,15 @@ export type CcAuthFailureJson = {
   details?: unknown;
 };
 
-export function getAuthConfig():
-  | { accessToken: string; refreshToken: string | null }
-  | { error: string } {
-  const accessToken = process.env.CONSTANT_CONTACT_ACCESS_TOKEN?.trim();
-  if (!accessToken) {
-    return { error: "Missing CONSTANT_CONTACT_ACCESS_TOKEN" };
+export async function getAuthConfig():
+  Promise<{ accessToken: string; refreshToken: string | null } | { error: string }> {
+  const tokens = await getLatestConstantContactTokens();
+  if ("error" in tokens) {
+    return { error: tokens.error };
   }
   return {
-    accessToken,
-    refreshToken: process.env.CONSTANT_CONTACT_REFRESH_TOKEN?.trim() || null,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
   };
 }
 
@@ -98,32 +101,41 @@ export async function parseJsonSafe(response: Response): Promise<unknown> {
   }
 }
 
-function envFilePath(): string {
-  return path.join(process.cwd(), ".env.local");
-}
-
-async function upsertEnvVars(updates: Record<string, string>): Promise<void> {
-  const file = envFilePath();
-  let content = "";
-  try {
-    content = await fs.readFile(file, "utf8");
-  } catch {
-    content = "";
+export async function getLatestConstantContactTokens():
+  Promise<StoredCcTokens | { error: string }> {
+  const sb = getSupabaseServer();
+  if (!sb) {
+    return { error: "Supabase is not configured for OAuth token storage." };
   }
 
-  for (const [key, value] of Object.entries(updates)) {
-    const escaped = value.replace(/\r?\n/g, "");
-    const line = `${key}=${escaped}`;
-    const pattern = new RegExp(`^${key}=.*$`, "m");
-    if (pattern.test(content)) {
-      content = content.replace(pattern, line);
-    } else {
-      content = content.trimEnd() + (content.trimEnd() ? "\n" : "") + line + "\n";
-    }
-    process.env[key] = escaped;
+  const { data, error } = await sb
+    .from("oauth_tokens")
+    .select("access_token, refresh_token, expires_at")
+    .eq("provider", "constant_contact")
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      error: `Failed to load Constant Contact OAuth tokens from Supabase: ${error.message}`,
+    };
+  }
+  if (!data?.access_token) {
+    return {
+      error: "No Constant Contact OAuth tokens stored. Reconnect Constant Contact.",
+    };
   }
 
-  await fs.writeFile(file, content, "utf8");
+  return {
+    accessToken: String(data.access_token),
+    refreshToken:
+      typeof data.refresh_token === "string" && data.refresh_token.trim()
+        ? data.refresh_token
+        : null,
+    expiresAt: typeof data.expires_at === "string" ? data.expires_at : null,
+  };
 }
 
 export async function persistConstantContactTokens(
@@ -132,17 +144,61 @@ export async function persistConstantContactTokens(
   if (!tokens.access_token) {
     throw new Error("Missing access_token in OAuth token response");
   }
-  const updates: Record<string, string> = {
-    CONSTANT_CONTACT_ACCESS_TOKEN: tokens.access_token,
-  };
-  if (tokens.refresh_token) {
-    updates.CONSTANT_CONTACT_REFRESH_TOKEN = tokens.refresh_token;
+
+  const sb = getSupabaseServer();
+  if (!sb) {
+    throw new Error("Supabase is not configured for OAuth token storage.");
   }
-  if (typeof tokens.expires_in === "number" && Number.isFinite(tokens.expires_in)) {
-    const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-    updates.CONSTANT_CONTACT_ACCESS_TOKEN_EXPIRES_AT = expiresAt;
+
+  const current = await getLatestConstantContactTokens();
+  const expiresAt =
+    typeof tokens.expires_in === "number" && Number.isFinite(tokens.expires_in)
+      ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+      : null;
+  const refreshToken =
+    typeof tokens.refresh_token === "string" && tokens.refresh_token.trim()
+      ? tokens.refresh_token
+      : "error" in current
+        ? null
+        : current.refreshToken;
+
+  const { data: existing, error: existingError } = await sb
+    .from("oauth_tokens")
+    .select("id")
+    .eq("provider", "constant_contact")
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) {
+    throw new Error(`Failed to load existing OAuth token row: ${existingError.message}`);
   }
-  await upsertEnvVars(updates);
+
+  if (existing?.id) {
+    const { error } = await sb
+      .from("oauth_tokens")
+      .update({
+        access_token: tokens.access_token,
+        refresh_token: refreshToken,
+        expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existing.id);
+    if (error) {
+      throw new Error(`Failed to update OAuth tokens: ${error.message}`);
+    }
+    return;
+  }
+
+  const { error } = await sb.from("oauth_tokens").insert({
+    provider: "constant_contact",
+    access_token: tokens.access_token,
+    refresh_token: refreshToken,
+    expires_at: expiresAt,
+  });
+  if (error) {
+    throw new Error(`Failed to insert OAuth tokens: ${error.message}`);
+  }
 }
 
 export function getConstantContactAuthUrl(state: string): string {
@@ -206,7 +262,11 @@ export async function exchangeAuthorizationCode(
 
 export async function refreshAccessTokenIfPossible():
   Promise<{ ok: true; accessToken: string } | { ok: false; error: string }> {
-  const refreshToken = process.env.CONSTANT_CONTACT_REFRESH_TOKEN?.trim();
+  const current = await getLatestConstantContactTokens();
+  if ("error" in current) {
+    return { ok: false, error: current.error };
+  }
+  const refreshToken = current.refreshToken;
   if (!refreshToken) {
     return { ok: false, error: "No refresh token available. Reconnect required." };
   }
@@ -231,7 +291,7 @@ export async function ccAuthedFetch(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const cfg = getAuthConfig();
+  const cfg = await getAuthConfig();
   if ("error" in cfg) {
     throw new Error(cfg.error);
   }
@@ -297,7 +357,7 @@ function ccErrorResponse(
 }
 
 export async function fetchContactListsResponse(): Promise<NextResponse> {
-  const cfg = getAuthConfig();
+  const cfg = await getAuthConfig();
   if ("error" in cfg) {
     return NextResponse.json({ error: cfg.error }, { status: 503 });
   }
@@ -348,7 +408,7 @@ type SyncContactsResult =
  * verification with synced count 0.
  */
 export async function syncContactsToList(listId: string): Promise<SyncContactsResult> {
-  const cfg = getAuthConfig();
+  const cfg = await getAuthConfig();
   if ("error" in cfg) {
     return { ok: false, error: cfg.error };
   }

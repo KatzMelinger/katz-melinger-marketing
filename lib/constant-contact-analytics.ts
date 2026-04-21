@@ -4,8 +4,10 @@ import { fetchCmsJson } from "@/lib/cms-server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
 import {
-  authHeaders,
+  ccAuthedFetch,
   CONSTANT_CONTACT_API_BASE,
+  getAuthConfig,
+  getConstantContactAuthUrl,
   parseJsonSafe,
   type ConstantContactApiErrorBody,
 } from "@/lib/constant-contact-server";
@@ -138,13 +140,16 @@ export async function recordSyncActivityServer(
 }
 
 export async function fetchAnalyticsResponse(): Promise<NextResponse> {
-  const token = process.env.CONSTANT_CONTACT_ACCESS_TOKEN?.trim();
-  const apiKey = process.env.CONSTANT_CONTACT_API_KEY?.trim();
-
-  if (!token || !apiKey) {
+  const cfg = await getAuthConfig();
+  if ("error" in cfg) {
     return NextResponse.json(
-      { error: "Missing Constant Contact credentials" },
-      { status: 503 },
+      {
+        error: cfg.error,
+        status: 401,
+        needsAuth: true,
+        authUrl: getConstantContactAuthUrl("cc-reconnect"),
+      },
+      { status: 401 },
     );
   }
 
@@ -153,8 +158,8 @@ export async function fetchAnalyticsResponse(): Promise<NextResponse> {
 
   try {
     const [emailsRes, listsRes] = await Promise.all([
-      fetch(emailsUrl, { cache: "no-store", headers: authHeaders(token) }),
-      fetch(listsUrl, { cache: "no-store", headers: authHeaders(token) }),
+      ccAuthedFetch(emailsUrl),
+      ccAuthedFetch(listsUrl),
     ]);
 
     const emailsBody = await parseJsonSafe(emailsRes);
@@ -162,6 +167,20 @@ export async function fetchAnalyticsResponse(): Promise<NextResponse> {
 
     if (!emailsRes.ok) {
       const err = emailsBody as ConstantContactApiErrorBody;
+      if (emailsRes.status === 401) {
+        return NextResponse.json(
+          {
+            error:
+              err?.error_message ??
+              "Constant Contact token expired or revoked. Reconnect required.",
+            status: 401,
+            needsAuth: true,
+            authUrl: getConstantContactAuthUrl("cc-reconnect"),
+            details: emailsBody,
+          },
+          { status: 401 },
+        );
+      }
       return NextResponse.json(
         {
           error:

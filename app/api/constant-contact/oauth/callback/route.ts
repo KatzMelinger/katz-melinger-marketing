@@ -47,9 +47,11 @@ export async function GET(request: NextRequest) {
     response.cookies.delete("cc_oauth_next");
     return response;
   } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "Failed to exchange authorization code.";
     return errorRedirect(
       url,
-      e instanceof Error ? e.message : "Failed to exchange authorization code.",
+      `OAuth callback failed: ${message}`,
     );
   }
 }

@@ -25,6 +25,24 @@ type GbpLocationRow = {
   };
 };
 
+type CachedHttpResponse = {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  expiresAt: number;
+};
+
+const MIN_REQUEST_GAP_MS = 500;
+const DEFAULT_GET_CACHE_MS = 60_000;
+const NEGATIVE_GET_CACHE_MS = 20_000;
+
+const responseCache = new Map<string, CachedHttpResponse>();
+const inFlightRequests = new Map<string, Promise<Response>>();
+
+let throttleLock: Promise<void> = Promise.resolve();
+let nextAllowedAt = 0;
+
 function stripAccountPrefix(id: string): string {
   const t = id.trim();
   return t.startsWith("accounts/") ? t.slice("accounts/".length) : t;
@@ -58,9 +76,17 @@ function toReadableError(status: number, parsed: ParsedGoogleApiError): string {
 
 async function jsonErrorPayload(
   res: Response,
-): Promise<{ friendly: string; parsed: ParsedGoogleApiError }> {
+): Promise<{ friendly: string; parsed: ParsedGoogleApiError; retryAfterSeconds: number | null }> {
   const parsed = await parseGoogleApiErrorResponse(res);
-  return { friendly: toReadableError(res.status, parsed), parsed };
+  const retryAfter = res.headers.get("retry-after");
+  const parsedSec = retryAfter ? Number(retryAfter) : NaN;
+  const retryAfterSeconds =
+    Number.isFinite(parsedSec) && parsedSec > 0
+      ? Math.floor(parsedSec)
+      : res.status === 429
+        ? 30
+        : null;
+  return { friendly: toReadableError(res.status, parsed), parsed, retryAfterSeconds };
 }
 
 function formatAddress(addr: {
@@ -145,6 +171,64 @@ async function waitMs(ms: number): Promise<void> {
   });
 }
 
+async function throttleBeforeGoogleCall(): Promise<void> {
+  let release = () => {};
+  const previous = throttleLock;
+  throttleLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await previous;
+  try {
+    const now = Date.now();
+    const waitFor = Math.max(0, nextAllowedAt - now);
+    if (waitFor > 0) await waitMs(waitFor);
+    nextAllowedAt = Date.now() + MIN_REQUEST_GAP_MS;
+  } finally {
+    release();
+  }
+}
+
+function copyHeaders(res: Response): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of res.headers.entries()) out[k] = v;
+  return out;
+}
+
+function cacheTtlMs(url: string, status: number): number {
+  if (status >= 400) return NEGATIVE_GET_CACHE_MS;
+  if (url.includes("/accounts") || url.includes("/locations")) return 5 * 60_000;
+  return DEFAULT_GET_CACHE_MS;
+}
+
+function cacheKey(method: string, url: string): string {
+  return `${method.toUpperCase()} ${url}`;
+}
+
+function readCachedResponse(key: string): Response | null {
+  const cached = responseCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    responseCache.delete(key);
+    return null;
+  }
+  return new Response(cached.body, {
+    status: cached.status,
+    statusText: cached.statusText,
+    headers: cached.headers,
+  });
+}
+
+function writeCachedResponse(key: string, url: string, res: Response, body: string): void {
+  responseCache.set(key, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: copyHeaders(res),
+    body,
+    expiresAt: Date.now() + cacheTtlMs(url, res.status),
+  });
+}
+
 function retryDelayMs(res: Response, attempt: number): number {
   const retryAfter = res.headers.get("retry-after");
   if (retryAfter) {
@@ -161,15 +245,52 @@ async function gbpFetchWithRetry(
   init?: RequestInit,
   retries = 2,
 ): Promise<Response> {
-  let res = await gbpFetch(label, url, token, init);
-  let attempt = 0;
-  while (attempt < retries && isRetryableStatus(res.status)) {
-    const delay = retryDelayMs(res, attempt);
-    await waitMs(delay);
-    attempt += 1;
-    res = await gbpFetch(`${label}-retry${attempt}`, url, token, init);
+  const method = init?.method ?? "GET";
+  const key = cacheKey(method, url);
+  if (method.toUpperCase() === "GET") {
+    const cached = readCachedResponse(key);
+    if (cached) return cached;
+    const inFlight = inFlightRequests.get(key);
+    if (inFlight) {
+      const pending = await inFlight;
+      return pending.clone();
+    }
   }
-  return res;
+
+  const run = async (): Promise<Response> => {
+    await throttleBeforeGoogleCall();
+    let res = await gbpFetch(label, url, token, init);
+    let attempt = 0;
+    while (attempt < retries && isRetryableStatus(res.status)) {
+      const delay = Math.max(MIN_REQUEST_GAP_MS, retryDelayMs(res, attempt));
+      await waitMs(delay);
+      attempt += 1;
+      await throttleBeforeGoogleCall();
+      res = await gbpFetch(`${label}-retry${attempt}`, url, token, init);
+    }
+    const body = await res.text();
+    if (method.toUpperCase() === "GET") {
+      writeCachedResponse(key, url, res, body);
+    }
+    return new Response(body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: copyHeaders(res),
+    });
+  };
+
+  if (method.toUpperCase() !== "GET") {
+    return run();
+  }
+
+  const task = run();
+  inFlightRequests.set(key, task);
+  try {
+    const res = await task;
+    return res.clone();
+  } finally {
+    inFlightRequests.delete(key);
+  }
 }
 
 async function fetchAccounts(
@@ -179,12 +300,19 @@ async function fetchAccounts(
   error: string;
   googleError: ParsedGoogleApiError;
   status: number;
+  retryAfterSeconds: number | null;
 }> {
   const url = `${GBP_ACCOUNT_MANAGEMENT_V1_BASE}/accounts`;
   const res = await gbpFetchWithRetry("accounts-list", url, token);
   if (!res.ok) {
-    const { friendly, parsed } = await jsonErrorPayload(res);
-    return { ok: false, error: friendly, googleError: parsed, status: res.status };
+    const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(res);
+    return {
+      ok: false,
+      error: friendly,
+      googleError: parsed,
+      status: res.status,
+      retryAfterSeconds,
+    };
   }
   const json = (await res.json()) as {
     accounts?: Array<{ name?: string; accountName?: string }>;
@@ -207,14 +335,21 @@ async function fetchLocations(
   error: string;
   googleError: ParsedGoogleApiError;
   status: number;
+  retryAfterSeconds: number | null;
 }> {
   const acc = encodeURIComponent(accountId);
   const base = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations?pageSize=100`;
   const url = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
   const res = await gbpFetchWithRetry("locations-list", url, token);
   if (!res.ok) {
-    const { friendly, parsed } = await jsonErrorPayload(res);
-    return { ok: false, error: friendly, googleError: parsed, status: res.status };
+    const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(res);
+    return {
+      ok: false,
+      error: friendly,
+      googleError: parsed,
+      status: res.status,
+      retryAfterSeconds,
+    };
   }
   const json = (await res.json()) as {
     locations?: Array<{
@@ -277,7 +412,12 @@ export async function GET(req: Request) {
     const accounts = await fetchAccounts(auth.token);
     if (!accounts.ok) {
       return NextResponse.json(
-        { error: accounts.error, googleError: accounts.googleError },
+        {
+          error: accounts.error,
+          googleError: accounts.googleError,
+          rateLimited: accounts.status === 429,
+          retryAfterSeconds: accounts.retryAfterSeconds,
+        },
         { status: accounts.status >= 500 ? 502 : accounts.status },
       );
     }
@@ -299,7 +439,12 @@ export async function GET(req: Request) {
     const locations = await fetchLocations(auth.token, accountId, pageToken);
     if (!locations.ok) {
       return NextResponse.json(
-        { error: locations.error, googleError: locations.googleError },
+        {
+          error: locations.error,
+          googleError: locations.googleError,
+          rateLimited: locations.status === 429,
+          retryAfterSeconds: locations.retryAfterSeconds,
+        },
         { status: locations.status >= 500 ? 502 : locations.status },
       );
     }
@@ -319,6 +464,8 @@ export async function GET(req: Request) {
         accountId,
         locations: discovered.ok ? discovered.locations : [],
         discoveryError: discovered.ok ? null : discovered.error,
+        rateLimited: !discovered.ok && discovered.status === 429,
+        retryAfterSeconds: !discovered.ok ? discovered.retryAfterSeconds : null,
       },
       { status: 200 },
     );
@@ -336,9 +483,14 @@ export async function GET(req: Request) {
         auth.token,
       );
       if (!res.ok) {
-        const { friendly, parsed } = await jsonErrorPayload(res);
+        const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(res);
         return NextResponse.json(
-          { error: friendly, googleError: parsed },
+          {
+            error: friendly,
+            googleError: parsed,
+            rateLimited: res.status === 429,
+            retryAfterSeconds,
+          },
           { status: res.status >= 500 ? 502 : res.status },
         );
       }
@@ -348,9 +500,14 @@ export async function GET(req: Request) {
     if (action === "media") {
       const res = await gbpFetchWithRetry("get-media", `${locationName}/media`, auth.token);
       if (!res.ok) {
-        const { friendly, parsed } = await jsonErrorPayload(res);
+        const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(res);
         return NextResponse.json(
-          { error: friendly, googleError: parsed },
+          {
+            error: friendly,
+            googleError: parsed,
+            rateLimited: res.status === 429,
+            retryAfterSeconds,
+          },
           { status: res.status >= 500 ? 502 : res.status },
         );
       }
@@ -364,9 +521,14 @@ export async function GET(req: Request) {
         auth.token,
       );
       if (!res.ok) {
-        const { friendly, parsed } = await jsonErrorPayload(res);
+        const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(res);
         return NextResponse.json(
-          { error: friendly, googleError: parsed },
+          {
+            error: friendly,
+            googleError: parsed,
+            rateLimited: res.status === 429,
+            retryAfterSeconds,
+          },
           { status: res.status >= 500 ? 502 : res.status },
         );
       }
@@ -380,19 +542,10 @@ export async function GET(req: Request) {
       );
     }
 
-    const [locRes, revRes, mediaRes, postsRes] = await Promise.all([
-      gbpFetchWithRetry("dashboard-location", locationName, auth.token),
-      gbpFetchWithRetry("dashboard-reviews", `${locationName}/reviews?pageSize=50`, auth.token),
-      gbpFetchWithRetry("dashboard-media", `${locationName}/media?pageSize=50`, auth.token),
-      gbpFetchWithRetry(
-        "dashboard-local-posts",
-        `${locationName}/localPosts?pageSize=50`,
-        auth.token,
-      ),
-    ]);
+    const locRes = await gbpFetchWithRetry("dashboard-location", locationName, auth.token);
 
     if (!locRes.ok) {
-      const { friendly, parsed } = await jsonErrorPayload(locRes);
+      const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(locRes);
       const discovered = await fetchLocations(auth.token, accountId);
       return NextResponse.json(
         {
@@ -403,11 +556,29 @@ export async function GET(req: Request) {
           locationId,
           locations: discovered.ok ? discovered.locations : [],
           discoveryError: discovered.ok ? null : discovered.error,
+          rateLimited: locRes.status === 429,
+          retryAfterSeconds,
           ...(debug ? { googleBusinessDebug: { locationUrl: locationName } } : {}),
         },
         { status: 200 },
       );
     }
+
+    const revRes = await gbpFetchWithRetry(
+      "dashboard-reviews",
+      `${locationName}/reviews?pageSize=50`,
+      auth.token,
+    );
+    const mediaRes = await gbpFetchWithRetry(
+      "dashboard-media",
+      `${locationName}/media?pageSize=50`,
+      auth.token,
+    );
+    const postsRes = await gbpFetchWithRetry(
+      "dashboard-local-posts",
+      `${locationName}/localPosts?pageSize=50`,
+      auth.token,
+    );
 
     const location = (await locRes.json()) as Record<string, unknown>;
     const primary = (location.categories as { primaryCategory?: { displayName?: string } })
@@ -678,9 +849,14 @@ export async function POST(req: Request) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const { friendly, parsed } = await jsonErrorPayload(res);
+    const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(res);
     return NextResponse.json(
-      { error: friendly, googleError: parsed },
+      {
+        error: friendly,
+        googleError: parsed,
+        rateLimited: res.status === 429,
+        retryAfterSeconds,
+      },
       { status: res.status >= 500 ? 502 : res.status },
     );
   }

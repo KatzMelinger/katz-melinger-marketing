@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ rules });
   }
 
-  const config = getAuthConfig();
+  const config = await getAuthConfig();
   if ("error" in config) {
     return NextResponse.json({ error: config.error }, { status: 503 });
   }
@@ -313,7 +313,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const config = getAuthConfig();
+  const config = await getAuthConfig();
   if ("error" in config) {
     return NextResponse.json({ error: config.error }, { status: 503 });
   }
