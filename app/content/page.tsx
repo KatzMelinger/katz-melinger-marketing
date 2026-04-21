@@ -60,6 +60,14 @@ type BrandVoiceResponse = {
   documents?: BrandVoiceDoc[];
 };
 
+type SeoBrief = {
+  targetKeywords: string[];
+  longTailKeywords: string[];
+  titleIdeas: string[];
+  headings: string[];
+  competitorGaps: string[];
+};
+
 export default function ContentPage() {
   const [tab, setTab] = useState<"blog" | "social" | "email">("blog");
   const [topic, setTopic] = useState("");
@@ -86,6 +94,10 @@ export default function ContentPage() {
   const [sampleFiles, setSampleFiles] = useState<FileList | null>(null);
   const [uploadingType, setUploadingType] = useState<"brand" | "sample" | null>(null);
   const [uploadProgress, setUploadProgress] = useState<string>("");
+  const [seoBrief, setSeoBrief] = useState<SeoBrief | null>(null);
+  const [seoBriefLoading, setSeoBriefLoading] = useState(false);
+  const [seoBriefError, setSeoBriefError] = useState<string | null>(null);
+  const [includeSeoGuidance, setIncludeSeoGuidance] = useState(true);
 
   const loadBrand = useCallback(async () => {
     const res = await fetch("/api/content/brand-voice", { cache: "no-store" });
@@ -104,6 +116,60 @@ export default function ContentPage() {
     setTemplateKey(tab === "blog" ? "blog_general" : tab === "social" ? "social_post" : "newsletter");
   }, [tab]);
 
+  const loadSeoBrief = useCallback(
+    async (topicInput: string, practiceAreaInput: string) => {
+      const normalized = topicInput.trim();
+      if (!normalized) {
+        setSeoBrief(null);
+        setSeoBriefError(null);
+        return;
+      }
+      setSeoBriefLoading(true);
+      setSeoBriefError(null);
+      try {
+        const query = new URLSearchParams({
+          topic: normalized,
+          practice_area: practiceAreaInput,
+        });
+        const res = await fetch(`/api/seo/content/brief?${query.toString()}`, {
+          cache: "no-store",
+        });
+        const body = (await res.json()) as SeoBrief & { error?: string };
+        if (!res.ok) {
+          setSeoBrief(null);
+          setSeoBriefError(body.error ?? "Could not fetch SEO brief.");
+          return;
+        }
+        setSeoBrief({
+          targetKeywords: Array.isArray(body.targetKeywords) ? body.targetKeywords : [],
+          longTailKeywords: Array.isArray(body.longTailKeywords) ? body.longTailKeywords : [],
+          titleIdeas: Array.isArray(body.titleIdeas) ? body.titleIdeas : [],
+          headings: Array.isArray(body.headings) ? body.headings : [],
+          competitorGaps: Array.isArray(body.competitorGaps) ? body.competitorGaps : [],
+        });
+      } catch (e) {
+        setSeoBrief(null);
+        setSeoBriefError(e instanceof Error ? e.message : "Could not fetch SEO brief.");
+      } finally {
+        setSeoBriefLoading(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const normalized = topic.trim();
+    if (!normalized) {
+      setSeoBrief(null);
+      setSeoBriefError(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void loadSeoBrief(normalized, practiceArea);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [topic, practiceArea, loadSeoBrief]);
+
   async function generate() {
     setLoading(true);
     setErr(null);
@@ -118,6 +184,10 @@ export default function ContentPage() {
         template_key: templateKey,
         use_brand_voice: useBrandVoice,
       };
+      if (includeSeoGuidance && seoBrief) {
+        body.seo_brief = seoBrief;
+        body.target_keywords = seoBrief.targetKeywords;
+      }
       if (tab === "social") body.platform = platform;
       if (tab === "email") body.campaign_type = campaignType;
 
@@ -348,6 +418,41 @@ export default function ContentPage() {
                 ))}
               </select>
             </label>
+
+            <div className="rounded border border-[#2a3f5f] bg-[#0f1729] p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-slate-400">SEO keyword assistant (Semrush + competitor gaps)</p>
+                <button
+                  type="button"
+                  onClick={() => void loadSeoBrief(topic, practiceArea)}
+                  className="rounded border border-[#2a3f5f] px-2 py-1 text-xs text-slate-200"
+                >
+                  Refresh
+                </button>
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={includeSeoGuidance}
+                  onChange={(e) => setIncludeSeoGuidance(e.target.checked)}
+                />
+                Include SEO brief in generation
+              </label>
+              {seoBriefLoading ? <p className="mt-2 text-xs text-slate-500">Loading SEO brief...</p> : null}
+              {seoBriefError ? <p className="mt-2 text-xs text-rose-300">{seoBriefError}</p> : null}
+              {seoBrief ? (
+                <div className="mt-2 space-y-2 text-xs text-slate-300">
+                  <p>
+                    <span className="text-slate-400">Target keywords:</span>{" "}
+                    {seoBrief.targetKeywords.join(", ") || "—"}
+                  </p>
+                  <p>
+                    <span className="text-slate-400">Long-tail ideas:</span>{" "}
+                    {seoBrief.longTailKeywords.slice(0, 3).join(" | ") || "—"}
+                  </p>
+                </div>
+              ) : null}
+            </div>
 
             {tab === "blog" ? (
               <>

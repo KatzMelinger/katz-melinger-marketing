@@ -49,6 +49,17 @@ export async function POST(req: Request) {
   const templateKey =
     typeof o.template_key === "string" ? o.template_key.trim() : "";
   const useBrandVoice = o.use_brand_voice !== false;
+  const targetKeywords = Array.isArray(o.target_keywords)
+    ? o.target_keywords.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)
+    : [];
+  const seoBrief =
+    o.seo_brief && typeof o.seo_brief === "object"
+      ? (o.seo_brief as {
+          longTailKeywords?: unknown;
+          headings?: unknown;
+          competitorGaps?: unknown;
+        })
+      : null;
 
   if (!topic) {
     return NextResponse.json({ error: "topic required" }, { status: 400 });
@@ -73,6 +84,9 @@ ${profile?.legalTerms?.length ? `Prefer legal terminology:\n${profile.legalTerms
 ${profile?.disclaimers?.length ? `Use applicable disclaimer language:\n${profile.disclaimers.join(" | ")}\n` : ""}
 ${profile?.messagingPatterns?.length ? `Messaging patterns:\n${profile.messagingPatterns.join(" | ")}\n` : ""}
 ${templateKey && TEMPLATE_INSTRUCTIONS[templateKey] ? `Template guidance:\n${TEMPLATE_INSTRUCTIONS[templateKey]}\n` : ""}
+${targetKeywords.length ? `Target SEO keywords to include naturally:\n${targetKeywords.join(", ")}\n` : ""}
+${seoBrief?.headings && Array.isArray(seoBrief.headings) ? `SEO heading suggestions:\n${seoBrief.headings.filter((item): item is string => typeof item === "string").join(" | ")}\n` : ""}
+${seoBrief?.competitorGaps && Array.isArray(seoBrief.competitorGaps) ? `Competitor content gaps to address:\n${seoBrief.competitorGaps.filter((item): item is string => typeof item === "string").join(" | ")}\n` : ""}
 
 Follow the user's output format instructions exactly. Do not fabricate case results or guarantees.`;
 
