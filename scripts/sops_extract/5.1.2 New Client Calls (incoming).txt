@@ -1,0 +1,27 @@
+1. Internal Policy
+It is the policy of the Firm that all incoming new client calls are handled live, in real time, and completed fully during the call using the Firm’s intake systems. Intake information must not be deferred to email when a potential client initiates contact by phone. Email outreach for intake purposes is permitted only when the Firm has attempted and failed to reach the potential client after outbound call attempts.
+2. Procedure
+Inbound Call Handling  ( add deferred call details ) **
+All incoming calls from potential clients must be answered live whenever possible.
+When a potential client calls the Firm, the Intake Specialist must accurately complete and enter the information into the Firm database for the entire intake during the phone call.
+Intake Specialists should not send an email requesting intake information when the potential client has called the Firm directly.
+Add Deadline Flagging 5.1.16 **
+Ownership Assignment
+1.  The Intake Specialist who answers and completes the intake call becomes the 	  
+     PC Owner.
+2.  Ownership remains with that Intake Specialist until the PC is transferred to the         
+      legal team or formally declined.
+Documentation Requirements
+1.   All intake questions must be completed live on the phone.
+2.   Documents provided during the call must be uploaded immediately or requested
+      verbally before the call ends.
+3.   Next steps must be clearly communicated to the potential client before ending  
+      the call.
+Exception – Email Outreach
+Email requests for intake information are permitted only when:
+The potential client cannot be reached after reasonable call attempts.
+Email may not be used as a substitute for live intake when the client calls in.
+3. Resources
+Resource #1: Jotform Intake Forms
+Resource #2: Airtable Intake Database
+Resource #3: Intake Coverage and Weekly Rotation Plan

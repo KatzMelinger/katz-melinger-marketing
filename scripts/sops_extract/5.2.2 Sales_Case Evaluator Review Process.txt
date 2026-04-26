@@ -1,0 +1,63 @@
+1. Internal Policy
+It is the policy of the Firm that all Intake records assigned for evaluation are reviewed and managed by the Sales / Case Evaluator using a standardized, status-driven workflow to ensure consistent evaluation, timely communication with Potential Clients (PCs), proper coordination with the Intake Team and Attorneys (if applicable), and accurate progression toward decline, referral, or engagement.
+This SOP governs the responsibilities of the Sales / Case Evaluator from the point an Intake record enters the review queue through consultation handling, case disposition, and engagement advancement. Intake creation, administrative follow-up, and scheduling execution are governed by the Intake SOP. Attorney legal review and final legal determinations are governed by separate Attorney SOPs.
+All Sales / Case Evaluators are required to follow this SOP to ensure consistency, operational clarity, and compliance.
+2. Procedure
+2.1 Receipt of Intake for Review
+Intake records are assigned to the Sales / Case Evaluator when the Intake Team places the record into Initial Review.
+Upon receipt, Sales / Case Evaluator shall review the Intake record to determine whether additional documents or information or attorney review is required, and whether a consultation, referral or declination is appropriate.
+2.2 Requesting Additional Documents or Administrative Follow-Up
+If additional documents are required before moving forward, assign the Case Status Pending Admin Follow-Up.
+This moves the Intake record into the Intake Team’s work queue.
+Once the Intake Team has contacted the PC and formally requested the required documents, assign the Case Status Awaiting Documents.
+This confirms the Firm is waiting on the PC to provide the requested materials.
+Do not proceed with “schedule a call” until requested items are received.
+2.3 Reviewing Returned Intake Records
+When requested documents are received, the Intake Team will assign the Case Status Documents to Review, confirming the Intake records moves back into the Sales/ Case Evaluator work queue.
+When requested documents and/ or information is received, the Intake Team will move to Secondary Review status.
+This moves the record back to the Sales Case Evaluator work queue.
+Upon receipt, re-evaluate the Intake record and determine the appropriate next steps.
+2.4 Consultation Readiness and Scheduling
+If the Intake record is ready for a consultation with the PC, assign the Case Status Schedule a Call.
+Assigning Schedule a Call transfers responsibility to the Intake Team to schedule the consultation.
+Once the consultation is scheduled, the Intake Team will update the Case Status to Consultation Scheduled, returning the Intake record to the Sales / Case Evaluator’s work queue.
+If the consultation is rescheduled, update the Case Status to Consultation Rescheduled.
+If the PC fails to attend the consultation, update the Case Status to Consultation No Show.
+If the PC becomes unresponsive and does not reschedule after reasonable follow-up, update the Case Status to Decline – Client No Show.
+2.5 Post-Consultation Follow-Up
+If an additional consultation is required, assign the Case Status Follow-Up Consultation.
+If the PC is deciding whether to proceed, assign the Case Status Pending PC Decision.
+If a check-in with the PC is required, assign the Case Status Reviewer Check-In.
+If follow-up regarding items discussed during the consultation is required, assign the Case Status Reviewer Follow-Up.
+All follow ups are required within 48 hours of status change.
+2.6 Firm Decision and Attorney Involvement
+Once sufficient information has been gathered, determine whether the Intake record should be declined, referred, or advanced toward engagement.
+If attorney input is required prior to making a decision, assign the Case Status Pending Firm Decision.
+This moves the Intake record into the Attorneys’ work queue.
+Sales/ Case Evaluator owns this phase and is their responsibility to follow up with the Attorney. (Every 24 hours)
+2.7 Decline and Referral Outcomes
+If the case is declined based on Firm fit or timing, the Sales / Case Evaluator must assign one of the following decline Case Statuses:
+Decline – Not a Fit
+Decline – For Now
+Decline – Firm
+Assigning Decline – Not a Fit, Decline – For Now, or Decline – Firm signals the Intake Team to complete the Decline Notice process in accordance with the Firm’s Decline Notice SOP.
+If the case is to be referred to another firm, the Sales / Case Evaluator must assign Decline – Referred.
+Assigning Decline – Referred moves the Intake record into the Intake Team’s work queue for referral processing.
+Once the Decline Notice has been sent by the Intake Team and the Intake record is moved into Decline – Notice Sent, the Intake is closed and removed from the Intake work queue.
+The following decline-related Case Statuses are owned and managed exclusively by the Sales / Case Evaluator and remain in the Sales / Case Evaluator’s work queue. These statuses do not trigger Intake Team action unless otherwise directed by a separate SOP:
+Decline – Client Reject
+Decline – Client No Show
+Decline – No Response to Engagement Letter
+2.8 Engagement Advancement and Automated Progression
+If the Firm elects to proceed with the case, assign the Case Status Pending Engagement Letter.
+Once the Engagement Letter is sent to the PC, the Intake record will be updated to Engagement Letter Sent.
+Upon execution of the Engagement Letter by the PC, system automation will send an email to the Sales/ Case Evaluator that we received the signed Engagement Letter.
+Sales/ Case Evaluator to confirm payment if flat fee/ retainer is required.
+If a retainer or flat fee is required, the Intake record will move it to Pending Retainer / Flat Fee.
+Upon confirmation that the required payment amount has been received and validated through the Firm’s payment system, the Intake record will be updated to Retainer / Flat Fee Received.
+Once engagement and payment requirements are satisfied, the Intake record will advance to Create New Matter, triggering operational handoff.
+After the Matter is created, the Intake record will be removed from the Intake work queue.
+3. Resources
+Resource #1: 5.1.1-b Intake definitions / glossary
+Resource #2: Intake SOP add link
+Resource #3: 5.2.3  Attorney Review Process

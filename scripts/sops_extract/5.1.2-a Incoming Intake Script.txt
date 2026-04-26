@@ -1,0 +1,50 @@
+INCOMING INTAKE CALL
+Call Script & Reference Guide  |  Katz Melinger
+STEP 1 — OPEN THE CALL
+Introduce Yourself
+Confirm Availability
+Ask: How may we assist you today?
+If proceeding with intake, confirm availability:
+📌 If they ask how long: say about 10 to 15 minutes.
+If NO: "No problem! What would be a better time for you? I can schedule a follow-up call at your convenience."
+📌 Schedule and send a calendar invite.
+Ensure Confidentiality
+STEP 2 — SET THE AGENDA
+Propose an agenda based on the type of matter:
+Employment Matter
+Severance Matter
+Collections Matter
+Address Immediate Concerns
+Ask: "Do you have any specific concerns or questions about this process before we begin?"
+STEP 3 — GATHER INFORMATION
+Personal Details
+Gather initial information on Jotform.
+Key Issue Identification
+Ask: "Can you summarize the main issue you're facing with your employer?"
+Desired Outcome
+Ask: "What are you hoping to achieve by working with our firm?"
+📌 Examples: compensation, reinstatement, etc.
+Wrap Up Information Gathering
+Ask: "Is there any other information you want to provide that we have not yet covered?"
+STEP 4 — CLOSE THE CALL
+Provide Next Steps
+If asked what next steps are: "Our team will determine if we can assist you on your matter, or need further information, or whether there are other resources we can provide to help you."
+Address Final Questions
+Ask: "Do you have any questions for me before we finish this call?"
+STEP 5 — SUBMIT THE INTAKE
+Before submitting, select a case quality rating:
+High
+Medium
+Low
+Then submit the intake for review.
+COMPLIANCE & BEST PRACTICES
+Confidentiality: Ensure all client information is securely recorded and protected.
+Professionalism: Maintain a courteous and empathetic approach at all times.
+Accuracy: Verify all client details before finalizing the intake.
+"Thank you for calling Katz Melinger, my name is [Your Name], may I ask who is calling?"
+"I would just like to confirm that now is a good time to speak to gather the information needed to evaluate your claim. This will take a few minutes of your time."
+"Before we continue, I want to assure you that everything we discuss today is completely confidential. Only the Katz Melinger team will have access to your information. We will review your information but will not reach out to anyone or discuss this matter outside the firm without your permission. Does that sound good to you?"
+"I'll start by asking you a few questions to gather some basic information. Then, we'll go over details regarding your employer and pay. Once that's covered, we can get into the specifics of the issue for your call."
+"I'll start by asking you a few questions to gather some basic information. Then, we'll go over details regarding your employer and your severance details. Once that's covered, we can discuss any other concerns you have with your employment."
+"I'll start by asking you a few questions to gather some basic information. Then, we'll go over details regarding the debt you are owed and what you have done so far. Once that's covered, we can get into any other concerns you may have."
+"Thank you for sharing this information. Our legal team will now review your potential matter to see if we can help you. Next, you'll receive a response from our team to discuss the next steps."

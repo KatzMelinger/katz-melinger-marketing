@@ -1,0 +1,45 @@
+OUTGOING INTAKE CALL
+Call Script & Reference Guide  |  Katz Melinger
+STEP 1 — OPEN THE CALL
+Introduce Yourself
+📌 If they do not recognize Katz Melinger, remind them that we are a law firm they reached out to or spoke to recently about their potential matter.
+Confirm Availability
+📌 If they ask how long: say about 5 to 10 minutes.
+If NO: "No problem! What would be a better time for you? I can schedule a follow-up call at your convenience."
+📌 Schedule and send a calendar invite.
+📌 If they confirm availability, move directly to Step 2.
+Ensure Confidentiality
+STEP 2 — SET THE AGENDA
+Select the agenda based on the reason for the outgoing call:
+Reason: Further Questions Needed
+Reason: Documents Needed
+Reason: Other
+📌 If the call involves a mix of categories, adjust the agenda language to reflect that.
+Address Immediate Concerns
+Ask: "Do you have any specific concerns or questions about this process before we begin?"
+STEP 3 — GATHER INFORMATION
+Collect the information needed based on the reason for the call. Reference the notes from the original intake or prior communications before dialing.
+Wrap Up Information Gathering
+Ask: "Is there any other information you want to provide that we have not yet covered?"
+STEP 4 — CLOSE THE CALL
+Provide Next Steps
+If asked what next steps are: "Our team will determine if we can assist you on your matter, or need further information, or whether there are other resources we can provide to help you."
+Address Final Questions
+Ask: "Do you have any questions for me before we finish this call?"
+STEP 5 — SUBMIT THE INTAKE
+Before submitting, select a case quality rating:
+High
+Medium
+Low
+Then submit the intake for review.
+COMPLIANCE & BEST PRACTICES
+Confidentiality: Ensure all client information is securely recorded and protected.
+Professionalism: Maintain a courteous and empathetic approach at all times.
+Accuracy: Verify all client details before finalizing the intake.
+"Hi, my name is [Your Name], and I'm calling from Katz Melinger. Am I speaking with Mr./Ms. [Person's Last Name]?"
+"I would just like to confirm that now is a good time to speak for a few minutes so we can discuss your matter further."
+"Before we continue, I want to assure you that everything we discuss today is completely confidential. Only the Katz Melinger team will have access to your information. We will review your information but will not reach out to anyone or discuss this matter outside the firm without your permission. Does that sound good to you?"
+"To make the best use of our time today, I'll start by asking you a few questions to gather some additional information that the legal team needs to assess your potential matter. Once that's covered, we can get into any other questions you might have on the process. Does that sound good?"
+"To make the best use of our time today, I'll start by asking you a few questions about documents you might have that could assist the legal team in assessing your potential matter. Once that's covered, we can get into any other questions you might have on the process. Does that sound good?"
+"To make the best use of our time today, I'll start by asking you a few questions about [describe reason for calling] which could assist the legal team in assessing your potential matter. Once that's covered, we can get into any other questions you might have on the process. Does that sound good?"
+"Thank you for sharing this information. Our legal team will now review your potential matter to see if we can help you. Next, you'll receive a response from our team to discuss the next steps."

@@ -17,6 +17,7 @@ export const MARKETING_NAV = [
   { label: "Reviews", href: "/reviews", icon: "★" },
   { label: "Attribution", href: "/attribution", icon: "⎔" },
   { label: "Pipeline", href: "/pipeline", icon: "▥" },
+  { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
   { label: "Settings", href: "/settings", icon: "⚙" },
 ] as const;
 

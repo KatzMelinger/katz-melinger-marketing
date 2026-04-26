@@ -1,8 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
+
+type ScoreRow = {
+  overall_score: number | null;
+  rubric_type: string | null;
+  language: string | null;
+  scored_at: string | null;
+};
 
 type CallRow = {
   id: string;
@@ -11,9 +19,22 @@ type CallRow = {
   source_name: string | null;
   duration: number | null;
   answered: boolean;
+  voicemail?: boolean;
+  direction?: string | null;
   start_time: string;
   lead_status: string | null;
+  agent_email?: string | null;
+  transcription_language?: string | null;
+  score?: ScoreRow | null;
 };
+
+type CallStatus = "Answered" | "Voicemail" | "Missed";
+
+function callStatus(row: Pick<CallRow, "answered" | "voicemail">): CallStatus {
+  if (row.voicemail === true) return "Voicemail";
+  if (row.answered === true) return "Answered";
+  return "Missed";
+}
 
 function formatDurationSeconds(total: number): string {
   if (!Number.isFinite(total) || total < 0) return "—";
@@ -32,39 +53,83 @@ function formatStartTime(iso: string): string {
   }).format(d);
 }
 
+const STATUS_BADGE: Record<CallStatus, { bg: string; ring: string; fg: string; label: string }> = {
+  Answered: { bg: "bg-emerald-500/20", ring: "ring-emerald-500/30", fg: "text-emerald-300", label: "Answered" },
+  Voicemail: { bg: "bg-amber-500/20", ring: "ring-amber-500/30", fg: "text-amber-200", label: "Voicemail" },
+  Missed: { bg: "bg-rose-500/20", ring: "ring-rose-500/30", fg: "text-rose-300", label: "Missed" },
+};
+
+function scoreBadgeClass(score: number | null | undefined): { color: string; label: string } {
+  if (score == null) return { color: "bg-slate-500/20 text-slate-300 ring-slate-500/30", label: "—" };
+  if (score >= 85) return { color: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/30", label: `${score}` };
+  if (score >= 70) return { color: "bg-blue-500/20 text-blue-300 ring-blue-500/30", label: `${score}` };
+  if (score >= 50) return { color: "bg-amber-500/20 text-amber-200 ring-amber-500/30", label: `${score}` };
+  return { color: "bg-rose-500/20 text-rose-300 ring-rose-500/30", label: `${score}` };
+}
+
 export default function CallsPage() {
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+  const [source, setSource] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [source, setSource] = useState("all");
-  const [status, setStatus] = useState<"all" | "answered" | "missed">("all");
+  const [src, setSrc] = useState("all");
+  const [status, setStatus] = useState<"all" | "answered" | "voicemail" | "missed">("all");
+  const [language, setLanguage] = useState<"all" | "en" | "es" | "mixed" | "unknown">("all");
+
+  async function load() {
+    try {
+      const res = await fetch("/api/calls", { cache: "no-store" });
+      const data = (await res.json()) as { calls?: CallRow[]; error?: string; source?: string; hint?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load calls");
+        return;
+      }
+      setCalls(Array.isArray(data.calls) ? data.calls : []);
+      setSource(data.source ?? null);
+      setHint(data.hint ?? null);
+      if (data.error) setError(data.error);
+    } catch {
+      setError("Network error");
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/callrail/calls", { cache: "no-store" });
-        const data = (await res.json()) as {
-          calls?: CallRow[];
-          error?: string;
-        };
-        if (cancelled) return;
-        if (!res.ok) {
-          setError(data.error ?? "Failed to load calls");
-          return;
-        }
-        setCalls(Array.isArray(data.calls) ? data.calls : []);
-        if (data.error) setError(data.error);
-      } catch {
-        if (!cancelled) setError("Network error");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void load();
   }, []);
+
+  async function runSync() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/calls/sync", { method: "POST" });
+      const data = (await res.json()) as { synced?: number; error?: string };
+      if (!res.ok) setError(data.error ?? "Sync failed");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runScorePending() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/calls/score-pending", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ limit: 25, min_duration_seconds: 60 }),
+      });
+      const data = (await res.json()) as { scored?: number; error?: string };
+      if (!res.ok) setError(data.error ?? "Scoring failed");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const sources = useMemo(() => {
     const m = new Map<string, number>();
@@ -80,11 +145,14 @@ export default function CallsPage() {
     const fromD = from ? new Date(`${from}T00:00:00`) : null;
     const toD = to ? new Date(`${to}T23:59:59`) : null;
     return calls.filter((c) => {
-      if (status === "answered" && !c.answered) return false;
-      if (status === "missed" && c.answered) return false;
-      if (source !== "all") {
+      const st = callStatus(c);
+      if (status === "answered" && st !== "Answered") return false;
+      if (status === "voicemail" && st !== "Voicemail") return false;
+      if (status === "missed" && st !== "Missed") return false;
+      if (language !== "all" && (c.transcription_language ?? "unknown") !== language) return false;
+      if (src !== "all") {
         const s = c.source_name?.trim() || "Unknown";
-        if (s !== source) return false;
+        if (s !== src) return false;
       }
       const t = new Date(c.start_time);
       if (fromD && !Number.isNaN(fromD.getTime()) && t < fromD) return false;
@@ -92,33 +160,54 @@ export default function CallsPage() {
       if (!qq) return true;
       const name = (c.customer_name ?? "").toLowerCase();
       const phone = (c.customer_phone_number ?? "").toLowerCase();
-      return name.includes(qq) || phone.includes(qq);
+      const agent = (c.agent_email ?? "").toLowerCase();
+      return name.includes(qq) || phone.includes(qq) || agent.includes(qq);
     });
-  }, [calls, q, from, to, source, status]);
+  }, [calls, q, from, to, src, status, language]);
 
   const totalCalls = filtered.length;
-  const answered = filtered.filter((c) => c.answered).length;
+  const answered = filtered.filter((c) => callStatus(c) === "Answered").length;
+  const voicemails = filtered.filter((c) => callStatus(c) === "Voicemail").length;
+  const missed = filtered.filter((c) => callStatus(c) === "Missed").length;
   const answeredRate = totalCalls ? Math.round((answered / totalCalls) * 1000) / 10 : 0;
   const durSum = filtered.reduce((s, c) => s + (c.duration ?? 0), 0);
   const avgDuration = totalCalls ? durSum / totalCalls : 0;
+  const scored = filtered.filter((c) => c.score?.overall_score != null);
+  const avgScore = scored.length
+    ? Math.round(scored.reduce((s, c) => s + (c.score?.overall_score ?? 0), 0) / scored.length)
+    : null;
 
   return (
     <div
       className="min-h-full text-white"
-      style={{
-        backgroundColor: "#0f1729",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
+      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">
-            Call tracking
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Full CallRail list with filters
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-white">Call tracking</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              CallRail call log with AI sales-coach scoring against the firm&apos;s SOPs
+              {source ? ` · source: ${source}` : ""}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => void runSync()}
+              disabled={busy}
+              className="rounded-lg bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
+            >
+              {busy ? "Working…" : "Sync from CallRail"}
+            </button>
+            <button
+              onClick={() => void runScorePending()}
+              disabled={busy}
+              className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-sm font-medium text-[#5fa1d8] hover:bg-[#1a2540] disabled:opacity-50"
+            >
+              Score pending
+            </button>
+          </div>
         </div>
 
         {error ? (
@@ -126,30 +215,36 @@ export default function CallsPage() {
             {error}
           </div>
         ) : null}
+        {hint ? (
+          <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+            {hint}
+          </div>
+        ) : null}
 
-        <section className="grid gap-4 sm:grid-cols-3">
-          <article
-            className="rounded-xl border border-white/5 p-5 shadow-sm"
-            style={{ backgroundColor: "#185FA5" }}
-          >
-            <p className="text-sm font-medium text-white/90">Total calls (filtered)</p>
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#185FA5" }}>
+            <p className="text-sm font-medium text-white/90">Total (filtered)</p>
             <p className="mt-3 text-3xl font-semibold tabular-nums">{totalCalls}</p>
           </article>
-          <article
-            className="rounded-xl border border-white/5 p-5 shadow-sm"
-            style={{ backgroundColor: "#166534" }}
-          >
+          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#166534" }}>
             <p className="text-sm font-medium text-white/90">Answered rate</p>
             <p className="mt-3 text-3xl font-semibold tabular-nums">{answeredRate}%</p>
-          </article>
-          <article
-            className="rounded-xl border border-white/5 p-5 shadow-sm"
-            style={{ backgroundColor: "#475569" }}
-          >
-            <p className="text-sm font-medium text-white/90">Avg duration</p>
-            <p className="mt-3 text-3xl font-semibold tabular-nums">
-              {formatDurationSeconds(avgDuration)}
+            <p className="mt-1 text-xs text-white/70">
+              {answered} answered · {voicemails} VM · {missed} missed
             </p>
+          </article>
+          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#475569" }}>
+            <p className="text-sm font-medium text-white/90">Avg duration</p>
+            <p className="mt-3 text-3xl font-semibold tabular-nums">{formatDurationSeconds(avgDuration)}</p>
+          </article>
+          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#7c3aed" }}>
+            <p className="text-sm font-medium text-white/90">Avg coach score</p>
+            <p className="mt-3 text-3xl font-semibold tabular-nums">{avgScore != null ? avgScore : "—"}</p>
+            <p className="mt-1 text-xs text-white/70">{scored.length} of {totalCalls} scored</p>
+          </article>
+          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#0f4c75" }}>
+            <p className="text-sm font-medium text-white/90">Voicemails</p>
+            <p className="mt-3 text-3xl font-semibold tabular-nums">{voicemails}</p>
           </article>
         </section>
 
@@ -157,10 +252,10 @@ export default function CallsPage() {
           className="rounded-xl border border-[#2a3f5f] p-4 shadow-sm sm:p-6"
           style={{ backgroundColor: "#1a2540" }}
         >
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <input
               className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white placeholder:text-slate-500"
-              placeholder="Search name or phone"
+              placeholder="Search name, phone, agent"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -178,8 +273,8 @@ export default function CallsPage() {
             />
             <select
               className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
+              value={src}
+              onChange={(e) => setSrc(e.target.value)}
             >
               <option value="all">All sources</option>
               {sources.map((s) => (
@@ -191,13 +286,23 @@ export default function CallsPage() {
             <select
               className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
               value={status}
-              onChange={(e) =>
-                setStatus(e.target.value as "all" | "answered" | "missed")
-              }
+              onChange={(e) => setStatus(e.target.value as typeof status)}
             >
               <option value="all">All statuses</option>
               <option value="answered">Answered</option>
+              <option value="voicemail">Voicemail</option>
               <option value="missed">Missed</option>
+            </select>
+            <select
+              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as typeof language)}
+            >
+              <option value="all">All languages</option>
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="mixed">Mixed</option>
+              <option value="unknown">Unknown</option>
             </select>
           </div>
         </section>
@@ -207,7 +312,7 @@ export default function CallsPage() {
           style={{ backgroundColor: "#1a2540" }}
         >
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[860px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-[#2a3f5f] text-slate-400">
                   <th className="pb-3 pr-4 font-medium">Caller</th>
@@ -215,6 +320,8 @@ export default function CallsPage() {
                   <th className="pb-3 pr-4 font-medium">Source</th>
                   <th className="pb-3 pr-4 font-medium">Duration</th>
                   <th className="pb-3 pr-4 font-medium">Status</th>
+                  <th className="pb-3 pr-4 font-medium">Lang</th>
+                  <th className="pb-3 pr-4 font-medium">Score</th>
                   <th className="pb-3 pr-4 font-medium">Lead</th>
                   <th className="pb-3 font-medium">Date</th>
                 </tr>
@@ -223,41 +330,42 @@ export default function CallsPage() {
                 {filtered.map((row) => {
                   const callerName = row.customer_name?.trim() || "Unknown caller";
                   const callerNumber = row.customer_phone_number?.trim() || "—";
-                  const src = row.source_name?.trim() || "—";
+                  const sourceLabel = row.source_name?.trim() || "—";
                   const duration =
-                    row.duration == null || row.duration < 0
-                      ? "—"
-                      : formatDurationSeconds(row.duration);
+                    row.duration == null || row.duration < 0 ? "—" : formatDurationSeconds(row.duration);
+                  const st = callStatus(row);
+                  const stBadge = STATUS_BADGE[st];
+                  const score = row.score?.overall_score ?? null;
+                  const sb = scoreBadgeClass(score);
+                  const lang = row.transcription_language ?? "—";
                   return (
                     <tr
                       key={row.id}
-                      className="border-b border-[#2a3f5f]/60 last:border-0"
+                      className="border-b border-[#2a3f5f]/60 last:border-0 hover:bg-[#172037] cursor-pointer"
                     >
                       <td className="py-3 pr-4 font-medium text-white">
-                        {callerName}
+                        <Link href={`/calls/${encodeURIComponent(row.id)}`} className="hover:underline">
+                          {callerName}
+                        </Link>
                       </td>
-                      <td className="py-3 pr-4 tabular-nums text-slate-300">
-                        {callerNumber}
-                      </td>
-                      <td className="py-3 pr-4">{src}</td>
+                      <td className="py-3 pr-4 tabular-nums text-slate-300">{callerNumber}</td>
+                      <td className="py-3 pr-4">{sourceLabel}</td>
                       <td className="py-3 pr-4 tabular-nums">{duration}</td>
                       <td className="py-3 pr-4">
-                        {row.answered ? (
-                          <span className="inline-flex rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/30">
-                            Answered
-                          </span>
-                        ) : (
-                          <span className="inline-flex rounded-full bg-rose-500/20 px-2.5 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-rose-500/30">
-                            Missed
-                          </span>
-                        )}
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${stBadge.bg} ${stBadge.fg} ${stBadge.ring}`}
+                        >
+                          {stBadge.label}
+                        </span>
                       </td>
-                      <td className="py-3 pr-4 text-slate-400">
-                        {row.lead_status?.trim() || "—"}
+                      <td className="py-3 pr-4 text-xs uppercase text-slate-400">{lang}</td>
+                      <td className="py-3 pr-4">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${sb.color}`}>
+                          {sb.label}
+                        </span>
                       </td>
-                      <td className="py-3 text-slate-400">
-                        {formatStartTime(row.start_time)}
-                      </td>
+                      <td className="py-3 pr-4 text-slate-400">{row.lead_status?.trim() || "—"}</td>
+                      <td className="py-3 text-slate-400">{formatStartTime(row.start_time)}</td>
                     </tr>
                   );
                 })}

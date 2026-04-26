@@ -1,0 +1,33 @@
+1. Internal Policy
+It is the policy of the Firm that Attorneys provide legal input on Intake records only when escalation is required to support a business and legal decision. Attorneys do not perform Intake execution, status updates, client communication, or administrative actions during the Intake process.
+This SOP governs the Attorney’s role in reviewing escalated Intake records and providing a legal recommendation to the Sales / Case Evaluator. All Intake execution, status management, client communication, and engagement processing are governed by separate SOPs.
+Attorneys must follow this SOP to ensure consistent legal evaluation while maintaining clear separation of duties.
+2. Procedure
+2.1 Intake Escalation for Attorney Review
+An Intake record is escalated to an Attorney when the Sales / Case Evaluator assigns the Case Status Pending Firm Decision.
+The Attorney will be notified that legal input is required for the Intake record, by tagging the attorney in the Intake notes.
+2.2 Attorney Review
+Upon escalation, the Attorney must review the Intake record, including all available Intake information and supporting documentation.
+The Attorney must evaluate the Intake to:
+Assess if additional information is required and provide such requests, or
+Provide specific guidance requested, or
+Determine if the case should be accepted or Declined by the Firm, or
+Referred to another firm.
+The Attorney may request clarification or additional information from the Sales / Case Evaluator as needed to complete the review.
+2.3 Attorney Recommendation
+After completing the review, the Attorney must communicate a clear recommendation to the Sales / Case Evaluator.
+The recommendation must indicate one of the following outcomes:
+Provide specific information required for further evaluation, or
+Provide specific responses to guidance requested, or
+Accept the Intake and proceed toward engagement, or
+Decline the Intake, or
+Refer the Intake to another firm.
+The Attorney doesn’t update Case Statuses, they may communicate decisions to the Potential Client, and/ or to the Sales/ Case evaluator by tagging them in the Intake notes to take further actions to close or send out Engagement letter.
+2.4 Post-Recommendation Handling
+Upon receiving the Attorney’s recommendation, the Sales / Case Evaluator is responsible for executing the appropriate Case Status updates in accordance with the Sales / Case Evaluator SOP.
+If the Intake is declined or referred, the Intake Team will complete all required client communication and referral processing in accordance with the Intake SOP and Decline Notice SOP.
+3. Resources
+Resource #1: 5.1.1-b Intake definitions / glossary
+Resource #2: Intake SOP (Separate SOP) Link
+Resource #3: Sales / Case Evaluator Review SOP Link
+Resource #4: 5.1.6  Decline Notice Functionality

@@ -1,0 +1,69 @@
+5.1.1-b — Intake Definitions & Glossary
+Core Intake Terms
+Intake Record – A record capturing information about a Potential Client and their legal matter prior to engagement.
+
+Potential Client (PC) – An individual or entity seeking legal representation who is not yet a client of the Firm.
+
+Intake Team – Administrative team responsible for Intake record creation, information gathering, scheduling, and client communications.
+
+Sales / Case Evaluator – Role responsible for reviewing Intake records, conducting consultations, and determining whether a matter proceeds, is declined, or referred.
+
+Attorney Review – Legal evaluation provided by an Attorney when escalation is required; advisory only.
+
+Engagement – Formal agreement to represent a client, evidenced by a signed Engagement Letter and receipt of required fees.
+
+Intake Statuses – Intake & Review
+Partial Intake – Initial Intake incomplete; because could not complete the initial call or are awaiting additional information needed for initial evaluation. (Intake Team queue)
+
+Initial Review – Initial Intake complete and ready for Sales / Case Evaluator review.
+
+Awaiting Documents – Additional documents required from PC. (Intake Team queue)
+
+Pending Admin Follow-Up – Additional administrative, documentation or informational follow-up required. (Intake Team queue)
+
+Secondary Review – Requested documents received and ready for review for Sales/Case Evaluator to review.
+
+Schedule a Call – Intake approved for consultation; Intake Team schedules call.
+
+Consultation Scheduled – Consultation booked and confirmed.
+
+Consultation Rescheduled – Consultation rescheduled.
+
+Consultation No Show – PC failed to attend scheduled consultation.
+Follow-Up Consultation – Additional consultation required.
+
+Pending PC Decision – PC deciding whether to proceed.
+
+Reviewer Check-In – Check-in required by Sales / Case Evaluator.
+
+Reviewer Follow-Up – Follow-up required regarding consultation discussion.
+
+Pending Firm Decision – Attorney input required before decision.
+Decline & Referral Statuses
+Decline – Not a Fit – Matter not within the Firm’s practice areas or jurisdiction and not referred to another attorney by the Firm.
+
+Decline – For Now – Matter not actionable at this time; may be viable later.
+
+Decline – Firm – Firm elects not to proceed.
+
+Decline – Client No Show – PC unresponsive after no-show.
+
+Decline – Client Reject – PC elects not to proceed.
+
+Decline – Referred – Matter referred to another firm.
+
+Decline – Notice Sent – Decline Notice sent; Intake closed.
+Engagement & Matter Creation Statuses
+Pending Engagement Letter – Firm intends to proceed; engagement to be created and sent to PC.
+
+Engagement Letter Sent – Engagement Letter sent to PC.
+
+Received Signed Engagement Letter – Executed Engagement Letter received.
+
+Pending Retainer / Flat Fee – Engagement executed; payment pending.
+
+Retainer / Flat Fee Received – Required payment received and validated.
+
+Create New Matter – All pre-engagement requirements satisfied; ready for Matter creation.
+
+Usage Note : This document is a reference resource only and must be used in conjunction with Intake, Sales / Case Evaluator, Attorney, and Decline Notice SOPs.

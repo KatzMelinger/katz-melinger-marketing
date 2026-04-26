@@ -1,0 +1,320 @@
+KATZ MELINGER PLLC
+Sales Team Playbook
+Consultation Call Scripts & Fee Guides
+Resource Guide  |  5.2.3-a
+For Internal Use Only — Sales / Case Evaluator Team
+How to Use This Guide
+This playbook is designed to support you through every consultation call — from the moment you pick up the phone to the moment you close the engagement.
+Here is how it works:
+Start with the Universal Opening Script at the top of this guide. Use it on every call, regardless of case type.
+Once you know what kind of matter the client is calling about, jump to the appropriate section using the Table of Contents below.
+Each section includes a conversation script, fee presentation, objection handling, and escalation guidance.
+Table of Contents
+↑ Back to Table of Contents
+PART 1 — Universal Opening Script
+Use this opening on every consultation call — before you know anything about the case type. Do not skip this section.
+Opening the Call
+Use the appropriate opening based on whether you took this PC's original intake call or not.
+If this is YOUR PC — you took the original intake call:
+"Hi [Name], this is [Your Name] calling from Katz Melinger — we actually spoke when you first reached out to us. I'm following up because our team has had a chance to review your information, and I'm happy to tell you we'd love to help you. I'd like to take a few minutes to go over what we can do for you and walk you through how we work — does now still work for you?"
+If this is NOT your PC — you are covering for a colleague:
+"Hi [Name], this is [Your Name] calling from Katz Melinger. Our team has had a chance to review your information, and I'm happy to tell you we'd love to help you. I'd like to take a few minutes to go over what we can do for you and walk you through how we work — does now still work for you?"
+If the PC seems surprised or asks what this is about:
+"Of course — you reached out to our firm regarding [matter type]. Our team reviewed your information and we'd like to move forward. I just want to walk you through our fees and next steps — it should only take a few minutes."
+If the Client Has Already Vented or Is Upset
+Step 1 — Express Empathy
+"I appreciate you taking the time to speak with us today. I want you to know that we have helped many people in situations similar to yours, and we are confident we can help you too."
+Step 2 — Restate the Issue
+Briefly acknowledge what brought them to us — this shows you reviewed their file and builds confidence that the right people are handling their matter.
+Step 3 — Start Moving Forward
+Your goal on this call is to present the fees, handle any objections, and sign up the PC. You are moving them from this call to sending out the Engagement Letter and payment link.
+Step 4 — Confirm Next Steps
+Once they agree to move forward:
+"You will be receiving an email with your Engagement Letter — please review and sign it at your earliest convenience. Once that is signed and your payment is processed, your case will be introduced to your legal team."
+Match the Client's Energy
+Communication Best Practices
+Goal: Disarm the client and show that you are taking ownership of the issue.
+PART 2 — Identifying the Case Type
+Once you have completed the opening and gathered basic information, identify which type of matter the client is calling about. Then navigate to the correct fee guide section using the table below.
+Quick Reference — Which Fee Guide Do I Use?
+↑ Back to Table of Contents
+PART 3 — Collections & Judgment Enforcement
+3.1  Pre-Litigation / Demand Letters  (5.2.6-b)
+Use when: Client needs a demand letter sent to collect money owed. No lawsuit has been filed yet.
+Conversation Script
+STEP 1 — Ask About the Claim Amount
+"What is the total amount you're trying to collect?"
+→ Write down the amount. This determines which tier applies.
+STEP 2 — Determine Which Tier Applies
+Under $50,000 → Tier 1
+$50,001 – $250,000 → Tier 2
+Over $250,000 → Tier 3
+STEP 3 — Present ONLY the Fee Structure That Applies
+Do NOT list all three tiers. Only present the one that applies to this client.
+For claims UNDER $50,000:
+"Here's how our fees work: You'll pay a $1,500 flat fee to get started. Then we earn 1/3 of the first $500,000 we recover for you, 25% of the next $500,000, and 30% of anything beyond that. This way, we only make more money when you do."
+For claims $50,001 – $250,000:
+"Here's how our fees work: You'll pay a $2,500 flat fee to get started. Then we earn 1/3 of the first $500,000 recovered, 25% of the next $500,000, and 30% of anything beyond that."
+For claims OVER $250,000:
+"Here's how our fees work: You'll pay a $5,000 flat fee to get started. Then we earn 1/3 of the first $500,000 recovered, 25% of the next $500,000, and 30% of anything beyond that."
+Fee Breakdown — Pre-Litigation
+Objection Handling
+Escalation: If client needs a fee adjustment → Ping Adam Sackowitz or Kenneth Katz.
+↑ Back to Table of Contents
+3.2  Judgment Enforcement  (5.2.6-c)
+Use when: A judgment already exists and the client needs help collecting the money owed.
+Conversation Script
+STEP 1 — Ask About the Judgment Amount
+"What is the total judgment amount?"
+→ Write down the amount.
+STEP 2 — Ask About Court Filing
+"Will we need to file anything in court, or is this just enforcement?"
+→ Note whether court filing is needed — this affects the contingency percentage.
+STEP 3 — Determine Which Tier Applies
+Under $50,000 → Tier 1
+$50,001 – $250,000 → Tier 2
+Over $250,000 → Tier 3
+STEP 4 — Present ONLY the Fee Structure That Applies
+Do NOT list all three tiers. Only present the one that applies to this client.
+For judgments UNDER $50,000:
+"Here's how our fees work: You'll pay a $1,500 flat fee to get started. Then we earn 1/3 of the first $500,000 we collect, 25% of the next $500,000, and 30% of anything beyond that."
+For judgments $50,001 – $250,000:
+"Here's how our fees work: You'll pay a $2,500 flat fee to get started. Then we earn 1/3 of the first $500,000 collected, 25% of the next $500,000, and 30% of anything beyond that."
+For judgments OVER $250,000:
+"Here's how our fees work: You'll pay a $5,000 flat fee to get started. Then we earn 1/3 of the first $500,000 collected, 25% of the next $500,000, and 30% of anything beyond that."
+If Court Filing Is Required:
+"If we need to file anything in court during enforcement, our contingency percentage increases slightly. It becomes 40% of the first $250,000, 1/3 of the next $750,000, and 35% beyond that."
+Fee Breakdown — Judgment Enforcement
+Objection Handling
+↑ Back to Table of Contents
+3.3  Collections Litigation  (5.2.6-d)
+Use when: Client needs to file a lawsuit to collect money owed. This involves full litigation.
+Conversation Script
+STEP 1 — Ask About the Claim Amount
+"What is the total amount you're trying to collect?"
+→ Write down the amount.
+STEP 2 — Determine Which Tier Applies
+Under $250,000 → Tier 1
+$250,001 – $1,000,000 → Tier 2
+Over $1,000,000 → Tier 3
+STEP 3 — Present ONLY the Fee Structure That Applies
+For claims UNDER $250,000:
+"For litigation, the flat fee is $5,000 to get started. Then we earn 40% of the first $250,000 we recover, 1/3 of the next $750,000, and 35% of anything beyond that."
+For claims $250,001 – $1,000,000:
+"For litigation, the flat fee is $7,500 to get started. Then we earn 40% of the first $250,000 recovered, 1/3 of the next $750,000, and 35% of anything beyond that."
+For claims OVER $1,000,000:
+"For litigation, the flat fee is $10,000 to get started. Then we earn 40% of the first $250,000 recovered, 1/3 of the next $750,000, and 35% of anything beyond that."
+Fee Breakdown — Collections Litigation
+Objection Handling
+↑ Back to Table of Contents
+3.4  Domestication of Foreign Judgments  (5.2.6-e)
+Use when: An out-of-state judgment needs to be enforced in New York or New Jersey.
+Conversation Script
+STEP 1 — Ask Key Questions
+"Where was the original judgment entered?"
+"Was this a default judgment, confession of judgment, or did the defendant appear in court?"
+"Are you also looking for enforcement help, or just domestication?"
+STEP 2 — Determine Which Scenario Applies
+SCENARIO A — New Jersey (any case) OR New York where defendant appeared in court:
+"For domestication, the flat fee is $1,500 plus a $250 retainer for expenses. If you also need enforcement help, we add a contingency fee: 1/3 of the first $500,000 collected, 25% of the next $500,000, and 30% beyond that."
+"If we need to file in court during enforcement, the contingency increases to: 40% of the first $250,000, 1/3 of the next $750,000, and 35% beyond that."
+SCENARIO B — New York where defendant did NOT appear (default or confession of judgment):
+"For this type of case, domestication is more complex. The flat fee is $5,000 plus a $500 retainer. If you also need an order of attachment, that's an additional $5,000. For enforcement, the same contingency applies: 1/3 of the first $500,000, 25% of the next $500,000, and 30% beyond."
+Fee Breakdown — Domestication
+Scenario A: NJ (Any Case) or NY (Defendant Appeared)
+Scenario B: NY Default / Confession of Judgment
+Objection Handling
+Escalation: If unsure about case type or fee structure → Contact Adam Sackowitz or Kenneth Katz.
+↑ Back to Table of Contents
+PART 4 — Employment Matters
+4.1  Severance  (5.2.6-f)
+Use when: Client is negotiating a severance package with their employer.
+Conversation Script
+STEP 1 — Ask About the Current Offer
+"What severance package is your employer currently offering?"
+→ Note the details — money, benefits, length of time, etc.
+STEP 2 — Present the Fee Structure
+"Here's how our fees work for severance negotiation: You'll pay a flat fee of $1,500 to get started. Then, we earn 1/3 of any increase in money or benefits we negotiate above what they're currently offering. So if they're offering you $10,000 and we get that up to $20,000, we earn 1/3 of that $10,000 increase."
+Fee Breakdown — Severance
+Objection Handling
+Escalation: If client needs a fee adjustment → Ping Nicole Grunfeld or Kenneth Katz for approval.
+Note: Flat fee may be negotiable in strong cases with prior approval.
+↑ Back to Table of Contents
+4.2  Wage and Hour  (5.2.6-g)
+Use when: Unpaid wages, overtime violations, minimum wage claims, or similar wage and hour issues.
+Conversation Script
+STEP 1 — Determine Demand Letter or Litigation
+"Do you want us to send a demand letter first, or are we filing a lawsuit?"
+→ Demand letter = start here. Litigation = court filing will be required.
+STEP 2 — Ask How Many People Are Involved
+"Is this just for you, or are there other employees with the same issue?"
+→ The flat fee is $1,500 per person.
+STEP 3 — Present the Fee Structure
+For a Demand Letter:
+"The flat fee is $1,500 per person to send the demand letter. Then we earn 1/3 of whatever we recover for you."
+For Litigation:
+"The flat fee is $1,500 per person to file the lawsuit. Then we earn 40% of whatever we recover for you."
+Fee Breakdown — Wage and Hour
+Objection Handling
+Escalation: Multiple clients with strong cases → Contact Nicole Grunfeld or Kenneth Katz about reducing or waiving the flat fee.
+↑ Back to Table of Contents
+4.3  Discrimination / Harassment / Retaliation  (5.2.6-h)
+Use when: Client has a discrimination, harassment, or retaliation claim.
+Conversation Script
+STEP 1 — Ask How Many People Are Involved
+"Is this just for you, or are there other employees?"
+→ The flat fee is per person.
+STEP 2 — Present Both Approaches
+"Here's how our fees work for discrimination cases. There are two approaches we can take:"
+Option 1 — Demand Letter:
+"We start by sending a demand letter to try to resolve this without going to court. The flat fee is $2,500 per person, and we earn 1/3 of whatever we recover for you. This is often the faster, less expensive route."
+Option 2 — Litigation:
+"If we need to file a lawsuit, the flat fee is $5,000 per person, and we earn 40% of whatever we recover until depositions begin, then 45% after that."
+"Your attorney will review your case during the consultation and recommend which approach makes the most sense. Once that's determined, we'll send you an Engagement Letter with the specific terms."
+Fee Breakdown — Discrimination
+Objection Handling
+Escalation: Multiple clients with strong cases → Ping Nicole Grunfeld or Kenneth Katz about reducing or waiving the flat fee.
+↑ Back to Table of Contents
+PART 5 — Hourly / Counseling / Document Review
+5.1  Hourly Fee Structure  (5.2.6-i)
+Use when: Advisory matters, document review, or counseling. This structure is rarely used — most matters are handled on contingency or flat fee.
+Conversation Script
+STEP 1 — Explain Hourly Billing
+"For this type of matter, we bill by the hour based on which attorney or staff member works on your case. Our rates range from $150 to $675 per hour depending on the person assigned. We'll provide you with a detailed invoice showing who worked on what."
+STEP 2 — Discuss Which Attorney
+"Based on your matter, [Attorney Name] would be the best fit. Their hourly rate is $[rate]."
+Hourly Rate Breakdown
+Objection Handling
+Escalation: Always escalate hourly matters to the assigned attorney for final rate and scope 
+discussion.
+↑ Back to Table of Contents
+PART 6 — Closing the Call
+CLOSING:
+Use this closing on every call after the fee discussion.
+Closing the Call
+" Based on everything we discussed today, we are excited to move forward with your case. You will be receiving an email with your Engagement Letter along with a link to complete your payment. Please review, sign, and submit your payment at your earliest convenience — once that is done, your case will be introduced to your legal team."
+If the PC Pushes Back or Has Concerns
+" I completely understand. What is your main concern right now?"
+→ Listen, identify the objection, and handle it using the techniques in the relevant fee guide section. Then circle back to the close.
+If the PC Has Questions About Legal Strategy
+" That's a great question — your attorney will walk you through the full strategy once your engagement is confirmed. Would you like me to make a note of that so it gets addressed right away?”
+→ Listen carefully. If this is a case you want to keep, handle the objection using the techniques in each fee guide section, then attempt to close again.
+If Client Has Questions About Legal Strategy
+"I'm not completely certain about the specific legal strategy. When you meet with your attorney in the next few days, they'll lay out the approach and answer all your questions in detail. Would you like me to make a note of your concerns so they can be addressed?"
+Your Goal on Every Call
+↑ Back to Table of Contents
+💡 Tip: You do not need to read this entire guide on every call. The opening is universal — everything else is designed for quick reference mid-call.
+Client's Emotional State | Your Response
+Natural / Calm | Natural and steady
+Angry | Show genuine concern
+Panicked | Create a sense of urgency — reassure them you are on it
+Friendly | Match with warmth and energy
+Overburdened | Sympathetic — acknowledge how much they are carrying
+Frustrated | Empathetic — validate without agreeing with misinformation
+❌  Words to AVOID | ✅  Words to USE
+You should… | Let's work on this…
+You're wrong… (even if they are!) | I understand… let's…
+I demand… | Can you help me understand…
+We can't… | What I can do is…
+We won't… | Help me better understand the issue
+Not our policy… | This is a top priority for me…
+You don't understand… | We should have…
+That does not make any sense… | I'll make sure we make this right…
+You must be confused… | 
+I'm too busy to deal with this… | 
+You have to… | 
+Case Type | Section | Use When…
+Pre-Litigation / Demand Letters | Section 3.1 | Client needs a demand letter sent — no lawsuit filed yet
+Judgment Enforcement | Section 3.2 | A judgment already exists and client needs help collecting
+Collections Litigation | Section 3.3 | Client needs to file a lawsuit to collect money owed
+Domestication of Foreign Judgments | Section 3.4 | Out-of-state judgment needs to be enforced in NY or NJ
+Severance | Section 4.1 | Client is negotiating a severance package
+Wage and Hour | Section 4.2 | Unpaid wages, overtime, or minimum wage violations
+Discrimination / Harassment / Retaliation | Section 4.3 | Discrimination, harassment, or retaliation claims
+Hourly / Counseling / Document Review | Section 5.1 | Advisory matters — rarely used
+Claim Amount | Flat Fee | Contingency Fee
+Under $50,000 | $1,500 | 1/3 of first $500K 25% of next $500K 30% beyond
+$50,001 – $250,000 | $2,500 | 1/3 of first $500K 25% of next $500K 30% beyond
+Over $250,000 | $5,000 | 1/3 of first $500K 25% of next $500K 30% beyond
+OBJECTION: "That flat fee seems high" | OBJECTION: "That flat fee seems high"
+1st Attempt | "I understand. The flat fee ensures we can dedicate the resources needed for your case. Keep in mind, we only earn more when you do — our contingency fee means we're incentivized to get you the best result. Would you like to move forward?"
+2nd Attempt | "I hear you. Many of our clients initially have the same concern, but they find that the flat fee is often recovered through the settlement or recovery we achieve. The alternative would be a higher contingency percentage, which could cost you more in the long run. Shall we move forward with the standard structure?"
+Last Resort | "Let me reach out to our managing attorney to see if we have any flexibility on your specific case. I'll get back to you today with options. Can I follow up with you this afternoon?" → After the call: Ping Adam or Kenneth for approval.
+OBJECTION: "What if you don't recover anything?" | OBJECTION: "What if you don't recover anything?"
+Response | "You only owe the flat fee. If we don't recover anything for you, you won't owe us any additional fees beyond that initial amount."
+⚠️  Alternative Fee Structure (No Flat Fee / Contingency Only): 40% of first $500K, 30% of next $500K, 35% beyond. ONLY offer after standard objection handling. Requires Adam Sackowitz or Kenneth Katz approval before presenting to the client.
+Judgment Amount | Flat Fee | Contingency (No Court Filing) | Contingency (With Court Filing)
+Under $50,000 | $1,500 | 1/3 of first $500K 25% of next $500K 30% beyond | 40% of first $250K 1/3 of next $750K 35% beyond
+$50,001 – $250,000 | $2,500 | 1/3 of first $500K 25% of next $500K 30% beyond | 40% of first $250K 1/3 of next $750K 35% beyond
+Over $250,000 | $5,000 | 1/3 of first $500K 25% of next $500K 30% beyond | 40% of first $250K 1/3 of next $750K 35% beyond
+OBJECTION: "That flat fee seems high" | OBJECTION: "That flat fee seems high"
+1st Attempt | "I understand. The flat fee ensures we can dedicate the resources needed for your case. We only earn more when you do — our contingency fee means we're incentivized to get you the best result. Would you like to move forward?"
+2nd Attempt | "I hear you. Many clients initially have the same concern, but they find the flat fee is often recovered through the settlement or recovery we achieve. The alternative is a higher contingency percentage, which could cost more in the long run. Shall we move forward?"
+Last Resort | "Let me reach out to our managing attorney to see if we have any flexibility. I'll get back to you today with options. Can I follow up with you this afternoon?" → After the call: Ping Adam or Kenneth for approval.
+OBJECTION: "I already have a judgment — why do I need to pay more?" | OBJECTION: "I already have a judgment — why do I need to pay more?"
+Response | "A judgment is just a piece of paper. The hard part is actually collecting the money. We handle all the enforcement work — bank levies, wage garnishments, property liens — to turn that judgment into cash."
+⚠️  Alternative Fee Structure (Requires Adam / Kenneth approval): No Court Filing: 40% of first $500K, 30% of next $500K, 35% beyond. With Court Filing: 50% of first $250K, 45% of next $750K, 50% beyond. ONLY offer after standard objection handling.
+Claim Amount | Flat Fee | Contingency Fee
+Under $250,000 | $5,000 | 40% of first $250K 1/3 of next $750K 35% beyond
+$250,001 – $1,000,000 | $7,500 | 40% of first $250K 1/3 of next $750K 35% beyond
+Over $1,000,000 | $10,000 | 40% of first $250K 1/3 of next $750K 35% beyond
+OBJECTION: "That flat fee seems high" | OBJECTION: "That flat fee seems high"
+1st Attempt | "I understand. The flat fee ensures we can dedicate the resources needed for your case. We only earn more when you do. Would you like to move forward?"
+2nd Attempt | "I hear you. Many clients find the flat fee is recovered through the settlement we achieve. The alternative is a higher contingency percentage, which could cost more. Shall we move forward with the standard structure?"
+Last Resort | "Let me reach out to our managing attorney to see if we have any flexibility. I'll get back to you today. Can I follow up this afternoon?" → After the call: Ping Adam or Kenneth for approval.
+OBJECTION: "Why is the flat fee higher for litigation?" | OBJECTION: "Why is the flat fee higher for litigation?"
+Response | "Litigation involves filing a lawsuit, court appearances, discovery, and potentially trial. It's significantly more work than sending demand letters, so the upfront cost reflects that."
+⚠️  Alternative Fee Structure (No Flat Fee / Contingency Only): 50% of first $250K, 45% of next $750K, 50% beyond. ONLY offer after standard objection handling. Requires Adam Sackowitz or Kenneth Katz approval.
+Service | Flat Fee + Retainer | Contingency (if enforcement)
+Domestication Only | $1,500 + $250 retainer | N/A
+Domestication + Enforcement (No court filing) | $1,500 + $250 retainer | 1/3 of first $500K 25% of next $500K 30% beyond
+Domestication + Enforcement (With court filing) | $1,500 + $250 retainer | 40% of first $250K 1/3 of next $750K 35% beyond
+Service | Flat Fee + Retainer | Contingency (if enforcement)
+Domestication Only | $5,000 + $500 retainer | N/A
+Add Order of Attachment | + $5,000 additional | N/A
+Domestication + Enforcement (No court filing) | $5,000 + $500 retainer | 1/3 of first $500K 25% of next $500K 30% beyond
+Domestication + Enforcement (With court filing) | $5,000 + $500 retainer | 40% of first $250K 1/3 of next $750K 35% beyond
+OBJECTION: "Why is the New York default case more expensive?" | OBJECTION: "Why is the New York default case more expensive?"
+Response | "When the defendant didn't appear in the original case, New York law requires additional steps and filings. It's a more complex process, which is why the fee is higher."
+OBJECTION: "Do I need enforcement, or just domestication?" | OBJECTION: "Do I need enforcement, or just domestication?"
+Response | "Domestication makes the judgment valid in NY or NJ. Enforcement is actually collecting the money — bank levies, garnishments, etc. Most clients need both. We can start with domestication and add enforcement if needed."
+Fee Type | Amount
+Flat Fee | $1,500
+Contingency Fee | 33.33% (1/3) of any increase in money and/or benefits above the current offer
+📊  Example: Current offer $10,000 → Negotiated to $20,000 → Increase = $10,000 → Our fee = 1/3 of $10,000 = $3,333
+OBJECTION: "That flat fee seems high" | OBJECTION: "That flat fee seems high"
+1st Attempt | "I understand. The flat fee ensures we can dedicate the resources needed for your case. We only earn more when you do — our contingency means we're incentivized to get you the best result. Would you like to move forward?"
+2nd Attempt | "I hear you. Many clients find the flat fee is recovered through what we negotiate. The alternative is a higher contingency percentage, which could cost more long-term. Shall we move forward?"
+Last Resort | "Let me reach out to our managing attorney to see if we have any flexibility. I'll get back to you today. Can I follow up this afternoon?" → After the call: Ping Nicole or Kenneth for approval.
+OBJECTION: "What if you can't improve the offer?" | OBJECTION: "What if you can't improve the offer?"
+Response | "You only owe the $1,500 flat fee. If we don't increase your package at all, you won't owe any contingency fee."
+⚠️  Do NOT discuss fee increases for appeals or counterclaims. Those details are in the engagement letter — you do not need to bring them up on this call.
+Case Type | Flat Fee (Per Person) | Contingency Fee
+Demand Letter | $1,500 per person | 33.33% (1/3) of gross recovery
+Litigation | $1,500 per person | 40% of gross recovery
+OBJECTION: "The flat fee is too high for our group" | OBJECTION: "The flat fee is too high for our group"
+Response | "If you have multiple employees with strong cases, I can discuss with Nicole or Kenneth whether we can reduce or waive the flat fee. Let me get approval for that."
+OBJECTION: "Why is litigation 40% instead of 1/3?" | OBJECTION: "Why is litigation 40% instead of 1/3?"
+Response | "Litigation requires filing in court, discovery, depositions, and potentially trial. It's significantly more work than sending a demand letter."
+⚠️  Do NOT discuss fee increases for appeals, counterclaims, or judgment enforcement. Those details are in the engagement letter — you do not need to bring them up on this call.
+Approach | Flat Fee (Per Person) | Contingency Fee
+Demand Letter | $2,500 per person | 33.33% (1/3) of gross recovery
+Litigation (before depositions begin) | $5,000 per person | 40% of gross recovery
+Litigation (after depositions begin) | $5,000 per person | 45% of gross recovery
+📌  If client starts with demand letter ($2,500) and later needs litigation, they pay an additional $2,500 for a total flat fee of $5,000.
+OBJECTION: "That flat fee seems high" | OBJECTION: "That flat fee seems high"
+1st Attempt | "I understand. The flat fee ensures we can dedicate the resources needed for your case. We only earn more when you do. Would you like to move forward?"
+2nd Attempt | "I hear you. Many clients find the flat fee is recovered through what we achieve. The alternative is a higher contingency percentage, which could cost more long-term. Shall we move forward?"
+Last Resort | "Let me reach out to our managing attorney to see if we have any flexibility. I'll get back to you today. Can I follow up this afternoon?" → After the call: Ping Nicole or Kenneth for approval.
+OBJECTION: "Why is litigation 40% instead of 1/3?" | OBJECTION: "Why is litigation 40% instead of 1/3?"
+Response | "Litigation requires filing in court, discovery, depositions, and potentially trial. It's significantly more work than sending a demand letter."
+Role | Rate Range | Individual Rates
+Partners | $575 – $750/hr | Kenneth Katz: $675 Nicole Grunfeld: $625 Adam Sackowitz: $575
+Associates | $400 – $550/hr | Other Associates (pending): $425
+Paralegals | $250 – $350/hr | Isalice Acevedo: $275
+Legal Assistants | $150 – $225/hr | Diomicsa Hernandez: $225 Maria Camacaro: $150 Ruqaiyah Khan: $150
+OBJECTION: "How much will this cost total?" | OBJECTION: "How much will this cost total?"
+Response | "It depends on how much time the matter requires. We can estimate based on similar cases, but I'll need to discuss with the attorney. We can also set a budget or cap if that helps."
+OBJECTION: "Can we do a flat fee instead?" | OBJECTION: "Can we do a flat fee instead?"
+Response | "Let me discuss that with the attorney. For some matters we can offer a flat fee, but it depends on the scope of work."
+Build trust. Present fees clearly. Handle objections confidently and Assume the Close. Be honest, be empathetic, and always follow through.
