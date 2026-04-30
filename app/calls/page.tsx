@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
@@ -68,6 +69,7 @@ function scoreBadgeClass(score: number | null | undefined): { color: string; lab
 }
 
 export default function CallsPage() {
+  const router = useRouter();
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -341,10 +343,15 @@ export default function CallsPage() {
                   return (
                     <tr
                       key={row.id}
+                      onClick={() => router.push(`/calls/${encodeURIComponent(row.id)}`)}
                       className="border-b border-[#2a3f5f]/60 last:border-0 hover:bg-[#172037] cursor-pointer"
                     >
                       <td className="py-3 pr-4 font-medium text-white">
-                        <Link href={`/calls/${encodeURIComponent(row.id)}`} className="hover:underline">
+                        <Link
+                          href={`/calls/${encodeURIComponent(row.id)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:underline"
+                        >
                           {callerName}
                         </Link>
                       </td>
