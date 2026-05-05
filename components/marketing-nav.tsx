@@ -10,6 +10,8 @@ export const MARKETING_NAV = [
   { label: "Analytics", href: "/analytics", icon: "▣" },
   { label: "Search Console", href: "/search-console", icon: "🔍" },
   { label: "SEO", href: "/seo", icon: "◎" },
+  { label: "Keyword Research", href: "/keyword-research", icon: "⌕" },
+  { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
   { label: "Content", href: "/content", icon: "✎" },
   { label: "Social", href: "/social", icon: "♺" },
   { label: "Email", href: "/email", icon: "✉" },

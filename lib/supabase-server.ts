@@ -14,3 +14,17 @@ export function getSupabaseServer(): SupabaseClient | null {
   }
   return cached;
 }
+/**
+ * Same as getSupabaseServer, but throws instead of returning null when env
+ * vars are missing. Use this in API routes where you'd just have to throw
+ * anyway. Used by the keyword research and brand voice routes.
+ */
+export function getSupabaseAdmin(): SupabaseClient {
+  const client = getSupabaseServer();
+  if (!client) {
+    throw new Error(
+      "Supabase server client unavailable. Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars.",
+    );
+  }
+  return client;
+}
