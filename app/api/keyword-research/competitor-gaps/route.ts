@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const anthropic = getAnthropic();
     const response = await anthropic.messages.create({
       model: KEYWORD_RESEARCH_MODEL,
-      max_tokens: 8192,
+      max_tokens: 6000,
       system: `You are an expert SEO competitor analysis specialist for law firms.\n\n${firmContext}`,
       messages: [
         {
