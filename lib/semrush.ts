@@ -1,26 +1,87 @@
 /**
- * Semrush helper for the keyword research feature.
+ * Semrush helper for MarketOS.
  *
- * Replaces the SE Ranking integration the Replit version used. The two main
- * functions:
+ * Two layers:
  *
- *   - getDomainKeywords(domain, ...) — pulls the domain_organic report
- *     (keywords the domain currently ranks for, with position/volume/etc).
- *     Mirrors the shape the original SE Ranking helper returned so callers
- *     don't have to change.
+ *   1. Original low-level utilities used by the SEO Overview API routes
+ *      (semrushSeoUrl, semrushAnalyticsUrl, parseSemrushCsv, rowToRecord,
+ *      parseIntSafe, SEMRUSH_DOMAIN, SEMRUSH_DATABASE).
  *
- *   - getKeywordDifficulty(phrases) — calls phrase_kdi to fill in difficulty
- *     scores when domain_organic doesn't include them.
+ *   2. Higher-level helpers added for the Keyword Research feature
+ *      (getDomainKeywords, getKeywordDifficulty, lookupKeywordRanking,
+ *      SemrushKeywordRow type).
  *
- * Semrush returns CSV with `;` delimiters. We parse it into typed objects.
- *
- * MarketOS already uses Semrush on the SEO Overview page (Authority 26,
- * 3,595 keywords), so SEMRUSH_API_KEY is already configured in Vercel.
+ * The two layers don't interfere — the second layer is built on a separate,
+ * stricter CSV parser because it expects header-keyed objects, while the
+ * original parseSemrushCsv returns parallel arrays for the older callers.
  */
 
-const SEMRUSH_BASE = "https://api.semrush.com/";
-const DEFAULT_DOMAIN = "katzmelinger.com";
-const DEFAULT_DATABASE = "us"; // NY/NJ market — US database
+// ============================================================================
+// Layer 1 — original exports (DO NOT REMOVE — used by /api/seo/* routes)
+// ============================================================================
+
+export const SEMRUSH_DOMAIN = "katzmelinger.com";
+export const SEMRUSH_DATABASE = "us";
+
+const SEO_BASE = "https://api.semrush.com/";
+const ANALYTICS_BASE = "https://api.semrush.com/analytics/v1/";
+
+export function semrushSeoUrl(params: Record<string, string>): string {
+  const u = new URL(SEO_BASE);
+  for (const [k, v] of Object.entries(params)) {
+    u.searchParams.set(k, v);
+  }
+  return u.toString();
+}
+
+export function semrushAnalyticsUrl(params: Record<string, string>): string {
+  const u = new URL(ANALYTICS_BASE);
+  for (const [k, v] of Object.entries(params)) {
+    u.searchParams.set(k, v);
+  }
+  return u.toString();
+}
+
+/** Semrush returns semicolon-separated CSV; first line is headers. */
+export function parseSemrushCsv(text: string): {
+  headers: string[];
+  rows: string[][];
+} | null {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith("ERROR")) {
+    return null;
+  }
+  const lines = trimmed.split(/\r?\n/).filter(Boolean);
+  if (lines.length < 1) {
+    return null;
+  }
+  const headers = lines[0]!.split(";").map((h) => h.trim());
+  const rows = lines.slice(1).map((line) => line.split(";").map((c) => c.trim()));
+  return { headers, rows };
+}
+
+export function rowToRecord(
+  headers: string[],
+  row: string[],
+): Record<string, string> {
+  const o: Record<string, string> = {};
+  headers.forEach((h, i) => {
+    o[h] = row[i] ?? "";
+  });
+  return o;
+}
+
+export function parseIntSafe(v: string | undefined): number {
+  if (v == null || v === "") {
+    return 0;
+  }
+  const n = Number.parseInt(v.replace(/,/g, ""), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// ============================================================================
+// Layer 2 — keyword research helpers (added April 2026)
+// ============================================================================
 
 export type SemrushKeywordRow = {
   keyword: string;
@@ -33,7 +94,7 @@ export type SemrushKeywordRow = {
   trafficPercent: number | null;
   competition: number | null;
   numberOfResults: number | null;
-  difficulty: number | null; // filled in by getKeywordDifficulty if requested
+  difficulty: number | null;
 };
 
 function getApiKey(): string {
@@ -47,16 +108,14 @@ function getApiKey(): string {
 }
 
 /**
- * Parses Semrush CSV (semicolon-delimited, first row is headers).
- * Returns an array of objects keyed by header name.
+ * Strict CSV parser for layer 2. Returns header-keyed objects rather than the
+ * parallel-arrays shape used by the original parseSemrushCsv.
  */
-function parseSemrushCsv(text: string): Record<string, string>[] {
+function parseSemrushCsvObjects(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-
   const headers = lines[0].split(";");
   const rows: Record<string, string>[] = [];
-
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(";");
     const row: Record<string, string> = {};
@@ -74,10 +133,6 @@ function toNum(v: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Maps a sort key from the original SE Ranking helper to the Semrush
- * display_sort parameter format. Falls back to traffic descending.
- */
 function mapSort(
   sortBy: string | undefined,
   sortDir: "asc" | "desc" | undefined,
@@ -96,9 +151,6 @@ function mapSort(
 /**
  * Pulls the domain_organic report from Semrush — keywords the domain
  * currently ranks for in Google's top 100 organic results.
- *
- * Signature mirrors the original SE Ranking helper so the keywords route
- * doesn't need to change its call site.
  */
 export async function getDomainKeywords(
   domain: string | undefined,
@@ -112,17 +164,16 @@ export async function getDomainKeywords(
   const params = new URLSearchParams({
     type: "domain_organic",
     key,
-    domain: domain ?? DEFAULT_DOMAIN,
-    database: database ?? DEFAULT_DATABASE,
+    domain: domain ?? SEMRUSH_DOMAIN,
+    database: database ?? SEMRUSH_DATABASE,
     display_limit: String(Math.min(Math.max(limit, 1), 1000)),
     display_offset: String(Math.max(offset, 0)),
     display_sort: mapSort(sortBy, sortDir),
     export_columns: "Ph,Po,Pp,Pd,Nq,Cp,Ur,Tr,Tc,Co,Nr,Td",
   });
 
-  const res = await fetch(`${SEMRUSH_BASE}?${params.toString()}`, {
+  const res = await fetch(`${SEO_BASE}?${params.toString()}`, {
     method: "GET",
-    // Semrush is fairly slow; give it room.
     signal: AbortSignal.timeout(30_000),
   });
 
@@ -132,14 +183,12 @@ export async function getDomainKeywords(
 
   const text = await res.text();
 
-  // Semrush returns "ERROR ###" as plain text on failure, not CSV.
   if (text.startsWith("ERROR")) {
-    // Empty result is a common case (e.g. tiny domain, niche query) — return [].
     if (/NOTHING\s*FOUND/i.test(text) || /50 ::/.test(text)) return [];
     throw new Error(`Semrush returned: ${text.trim()}`);
   }
 
-  const rows = parseSemrushCsv(text);
+  const rows = parseSemrushCsvObjects(text);
   return rows.map((r) => ({
     keyword: r["Keyword"] ?? "",
     position: toNum(r["Position"]),
@@ -151,26 +200,23 @@ export async function getDomainKeywords(
     trafficPercent: toNum(r["Traffic (%)"]),
     competition: toNum(r["Competition"]),
     numberOfResults: toNum(r["Number of Results"]),
-    difficulty: null, // not in this report — call getKeywordDifficulty to enrich
+    difficulty: null,
   }));
 }
 
 /**
  * Look up keyword difficulty for one or more phrases via the phrase_kdi
  * endpoint. Returns a map of lowercase keyword -> difficulty (0-100).
- *
- * Semrush charges per phrase, so call this only when difficulty is needed.
  */
 export async function getKeywordDifficulty(
   phrases: string[],
-  database: string = DEFAULT_DATABASE,
+  database: string = SEMRUSH_DATABASE,
 ): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   if (phrases.length === 0) return out;
 
   const key = getApiKey();
 
-  // phrase_kdi accepts up to 100 phrases per request, semicolon-separated.
   const chunks: string[][] = [];
   for (let i = 0; i < phrases.length; i += 100) {
     chunks.push(phrases.slice(i, i + 100));
@@ -186,7 +232,7 @@ export async function getKeywordDifficulty(
     });
 
     try {
-      const res = await fetch(`${SEMRUSH_BASE}?${params.toString()}`, {
+      const res = await fetch(`${SEO_BASE}?${params.toString()}`, {
         method: "GET",
         signal: AbortSignal.timeout(30_000),
       });
@@ -195,7 +241,7 @@ export async function getKeywordDifficulty(
       const text = await res.text();
       if (text.startsWith("ERROR")) continue;
 
-      const rows = parseSemrushCsv(text);
+      const rows = parseSemrushCsvObjects(text);
       for (const r of rows) {
         const phrase = r["Keyword"]?.toLowerCase().trim();
         const kd = toNum(r["Keyword Difficulty Index"]);
@@ -215,7 +261,7 @@ export async function getKeywordDifficulty(
  */
 export async function lookupKeywordRanking(
   keyword: string,
-  domain: string = DEFAULT_DOMAIN,
+  domain: string = SEMRUSH_DOMAIN,
 ): Promise<{
   currentRank: number | null;
   searchVolume: number | null;
@@ -225,8 +271,6 @@ export async function lookupKeywordRanking(
   const normalized = keyword.toLowerCase().trim();
 
   try {
-    // Pull a generous slice of the domain's keywords and search locally.
-    // Cheaper than a per-keyword API call and matches the original behavior.
     const all = await getDomainKeywords(domain, undefined, 500, 0, "traffic", "desc");
 
     const exact = all.find((kw) => kw.keyword.toLowerCase().trim() === normalized);
@@ -239,14 +283,11 @@ export async function lookupKeywordRanking(
       );
 
     if (!partial) {
-      // Not in the domain's ranking set. Still try to grab volume + KD for the
-      // keyword itself so the user sees something useful.
       const kdMap = await getKeywordDifficulty([keyword]);
       const difficulty = kdMap.get(normalized) ?? null;
       return { currentRank: null, searchVolume: null, difficulty, url: null };
     }
 
-    // Enrich with KD if missing.
     let difficulty = partial.difficulty;
     if (difficulty === null) {
       const kdMap = await getKeywordDifficulty([partial.keyword]);

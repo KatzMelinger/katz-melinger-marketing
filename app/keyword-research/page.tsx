@@ -3,48 +3,14 @@
 /**
  * Keyword Research page for MarketOS.
  *
- * Four tabs:
- *   - Discover         — AI-suggested keyword opportunities
- *   - Expand           — keyword cluster around a single seed
- *   - Competitor Gaps  — AI gap analysis vs competing firms
- *   - Tracked          — keywords the firm is monitoring with live Semrush data
+ * Four tabs: Discover / Expand / Competitor Gaps / Tracked.
  *
- * Ported from artifacts/dashboard/src/pages/keyword-research.tsx (Replit / Vite)
- * to Next.js App Router. Differences from the original:
- *   - "use client" directive at the top (Next.js Server Component default)
- *   - Removed the Layout/PageHeader wrappers — MarketOS has its own layout shell
- *   - API base is just "/api" since pages and routes live in the same Next.js app
- *   - Added a "Tracked" tab backed by /api/seo/keywords{,/refresh,/[id]}
+ * Uses plain Tailwind utility classes only — no shadcn UI primitives, no
+ * lucide icons. Matches the project's existing aesthetic (the marketing nav
+ * uses Unicode glyphs the same way).
  */
 
 import { useEffect, useState } from "react";
-import {
-  Search,
-  Loader2,
-  Sparkles,
-  TrendingUp,
-  Target,
-  Lightbulb,
-  ChevronDown,
-  ChevronUp,
-  Zap,
-  ArrowRight,
-  Plus,
-  Copy,
-  Check,
-  BarChart3,
-  Globe,
-  FileText,
-  Trash2,
-  RefreshCw,
-  ListChecks,
-  ArrowUp,
-  ArrowDown,
-  Minus,
-} from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 type Tab = "discover" | "expand" | "gaps" | "tracked";
 
@@ -69,20 +35,71 @@ const INTENTS = [
 
 // ---------- shared visual primitives ---------------------------------------
 
+function Card({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`border border-black/10 dark:border-white/10 rounded-lg ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function Button({
+  children,
+  onClick,
+  disabled,
+  variant = "primary",
+  className = "",
+  title,
+  type = "button",
+}: {
+  children: React.ReactNode;
+  onClick?: (e: React.MouseEvent) => void;
+  disabled?: boolean;
+  variant?: "primary" | "ghost" | "outline";
+  className?: string;
+  title?: string;
+  type?: "button" | "submit";
+}) {
+  const base =
+    "inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  const variants: Record<string, string> = {
+    primary: "bg-foreground text-background hover:opacity-90",
+    ghost: "hover:bg-black/5 dark:hover:bg-white/10",
+    outline: "border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/10",
+  };
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`${base} ${variants[variant]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function DifficultyBadge({ d }: { d: number | null | undefined }) {
   if (d === null || d === undefined) {
     return (
-      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-black/5 dark:bg-white/10 opacity-70">
         —
       </span>
     );
   }
   const color =
     d >= 70
-      ? "bg-red-500/10 text-red-400"
+      ? "bg-red-500/15 text-red-700 dark:text-red-400"
       : d >= 40
-      ? "bg-amber-500/10 text-amber-400"
-      : "bg-emerald-500/10 text-emerald-400";
+      ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+      : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400";
   const label = d >= 70 ? "Hard" : d >= 40 ? "Medium" : "Easy";
   return (
     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
@@ -93,15 +110,15 @@ function DifficultyBadge({ d }: { d: number | null | undefined }) {
 
 function IntentBadge({ intent }: { intent: string }) {
   const colors: Record<string, string> = {
-    informational: "bg-blue-500/10 text-blue-400",
-    commercial: "bg-violet-500/10 text-violet-400",
-    transactional: "bg-emerald-500/10 text-emerald-400",
-    navigational: "bg-orange-500/10 text-orange-400",
+    informational: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+    commercial: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
+    transactional: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+    navigational: "bg-orange-500/15 text-orange-700 dark:text-orange-400",
   };
   return (
     <span
       className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-        colors[intent] || "bg-muted text-muted-foreground"
+        colors[intent] || "bg-black/5 dark:bg-white/10"
       }`}
     >
       {intent}
@@ -112,22 +129,29 @@ function IntentBadge({ intent }: { intent: string }) {
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-6 w-6 p-0"
+    <button
       onClick={() => {
         navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
+      className="text-xs opacity-50 hover:opacity-100 transition-opacity"
+      title="Copy"
     >
-      {copied ? (
-        <Check className="w-3 h-3 text-emerald-400" />
-      ) : (
-        <Copy className="w-3 h-3 text-muted-foreground" />
-      )}
-    </Button>
+      {copied ? "✓" : "⎘"}
+    </button>
+  );
+}
+
+function Spinner({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-block animate-spin ${className}`}
+      style={{ width: "1em", height: "1em" }}
+      aria-hidden
+    >
+      ◐
+    </span>
   );
 }
 
@@ -136,45 +160,38 @@ function CopyButton({ text }: { text: string }) {
 export default function KeywordResearchPage() {
   const [activeTab, setActiveTab] = useState<Tab>("discover");
 
+  const tabs: { id: Tab; label: string; icon: string }[] = [
+    { id: "discover", label: "Discover", icon: "⌕" },
+    { id: "expand", label: "Expand", icon: "✦" },
+    { id: "gaps", label: "Competitor Gaps", icon: "◎" },
+    { id: "tracked", label: "Tracked", icon: "☑" },
+  ];
+
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Keyword Research</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm opacity-70 mt-1">
           AI-powered keyword discovery, cluster expansion, competitive gap analysis,
           and live rank tracking via Semrush.
         </p>
       </div>
 
-      <div className="flex gap-2 border-b border-border pb-4 overflow-x-auto">
-        <Button
-          variant={activeTab === "discover" ? "default" : "ghost"}
-          onClick={() => setActiveTab("discover")}
-          className="gap-2 shrink-0"
-        >
-          <Search className="w-4 h-4" /> Discover
-        </Button>
-        <Button
-          variant={activeTab === "expand" ? "default" : "ghost"}
-          onClick={() => setActiveTab("expand")}
-          className="gap-2 shrink-0"
-        >
-          <Sparkles className="w-4 h-4" /> Expand
-        </Button>
-        <Button
-          variant={activeTab === "gaps" ? "default" : "ghost"}
-          onClick={() => setActiveTab("gaps")}
-          className="gap-2 shrink-0"
-        >
-          <Target className="w-4 h-4" /> Competitor Gaps
-        </Button>
-        <Button
-          variant={activeTab === "tracked" ? "default" : "ghost"}
-          onClick={() => setActiveTab("tracked")}
-          className="gap-2 shrink-0"
-        >
-          <ListChecks className="w-4 h-4" /> Tracked
-        </Button>
+      <div className="flex gap-2 border-b border-black/10 dark:border-white/10 pb-3 overflow-x-auto">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors shrink-0 ${
+              activeTab === t.id
+                ? "bg-foreground text-background"
+                : "hover:bg-black/5 dark:hover:bg-white/10"
+            }`}
+          >
+            <span aria-hidden>{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {activeTab === "discover" && <DiscoverTab />}
@@ -243,11 +260,9 @@ function DiscoverTab() {
       <Card className="p-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Seed Keyword (optional)
-            </label>
+            <label className="text-xs font-medium opacity-70">Seed Keyword (optional)</label>
             <input
-              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               placeholder="e.g., employment lawyer NYC"
               value={seedKeyword}
               onChange={(e) => setSeedKeyword(e.target.value)}
@@ -255,40 +270,32 @@ function DiscoverTab() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Practice Area</label>
+            <label className="text-xs font-medium opacity-70">Practice Area</label>
             <select
-              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               value={practiceArea}
               onChange={(e) => setPracticeArea(e.target.value)}
             >
               {PRACTICE_AREAS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
+                <option key={a} value={a}>{a}</option>
               ))}
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Search Intent</label>
+            <label className="text-xs font-medium opacity-70">Search Intent</label>
             <select
-              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               value={intent}
               onChange={(e) => setIntent(e.target.value)}
             >
               {INTENTS.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.label}
-                </option>
+                <option key={i.id} value={i.id}>{i.label}</option>
               ))}
             </select>
           </div>
           <div className="flex items-end">
-            <Button onClick={handleDiscover} disabled={loading} className="w-full gap-2">
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
+            <Button onClick={handleDiscover} disabled={loading} className="w-full">
+              {loading ? <Spinner /> : <span aria-hidden>⌕</span>}
               Discover Keywords
             </Button>
           </div>
@@ -296,24 +303,24 @@ function DiscoverTab() {
       </Card>
 
       {error && (
-        <div className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg">
+        <div className="text-red-700 dark:text-red-400 text-sm bg-red-500/10 p-3 rounded-md">
           {error}
         </div>
       )}
 
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Analyzing keyword opportunities…</p>
+          <Spinner className="text-2xl" />
+          <p className="text-sm opacity-70">Analyzing keyword opportunities…</p>
         </div>
       )}
 
       {results && !loading && (
         <div className="space-y-6">
           {results.summary && (
-            <Card className="p-4 border-primary/20 bg-primary/5">
+            <Card className="p-4 bg-blue-500/5 border-blue-500/30">
               <div className="flex items-start gap-3">
-                <Lightbulb className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                <span className="text-lg" aria-hidden>💡</span>
                 <p className="text-sm">{results.summary}</p>
               </div>
             </Card>
@@ -323,22 +330,19 @@ function DiscoverTab() {
             {results.quickWins?.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
-                  <Zap className="w-4 h-4 text-emerald-400" /> Quick Wins
+                  <span aria-hidden>⚡</span> Quick Wins
                 </h3>
                 <div className="space-y-2">
                   {results.quickWins.map((qw: any, i: number) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between text-sm bg-muted/30 rounded-lg p-2.5"
-                    >
+                    <div key={i} className="flex items-center justify-between text-sm bg-black/5 dark:bg-white/5 rounded-md p-2.5">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{qw.keyword}</span>
                           <CopyButton text={qw.keyword} />
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{qw.reason}</p>
+                        <p className="text-xs opacity-70 mt-0.5">{qw.reason}</p>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0 ml-3">
+                      <div className="flex items-center gap-3 text-xs opacity-70 shrink-0 ml-3">
                         <span>{qw.volume?.toLocaleString()} /mo</span>
                         <DifficultyBadge d={qw.difficulty} />
                       </div>
@@ -351,22 +355,19 @@ function DiscoverTab() {
             {results.highValueTargets?.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
-                  <TrendingUp className="w-4 h-4 text-amber-400" /> High-Value Targets
+                  <span aria-hidden>📈</span> High-Value Targets
                 </h3>
                 <div className="space-y-2">
                   {results.highValueTargets.map((hv: any, i: number) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between text-sm bg-muted/30 rounded-lg p-2.5"
-                    >
+                    <div key={i} className="flex items-center justify-between text-sm bg-black/5 dark:bg-white/5 rounded-md p-2.5">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{hv.keyword}</span>
                           <CopyButton text={hv.keyword} />
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{hv.strategy}</p>
+                        <p className="text-xs opacity-70 mt-0.5">{hv.strategy}</p>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0 ml-3">
+                      <div className="flex items-center gap-3 text-xs opacity-70 shrink-0 ml-3">
                         <span>{hv.volume?.toLocaleString()} /mo</span>
                         <DifficultyBadge d={hv.difficulty} />
                       </div>
@@ -379,31 +380,22 @@ function DiscoverTab() {
 
           {sortedKeywords.length > 0 && (
             <Card className="overflow-hidden">
-              <div className="p-4 border-b border-border flex items-center justify-between">
+              <div className="p-4 border-b border-black/10 dark:border-white/10">
                 <h3 className="font-medium">All Keywords ({sortedKeywords.length})</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-xs uppercase bg-muted/50 text-muted-foreground border-b border-border">
+                  <thead className="text-xs uppercase bg-black/5 dark:bg-white/5 opacity-70">
                     <tr>
                       <th className="px-4 py-3 text-left font-medium">Keyword</th>
-                      <th
-                        className="px-4 py-3 text-left font-medium cursor-pointer hover:text-foreground"
-                        onClick={() => toggleSort("volume")}
-                      >
+                      <th className="px-4 py-3 text-left font-medium cursor-pointer" onClick={() => toggleSort("volume")}>
                         Volume {sortBy === "volume" && (sortDir === "desc" ? "↓" : "↑")}
                       </th>
-                      <th
-                        className="px-4 py-3 text-left font-medium cursor-pointer hover:text-foreground"
-                        onClick={() => toggleSort("difficulty")}
-                      >
+                      <th className="px-4 py-3 text-left font-medium cursor-pointer" onClick={() => toggleSort("difficulty")}>
                         Difficulty {sortBy === "difficulty" && (sortDir === "desc" ? "↓" : "↑")}
                       </th>
                       <th className="px-4 py-3 text-left font-medium">Intent</th>
-                      <th
-                        className="px-4 py-3 text-left font-medium cursor-pointer hover:text-foreground"
-                        onClick={() => toggleSort("relevance")}
-                      >
+                      <th className="px-4 py-3 text-left font-medium cursor-pointer" onClick={() => toggleSort("relevance")}>
                         Relevance {sortBy === "relevance" && (sortDir === "desc" ? "↓" : "↑")}
                       </th>
                       <th className="px-4 py-3 text-left font-medium">Practice Area</th>
@@ -411,44 +403,26 @@ function DiscoverTab() {
                       <th className="px-4 py-3 text-left font-medium">Track</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/50">
+                  <tbody>
                     {sortedKeywords.map((kw: any, i: number) => (
-                      <tr key={i} className="hover:bg-muted/20 transition-colors">
+                      <tr key={i} className="border-t border-black/5 dark:border-white/5 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{kw.keyword}</span>
                             <CopyButton text={kw.keyword} />
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {kw.volume?.toLocaleString() || "—"}
-                        </td>
+                        <td className="px-4 py-3 opacity-70">{kw.volume?.toLocaleString() || "—"}</td>
+                        <td className="px-4 py-3"><DifficultyBadge d={kw.difficulty || 0} /></td>
+                        <td className="px-4 py-3"><IntentBadge intent={kw.intent || "informational"} /></td>
                         <td className="px-4 py-3">
-                          <DifficultyBadge d={kw.difficulty || 0} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <IntentBadge intent={kw.intent || "informational"} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="w-16 bg-muted rounded-full h-2">
-                            <div
-                              className="bg-primary h-2 rounded-full"
-                              style={{ width: `${kw.relevance || 0}%` }}
-                            />
+                          <div className="w-16 bg-black/10 dark:bg-white/10 rounded-full h-2">
+                            <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${kw.relevance || 0}%` }} />
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {kw.practiceArea || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px] truncate">
-                          {kw.contentSuggestion || "—"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <TrackButton
-                            keyword={kw.keyword}
-                            practiceArea={kw.practiceArea}
-                          />
-                        </td>
+                        <td className="px-4 py-3 text-xs opacity-70">{kw.practiceArea || "—"}</td>
+                        <td className="px-4 py-3 text-xs opacity-70 max-w-[200px] truncate">{kw.contentSuggestion || "—"}</td>
+                        <td className="px-4 py-3"><TrackButton keyword={kw.keyword} practiceArea={kw.practiceArea} compact /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -460,28 +434,21 @@ function DiscoverTab() {
           {results.contentGaps?.length > 0 && (
             <Card className="p-4">
               <h3 className="font-medium flex items-center gap-2 mb-3">
-                <FileText className="w-4 h-4 text-blue-400" /> Content Gaps
+                <span aria-hidden>📄</span> Content Gaps
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {results.contentGaps.map((gap: any, i: number) => (
-                  <div key={i} className="bg-muted/30 rounded-lg p-3">
+                  <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-medium text-sm">{gap.topic}</span>
-                      <Badge variant="outline" className="text-xs capitalize">
+                      <span className="text-xs px-2 py-0.5 rounded-full border border-black/15 dark:border-white/15 capitalize">
                         {gap.priority}
-                      </Badge>
+                      </span>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Format: {gap.contentFormat}
-                    </p>
+                    <p className="text-xs opacity-70 mb-2">Format: {gap.contentFormat}</p>
                     <div className="flex flex-wrap gap-1">
                       {gap.suggestedKeywords?.map((kw: string, j: number) => (
-                        <span
-                          key={j}
-                          className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
-                        >
-                          {kw}
-                        </span>
+                        <span key={j} className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">{kw}</span>
                       ))}
                     </div>
                   </div>
@@ -502,12 +469,8 @@ function ExpandTab() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    longTail: true,
-    questions: true,
-    local: true,
-    semantic: false,
-    competitor: false,
+  const [open, setOpen] = useState<Record<string, boolean>>({
+    longTail: true, questions: true, local: true, semantic: false, competitor: false,
   });
 
   const handleExpand = async () => {
@@ -530,16 +493,12 @@ function ExpandTab() {
     }
   };
 
-  const toggleSection = (key: string) => {
-    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
   const sections = [
-    { key: "longTail", label: "Long-Tail Variations", icon: ArrowRight, color: "text-blue-400" },
-    { key: "questions", label: "Question Keywords", icon: Search, color: "text-violet-400" },
-    { key: "local", label: "Local Variations (NYC/NJ)", icon: Globe, color: "text-emerald-400" },
-    { key: "semantic", label: "Semantic / Related", icon: Sparkles, color: "text-amber-400" },
-    { key: "competitor", label: "Competitor Keywords", icon: Target, color: "text-red-400" },
+    { key: "longTail", label: "Long-Tail Variations", icon: "→" },
+    { key: "questions", label: "Question Keywords", icon: "?" },
+    { key: "local", label: "Local Variations (NYC/NJ)", icon: "⌖" },
+    { key: "semantic", label: "Semantic / Related", icon: "✦" },
+    { key: "competitor", label: "Competitor Keywords", icon: "◎" },
   ];
 
   return (
@@ -547,11 +506,9 @@ function ExpandTab() {
       <Card className="p-5">
         <div className="flex gap-4">
           <div className="flex-1 space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Keyword to Expand
-            </label>
+            <label className="text-xs font-medium opacity-70">Keyword to Expand</label>
             <input
-              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               placeholder="e.g., wrongful termination"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
@@ -559,75 +516,54 @@ function ExpandTab() {
             />
           </div>
           <div className="flex items-end">
-            <Button
-              onClick={handleExpand}
-              disabled={loading || !keyword.trim()}
-              className="gap-2"
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
+            <Button onClick={handleExpand} disabled={loading || !keyword.trim()}>
+              {loading ? <Spinner /> : <span aria-hidden>✦</span>}
               Expand
             </Button>
           </div>
         </div>
       </Card>
 
-      {error && (
-        <div className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg">
-          {error}
-        </div>
-      )}
+      {error && <div className="text-red-700 dark:text-red-400 text-sm bg-red-500/10 p-3 rounded-md">{error}</div>}
 
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">
-            Building keyword cluster for &quot;{keyword}&quot;…
-          </p>
+          <Spinner className="text-2xl" />
+          <p className="text-sm opacity-70">Building keyword cluster for &quot;{keyword}&quot;…</p>
         </div>
       )}
 
       {results && !loading && (
         <div className="space-y-4">
-          {sections.map(({ key, label, icon: Icon, color }) => {
+          {sections.map(({ key, label, icon }) => {
             const items = results[key] || [];
             if (items.length === 0) return null;
-            const isOpen = expandedSections[key];
+            const isOpen = open[key];
             return (
               <Card key={key} className="overflow-hidden">
                 <button
-                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/20 transition-colors"
-                  onClick={() => toggleSection(key)}
+                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors"
+                  onClick={() => setOpen((p) => ({ ...p, [key]: !p[key] }))}
                 >
                   <div className="flex items-center gap-2">
-                    <Icon className={`w-4 h-4 ${color}`} />
+                    <span aria-hidden>{icon}</span>
                     <span className="font-medium text-sm">{label}</span>
-                    <Badge variant="outline" className="text-xs">
+                    <span className="text-xs px-2 py-0.5 rounded-full border border-black/15 dark:border-white/15">
                       {items.length}
-                    </Badge>
+                    </span>
                   </div>
-                  {isOpen ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
+                  <span aria-hidden>{isOpen ? "▴" : "▾"}</span>
                 </button>
                 {isOpen && (
-                  <div className="border-t border-border divide-y divide-border/50">
+                  <div className="border-t border-black/10 dark:border-white/10">
                     {items.map((item: any, i: number) => (
-                      <div
-                        key={i}
-                        className="px-4 py-2.5 flex items-center justify-between hover:bg-muted/10"
-                      >
+                      <div key={i} className="px-4 py-2.5 flex items-center justify-between border-t border-black/5 dark:border-white/5 first:border-t-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
                         <div className="flex items-center gap-2">
                           <span className="text-sm">{item.keyword}</span>
                           <CopyButton text={item.keyword} />
                           <TrackButton keyword={item.keyword} compact />
                         </div>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-4 text-xs opacity-70">
                           <span>{item.volume?.toLocaleString() || "—"} /mo</span>
                           <DifficultyBadge d={item.difficulty || 0} />
                         </div>
@@ -642,30 +578,28 @@ function ExpandTab() {
           {results.contentStrategy && (
             <Card className="p-4">
               <h3 className="font-medium flex items-center gap-2 mb-3">
-                <BarChart3 className="w-4 h-4 text-primary" /> Content Strategy
+                <span aria-hidden>📊</span> Content Strategy
               </h3>
               <div className="space-y-3 text-sm">
                 {results.contentStrategy.pillarPage && (
                   <div>
-                    <span className="text-muted-foreground">Pillar Page:</span>{" "}
+                    <span className="opacity-70">Pillar Page:</span>{" "}
                     <span className="font-medium">{results.contentStrategy.pillarPage}</span>
                   </div>
                 )}
                 {results.contentStrategy.supportingArticles?.length > 0 && (
                   <div>
-                    <span className="text-muted-foreground block mb-1">Supporting Articles:</span>
-                    <ul className="space-y-1 ml-4">
+                    <span className="opacity-70 block mb-1">Supporting Articles:</span>
+                    <ul className="space-y-1 ml-4 list-disc">
                       {results.contentStrategy.supportingArticles.map((a: string, i: number) => (
-                        <li key={i} className="text-sm list-disc">
-                          {a}
-                        </li>
+                        <li key={i}>{a}</li>
                       ))}
                     </ul>
                   </div>
                 )}
                 {results.contentStrategy.internalLinkingPlan && (
                   <div>
-                    <span className="text-muted-foreground">Linking Plan:</span>{" "}
+                    <span className="opacity-70">Linking Plan:</span>{" "}
                     {results.contentStrategy.internalLinkingPlan}
                   </div>
                 )}
@@ -690,10 +624,7 @@ function GapsTab() {
     setLoading(true);
     setError(null);
     try {
-      const competitorList = competitors
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean);
+      const competitorList = competitors.split(",").map((c) => c.trim()).filter(Boolean);
       const res = await fetch("/api/keyword-research/competitor-gaps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -714,52 +645,44 @@ function GapsTab() {
       <Card className="p-5">
         <div className="flex gap-4">
           <div className="flex-1 space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="text-xs font-medium opacity-70">
               Competitor Domains (optional, comma-separated)
             </label>
             <input
-              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               placeholder="e.g., phillipsandassociates.com, nycemploymentlawyer.com"
               value={competitors}
               onChange={(e) => setCompetitors(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs opacity-60">
               Leave empty to analyze against typical NYC/NJ employment law competitors
             </p>
           </div>
           <div className="flex items-end">
-            <Button onClick={handleAnalyze} disabled={loading} className="gap-2">
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Target className="w-4 h-4" />
-              )}
+            <Button onClick={handleAnalyze} disabled={loading}>
+              {loading ? <Spinner /> : <span aria-hidden>◎</span>}
               Analyze Gaps
             </Button>
           </div>
         </div>
       </Card>
 
-      {error && (
-        <div className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg">
-          {error}
-        </div>
-      )}
+      {error && <div className="text-red-700 dark:text-red-400 text-sm bg-red-500/10 p-3 rounded-md">{error}</div>}
 
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Analyzing competitive keyword gaps…</p>
+          <Spinner className="text-2xl" />
+          <p className="text-sm opacity-70">Analyzing competitive keyword gaps…</p>
         </div>
       )}
 
       {results && !loading && (
         <div className="space-y-6">
           {results.actionPlan && (
-            <Card className="p-4 border-primary/20 bg-primary/5">
+            <Card className="p-4 bg-blue-500/5 border-blue-500/30">
               <div className="flex items-start gap-3">
-                <Lightbulb className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                <span className="text-lg" aria-hidden>💡</span>
                 <div>
                   <h3 className="font-medium text-sm mb-1">30-Day Action Plan</h3>
                   <p className="text-sm">{results.actionPlan}</p>
@@ -771,11 +694,11 @@ function GapsTab() {
           {results.competitorKeywords?.length > 0 && (
             <Card className="p-4">
               <h3 className="font-medium flex items-center gap-2 mb-3">
-                <Target className="w-4 h-4 text-red-400" /> Competitor Keywords to Target
+                <span aria-hidden>◎</span> Competitor Keywords to Target
               </h3>
               <div className="space-y-2">
                 {results.competitorKeywords.map((ck: any, i: number) => (
-                  <div key={i} className="bg-muted/30 rounded-lg p-3">
+                  <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">{ck.keyword}</span>
@@ -783,13 +706,11 @@ function GapsTab() {
                         <TrackButton keyword={ck.keyword} compact />
                       </div>
                       <div className="flex items-center gap-3 text-xs">
-                        <span className="text-muted-foreground">
-                          {ck.volume?.toLocaleString()} /mo
-                        </span>
+                        <span className="opacity-70">{ck.volume?.toLocaleString()} /mo</span>
                         <DifficultyBadge d={ck.difficulty || 0} />
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">{ck.ourOpportunity}</p>
+                    <p className="text-xs opacity-70">{ck.ourOpportunity}</p>
                   </div>
                 ))}
               </div>
@@ -799,46 +720,31 @@ function GapsTab() {
           {results.emergingTrends?.length > 0 && (
             <Card className="p-4">
               <h3 className="font-medium flex items-center gap-2 mb-3">
-                <TrendingUp className="w-4 h-4 text-emerald-400" /> Emerging Trends
+                <span aria-hidden>📈</span> Emerging Trends
               </h3>
               <div className="space-y-2">
                 {results.emergingTrends.map((t: any, i: number) => (
-                  <div key={i} className="bg-muted/30 rounded-lg p-3">
+                  <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-medium text-sm">{t.trend}</span>
                       <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${
-                            t.timing === "act now"
-                              ? "border-red-400 text-red-400"
-                              : t.timing === "next quarter"
-                              ? "border-amber-400 text-amber-400"
-                              : "border-muted-foreground"
-                          }`}
-                        >
-                          {t.timing}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${
-                            t.growthPotential === "high"
-                              ? "border-emerald-400 text-emerald-400"
-                              : ""
-                          }`}
-                        >
-                          {t.growthPotential} growth
-                        </Badge>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                          t.timing === "act now"
+                            ? "border-red-500/50 text-red-700 dark:text-red-400"
+                            : t.timing === "next quarter"
+                            ? "border-amber-500/50 text-amber-700 dark:text-amber-400"
+                            : "border-black/20 dark:border-white/20"
+                        }`}>{t.timing}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                          t.growthPotential === "high"
+                            ? "border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+                            : "border-black/20 dark:border-white/20"
+                        }`}>{t.growthPotential} growth</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {t.relatedKeywords?.map((kw: string, j: number) => (
-                        <span
-                          key={j}
-                          className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
-                        >
-                          {kw}
-                        </span>
+                        <span key={j} className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">{kw}</span>
                       ))}
                     </div>
                   </div>
@@ -851,16 +757,14 @@ function GapsTab() {
             {results.underservedTopics?.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
-                  <Lightbulb className="w-4 h-4 text-amber-400" /> Underserved Topics
+                  <span aria-hidden>💡</span> Underserved Topics
                 </h3>
                 <div className="space-y-2">
                   {results.underservedTopics.map((t: any, i: number) => (
-                    <div key={i} className="bg-muted/30 rounded-lg p-3 text-sm">
+                    <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3 text-sm">
                       <div className="font-medium mb-1">{t.topic}</div>
-                      <p className="text-xs text-muted-foreground mb-1">{t.contentApproach}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Est. volume: {t.estimatedTotalVolume?.toLocaleString()}
-                      </p>
+                      <p className="text-xs opacity-70 mb-1">{t.contentApproach}</p>
+                      <p className="text-xs opacity-70">Est. volume: {t.estimatedTotalVolume?.toLocaleString()}</p>
                     </div>
                   ))}
                 </div>
@@ -870,11 +774,11 @@ function GapsTab() {
             {results.localOpportunities?.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
-                  <Globe className="w-4 h-4 text-blue-400" /> Local Opportunities
+                  <span aria-hidden>⌖</span> Local Opportunities
                 </h3>
                 <div className="space-y-2">
                   {results.localOpportunities.map((l: any, i: number) => (
-                    <div key={i} className="bg-muted/30 rounded-lg p-3 text-sm">
+                    <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3 text-sm">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{l.keyword}</span>
@@ -883,7 +787,7 @@ function GapsTab() {
                         </div>
                         <DifficultyBadge d={l.difficulty || 0} />
                       </div>
-                      <p className="text-xs text-muted-foreground">{l.tactic}</p>
+                      <p className="text-xs opacity-70">{l.tactic}</p>
                     </div>
                   ))}
                 </div>
@@ -924,7 +828,7 @@ function TrackedTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/seo/keywords");
+      const res = await fetch("/api/seo/tracked-keywords");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load");
       setItems(data);
@@ -935,16 +839,14 @@ function TrackedTab() {
     }
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const handleAdd = async () => {
     if (!newKeyword.trim()) return;
     setAdding(true);
     setError(null);
     try {
-      const res = await fetch("/api/seo/keywords", {
+      const res = await fetch("/api/seo/tracked-keywords", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -967,7 +869,7 @@ function TrackedTab() {
     setRefreshing(true);
     setError(null);
     try {
-      const res = await fetch("/api/seo/keywords/refresh", { method: "POST" });
+      const res = await fetch("/api/seo/tracked-keywords/refresh", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to refresh");
       setItems(data.keywords);
@@ -981,7 +883,7 @@ function TrackedTab() {
   const handleDelete = async (id: string) => {
     setError(null);
     try {
-      const res = await fetch(`/api/seo/keywords/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/seo/tracked-keywords/${id}`, { method: "DELETE" });
       if (!res.ok && res.status !== 204) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to delete");
@@ -997,11 +899,9 @@ function TrackedTab() {
       <Card className="p-5">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Add a keyword to track
-            </label>
+            <label className="text-xs font-medium opacity-70">Add a keyword to track</label>
             <input
-              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               placeholder="e.g., unpaid overtime lawyer nyc"
               value={newKeyword}
               onChange={(e) => setNewKeyword(e.target.value)}
@@ -1009,70 +909,45 @@ function TrackedTab() {
             />
           </div>
           <div className="space-y-1 md:w-64">
-            <label className="text-xs font-medium text-muted-foreground">Practice Area</label>
+            <label className="text-xs font-medium opacity-70">Practice Area</label>
             <select
-              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               value={newPracticeArea}
               onChange={(e) => setNewPracticeArea(e.target.value)}
             >
-              {PRACTICE_AREAS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
+              {PRACTICE_AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
           <div className="flex items-end gap-2">
-            <Button
-              onClick={handleAdd}
-              disabled={adding || !newKeyword.trim()}
-              className="gap-2"
-            >
-              {adding ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4" />
-              )}
+            <Button onClick={handleAdd} disabled={adding || !newKeyword.trim()}>
+              {adding ? <Spinner /> : <span aria-hidden>+</span>}
               Add
             </Button>
-            <Button
-              onClick={handleRefresh}
-              disabled={refreshing || items.length === 0}
-              variant="outline"
-              className="gap-2"
-            >
-              {refreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
+            <Button onClick={handleRefresh} disabled={refreshing || items.length === 0} variant="outline">
+              {refreshing ? <Spinner /> : <span aria-hidden>↻</span>}
               Refresh
             </Button>
           </div>
         </div>
       </Card>
 
-      {error && (
-        <div className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg">
-          {error}
-        </div>
-      )}
+      {error && <div className="text-red-700 dark:text-red-400 text-sm bg-red-500/10 p-3 rounded-md">{error}</div>}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading tracked keywords…</p>
+          <Spinner className="text-2xl" />
+          <p className="text-sm opacity-70">Loading tracked keywords…</p>
         </div>
       ) : items.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-muted-foreground">
-          No tracked keywords yet. Add one above, or click the &quot;Track&quot; icon next to
+        <Card className="p-8 text-center text-sm opacity-70">
+          No tracked keywords yet. Add one above, or click the &quot;+&quot; button next to
           any keyword in Discover, Expand, or Competitor Gaps.
         </Card>
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-xs uppercase bg-muted/50 text-muted-foreground border-b border-border">
+              <thead className="text-xs uppercase bg-black/5 dark:bg-white/5 opacity-70">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium">Keyword</th>
                   <th className="px-4 py-3 text-left font-medium">Practice Area</th>
@@ -1085,65 +960,44 @@ function TrackedTab() {
                   <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/50">
+              <tbody>
                 {items.map((item) => (
-                  <tr key={item.id} className="hover:bg-muted/20 transition-colors">
+                  <tr key={item.id} className="border-t border-black/5 dark:border-white/5 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{item.keyword}</span>
                         <CopyButton text={item.keyword} />
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {item.practice_area || "—"}
-                    </td>
+                    <td className="px-4 py-3 text-xs opacity-70">{item.practice_area || "—"}</td>
                     <td className="px-4 py-3">
                       {item.current_rank !== null ? (
                         <span className="font-medium">#{item.current_rank}</span>
                       ) : (
-                        <span className="text-muted-foreground">Not ranked</span>
+                        <span className="opacity-60">Not ranked</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <RankMovement
-                        previous={item.previous_rank}
-                        current={item.current_rank}
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {item.search_volume?.toLocaleString() || "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <DifficultyBadge d={item.difficulty} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px] truncate">
+                    <td className="px-4 py-3"><RankMovement previous={item.previous_rank} current={item.current_rank} /></td>
+                    <td className="px-4 py-3 opacity-70">{item.search_volume?.toLocaleString() || "—"}</td>
+                    <td className="px-4 py-3"><DifficultyBadge d={item.difficulty} /></td>
+                    <td className="px-4 py-3 text-xs opacity-70 max-w-[200px] truncate">
                       {item.url ? (
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:text-foreground underline-offset-2 hover:underline"
-                        >
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
                           {item.url.replace(/^https?:\/\//, "")}
                         </a>
-                      ) : (
-                        "—"
-                      )}
+                      ) : "—"}
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {item.last_checked_at
-                        ? new Date(item.last_checked_at).toLocaleDateString()
-                        : "—"}
+                    <td className="px-4 py-3 text-xs opacity-70">
+                      {item.last_checked_at ? new Date(item.last_checked_at).toLocaleDateString() : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
+                      <button
+                        className="opacity-50 hover:opacity-100 hover:text-red-600 transition-colors text-base"
                         onClick={() => handleDelete(item.id)}
+                        title="Delete"
                       >
-                        <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                      </Button>
+                        ×
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1156,40 +1010,21 @@ function TrackedTab() {
   );
 }
 
-function RankMovement({
-  previous,
-  current,
-}: {
-  previous: number | null;
-  current: number | null;
-}) {
+function RankMovement({ previous, current }: { previous: number | null; current: number | null }) {
   if (previous === null || current === null) {
-    return <span className="text-muted-foreground text-xs">—</span>;
+    return <span className="opacity-60 text-xs">—</span>;
   }
-  // In SEO, lower rank number is better. Going from #10 to #4 is +6 positions.
   const delta = previous - current;
   if (delta === 0) {
-    return (
-      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-        <Minus className="w-3 h-3" /> 0
-      </span>
-    );
+    return <span className="text-xs opacity-70">— 0</span>;
   }
   if (delta > 0) {
-    return (
-      <span className="text-xs text-emerald-400 inline-flex items-center gap-1">
-        <ArrowUp className="w-3 h-3" /> {delta}
-      </span>
-    );
+    return <span className="text-xs text-emerald-700 dark:text-emerald-400">↑ {delta}</span>;
   }
-  return (
-    <span className="text-xs text-red-400 inline-flex items-center gap-1">
-      <ArrowDown className="w-3 h-3" /> {Math.abs(delta)}
-    </span>
-  );
+  return <span className="text-xs text-red-700 dark:text-red-400">↓ {Math.abs(delta)}</span>;
 }
 
-// ---------- Track button (used across multiple tabs) -----------------------
+// ---------- Track button ---------------------------------------------------
 
 function TrackButton({
   keyword,
@@ -1206,7 +1041,7 @@ function TrackButton({
     e.stopPropagation();
     setState("saving");
     try {
-      const res = await fetch("/api/seo/keywords", {
+      const res = await fetch("/api/seo/tracked-keywords", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1214,11 +1049,7 @@ function TrackButton({
           practiceArea: practiceArea && practiceArea !== "All" ? practiceArea : null,
         }),
       });
-      // 409 (already tracked) is treated as success — the user's intent was to
-      // make sure the keyword is in the tracked list, and it is.
-      if (!res.ok && res.status !== 409) {
-        throw new Error("Failed");
-      }
+      if (!res.ok && res.status !== 409) throw new Error("Failed");
       setState("saved");
       setTimeout(() => setState("idle"), 1500);
     } catch {
@@ -1229,43 +1060,19 @@ function TrackButton({
 
   if (compact) {
     return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 w-6 p-0"
+      <button
+        className="text-xs opacity-50 hover:opacity-100 transition-opacity"
         title="Track this keyword"
         onClick={handleClick}
       >
-        {state === "saving" ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
-        ) : state === "saved" ? (
-          <Check className="w-3 h-3 text-emerald-400" />
-        ) : (
-          <Plus className="w-3 h-3 text-muted-foreground" />
-        )}
-      </Button>
+        {state === "saving" ? <Spinner /> : state === "saved" ? "✓" : "+"}
+      </button>
     );
   }
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="h-7 text-xs gap-1"
-      onClick={handleClick}
-      disabled={state === "saving"}
-    >
-      {state === "saving" ? (
-        <Loader2 className="w-3 h-3 animate-spin" />
-      ) : state === "saved" ? (
-        <>
-          <Check className="w-3 h-3" /> Tracked
-        </>
-      ) : (
-        <>
-          <Plus className="w-3 h-3" /> Track
-        </>
-      )}
+    <Button onClick={handleClick} disabled={state === "saving"} variant="outline" className="text-xs px-2 py-1">
+      {state === "saving" ? <Spinner /> : state === "saved" ? <>✓ Tracked</> : <>+ Track</>}
     </Button>
   );
 }
