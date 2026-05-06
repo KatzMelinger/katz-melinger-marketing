@@ -27,7 +27,7 @@ import {
 } from "@/lib/firm-context";
 
 export const runtime = "nodejs";
-export const maxDuration = 60; // AI calls can take 30-45s
+export const maxDuration = 60; // capped to 10s on Vercel Hobby
 
 const MAX_SEED_LENGTH = 200;
 const MAX_COUNT = 30;
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     const anthropic = getAnthropic();
     const response = await anthropic.messages.create({
       model: KEYWORD_RESEARCH_MODEL,
-      max_tokens: 8192,
+      max_tokens: 2500,
       system: `You are an expert SEO keyword strategist specializing in law firm marketing. You deeply understand search intent, keyword difficulty estimation, and content gap analysis for legal services in the New York and New Jersey market.\n\n${firmContext}`,
       messages: [
         {
