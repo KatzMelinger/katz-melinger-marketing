@@ -162,6 +162,17 @@ Respond in JSON format:
 
     const text = response.content[0].type === "text" ? response.content[0].text : "";
 
+    // TEMP DEBUG — remove after diagnosis
+    console.log("[keyword-research/discover] DEBUG response info:", {
+      contentBlocks: response.content.length,
+      firstBlockType: response.content[0]?.type,
+      stopReason: response.stop_reason,
+      usage: response.usage,
+      textLength: text.length,
+      textStart: text.slice(0, 500),
+      textEnd: text.slice(-500),
+    });
+
     try {
       const parsed = extractJSON(text);
       return NextResponse.json(parsed);
@@ -169,11 +180,13 @@ Respond in JSON format:
       console.error("[keyword-research/discover] Failed to parse AI response:", {
         error: parseErr.message,
         textLength: text.length,
+        fullText: text,
       });
       return NextResponse.json(
         { error: "AI returned an invalid response. Please try again." },
         { status: 502 },
       );
+    }
     }
   } catch (err: any) {
     console.error("[keyword-research/discover] Failed:", err?.message);
