@@ -211,14 +211,22 @@ function DiscoverTab() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ elapsed: number; status: string }>({
+    elapsed: 0,
+    status: "",
+  });
   const [sortBy, setSortBy] = useState<"volume" | "difficulty" | "relevance">("relevance");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const handleDiscover = async () => {
     setLoading(true);
     setError(null);
+    setResults(null);
+    setProgress({ elapsed: 0, status: "starting" });
+
     try {
-      const res = await fetch("/api/keyword-research/discover", {
+      // Step 1: kick off the job. Returns immediately with a jobId.
+      const startRes = await fetch("/api/keyword-research/discover/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -228,9 +236,51 @@ function DiscoverTab() {
           count: 20,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to generate keywords");
-      setResults(data);
+
+      if (!startRes.ok) {
+        const data = await startRes.json().catch(() => ({}));
+        throw new Error(data.error || `Failed to start: ${startRes.status}`);
+      }
+
+      const { jobId } = await startRes.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      // Step 2: poll the status endpoint every 3 seconds. Cap at 5 minutes total.
+      const startTime = Date.now();
+      const maxWaitMs = 5 * 60 * 1000; // 5 minutes
+      const pollIntervalMs = 3000;
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setProgress({ elapsed, status: "generating" });
+
+        const statusRes = await fetch(
+          `/api/keyword-research/discover/status?id=${encodeURIComponent(jobId)}`,
+        );
+
+        if (!statusRes.ok) {
+          // Don't fail the whole thing on one bad poll — try again
+          continue;
+        }
+
+        const statusData = await statusRes.json();
+
+        if (statusData.status === "done") {
+          setResults(statusData.result);
+          setProgress({ elapsed, status: "done" });
+          return;
+        }
+
+        if (statusData.status === "failed") {
+          throw new Error(statusData.error || "Generation failed");
+        }
+
+        // status is "pending" or "running" — keep polling
+      }
+
+      throw new Error("Timed out waiting for AI response (5 minutes). Try again or simplify your query.");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -311,7 +361,15 @@ function DiscoverTab() {
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <Spinner className="text-2xl" />
-          <p className="text-sm opacity-70">Analyzing keyword opportunities…</p>
+          <p className="text-sm opacity-70">
+            Analyzing keyword opportunities…{" "}
+            {progress.elapsed > 0 && (
+              <span className="opacity-60">({progress.elapsed}s)</span>
+            )}
+          </p>
+          <p className="text-xs opacity-50">
+            AI generation typically takes 60-120 seconds.
+          </p>
         </div>
       )}
 
