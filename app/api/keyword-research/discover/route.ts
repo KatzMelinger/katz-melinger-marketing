@@ -187,7 +187,6 @@ Respond in JSON format:
         { status: 502 },
       );
     }
-    }
   } catch (err: any) {
     console.error("[keyword-research/discover] Failed:", err?.message);
     return NextResponse.json(
