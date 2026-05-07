@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
         // Use streaming so the connection stays warm — without this, requests over
         // ~30 seconds get killed by Vercel's function timeout.
-        const stream = await anthropic.messages.stream({
+        const response = await anthropic.messages.create({
           model: KEYWORD_RESEARCH_MODEL,
           max_tokens: 6000,
           system: `You are an expert SEO competitor analysis specialist for law firms.\n\n${firmContext}`,
@@ -90,11 +90,10 @@ export async function POST(req: NextRequest) {
           ],
         });
     
-        const finalMessage = await stream.finalMessage();
         const text =
-          finalMessage.content[0]?.type === "text"
-            ? finalMessage.content[0].text
-            : "";
+      response.content[0]?.type === "text"
+        ? response.content[0].text
+        : "";
     
         try {
           const parsed = extractJSON(text);
