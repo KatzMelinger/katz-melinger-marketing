@@ -15,7 +15,7 @@ import { createJob, runAnthropicJob } from "@/lib/keyword-research-jobs";
 import { getFirmContext } from "@/lib/firm-context";
 
 export const runtime = "nodejs";
-export const maxDuration = 30; // start endpoint is fast — only kicks off work
+export const maxDuration = 300; // give after() background work full Pro Fluid Compute budget
 
 export async function POST(req: NextRequest) {
   try {
