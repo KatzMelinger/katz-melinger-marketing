@@ -527,6 +527,7 @@ function ExpandTab() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ elapsed: number }>({ elapsed: 0 });
   const [open, setOpen] = useState<Record<string, boolean>>({
     longTail: true, questions: true, local: true, semantic: false, competitor: false,
   });
@@ -535,15 +536,49 @@ function ExpandTab() {
     if (!keyword.trim()) return;
     setLoading(true);
     setError(null);
+    setResults(null);
+    setProgress({ elapsed: 0 });
+
     try {
-      const res = await fetch("/api/keyword-research/expand", {
+      const startRes = await fetch("/api/keyword-research/expand/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ keyword }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to expand keyword");
-      setResults(data);
+
+      if (!startRes.ok) {
+        const data = await startRes.json().catch(() => ({}));
+        throw new Error(data.error || `Failed to start: ${startRes.status}`);
+      }
+
+      const { jobId } = await startRes.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const startTime = Date.now();
+      const maxWaitMs = 5 * 60 * 1000;
+      const pollIntervalMs = 3000;
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setProgress({ elapsed });
+
+        const statusRes = await fetch(
+          `/api/keyword-research/expand/status?id=${encodeURIComponent(jobId)}`,
+        );
+        if (!statusRes.ok) continue;
+
+        const statusData = await statusRes.json();
+        if (statusData.status === "done") {
+          setResults(statusData.result);
+          return;
+        }
+        if (statusData.status === "failed") {
+          throw new Error(statusData.error || "Generation failed");
+        }
+      }
+
+      throw new Error("Timed out waiting for AI response (5 minutes).");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -587,7 +622,13 @@ function ExpandTab() {
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <Spinner className="text-2xl" />
-          <p className="text-sm opacity-70">Building keyword cluster for &quot;{keyword}&quot;…</p>
+          <p className="text-sm opacity-70">
+            Building keyword cluster for &quot;{keyword}&quot;…{" "}
+            {progress.elapsed > 0 && (
+              <span className="opacity-60">({progress.elapsed}s)</span>
+            )}
+          </p>
+          <p className="text-xs opacity-50">AI generation typically takes 60-120 seconds.</p>
         </div>
       )}
 
@@ -677,20 +718,56 @@ function GapsTab() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ elapsed: number }>({ elapsed: 0 });
 
   const handleAnalyze = async () => {
     setLoading(true);
     setError(null);
+    setResults(null);
+    setProgress({ elapsed: 0 });
+
     try {
       const competitorList = competitors.split(",").map((c) => c.trim()).filter(Boolean);
-      const res = await fetch("/api/keyword-research/competitor-gaps", {
+
+      const startRes = await fetch("/api/keyword-research/competitor-gaps/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ competitors: competitorList }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to analyze gaps");
-      setResults(data);
+
+      if (!startRes.ok) {
+        const data = await startRes.json().catch(() => ({}));
+        throw new Error(data.error || `Failed to start: ${startRes.status}`);
+      }
+
+      const { jobId } = await startRes.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const startTime = Date.now();
+      const maxWaitMs = 5 * 60 * 1000;
+      const pollIntervalMs = 3000;
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setProgress({ elapsed });
+
+        const statusRes = await fetch(
+          `/api/keyword-research/competitor-gaps/status?id=${encodeURIComponent(jobId)}`,
+        );
+        if (!statusRes.ok) continue;
+
+        const statusData = await statusRes.json();
+        if (statusData.status === "done") {
+          setResults(statusData.result);
+          return;
+        }
+        if (statusData.status === "failed") {
+          throw new Error(statusData.error || "Generation failed");
+        }
+      }
+
+      throw new Error("Timed out waiting for AI response (5 minutes).");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -731,7 +808,13 @@ function GapsTab() {
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <Spinner className="text-2xl" />
-          <p className="text-sm opacity-70">Analyzing competitive keyword gaps…</p>
+          <p className="text-sm opacity-70">
+            Analyzing competitive keyword gaps…{" "}
+            {progress.elapsed > 0 && (
+              <span className="opacity-60">({progress.elapsed}s)</span>
+            )}
+          </p>
+          <p className="text-xs opacity-50">AI generation typically takes 60-120 seconds.</p>
         </div>
       )}
 
