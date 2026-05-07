@@ -89,9 +89,13 @@ export async function POST(req: NextRequest) {
 
     // ----- AI call ---------------------------------------------------------
     const anthropic = getAnthropic();
-    const response = await anthropic.messages.create({
+
+    // Use streaming so the connection stays warm — without this, requests over
+    // ~30 seconds get killed by Vercel's function timeout. We collect chunks
+    // into a string and parse JSON only after the stream completes.
+    const stream = await anthropic.messages.stream({
       model: KEYWORD_RESEARCH_MODEL,
-      max_tokens:6000,
+      max_tokens: 6000,
       system: `You are an expert SEO keyword strategist specializing in law firm marketing. You deeply understand search intent, keyword difficulty estimation, and content gap analysis for legal services in the New York and New Jersey market.\n\n${firmContext}`,
       messages: [
         {
@@ -160,18 +164,13 @@ Respond in JSON format:
       ],
     });
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
-
-    // TEMP DEBUG — remove after diagnosis
-    console.log("[keyword-research/discover] DEBUG response info:", {
-      contentBlocks: response.content.length,
-      firstBlockType: response.content[0]?.type,
-      stopReason: response.stop_reason,
-      usage: response.usage,
-      textLength: text.length,
-      textStart: text.slice(0, 500),
-      textEnd: text.slice(-500),
-    });
+    // Drain the stream into a single string. The streaming helper exposes a
+    // .finalMessage() that resolves once the stream is done.
+    const finalMessage = await stream.finalMessage();
+    const text =
+      finalMessage.content[0]?.type === "text"
+        ? finalMessage.content[0].text
+        : "";
 
     try {
       const parsed = extractJSON(text);
@@ -180,7 +179,7 @@ Respond in JSON format:
       console.error("[keyword-research/discover] Failed to parse AI response:", {
         error: parseErr.message,
         textLength: text.length,
-        fullText: text,
+        textStart: text.slice(0, 300),
       });
       return NextResponse.json(
         { error: "AI returned an invalid response. Please try again." },
@@ -194,4 +193,4 @@ Respond in JSON format:
       { status: 500 },
     );
   }
-}
+} 

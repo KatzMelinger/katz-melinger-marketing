@@ -44,7 +44,10 @@ export async function POST(req: NextRequest) {
     const firmContext = await getFirmContext();
 
     const anthropic = getAnthropic();
-    const response = await anthropic.messages.create({
+
+    // Use streaming so the connection stays warm — without this, requests over
+    // ~30 seconds get killed by Vercel's function timeout.
+    const stream = await anthropic.messages.stream({
       model: KEYWORD_RESEARCH_MODEL,
       max_tokens: 6000,
       system: `You are an expert SEO keyword strategist for law firm marketing in NYC/NJ.\n\n${firmContext}`,
@@ -80,7 +83,11 @@ Respond in JSON format:
       ],
     });
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    const finalMessage = await stream.finalMessage();
+    const text =
+      finalMessage.content[0]?.type === "text"
+        ? finalMessage.content[0].text
+        : "";
 
     try {
       const parsed = extractJSON(text);
@@ -89,6 +96,7 @@ Respond in JSON format:
       console.error("[keyword-research/expand] Failed to parse AI response:", {
         error: parseErr.message,
         textLength: text.length,
+        textStart: text.slice(0, 300),
       });
       return NextResponse.json(
         { error: "AI returned an invalid response. Please try again." },
