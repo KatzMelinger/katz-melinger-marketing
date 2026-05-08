@@ -466,8 +466,7 @@ function DiscoverTab() {
               ))}
             </select>
           </div>
-          <div className="flex items-end">
-            <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2">
             <Button onClick={handleDiscover} disabled={loading} className="flex-1">
               {loading ? <Spinner /> : <span aria-hidden>⌕</span>}
               Discover Keywords
@@ -743,8 +742,7 @@ function ExpandTab() {
               onKeyDown={(e) => e.key === "Enter" && handleExpand()}
             />
           </div>
-          <div className="flex items-end">
-           <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2">
             <Button onClick={handleExpand} disabled={loading || !keyword.trim()}>
               {loading ? <Spinner /> : <span aria-hidden>✦</span>}
               Expand
