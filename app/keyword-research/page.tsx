@@ -10,7 +10,7 @@
  * uses Unicode glyphs the same way).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Tab = "discover" | "expand" | "gaps" | "tracked";
 
@@ -123,6 +123,129 @@ function IntentBadge({ intent }: { intent: string }) {
     >
       {intent}
     </span>
+  );
+}
+function HistoryDropdown({
+  jobType,
+  onSelect,
+  describeJob,
+}: {
+  jobType: "discover" | "expand" | "competitor-gaps";
+  onSelect: (result: any) => void;
+  describeJob: (params: any) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [jobs, setJobs] = useState<any[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Lazy-load history the first time the dropdown opens, and refresh on each
+  // open after that. Keeps the data fresh when the user opens it after a new
+  // run has finished.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/keyword-research/history?type=${encodeURIComponent(jobType)}&limit=10`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.error) {
+          setError(data.error);
+          return;
+        }
+        setJobs(data.jobs || []);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, jobType]);
+
+  // Close on outside click
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const formatTime = (iso: string | null) => {
+    if (!iso) return "—";
+    const date = new Date(iso);
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <Button
+        variant="outline"
+        onClick={() => setOpen((p) => !p)}
+        className="text-xs"
+      >
+        <span aria-hidden>🕒</span>
+        Recent
+        <span aria-hidden className="opacity-60">{open ? "▴" : "▾"}</span>
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-80 max-h-96 overflow-y-auto bg-background border border-black/15 dark:border-white/15 rounded-md shadow-lg z-10">
+          {loading && (
+            <div className="p-3 text-xs opacity-70 flex items-center gap-2">
+              <Spinner /> Loading history…
+            </div>
+          )}
+          {error && (
+            <div className="p-3 text-xs text-red-700 dark:text-red-400">{error}</div>
+          )}
+          {!loading && !error && jobs && jobs.length === 0 && (
+            <div className="p-3 text-xs opacity-70 italic">
+              No past runs yet. Run one to see it here.
+            </div>
+          )}
+          {!loading && !error && jobs && jobs.length > 0 && (
+            <ul className="py-1">
+              {jobs.map((job) => (
+                <li key={job.id}>
+                  <button
+                    className="w-full text-left px-3 py-2 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                    onClick={() => {
+                      onSelect(job.result);
+                      setOpen(false);
+                    }}
+                  >
+                    <div className="text-sm font-medium truncate">
+                      {describeJob(job.request_params)}
+                    </div>
+                    <div className="text-xs opacity-60 mt-0.5">
+                      {formatTime(job.completed_at)}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -344,10 +467,22 @@ function DiscoverTab() {
             </select>
           </div>
           <div className="flex items-end">
-            <Button onClick={handleDiscover} disabled={loading} className="w-full">
+            <div className="flex items-end gap-2">
+            <Button onClick={handleDiscover} disabled={loading} className="flex-1">
               {loading ? <Spinner /> : <span aria-hidden>⌕</span>}
               Discover Keywords
             </Button>
+            <HistoryDropdown
+              jobType="discover"
+              onSelect={(result) => { setResults(result); setError(null); }}
+              describeJob={(p) => {
+                const parts: string[] = [];
+                if (p?.seedKeyword) parts.push(`"${p.seedKeyword}"`);
+                if (p?.practiceArea && p.practiceArea !== "All") parts.push(p.practiceArea);
+                if (p?.intent && p.intent !== "all") parts.push(p.intent);
+                return parts.length > 0 ? parts.join(" · ") : "All practice areas";
+              }}
+            />
           </div>
         </div>
       </Card>
@@ -609,10 +744,16 @@ function ExpandTab() {
             />
           </div>
           <div className="flex items-end">
+           <div className="flex items-end gap-2">
             <Button onClick={handleExpand} disabled={loading || !keyword.trim()}>
               {loading ? <Spinner /> : <span aria-hidden>✦</span>}
               Expand
             </Button>
+            <HistoryDropdown
+              jobType="expand"
+              onSelect={(result) => { setResults(result); setError(null); }}
+              describeJob={(p) => p?.keyword ? `"${p.keyword}"` : "Untitled"}
+            />
           </div>
         </div>
       </Card>
@@ -794,11 +935,21 @@ function GapsTab() {
               Leave empty to analyze against typical NYC/NJ employment law competitors
             </p>
           </div>
-          <div className="flex items-end">
+         <div className="flex items-end gap-2">
             <Button onClick={handleAnalyze} disabled={loading}>
               {loading ? <Spinner /> : <span aria-hidden>◎</span>}
               Analyze Gaps
             </Button>
+            <HistoryDropdown
+              jobType="competitor-gaps"
+              onSelect={(result) => { setResults(result); setError(null); }}
+              describeJob={(p) => {
+                const list = Array.isArray(p?.competitors) ? p.competitors : [];
+                if (list.length === 0) return "Default competitors";
+                if (list.length === 1) return list[0];
+                return `${list[0]} +${list.length - 1} more`;
+              }}
+            />
           </div>
         </div>
       </Card>
