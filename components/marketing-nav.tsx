@@ -11,6 +11,7 @@ export const MARKETING_NAV = [
   { label: "Search Console", href: "/search-console", icon: "🔍" },
   { label: "SEO", href: "/seo", icon: "◎" },
   { label: "Keyword Research", href: "/keyword-research", icon: "⌕" },
+  { label: "AI Search", href: "/ai-search", icon: "🤖" },
   { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
   { label: "Content", href: "/content", icon: "✎" },
   { label: "Social", href: "/social", icon: "♺" },
