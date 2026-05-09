@@ -1,78 +1,14 @@
-"use client";
+/**
+ * The legacy horizontal MarketingNav has been replaced by the sidebar in
+ * `app/layout.tsx`. Pages still import this component, so we keep the export
+ * but render nothing — removing the imports across 25 pages would balloon
+ * this change for no functional benefit.
+ *
+ * If you're adding a new nav item, edit `components/marketing-sidebar.tsx`.
+ */
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-
-export const MARKETING_NAV = [
-  { label: "Dashboard", href: "/", icon: "⌂" },
-  { label: "Calls", href: "/calls", icon: "☎" },
-  { label: "Forms", href: "/forms", icon: "▤" },
-  { label: "Analytics", href: "/analytics", icon: "▣" },
-  { label: "Search Console", href: "/search-console", icon: "🔍" },
-  { label: "SEO", href: "/seo", icon: "◎" },
-  { label: "Keyword Research", href: "/keyword-research", icon: "⌕" },
-  { label: "AI Search", href: "/ai-search", icon: "🤖" },
-  { label: "AEO", href: "/aeo", icon: "✦" },
-  { label: "Recommendations", href: "/recommendations", icon: "💡" },
-  { label: "Alerts", href: "/alerts", icon: "🔔" },
-  { label: "Correlation", href: "/correlation", icon: "⇄" },
-  { label: "llms.txt", href: "/llms-txt", icon: "📜" },
-  { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
-  { label: "Content", href: "/content", icon: "✎" },
-  { label: "Social", href: "/social", icon: "♺" },
-  { label: "Email", href: "/email", icon: "✉" },
-  { label: "Local SEO", href: "/local-seo", icon: "⌖" },
-  { label: "Reviews", href: "/reviews", icon: "★" },
-  { label: "Attribution", href: "/attribution", icon: "⎔" },
-  { label: "Pipeline", href: "/pipeline", icon: "▥" },
-  { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
-  { label: "Settings", href: "/settings", icon: "⚙" },
-] as const;
-
-function isActive(pathname: string | null, href: string): boolean {
-  if (!pathname) return false;
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
+export const MARKETING_NAV: { label: string; href: string; icon: string }[] = [];
 
 export function MarketingNav() {
-  const pathname = usePathname();
-
-  return (
-    <header
-      className="sticky top-0 z-20 border-b border-[#2a3f5f]"
-      style={{ backgroundColor: "#0f1729" }}
-    >
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:px-8">
-        <Link
-          href="/"
-          className="shrink-0 text-lg font-semibold tracking-tight text-[#185FA5]"
-        >
-          KatzMelinger Marketing
-        </Link>
-        <nav className="flex flex-wrap items-center gap-1">
-          {MARKETING_NAV.map((item) => {
-            const active = isActive(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={item.label}
-                className={`flex items-center gap-1.5 rounded-md px-2 py-2 text-sm transition-colors md:px-3 ${
-                  active
-                    ? "bg-[#1a2540] font-semibold text-white ring-1 ring-[#185FA5]/40"
-                    : "text-slate-300 hover:bg-[#1a2540] hover:text-white"
-                }`}
-              >
-                <span className="text-base leading-none" aria-hidden>
-                  {item.icon}
-                </span>
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
-    </header>
-  );
+  return null;
 }

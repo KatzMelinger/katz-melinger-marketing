@@ -1,8 +1,24 @@
 @import "tailwindcss";
 
+/**
+ * Force dark theme app-wide. The dashboard's brand palette is dark navy
+ * regardless of the user's OS color-scheme preference, so we override the
+ * media-query default and have Tailwind's `dark:` variant key off the
+ * `.dark` class on <html> instead.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+}
+
+.dark {
+  /* Dashboard navy — used by Tailwind's bg-background / text-foreground when
+     the html element carries the .dark class (which it always does, set in
+     app/layout.tsx). */
+  --background: #0f1729;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -10,13 +26,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
