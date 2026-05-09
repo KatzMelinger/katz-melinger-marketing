@@ -1,0 +1,94 @@
+/**
+ * GET  /api/content/batches             — list recent multi-format batches
+ * POST /api/content/batches             — generate a new batch
+ *   body: {
+ *     topic, practiceArea?, formats: string[], tone?,
+ *     targetKeywords?: string[], seoBriefHeadings?: string[],
+ *     competitorGaps?: string[], sourceId?: string
+ *   }
+ *
+ * The POST returns the batch_id and the array of generated drafts. Each
+ * draft is also persisted in content_drafts so it shows up in the library.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+export async function GET() {
+  const supabase = getSupabaseAdmin();
+  const { data: batches, error } = await supabase
+    .from("content_batches")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(30);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // For each batch, also pull its drafts (titles only, for the index).
+  const batchIds = (batches ?? []).map((b) => b.id);
+  const draftMap = new Map<string, { id: string; format: string; title: string | null }[]>();
+  if (batchIds.length > 0) {
+    const { data: drafts } = await supabase
+      .from("content_drafts")
+      .select("id, batch_id, format, title")
+      .in("batch_id", batchIds);
+    for (const d of drafts ?? []) {
+      const arr = draftMap.get(d.batch_id as string) ?? [];
+      arr.push({ id: d.id as string, format: d.format as string, title: d.title as string | null });
+      draftMap.set(d.batch_id as string, arr);
+    }
+  }
+
+  return NextResponse.json({
+    batches: (batches ?? []).map((b) => ({ ...b, drafts: draftMap.get(b.id) ?? [] })),
+  });
+}
+
+const ALLOWED: FormatKey[] = ["blog", "linkedin", "twitter", "facebook", "instagram", "email", "podcast"];
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  if (!body?.topic) return NextResponse.json({ error: "topic required" }, { status: 400 });
+  const formats = Array.isArray(body?.formats)
+    ? (body.formats as string[]).filter((f): f is FormatKey => ALLOWED.includes(f as FormatKey))
+    : [];
+  if (formats.length === 0) {
+    return NextResponse.json(
+      { error: `formats[] required (one or more of: ${ALLOWED.join(", ")})` },
+      { status: 400 },
+    );
+  }
+
+  // If sourceId provided, pull its content for repurposing.
+  let sourceText: string | null = null;
+  if (body?.sourceId) {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from("content_sources")
+      .select("content")
+      .eq("id", body.sourceId)
+      .maybeSingle();
+    sourceText = (data?.content as string | null) ?? null;
+  }
+
+  try {
+    const result = await generateMultiFormat({
+      topic: body.topic,
+      practiceArea: body.practiceArea,
+      formats,
+      tone: body.tone,
+      targetKeywords: body.targetKeywords,
+      seoBriefHeadings: body.seoBriefHeadings,
+      competitorGaps: body.competitorGaps,
+      sourceId: body.sourceId ?? null,
+      sourceText,
+    });
+    return NextResponse.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Batch generation failed";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

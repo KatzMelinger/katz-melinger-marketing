@@ -57,7 +57,7 @@ export default async function KeywordCompetitivePage(props: PageProps) {
               href={`/seo/keywords/competitive?domain=${encodeURIComponent(domain)}`}
               className={`rounded border px-3 py-1 text-xs ${
                 selected === domain
-                  ? "border-[#185FA5] bg-[#185FA5] text-slate-900"
+                  ? "border-[#185FA5] bg-[#185FA5] text-white"
                   : "border-[#e2e8f0] bg-[#ffffff] text-slate-700"
               }`}
             >

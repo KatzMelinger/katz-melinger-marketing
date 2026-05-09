@@ -51,7 +51,7 @@ export function DashButton({
   const base =
     "inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
   const variants: Record<string, string> = {
-    primary: "bg-[#185FA5] text-slate-900 hover:bg-[#1f6fb8]",
+    primary: "bg-[#185FA5] text-white hover:bg-[#1f6fb8]",
     outline: "border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]",
     ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
     danger: "border border-red-300 text-red-700 hover:bg-red-50",

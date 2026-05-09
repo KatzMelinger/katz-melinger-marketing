@@ -783,7 +783,7 @@ export default function LocalSeoPlatformPage() {
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
         activeTab === id
           ? "bg-[#ffffff] text-slate-900 ring-1 ring-[#185FA5]/50"
-          : "text-slate-500 hover:bg-[#ffffff]/60 hover:text-slate-900"
+          : "text-slate-500 hover:bg-slate-50/60 hover:text-slate-900"
       }`}
     >
       {label}
@@ -820,7 +820,7 @@ export default function LocalSeoPlatformPage() {
             type="button"
             onClick={() => void load()}
             disabled={loading || isRefreshing}
-            className="self-start rounded-md border border-[#e2e8f0] bg-[#ffffff] px-4 py-2 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
+            className="self-start rounded-md border border-[#e2e8f0] bg-[#ffffff] px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             {loading || isRefreshing ? "Refreshing…" : "Refresh data"}
           </button>
@@ -935,7 +935,7 @@ export default function LocalSeoPlatformPage() {
               </button>
               <button
                 type="button"
-                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-[#ffffff]"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                 onClick={() => void discoverAccounts({ forceNetwork: true })}
                 disabled={discoveringAccounts || discoveringLocations}
               >
@@ -943,7 +943,7 @@ export default function LocalSeoPlatformPage() {
               </button>
               <button
                 type="button"
-                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-[#ffffff]"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                 onClick={() => {
                   const cachedAccounts = readTimedCache<
                     Array<{ accountId: string; name: string }>
@@ -982,7 +982,7 @@ export default function LocalSeoPlatformPage() {
               <p className="text-xs font-medium text-slate-500">
                 Service account JSON (server-side check)
               </p>
-              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
+              <pre className="max-h-40 overflow-auto rounded border border-slate-300 bg-[#f8fafc] p-2 text-xs text-slate-600">
                 {saStatus != null
                   ? JSON.stringify(saStatus, null, 2)
                   : "Loading…"}
@@ -1018,7 +1018,7 @@ export default function LocalSeoPlatformPage() {
                   : "Run GBP credential test (Account Management + v4 location)"}
               </button>
               {gbpTest != null ? (
-                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
+                <pre className="max-h-64 overflow-auto rounded border border-slate-300 bg-[#f8fafc] p-2 text-xs text-slate-600">
                   {JSON.stringify(gbpTest, null, 2)}
                 </pre>
               ) : null}
@@ -1185,7 +1185,7 @@ export default function LocalSeoPlatformPage() {
                     type="button"
                     disabled={posting}
                     onClick={() => void createLocalPost("EVENT")}
-                    className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
+                    className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
                     New event
                   </button>
@@ -1193,7 +1193,7 @@ export default function LocalSeoPlatformPage() {
                     type="button"
                     disabled={posting}
                     onClick={() => void createLocalPost("OFFER")}
-                    className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
+                    className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
                     New offer
                   </button>

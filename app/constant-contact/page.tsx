@@ -856,7 +856,7 @@ export default function ConstantContactPage() {
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
         activeTab === id
           ? "bg-[#ffffff] text-slate-900 ring-1 ring-[#185FA5]/50"
-          : "text-slate-500 hover:bg-[#ffffff]/60 hover:text-slate-900"
+          : "text-slate-500 hover:bg-slate-50/60 hover:text-slate-900"
       }`}
     >
       {label}
@@ -921,7 +921,7 @@ export default function ConstantContactPage() {
                   setOauthStarting(false);
                   void loadCampaigns();
                 }}
-                className="inline-flex items-center rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-[#ffffff]"
+                className="inline-flex items-center rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
               >
                 Retry check
               </button>
@@ -997,7 +997,7 @@ export default function ConstantContactPage() {
                   type="button"
                   onClick={() => void loadCampaigns()}
                   disabled={campaignsLoading}
-                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
+                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   {campaignsLoading ? "Refreshing…" : "Refresh"}
                 </button>
@@ -1209,7 +1209,7 @@ export default function ConstantContactPage() {
                 type="button"
                 onClick={() => void loadContactLists()}
                 disabled={listsLoading}
-                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
                 {listsLoading ? "Refreshing…" : "Refresh"}
               </button>
@@ -1260,7 +1260,7 @@ export default function ConstantContactPage() {
                           type="button"
                           disabled={!listId || syncingListId !== null}
                           onClick={() => listId && void handleSyncList(listId)}
-                          className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-800 hover:bg-[#ffffff] disabled:opacity-50"
+                          className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-800 hover:bg-slate-50 disabled:opacity-50"
                           style={
                             syncingListId === listId
                               ? { borderColor: ACCENT, color: "#0f172a" }
@@ -1290,7 +1290,7 @@ export default function ConstantContactPage() {
                   type="button"
                   onClick={() => void loadAutomation()}
                   disabled={automationLoading}
-                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
+                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   {automationLoading ? "Refreshing…" : "Refresh"}
                 </button>
@@ -1475,7 +1475,7 @@ export default function ConstantContactPage() {
                   type="button"
                   onClick={() => void loadAnalytics()}
                   disabled={analyticsLoading}
-                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
+                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   {analyticsLoading ? "Refreshing…" : "Refresh"}
                 </button>

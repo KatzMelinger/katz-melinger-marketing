@@ -131,7 +131,7 @@ export default function LocalSeoPage() {
                     <span>{new Date(review.date).toLocaleDateString()}</span>
                     <button
                       type="button"
-                      className="rounded-md bg-[#185FA5] px-2.5 py-1 text-slate-900"
+                      className="rounded-md bg-[#185FA5] px-2.5 py-1 text-white"
                     >
                       Draft response
                     </button>
@@ -220,7 +220,7 @@ export default function LocalSeoPage() {
             Trigger post-case review requests via SMS/email after matters close.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <button type="button" className="rounded-md bg-[#185FA5] px-3 py-2 text-sm text-slate-900">
+            <button type="button" className="rounded-md bg-[#185FA5] px-3 py-2 text-sm text-white">
               Create request template
             </button>
             <button

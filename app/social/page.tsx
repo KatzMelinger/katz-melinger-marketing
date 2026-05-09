@@ -175,7 +175,7 @@ export default function SocialPage() {
             </p>
             <div className="mt-3 space-y-2">
               <p className="text-xs font-medium text-slate-500">Env as seen by server</p>
-              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
+              <pre className="max-h-40 overflow-auto rounded border border-slate-300 bg-[#f8fafc] p-2 text-xs text-slate-600">
                 {envDebug != null
                   ? JSON.stringify(envDebug, null, 2)
                   : "Loading…"}
@@ -209,7 +209,7 @@ export default function SocialPage() {
                 {testLoading ? "Running…" : "Run credential test (single API call)"}
               </button>
               {testOutput != null ? (
-                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
+                <pre className="max-h-64 overflow-auto rounded border border-slate-300 bg-[#f8fafc] p-2 text-xs text-slate-600">
                   {JSON.stringify(testOutput, null, 2)}
                 </pre>
               ) : null}
@@ -219,7 +219,7 @@ export default function SocialPage() {
                 <p className="text-xs font-medium text-slate-500">
                   Last dashboard response (debug=1)
                 </p>
-                <pre className="mt-1 max-h-48 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
+                <pre className="mt-1 max-h-48 overflow-auto rounded border border-slate-300 bg-[#f8fafc] p-2 text-xs text-slate-600">
                   {JSON.stringify(data.metricoolDebug, null, 2)}
                 </pre>
               </div>

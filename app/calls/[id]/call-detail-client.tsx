@@ -216,7 +216,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
               <button
                 onClick={() => void runScore()}
                 disabled={scoring || !c.transcription}
-                className="rounded-lg bg-[#185FA5] px-3 py-2 text-xs font-medium text-slate-900 hover:bg-[#1369c4] disabled:opacity-50"
+                className="rounded-lg bg-[#185FA5] px-3 py-2 text-xs font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
               >
                 {scoring ? "Scoring…" : score ? "Re-score" : "Score this call"}
               </button>
@@ -225,14 +225,14 @@ export function CallDetailClient({ callId }: { callId: string }) {
                   <button
                     onClick={() => void runScore("intake")}
                     disabled={scoring}
-                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#5fa1d8] hover:bg-[#ffffff] disabled:opacity-50"
+                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#5fa1d8] hover:bg-slate-50 disabled:opacity-50"
                   >
                     As intake
                   </button>
                   <button
                     onClick={() => void runScore("consultation")}
                     disabled={scoring}
-                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#5fa1d8] hover:bg-[#ffffff] disabled:opacity-50"
+                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#5fa1d8] hover:bg-slate-50 disabled:opacity-50"
                   >
                     As consult
                   </button>
@@ -248,7 +248,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
               href={c.recording_player_url}
               target="_blank"
               rel="noopener"
-              className="inline-flex items-center gap-2 rounded-lg bg-[#ffffff] px-4 py-2 text-sm text-slate-900 ring-1 ring-[#e2e8f0] hover:bg-[#172037]"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#ffffff] px-4 py-2 text-sm text-slate-900 ring-1 ring-[#e2e8f0] hover:bg-[#f1f5f9]"
             >
               ▶ Open CallRail recording
             </a>
@@ -266,7 +266,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
                 <button
                   onClick={() => setView("manager")}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
-                    view === "manager" ? "bg-[#185FA5] text-slate-900" : "text-slate-500 hover:text-slate-900"
+                    view === "manager" ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
                   }`}
                 >
                   Manager view
@@ -274,7 +274,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
                 <button
                   onClick={() => setView("screener")}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
-                    view === "screener" ? "bg-[#185FA5] text-slate-900" : "text-slate-500 hover:text-slate-900"
+                    view === "screener" ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
                   }`}
                 >
                   Screener view
@@ -377,7 +377,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
               <h2 className="mb-4 text-lg font-semibold text-rose-100">Compliance flags</h2>
               <div className="space-y-2">
                 {score.compliance_flags.map((f, i) => (
-                  <div key={i} className="rounded-lg bg-[#1a0f15] p-3 ring-1 ring-rose-500/20">
+                  <div key={i} className="rounded-lg bg-[#fef2f2] p-3 ring-1 ring-rose-500/20">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-rose-200">&ldquo;{f.phrase}&rdquo;</p>
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${SEVERITY_COLOR[f.severity] ?? ""}`}>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
+import { ContentNav } from "@/components/content-nav";
 
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
@@ -309,11 +310,13 @@ export default function ContentPage() {
       style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
-      <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Content studio</h1>
           <p className="mt-1 text-sm text-slate-500">AI drafts · Katz Melinger voice</p>
         </div>
+
+        <ContentNav />
 
         <div className="flex flex-wrap gap-2 border-b pb-2" style={{ borderColor: BORDER }}>
           {(

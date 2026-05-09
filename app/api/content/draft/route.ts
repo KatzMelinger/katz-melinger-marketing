@@ -5,6 +5,7 @@ import {
   getBrandVoiceContext,
   getLatestBrandProfile,
 } from "@/lib/content-brand-voice";
+import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -131,28 +132,64 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     const text =
       textBlock && textBlock.type === "text" ? textBlock.text : "";
 
-    if (contentType === "email") {
+    // Autosave to the drafts library so every generation is recoverable.
+    async function autosave(format: string, body: string, metadata: Record<string, unknown> = {}) {
+      const supabase = getSupabaseServer();
+      if (!supabase) return null;
       try {
-        const parsed = JSON.parse(text) as { subject?: string; body?: string };
-        return NextResponse.json({
-          subject: parsed.subject ?? "",
-          body: parsed.body ?? text,
-          raw: text,
-          template: templateKey || null,
-          used_brand_voice: useBrandVoice,
-        });
+        const { data } = await supabase
+          .from("content_drafts")
+          .insert({
+            format,
+            template: templateKey || null,
+            topic,
+            practice_area: practiceArea,
+            body,
+            metadata: {
+              ...metadata,
+              tone,
+              length,
+              ...(platform ? { platform } : {}),
+              ...(campaignType ? { campaign_type: campaignType } : {}),
+              used_brand_voice: useBrandVoice,
+            },
+            seo_brief:
+              targetKeywords.length > 0 || seoBrief
+                ? { targetKeywords, ...(seoBrief ?? {}) }
+                : null,
+          })
+          .select("id")
+          .single();
+        return (data?.id as string | undefined) ?? null;
       } catch {
-        return NextResponse.json({
-          subject: "",
-          body: text,
-          raw: text,
-          template: templateKey || null,
-          used_brand_voice: useBrandVoice,
-        });
+        return null;
       }
     }
 
+    if (contentType === "email") {
+      let subject = "";
+      let bodyText = text;
+      try {
+        const parsed = JSON.parse(text) as { subject?: string; body?: string };
+        subject = parsed.subject ?? "";
+        bodyText = parsed.body ?? text;
+      } catch {
+        /* fall through */
+      }
+      const draftId = await autosave("email", bodyText, { subject });
+      return NextResponse.json({
+        draft_id: draftId,
+        subject,
+        body: bodyText,
+        raw: text,
+        template: templateKey || null,
+        used_brand_voice: useBrandVoice,
+      });
+    }
+
+    const draftId = await autosave(contentType === "social" ? "social" : "blog", text);
     return NextResponse.json({
+      draft_id: draftId,
       content: text,
       template: templateKey || null,
       used_brand_voice: useBrandVoice,

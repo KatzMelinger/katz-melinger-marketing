@@ -42,7 +42,7 @@ export default async function SeoCompetitorsPage() {
         <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">Actions</p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            <Link href="/seo/competitors/add" className="rounded bg-[#185FA5] px-2 py-1 text-slate-900">
+            <Link href="/seo/competitors/add" className="rounded bg-[#185FA5] px-2 py-1 text-white">
               Add competitor
             </Link>
             <Link href="/seo/keywords/competitive" className="rounded border border-[#e2e8f0] px-2 py-1 text-slate-700">

@@ -129,7 +129,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       onClick={onClick}
       className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-        active ? "bg-[#185FA5] text-slate-900" : "text-slate-500 hover:text-slate-900"
+        active ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
       }`}
     >
       {children}
@@ -232,7 +232,7 @@ function DimensionCard({
                 await onSave({ ...dimension, dimensionName: name, maxScore: max, criteriaText: criteria });
                 setEditing(false);
               }}
-              className="rounded-lg bg-[#185FA5] px-3 py-1 text-xs font-medium text-slate-900 disabled:opacity-50"
+              className="rounded-lg bg-[#185FA5] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
             >
               Save
             </button>
@@ -240,7 +240,7 @@ function DimensionCard({
         ) : (
           <button
             onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-[#ffffff]"
+            className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-slate-50"
           >
             Edit
           </button>
@@ -284,7 +284,7 @@ function MaterialsView({
               </div>
               <button
                 onClick={() => setOpenId(open ? null : id)}
-                className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-[#ffffff]"
+                className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-slate-50"
               >
                 {open ? "Hide" : "View"}
               </button>

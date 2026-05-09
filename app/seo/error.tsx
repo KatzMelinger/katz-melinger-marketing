@@ -33,7 +33,7 @@ export default function SeoRouteError({
           <button
             type="button"
             onClick={reset}
-            className="rounded bg-[#185FA5] px-3 py-1.5 text-sm font-medium text-slate-900"
+            className="rounded bg-[#185FA5] px-3 py-1.5 text-sm font-medium text-white"
           >
             Try again
           </button>

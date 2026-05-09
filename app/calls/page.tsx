@@ -198,14 +198,14 @@ export default function CallsPage() {
             <button
               onClick={() => void runSync()}
               disabled={busy}
-              className="rounded-lg bg-[#185FA5] px-3 py-2 text-sm font-medium text-slate-900 hover:bg-[#1369c4] disabled:opacity-50"
+              className="rounded-lg bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
             >
               {busy ? "Working…" : "Sync from CallRail"}
             </button>
             <button
               onClick={() => void runScorePending()}
               disabled={busy}
-              className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-sm font-medium text-[#5fa1d8] hover:bg-[#ffffff] disabled:opacity-50"
+              className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-sm font-medium text-[#5fa1d8] hover:bg-slate-50 disabled:opacity-50"
             >
               Score pending
             </button>
@@ -344,7 +344,7 @@ export default function CallsPage() {
                     <tr
                       key={row.id}
                       onClick={() => router.push(`/calls/${encodeURIComponent(row.id)}`)}
-                      className="border-b border-[#e2e8f0]/60 last:border-0 hover:bg-[#172037] cursor-pointer"
+                      className="border-b border-[#e2e8f0]/60 last:border-0 hover:bg-[#f1f5f9] cursor-pointer"
                     >
                       <td className="py-3 pr-4 font-medium text-slate-900">
                         <Link
