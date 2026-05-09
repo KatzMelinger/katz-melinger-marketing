@@ -22,6 +22,8 @@ const ACCENT = "#185FA5";
 type EmailPayload = {
   connected: boolean;
   error?: string;
+  selectedListId: string | null;
+  availableLists: { id: string; name: string; contacts: number }[];
   dashboard: {
     avgOpenRate: number;
     avgClickRate: number;
@@ -47,6 +49,8 @@ type EmailPayload = {
   }[];
 };
 
+const LIST_STORAGE_KEY = "km_email_selected_list";
+
 function pct(value: number): string {
   return `${value.toFixed(2)}%`;
 }
@@ -54,26 +58,52 @@ function pct(value: number): string {
 export default function EmailPage() {
   const [data, setData] = useState<EmailPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [listFilter, setListFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(false);
+
+  // Hydrate the saved list selection from localStorage on mount.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LIST_STORAGE_KEY);
+      if (saved) setListFilter(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
-        const res = await fetch("/api/email/constant-contact", {
-          cache: "no-store",
-        });
+        const url =
+          listFilter && listFilter !== "all"
+            ? `/api/email/constant-contact?listId=${encodeURIComponent(listFilter)}`
+            : "/api/email/constant-contact?listId=all";
+        const res = await fetch(url, { cache: "no-store" });
         const json = (await res.json()) as EmailPayload;
         if (cancelled) return;
         setData(json);
         setError(json.error ?? null);
       } catch {
         if (!cancelled) setError("Failed to load email marketing data");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [listFilter]);
+
+  const onListChange = (id: string) => {
+    setListFilter(id);
+    try {
+      localStorage.setItem(LIST_STORAGE_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const campaignTrend = useMemo(
     () =>
@@ -92,13 +122,39 @@ export default function EmailPage() {
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Email Marketing Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Constant Contact campaigns, contact growth, and lifecycle automation.
-          </p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">
+              Email Marketing Dashboard
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Constant Contact campaigns, contact growth, and lifecycle automation.
+            </p>
+          </div>
+
+          {data?.connected && data.availableLists.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <label htmlFor="list-filter" className="text-xs font-medium text-slate-700">
+                List
+              </label>
+              <select
+                id="list-filter"
+                value={listFilter}
+                onChange={(e) => onListChange(e.target.value)}
+                disabled={loading}
+                className="px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5] disabled:opacity-50"
+              >
+                <option value="all">
+                  All lists ({data.availableLists.reduce((n, l) => n + l.contacts, 0).toLocaleString()})
+                </option>
+                {data.availableLists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.contacts.toLocaleString()})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
 
         {error ? (
@@ -127,16 +183,12 @@ export default function EmailPage() {
                 In Vercel project settings, set:{" "}
                 <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
                   CONSTANT_CONTACT_CLIENT_ID
-                </code>
-                ,{" "}
+                </code>{" "}
+                and{" "}
                 <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
                   CONSTANT_CONTACT_CLIENT_SECRET
                 </code>
-                , and{" "}
-                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
-                  CONSTANT_CONTACT_LIST_ID
-                </code>
-                .
+                . List ID is optional — you'll pick lists from a dropdown after connecting.
               </li>
               <li>Redeploy.</li>
               <li>

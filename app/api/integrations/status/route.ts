@@ -199,19 +199,21 @@ export async function GET() {
     id: "constant-contact",
     label: "Constant Contact",
     category: "Email",
-    ...envCheck([
-      "CONSTANT_CONTACT_CLIENT_ID",
-      "CONSTANT_CONTACT_CLIENT_SECRET",
-      "CONSTANT_CONTACT_LIST_ID",
-    ]),
+    // LIST_ID is optional — the /email page now lets users pick the list at
+    // runtime via a dropdown. Only the OAuth client credentials are required.
+    ...envCheck(["CONSTANT_CONTACT_CLIENT_ID", "CONSTANT_CONTACT_CLIENT_SECRET"]),
     status: ccStatus,
     hint:
       ccStatus === "missing_env"
-        ? "Set the OAuth client + secret + list ID, then visit /api/constant-contact/oauth to authorize."
+        ? "Set the OAuth client + secret, then click Connect."
         : ccStatus === "needs_oauth"
-          ? "Env vars are set, but no OAuth token stored. Visit /api/constant-contact/oauth to authorize."
-          : "Connected and authorized.",
+          ? "Env vars are set, but no OAuth token stored yet. Click Connect to authorize."
+          : "Connected and authorized. Pick a list from the dropdown on /email.",
     feature_pages: ["/email", "/constant-contact"],
+    actions:
+      ccStatus === "needs_oauth" || ccStatus === "missing_env"
+        ? [{ label: "Connect Constant Contact", href: "/api/constant-contact/oauth/start", tone: "primary" }]
+        : [{ label: "Reconnect", href: "/api/constant-contact/oauth/start", tone: "primary" }],
   });
 
   // ---- Social ----

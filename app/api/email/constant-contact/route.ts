@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
 import { getAuthConfig } from "@/lib/constant-contact-server";
@@ -22,9 +22,17 @@ type SequenceRow = {
   enrolledContacts: number;
 };
 
+type ListRow = {
+  id: string;
+  name: string;
+  contacts: number;
+};
+
 type ConstantContactPayload = {
   connected: boolean;
   error?: string;
+  selectedListId: string | null;
+  availableLists: ListRow[];
   dashboard: {
     avgOpenRate: number;
     avgClickRate: number;
@@ -50,6 +58,8 @@ function getFallback(error?: string): ConstantContactPayload {
   return {
     connected: false,
     error,
+    selectedListId: null,
+    availableLists: [],
     dashboard: {
       avgOpenRate: 0,
       avgClickRate: 0,
@@ -63,9 +73,12 @@ function getFallback(error?: string): ConstantContactPayload {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await getAuthConfig();
-  const listId = process.env.CONSTANT_CONTACT_LIST_ID?.trim();
+  // listId precedence: ?listId= query param > CONSTANT_CONTACT_LIST_ID env var > none (all lists)
+  const queryListId = req.nextUrl.searchParams.get("listId")?.trim() || null;
+  const envListId = process.env.CONSTANT_CONTACT_LIST_ID?.trim() || null;
+  const listId = queryListId === "all" ? null : (queryListId ?? envListId);
 
   const cmsLeadData =
     (await fetchCmsJson<{ totalLeads?: number; monthlyGrowth?: number }>(
@@ -79,24 +92,25 @@ export async function GET() {
     return NextResponse.json(payload);
   }
 
+  // Fetch the available lists in parallel with everything else so the UI can
+  // render the dropdown immediately.
+  const headers = { Authorization: `Bearer ${auth.accessToken}` };
+  const contactListsUrl = `https://api.cc.email/v3/contact_lists?limit=50&include_count=true`;
+
   try {
-    const [campaignRes, contactRes] = await Promise.all([
-      fetch("https://api.cc.email/v3/emails?limit=10", {
-        cache: "no-store",
-        headers: { Authorization: `Bearer ${auth.accessToken}` },
-      }),
+    const [campaignRes, contactRes, listsRes] = await Promise.all([
+      fetch("https://api.cc.email/v3/emails?limit=10", { cache: "no-store", headers }),
       fetch(
         `https://api.cc.email/v3/contacts${listId ? `?list_ids=${encodeURIComponent(listId)}` : ""}`,
-        {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${auth.accessToken}` },
-        },
+        { cache: "no-store", headers },
       ),
+      fetch(contactListsUrl, { cache: "no-store", headers }),
     ]);
 
-    const [campaignJson, contactsJson] = await Promise.all([
+    const [campaignJson, contactsJson, listsJson] = await Promise.all([
       campaignRes.json(),
       contactRes.json(),
+      listsRes.json().catch(() => ({})),
     ]);
 
     if (!campaignRes.ok && !contactRes.ok) {
@@ -152,8 +166,46 @@ export async function GET() {
     const contactCount = contactsRaw.length;
     const cmsContacts = extractNumber(cmsLeadData?.totalLeads);
 
+    // Parse the lists response into a flat array for the UI dropdown.
+    const listsRaw: unknown[] = Array.isArray(
+      (listsJson as { lists?: unknown }).lists,
+    )
+      ? ((listsJson as { lists?: unknown[] }).lists ?? [])
+      : [];
+    const availableLists: ListRow[] = listsRaw
+      .map((row): ListRow | null => {
+        const src = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+        const id = src.list_id ?? src.id;
+        const name = src.name;
+        if (typeof id !== "string" || typeof name !== "string") return null;
+        return {
+          id,
+          name,
+          contacts: extractNumber(src.membership_count ?? src.member_count),
+        };
+      })
+      .filter((x): x is ListRow => x !== null)
+      .sort((a, b) => b.contacts - a.contacts);
+
+    const contactLists: ConstantContactPayload["contactLists"] =
+      availableLists.length > 0
+        ? availableLists.map((l) => ({
+            name: l.name,
+            contacts: l.contacts,
+            growthRate: 0,
+          }))
+        : [
+            {
+              name: "Master Newsletter",
+              contacts: contactCount > 0 ? contactCount : cmsContacts,
+              growthRate: extractNumber(cmsLeadData?.monthlyGrowth),
+            },
+          ];
+
     return NextResponse.json({
       connected: true,
+      selectedListId: listId,
+      availableLists,
       dashboard: {
         avgOpenRate,
         avgClickRate,
@@ -162,13 +214,7 @@ export async function GET() {
         monthlyGrowth: extractNumber(cmsLeadData?.monthlyGrowth),
       },
       campaigns,
-      contactLists: [
-        {
-          name: "Master Newsletter",
-          contacts: contactCount > 0 ? contactCount : cmsContacts,
-          growthRate: extractNumber(cmsLeadData?.monthlyGrowth),
-        },
-      ],
+      contactLists,
       sequences: [
         {
           id: "welcome-sequence",
