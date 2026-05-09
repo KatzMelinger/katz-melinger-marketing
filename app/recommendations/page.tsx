@@ -12,6 +12,7 @@
  */
 
 import { useState } from "react";
+import { MarketingNav } from "@/components/marketing-nav";
 
 type Recommendation = {
   title: string;
@@ -87,7 +88,9 @@ export default function RecommendationsPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <>
+      <MarketingNav />
+      <div className="p-6 space-y-6 mx-auto max-w-7xl">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">AI recommendations</h1>
@@ -154,6 +157,7 @@ export default function RecommendationsPage() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

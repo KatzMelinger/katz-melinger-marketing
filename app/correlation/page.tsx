@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { MarketingNav } from "@/components/marketing-nav";
 
 type Joined = {
   url: string;
@@ -55,7 +56,9 @@ export default function CorrelationPage() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6">
+    <>
+      <MarketingNav />
+      <div className="p-6 space-y-6 mx-auto max-w-7xl">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Content correlation</h1>
         <p className="text-sm opacity-70 mt-1 max-w-2xl">
@@ -95,7 +98,8 @@ export default function CorrelationPage() {
           </Group>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -11,6 +11,7 @@
  */
 
 import { useState } from "react";
+import { MarketingNav } from "@/components/marketing-nav";
 
 type Tab = "overview" | "bots" | "pages" | "recommendations";
 
@@ -280,7 +281,9 @@ export default function AISearchPage() {
   ];
 
   return (
-    <div className="p-6 space-y-6">
+    <>
+      <MarketingNav />
+      <div className="p-6 space-y-6 mx-auto max-w-7xl">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">AI Search Optimization</h1>
         <p className="text-sm opacity-70 mt-1">
@@ -378,7 +381,8 @@ export default function AISearchPage() {
           )}
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
