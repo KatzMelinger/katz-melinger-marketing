@@ -205,7 +205,7 @@ export default function CallsPage() {
             <button
               onClick={() => void runScorePending()}
               disabled={busy}
-              className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-sm font-medium text-[#5fa1d8] hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-sm font-medium text-[#185FA5] hover:bg-slate-50 disabled:opacity-50"
             >
               Score pending
             </button>

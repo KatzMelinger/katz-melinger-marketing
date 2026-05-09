@@ -1055,11 +1055,11 @@ export default function ConstantContactPage() {
               <p className="mb-4 text-sm text-slate-500">
                 Sends a <span className="text-slate-600">POST /emails</span> draft (custom code).
                 Sender must come from{" "}
-                <code className="rounded bg-[#ffffff] px-1 text-xs text-[#94a3b8]">
+                <code className="rounded bg-[#ffffff] px-1 text-xs text-[#475569]">
                   NEXT_PUBLIC_CC_FROM_EMAIL
                 </code>{" "}
                 (and optionally{" "}
-                <code className="rounded bg-[#ffffff] px-1 text-xs text-[#94a3b8]">
+                <code className="rounded bg-[#ffffff] px-1 text-xs text-[#475569]">
                   NEXT_PUBLIC_CC_FROM_NAME
                 </code>
                 ).
@@ -1558,13 +1558,13 @@ export default function ConstantContactPage() {
                         <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
                         <XAxis
                           dataKey="name"
-                          tick={{ fill: "#94a3b8", fontSize: 9 }}
+                          tick={{ fill: "#475569", fontSize: 9 }}
                           interval={0}
                           angle={-30}
                           textAnchor="end"
                           height={70}
                         />
-                        <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                        <YAxis tick={{ fill: "#475569", fontSize: 11 }} />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: CARD,

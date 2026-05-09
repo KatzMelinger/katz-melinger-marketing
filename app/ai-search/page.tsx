@@ -10,10 +10,18 @@
  * editable so this works for our own site and for competitor analysis.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MarketingNav } from "@/components/marketing-nav";
 
 type Tab = "overview" | "bots" | "pages" | "recommendations";
+
+type RecentScan = {
+  id: string;
+  domain: string;
+  base_url: string;
+  overall_score: number | null;
+  created_at: string;
+};
 
 const AI_PLATFORMS: { key: string; label: string }[] = [
   { key: "chatgpt", label: "ChatGPT" },
@@ -231,6 +239,35 @@ export default function AISearchPage() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
+
+  const refreshHistory = async () => {
+    try {
+      const res = await fetch("/api/ai-search/scans");
+      const data = await res.json();
+      setRecentScans(data.scans ?? []);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    refreshHistory();
+  }, []);
+
+  const loadScan = async (id: string) => {
+    try {
+      const res = await fetch(`/api/ai-search/scans?id=${id}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      setCrawlData(data.crawl);
+      setAnalysis(data.analysis);
+      setUrl(data.base_url);
+      setActiveTab("overview");
+    } catch {
+      /* ignore */
+    }
+  };
 
   const runCrawl = async () => {
     setCrawling(true);
@@ -267,6 +304,7 @@ export default function AISearchPage() {
       if (!res.ok) throw new Error(data?.error || "Analysis failed");
       setAnalysis(data.analysis);
       setActiveTab("overview");
+      refreshHistory();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Analysis failed");
     }
@@ -318,6 +356,34 @@ export default function AISearchPage() {
           <p className="mt-3 text-sm text-red-700 dark:text-red-400">{error}</p>
         )}
       </Card>
+
+      {recentScans.length > 0 && (
+        <Card className="p-4">
+          <div className="text-xs font-medium uppercase tracking-wider opacity-60 mb-2">
+            Recent scans
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recentScans.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => loadScan(s.id)}
+                className="text-xs px-2 py-1 rounded border border-slate-200 hover:border-[#185FA5] hover:text-[#185FA5] transition-colors"
+                title={`${s.domain} — ${new Date(s.created_at).toLocaleString()}`}
+              >
+                <span className="font-medium">{s.domain}</span>
+                {typeof s.overall_score === "number" && (
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                    {s.overall_score}
+                  </span>
+                )}
+                <span className="ml-2 opacity-60">
+                  {new Date(s.created_at).toLocaleDateString()}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {!crawlData && !crawling && (
         <Card className="p-10 text-center">

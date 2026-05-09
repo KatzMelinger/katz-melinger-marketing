@@ -255,8 +255,8 @@ export default function SocialPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data?.trend ?? []}>
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <XAxis dataKey="date" tick={{ fill: "#475569", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#475569", fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: CARD,
@@ -376,8 +376,8 @@ export default function SocialPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data?.overview ?? []}>
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                  <XAxis dataKey="platform" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <XAxis dataKey="platform" tick={{ fill: "#475569", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#475569", fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: CARD,

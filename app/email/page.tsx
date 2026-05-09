@@ -161,8 +161,8 @@ export default function EmailPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={campaignTrend}>
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <XAxis dataKey="name" tick={{ fill: "#475569", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#475569", fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: CARD,
@@ -186,8 +186,8 @@ export default function EmailPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data?.contactLists ?? []}>
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <XAxis dataKey="name" tick={{ fill: "#475569", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#475569", fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: CARD,

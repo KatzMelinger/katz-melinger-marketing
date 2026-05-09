@@ -11,8 +11,15 @@
  * persist; the user clicks Generate whenever they want a fresh take.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MarketingNav } from "@/components/marketing-nav";
+
+type HistoryItem = {
+  id: string;
+  rec_count: number;
+  evidence: { aeoRows?: number; keywords?: number; cannibalization?: number };
+  created_at: string;
+};
 
 type Recommendation = {
   title: string;
@@ -65,6 +72,21 @@ export default function RecommendationsPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  const refreshHistory = async () => {
+    try {
+      const res = await fetch("/api/recommendations/history");
+      const data = await res.json();
+      setHistory(data.history ?? []);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    refreshHistory();
+  }, []);
 
   const generate = async () => {
     setGenerating(true);
@@ -74,10 +96,26 @@ export default function RecommendationsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to generate");
       setResult(data);
+      refreshHistory();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate");
     }
     setGenerating(false);
+  };
+
+  const loadFromHistory = async (id: string) => {
+    try {
+      const res = await fetch(`/api/recommendations/history?id=${id}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      setResult({
+        recommendations: data.recommendations,
+        evidence: data.evidence,
+        generatedAt: data.created_at,
+      });
+    } catch {
+      /* ignore */
+    }
   };
 
   // Sort: high impact + low effort first.
@@ -118,6 +156,32 @@ export default function RecommendationsPage() {
 
       {error && (
         <div className="border border-red-500/40 rounded-lg p-3 text-sm text-red-700 dark:text-red-400">{error}</div>
+      )}
+
+      {history.length > 0 && (
+        <div className="border border-slate-200 rounded-lg p-4">
+          <div className="text-xs font-medium uppercase tracking-wider opacity-60 mb-2">
+            Recent generations
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {history.map((h) => (
+              <button
+                key={h.id}
+                onClick={() => loadFromHistory(h.id)}
+                className="text-xs px-2 py-1 rounded border border-slate-200 hover:border-[#185FA5] hover:text-[#185FA5] transition-colors"
+                title={`${h.rec_count} recs · ${new Date(h.created_at).toLocaleString()}`}
+              >
+                <span className="font-medium">{new Date(h.created_at).toLocaleDateString()}</span>
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                  {h.rec_count}
+                </span>
+                <span className="ml-2 opacity-60">
+                  {new Date(h.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {!result && !generating && (

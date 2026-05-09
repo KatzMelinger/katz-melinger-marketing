@@ -15,6 +15,7 @@ import {
   getAnthropic,
 } from "@/lib/anthropic";
 import type { AISiteCrawlResult } from "@/lib/ai-crawler";
+import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -146,7 +147,7 @@ Provide your analysis in JSON format:
     const text =
       response.content[0]?.type === "text" ? response.content[0].text : "";
 
-    let analysis: unknown;
+    let analysis: { overallScore?: number } | null = null;
     try {
       analysis = extractJSON(text);
     } catch (err) {
@@ -161,7 +162,29 @@ Provide your analysis in JSON format:
       );
     }
 
-    return NextResponse.json({ analysis });
+    // Persist crawl + analysis so users can browse history and see trends.
+    let scanId: string | null = null;
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from("ai_search_scans")
+          .insert({
+            domain: crawlData.domain,
+            base_url: crawlData.baseUrl,
+            crawl: crawlData,
+            analysis,
+            overall_score: typeof analysis?.overallScore === "number" ? analysis.overallScore : null,
+          })
+          .select("id")
+          .single();
+        scanId = (data?.id as string | undefined) ?? null;
+      } catch (err) {
+        console.warn("[ai-search/analyze] history persist failed:", err);
+      }
+    }
+
+    return NextResponse.json({ analysis, scan_id: scanId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to analyze AI search readiness";
     console.error("[ai-search/analyze] Failed:", message);

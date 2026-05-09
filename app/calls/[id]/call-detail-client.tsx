@@ -210,13 +210,13 @@ export function CallDetailClient({ callId }: { callId: string }) {
                 </p>
               </div>
             ) : (
-              <p className="text-xs italic text-slate-500">Not scored yet</p>
+              <p className="text-xs italic text-slate-600">Not scored yet</p>
             )}
             <div className="flex gap-2">
               <button
                 onClick={() => void runScore()}
                 disabled={scoring || !c.transcription}
-                className="rounded-lg bg-[#185FA5] px-3 py-2 text-xs font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
+                className="rounded-lg bg-[#185FA5] px-3 py-2 text-xs font-medium text-white hover:bg-[#1369c4] disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed"
               >
                 {scoring ? "Scoring…" : score ? "Re-score" : "Score this call"}
               </button>
@@ -225,14 +225,14 @@ export function CallDetailClient({ callId }: { callId: string }) {
                   <button
                     onClick={() => void runScore("intake")}
                     disabled={scoring}
-                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#5fa1d8] hover:bg-slate-50 disabled:opacity-50"
+                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#185FA5] hover:bg-slate-50 disabled:opacity-50"
                   >
                     As intake
                   </button>
                   <button
                     onClick={() => void runScore("consultation")}
                     disabled={scoring}
-                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#5fa1d8] hover:bg-slate-50 disabled:opacity-50"
+                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#185FA5] hover:bg-slate-50 disabled:opacity-50"
                   >
                     As consult
                   </button>

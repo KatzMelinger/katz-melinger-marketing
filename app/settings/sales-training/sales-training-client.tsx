@@ -240,7 +240,7 @@ function DimensionCard({
         ) : (
           <button
             onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-slate-50"
+            className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#185FA5] hover:bg-slate-50"
           >
             Edit
           </button>
@@ -284,7 +284,7 @@ function MaterialsView({
               </div>
               <button
                 onClick={() => setOpenId(open ? null : id)}
-                className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-slate-50"
+                className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#185FA5] hover:bg-slate-50"
               >
                 {open ? "Hide" : "View"}
               </button>

@@ -189,8 +189,8 @@ export default function AnalyticsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartDays}>
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <XAxis dataKey="label" tick={{ fill: "#475569", fontSize: 11 }} />
+                <YAxis tick={{ fill: "#475569", fontSize: 11 }} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: CARD,
@@ -221,12 +221,12 @@ export default function AnalyticsPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={sources} layout="vertical" margin={{ left: 8 }}>
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                  <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <XAxis type="number" tick={{ fill: "#475569", fontSize: 11 }} />
                   <YAxis
                     type="category"
                     dataKey="name"
                     width={120}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    tick={{ fill: "#475569", fontSize: 10 }}
                   />
                   <Tooltip
                     contentStyle={{

@@ -187,12 +187,12 @@ export default function SearchConsolePage() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                <YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <XAxis dataKey="label" tick={{ fill: "#475569", fontSize: 10 }} />
+                <YAxis yAxisId="left" tick={{ fill: "#475569", fontSize: 11 }} />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
+                  tick={{ fill: "#475569", fontSize: 11 }}
                 />
                 <Tooltip
                   contentStyle={{
