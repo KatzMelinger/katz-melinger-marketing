@@ -60,62 +60,62 @@ export default async function SeoPage() {
       subtitle="Keyword tracking, competitor intelligence, backlink analysis, and technical SEO monitoring."
     >
       {data.error ? (
-        <div className="rounded-xl border border-amber-700/50 bg-[#1a2540] p-4 text-sm text-amber-100">
+        <div className="rounded-xl border border-amber-700/50 bg-[#ffffff] p-4 text-sm text-amber-800">
           {data.error}
         </div>
       ) : null}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Tracked keywords</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{formatNumber(trackedCount)}</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Tracked keywords</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatNumber(trackedCount)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Top 10 rankings</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{formatNumber(rankingTop10)}</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Top 10 rankings</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatNumber(rankingTop10)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Missing targets</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{formatNumber(missing)}</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Missing targets</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatNumber(missing)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Authority score</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{formatNumber(authority)}</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Authority score</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatNumber(authority)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Backlinks</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{formatNumber(backlinks)}</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Backlinks</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatNumber(backlinks)}</p>
         </article>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-          <h2 className="text-lg font-semibold text-white">Trending legal keywords</h2>
-          <ul className="mt-3 space-y-2 text-sm text-slate-300">
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+          <h2 className="text-lg font-semibold text-slate-900">Trending legal keywords</h2>
+          <ul className="mt-3 space-y-2 text-sm text-slate-600">
             {(data.trendingKeywords ?? []).slice(0, 8).map((item) => (
-              <li key={item.keyword} className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
+              <li key={item.keyword} className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
                 {item.keyword}
               </li>
             ))}
           </ul>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-          <h2 className="text-lg font-semibold text-white">Top market competitors</h2>
-          <ul className="mt-3 space-y-2 text-sm text-slate-300">
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+          <h2 className="text-lg font-semibold text-slate-900">Top market competitors</h2>
+          <ul className="mt-3 space-y-2 text-sm text-slate-600">
             {competitors.slice(0, 8).map((item) => (
               <li
                 key={item.domain}
-                className="flex items-center justify-between rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2"
+                className="flex items-center justify-between rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2"
               >
                 <span>{item.domain}</span>
-                <span className="tabular-nums text-slate-400">{formatNumber(item.commonKeywords)}</span>
+                <span className="tabular-nums text-slate-500">{formatNumber(item.commonKeywords)}</span>
               </li>
             ))}
           </ul>
         </article>
       </section>
 
-      <section className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-        <h2 className="text-lg font-semibold text-white">Workflow shortcuts</h2>
+      <section className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+        <h2 className="text-lg font-semibold text-slate-900">Workflow shortcuts</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["/seo/keywords", "Keyword tracking & research"],
@@ -130,7 +130,7 @@ export default async function SeoPage() {
             <Link
               key={href}
               href={href}
-              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-3 text-sm text-slate-200 hover:border-[#185FA5] hover:text-white"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-3 text-sm text-slate-700 hover:border-[#185FA5] hover:text-white"
             >
               {label}
             </Link>

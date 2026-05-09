@@ -35,26 +35,26 @@ export default async function SeoTechnicalPage() {
       subtitle="Performance and crawl health tracking with Core Web Vitals and schema validation checks."
     >
       <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-          <h2 className="text-lg font-semibold text-white">Mobile performance</h2>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+          <h2 className="text-lg font-semibold text-slate-900">Mobile performance</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {(data.mobile ?? []).map((metric) => (
-              <li key={metric.name} className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
-                <p className="font-medium text-white">{metric.name}</p>
+              <li key={metric.name} className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
+                <p className="font-medium text-slate-900">{metric.name}</p>
                 <p className={`text-xs ${statusClass(metric.status)}`}>{metric.status} · score {metric.score}</p>
-                <p className="text-xs text-slate-400">{metric.detail}</p>
+                <p className="text-xs text-slate-500">{metric.detail}</p>
               </li>
             ))}
           </ul>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-          <h2 className="text-lg font-semibold text-white">Desktop performance</h2>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+          <h2 className="text-lg font-semibold text-slate-900">Desktop performance</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {(data.desktop ?? []).map((metric) => (
-              <li key={metric.name} className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
-                <p className="font-medium text-white">{metric.name}</p>
+              <li key={metric.name} className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
+                <p className="font-medium text-slate-900">{metric.name}</p>
                 <p className={`text-xs ${statusClass(metric.status)}`}>{metric.status} · score {metric.score}</p>
-                <p className="text-xs text-slate-400">{metric.detail}</p>
+                <p className="text-xs text-slate-500">{metric.detail}</p>
               </li>
             ))}
           </ul>
@@ -62,26 +62,26 @@ export default async function SeoTechnicalPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-          <h2 className="text-lg font-semibold text-white">Schema markup validation</h2>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+          <h2 className="text-lg font-semibold text-slate-900">Schema markup validation</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {(data.schemaChecks ?? []).map((metric) => (
-              <li key={metric.name} className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
-                <p className="font-medium text-white">{metric.name}</p>
+              <li key={metric.name} className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
+                <p className="font-medium text-slate-900">{metric.name}</p>
                 <p className={`text-xs ${statusClass(metric.status)}`}>{metric.status} · score {metric.score}</p>
-                <p className="text-xs text-slate-400">{metric.detail}</p>
+                <p className="text-xs text-slate-500">{metric.detail}</p>
               </li>
             ))}
           </ul>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-          <h2 className="text-lg font-semibold text-white">Crawl error report</h2>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+          <h2 className="text-lg font-semibold text-slate-900">Crawl error report</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {(data.crawlErrors ?? []).map((error) => (
-              <li key={`${error.url}-${error.issue}`} className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
-                <p className="font-medium text-white">{error.url}</p>
+              <li key={`${error.url}-${error.issue}`} className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
+                <p className="font-medium text-slate-900">{error.url}</p>
                 <p className={`text-xs ${statusClass(error.severity)}`}>{error.severity}</p>
-                <p className="text-xs text-slate-400">{error.issue}</p>
+                <p className="text-xs text-slate-500">{error.issue}</p>
               </li>
             ))}
           </ul>

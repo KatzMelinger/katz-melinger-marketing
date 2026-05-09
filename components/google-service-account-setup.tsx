@@ -1,5 +1,5 @@
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 
 export function GoogleServiceAccountSetup({
   contextLabel,
@@ -11,14 +11,14 @@ export function GoogleServiceAccountSetup({
       className="rounded-xl border p-6"
       style={{ backgroundColor: CARD, borderColor: BORDER }}
     >
-      <h2 className="text-xl font-semibold text-white">
+      <h2 className="text-xl font-semibold text-slate-900">
         Google Service Account Setup Required
       </h2>
-      <p className="mt-2 text-sm text-slate-300">
+      <p className="mt-2 text-sm text-slate-600">
         {contextLabel} is blocked until a replacement service account key is
         added.
       </p>
-      <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-200">
+      <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-700">
         <li>Go to Google Cloud Console -&gt; IAM -&gt; Service Accounts.</li>
         <li>
           Create a new service account with Google Analytics and Search Console
@@ -33,7 +33,7 @@ export function GoogleServiceAccountSetup({
         </li>
         <li>Enable Google Analytics Reporting API and Search Console API.</li>
       </ol>
-      <p className="mt-4 text-sm text-slate-400">
+      <p className="mt-4 text-sm text-slate-500">
         After saving the environment variable, reload this page to pull live
         data.
       </p>

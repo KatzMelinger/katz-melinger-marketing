@@ -30,20 +30,20 @@ export function SeoShell({
 }) {
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, Helvetica, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <section className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
-          <p className="text-sm text-slate-400">{subtitle}</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
+          <p className="text-sm text-slate-500">{subtitle}</p>
           <div className="flex flex-wrap gap-2 pt-2">
             {SEO_ROUTES.map((route) => (
               <Link
                 key={route.href}
                 href={route.href}
-                className="rounded-md border border-[#2a3f5f] bg-[#1a2540] px-3 py-1.5 text-xs text-slate-200 transition hover:border-[#185FA5] hover:text-white"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs text-slate-700 transition hover:border-[#185FA5] hover:text-white"
               >
                 {route.label}
               </Link>

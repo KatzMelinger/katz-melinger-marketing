@@ -18,8 +18,8 @@ import {
 
 import { MarketingNav } from "@/components/marketing-nav";
 
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 const PIE_COLORS = ["#185FA5", "#1D9E75", "#CA8A04", "#A855F7"];
 
@@ -134,16 +134,16 @@ export default function SocialPage() {
 
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-slate-900">
             Social Media Dashboard
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-500">
             Metricool integration for account health, posts, scheduling, and
             engagement analytics.
           </p>
@@ -151,12 +151,12 @@ export default function SocialPage() {
 
         {error ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
           >
             {error}
             {isDev && data?.metricoolDebug ? (
-              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-600">
                 {JSON.stringify(data.metricoolDebug, null, 2)}
               </pre>
             ) : null}
@@ -168,14 +168,14 @@ export default function SocialPage() {
             className="rounded-xl border border-dashed border-slate-600 p-4 text-sm"
             style={{ backgroundColor: "#0c1220" }}
           >
-            <h2 className="font-semibold text-slate-200">Metricool debug (dev only)</h2>
+            <h2 className="font-semibold text-slate-700">Metricool debug (dev only)</h2>
             <p className="mt-1 text-xs text-slate-500">
               Server logs (terminal running Next.js) contain full request/response traces.
               This panel shows safe env snapshot and optional API test results.
             </p>
             <div className="mt-3 space-y-2">
-              <p className="text-xs font-medium text-slate-400">Env as seen by server</p>
-              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+              <p className="text-xs font-medium text-slate-500">Env as seen by server</p>
+              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
                 {envDebug != null
                   ? JSON.stringify(envDebug, null, 2)
                   : "Loading…"}
@@ -183,7 +183,7 @@ export default function SocialPage() {
               <button
                 type="button"
                 disabled={testLoading}
-                className="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 disabled:opacity-50"
+                className="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-600 disabled:opacity-50"
                 onClick={() => {
                   void (async () => {
                     setTestLoading(true);
@@ -209,17 +209,17 @@ export default function SocialPage() {
                 {testLoading ? "Running…" : "Run credential test (single API call)"}
               </button>
               {testOutput != null ? (
-                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
                   {JSON.stringify(testOutput, null, 2)}
                 </pre>
               ) : null}
             </div>
             {data?.metricoolDebug && !error ? (
               <div className="mt-4">
-                <p className="text-xs font-medium text-slate-400">
+                <p className="text-xs font-medium text-slate-500">
                   Last dashboard response (debug=1)
                 </p>
-                <pre className="mt-1 max-h-48 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                <pre className="mt-1 max-h-48 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
                   {JSON.stringify(data.metricoolDebug, null, 2)}
                 </pre>
               </div>
@@ -254,7 +254,7 @@ export default function SocialPage() {
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data?.trend ?? []}>
-                  <CartesianGrid stroke="#2a3f5f" strokeDasharray="3 3" />
+                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <Tooltip
@@ -319,13 +319,13 @@ export default function SocialPage() {
             {(data?.posts ?? []).map((post) => (
               <article
                 key={post.id}
-                className="rounded-lg border border-[#2a3f5f] p-4 text-sm"
+                className="rounded-lg border border-[#e2e8f0] p-4 text-sm"
               >
-                <p className="font-semibold text-white">{post.title}</p>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="font-semibold text-slate-900">{post.title}</p>
+                <p className="mt-1 text-xs text-slate-500">
                   {post.platform} · {new Date(post.publishedAt).toLocaleDateString()}
                 </p>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600">
                   <span>Imp: {post.impressions.toLocaleString()}</span>
                   <span>Eng: {post.engagements.toLocaleString()}</span>
                   <span>Clk: {post.clicks.toLocaleString()}</span>
@@ -344,16 +344,16 @@ export default function SocialPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px] border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#2a3f5f] text-slate-400">
+                  <tr className="border-b border-[#e2e8f0] text-slate-500">
                     <th className="pb-3 pr-4 font-medium">Date</th>
                     <th className="pb-3 pr-4 font-medium">Platform</th>
                     <th className="pb-3 pr-4 font-medium">Status</th>
                     <th className="pb-3 font-medium">Content</th>
                   </tr>
                 </thead>
-                <tbody className="text-slate-200">
+                <tbody className="text-slate-700">
                   {(data?.schedule ?? []).map((row) => (
-                    <tr key={row.id} className="border-b border-[#2a3f5f]/60">
+                    <tr key={row.id} className="border-b border-[#e2e8f0]/60">
                       <td className="py-2 pr-4">
                         {new Date(row.date).toLocaleDateString()}
                       </td>
@@ -375,7 +375,7 @@ export default function SocialPage() {
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data?.overview ?? []}>
-                  <CartesianGrid stroke="#2a3f5f" strokeDasharray="3 3" />
+                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
                   <XAxis dataKey="platform" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <Tooltip
@@ -396,22 +396,22 @@ export default function SocialPage() {
           className="rounded-xl border border-dashed p-6"
           style={{ backgroundColor: CARD, borderColor: "#185FA5" }}
         >
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-slate-900">
             Post creation interface
           </h2>
-          <p className="mt-2 text-sm text-slate-300">
+          <p className="mt-2 text-sm text-slate-600">
             Connect to Metricool API
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <input
               readOnly
               value="Draft caption..."
-              className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-300"
+              className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-600"
             />
             <input
               readOnly
               value="Select audience and schedule"
-              className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-300"
+              className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-600"
             />
           </div>
         </section>

@@ -227,7 +227,7 @@ function DashboardSkeleton() {
           <article
             key={i}
             className="rounded-xl border border-white/5 p-5 shadow-sm"
-            style={{ backgroundColor: "#1a2540" }}
+            style={{ backgroundColor: "#ffffff" }}
           >
             <div className="h-4 w-32 animate-pulse rounded bg-white/10" />
             <div className="mt-3 h-9 w-20 animate-pulse rounded bg-white/10" />
@@ -235,15 +235,15 @@ function DashboardSkeleton() {
         ))}
       </section>
       <section
-        className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-        style={{ backgroundColor: "#1a2540" }}
+        className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+        style={{ backgroundColor: "#ffffff" }}
       >
         <div className="mb-4 h-6 w-40 animate-pulse rounded bg-white/10" />
         <div className="h-[300px] animate-pulse rounded-lg bg-white/5" />
       </section>
       <section
-        className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-        style={{ backgroundColor: "#1a2540" }}
+        className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+        style={{ backgroundColor: "#ffffff" }}
       >
         <div className="mb-4 h-6 w-36 animate-pulse rounded bg-white/10" />
         <div className="space-y-3">
@@ -297,10 +297,10 @@ async function DashboardMain() {
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-white">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
           Dashboard
         </h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-500">
           Katz Melinger PLLC · Plaintiff employment law · NYC
         </p>
       </div>
@@ -349,34 +349,34 @@ async function DashboardMain() {
 
       <section
         id="calls"
-        className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-        style={{ backgroundColor: "#1a2540" }}
+        className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+        style={{ backgroundColor: "#ffffff" }}
       >
         <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-slate-900">
               Calls by source
             </h2>
-            <p className="text-sm text-slate-400">Inbound volume by channel</p>
+            <p className="text-sm text-slate-500">Inbound volume by channel</p>
           </div>
         </div>
         <CallsBySourceChart data={chartData} />
       </section>
 
       <section
-        className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-        style={{ backgroundColor: "#1a2540" }}
+        className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+        style={{ backgroundColor: "#ffffff" }}
       >
-        <h2 className="mb-4 text-lg font-semibold text-white">Recent calls</h2>
+        <h2 className="mb-4 text-lg font-semibold text-slate-900">Recent calls</h2>
         {rawCalls.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             No recent calls to display.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-[#2a3f5f] text-slate-400">
+                <tr className="border-b border-[#e2e8f0] text-slate-500">
                   <th className="pb-3 pr-4 font-medium">Caller</th>
                   <th className="pb-3 pr-4 font-medium">Phone</th>
                   <th className="pb-3 pr-4 font-medium">Source</th>
@@ -385,7 +385,7 @@ async function DashboardMain() {
                   <th className="pb-3 font-medium">Date</th>
                 </tr>
               </thead>
-              <tbody className="text-slate-200">
+              <tbody className="text-slate-700">
                 {rawCalls.map((row) => {
                   const callerName =
                     row.customer_name?.trim() || "Unknown caller";
@@ -399,12 +399,12 @@ async function DashboardMain() {
                   return (
                     <tr
                       key={row.id}
-                      className="border-b border-[#2a3f5f]/60 last:border-0"
+                      className="border-b border-[#e2e8f0]/60 last:border-0"
                     >
-                      <td className="py-3 pr-4 font-medium text-white">
+                      <td className="py-3 pr-4 font-medium text-slate-900">
                         {callerName}
                       </td>
-                      <td className="py-3 pr-4 tabular-nums text-slate-300">
+                      <td className="py-3 pr-4 tabular-nums text-slate-600">
                         {callerNumber}
                       </td>
                       <td className="py-3 pr-4">{source}</td>
@@ -422,7 +422,7 @@ async function DashboardMain() {
                           </span>
                         )}
                       </td>
-                      <td className="py-3 text-slate-400">
+                      <td className="py-3 text-slate-500">
                         {formatStartTime(row.start_time)}
                       </td>
                     </tr>
@@ -436,21 +436,21 @@ async function DashboardMain() {
 
       <section
         id="attribution"
-        className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-        style={{ backgroundColor: "#1a2540" }}
+        className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+        style={{ backgroundColor: "#ffffff" }}
       >
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-slate-900">
             Marketing attribution
           </h2>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             Sources tied to intakes, open matters, and settlement value
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-[#2a3f5f] text-slate-400">
+              <tr className="border-b border-[#e2e8f0] text-slate-500">
                 <th className="pb-3 pr-4 font-medium">Source</th>
                 <th className="pb-3 pr-4 font-medium">Total calls</th>
                 <th className="pb-3 pr-4 font-medium">Intakes created</th>
@@ -460,13 +460,13 @@ async function DashboardMain() {
                 <th className="pb-3 font-medium">Avg settlement</th>
               </tr>
             </thead>
-            <tbody className="text-slate-200">
+            <tbody className="text-slate-700">
               {attributionRows.map((row) => (
                 <tr
                   key={row.source}
-                  className="border-b border-[#2a3f5f]/60 last:border-0"
+                  className="border-b border-[#e2e8f0]/60 last:border-0"
                 >
-                  <td className="py-3 pr-4 font-medium text-white">
+                  <td className="py-3 pr-4 font-medium text-slate-900">
                     {row.source}
                   </td>
                   <td className="py-3 pr-4 tabular-nums">{row.totalCalls}</td>
@@ -474,7 +474,7 @@ async function DashboardMain() {
                   <td className="py-3 pr-4 tabular-nums">
                     {row.mattersOpened}
                   </td>
-                  <td className="py-3 pr-4 font-medium tabular-nums text-white">
+                  <td className="py-3 pr-4 font-medium tabular-nums text-slate-900">
                     {formatCurrency(row.totalSettlementValue)}
                   </td>
                   <td className="py-3 pr-4 tabular-nums">
@@ -492,15 +492,15 @@ async function DashboardMain() {
 
       <section
         id="reputation"
-        className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-        style={{ backgroundColor: "#1a2540" }}
+        className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+        style={{ backgroundColor: "#ffffff" }}
       >
         <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white">Reputation snapshot</h2>
-            <p className="text-sm text-slate-400">From Supabase reviews (same data as CMS)</p>
+            <h2 className="text-lg font-semibold text-slate-900">Reputation snapshot</h2>
+            <p className="text-sm text-slate-500">From Supabase reviews (same data as CMS)</p>
           </div>
-          <Link href="/reviews" className="text-sm text-sky-300 hover:text-white">
+          <Link href="/reviews" className="text-sm text-sky-300 hover:text-slate-900">
             Reviews dashboard →
           </Link>
         </div>
@@ -508,28 +508,28 @@ async function DashboardMain() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#185FA5" }}>
               <p className="text-xs font-medium text-white/90">Avg Google rating</p>
-              <p className="mt-2 text-2xl font-semibold text-white">
+              <p className="mt-2 text-2xl font-semibold text-slate-900">
                 {reputation.googleAvg != null ? reputation.googleAvg.toFixed(2) : "—"}
               </p>
             </article>
             <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#166534" }}>
               <p className="text-xs font-medium text-white/90">Total reviews</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{reputation.totalReviews}</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{reputation.totalReviews}</p>
             </article>
             <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#b45309" }}>
               <p className="text-xs font-medium text-white/90">Reviews this month</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{reputation.reviewsThisMonth}</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{reputation.reviewsThisMonth}</p>
             </article>
             <article className="rounded-lg border border-white/10 p-4" style={{ backgroundColor: "#475569" }}>
               <p className="text-xs font-medium text-white/90">Response rate</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{reputation.responseRatePct}%</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{reputation.responseRatePct}%</p>
             </article>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             Reviews could not be loaded. Configure{" "}
-            <code className="text-slate-200">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-            <code className="text-slate-200">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
+            <code className="text-slate-700">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+            <code className="text-slate-700">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
             (or service role for server-only paths).
           </p>
         )}
@@ -541,9 +541,9 @@ async function DashboardMain() {
 export default async function Home() {
   return (
     <div
-      className="min-h-full text-white"
+      className="min-h-full text-slate-900"
       style={{
-        backgroundColor: "#0f1729",
+        backgroundColor: "#ffffff",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >

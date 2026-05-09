@@ -4,7 +4,7 @@
  * Collapsible sidebar that replaces the old horizontal MarketingNav.
  *
  * Items are organized into four buckets — Acquisition, Search & AI,
- * Reach & Reputation, Settings — to keep the nav scannable as we keep
+ * Reach & Reputation, Workspace — to keep the nav scannable as we keep
  * adding features. Each section is independently collapsible; the whole
  * sidebar can collapse to icons-only via the chevron at the top.
  *
@@ -83,9 +83,6 @@ export function MarketingSidebar() {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(GROUPS.map((g) => [g.label, true])),
   );
-  // Wait for client mount before applying persisted state — avoids hydration
-  // mismatch when the server renders the default and the client renders the
-  // user's saved preference.
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -126,16 +123,18 @@ export function MarketingSidebar() {
 
   return (
     <aside
-      className="shrink-0 border-r border-[#2a3f5f] sticky top-0 h-screen overflow-y-auto z-30"
+      className="shrink-0 border-r border-slate-200 sticky top-0 h-screen overflow-y-auto z-30 bg-slate-50"
       style={{
-        backgroundColor: "#0f1729",
         width,
         transition: hydrated ? "width 150ms ease" : undefined,
       }}
     >
-      <div className="flex items-center justify-between px-3 py-3 border-b border-[#2a3f5f]/60">
+      <div className="flex items-center justify-between px-3 py-3 border-b border-slate-200">
         {!collapsed && (
-          <Link href="/" className="text-sm font-semibold tracking-tight text-[#185FA5] truncate">
+          <Link
+            href="/"
+            className="text-sm font-semibold tracking-tight text-[#185FA5] truncate"
+          >
             KatzMelinger
           </Link>
         )}
@@ -143,7 +142,7 @@ export function MarketingSidebar() {
           type="button"
           onClick={toggleCollapsed}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="text-slate-400 hover:text-white text-lg leading-none px-1.5 py-0.5 rounded hover:bg-[#1a2540] ml-auto"
+          className="text-slate-500 hover:text-slate-900 text-lg leading-none px-1.5 py-0.5 rounded hover:bg-slate-200 ml-auto"
         >
           {collapsed ? "»" : "«"}
         </button>
@@ -158,7 +157,7 @@ export function MarketingSidebar() {
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.label)}
-                  className="w-full flex items-center justify-between px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300"
+                  className="w-full flex items-center justify-between px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
                 >
                   <span>{group.label}</span>
                   <span aria-hidden>{openGroups[group.label] ? "▾" : "▸"}</span>
@@ -175,8 +174,8 @@ export function MarketingSidebar() {
                         title={item.label}
                         className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
                           active
-                            ? "bg-[#1a2540] font-semibold text-white ring-1 ring-[#185FA5]/40"
-                            : "text-slate-300 hover:bg-[#1a2540] hover:text-white"
+                            ? "bg-[#185FA5]/10 font-semibold text-[#185FA5]"
+                            : "text-slate-700 hover:bg-slate-200/70 hover:text-slate-900"
                         } ${collapsed ? "justify-center" : ""}`}
                       >
                         <span aria-hidden className="text-base leading-none shrink-0">

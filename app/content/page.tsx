@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
 
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 const DEFAULT_BRAND_VOICE =
@@ -305,14 +305,14 @@ export default function ContentPage() {
 
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Content studio</h1>
-          <p className="mt-1 text-sm text-slate-400">AI drafts · Katz Melinger voice</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Content studio</h1>
+          <p className="mt-1 text-sm text-slate-500">AI drafts · Katz Melinger voice</p>
         </div>
 
         <div className="flex flex-wrap gap-2 border-b pb-2" style={{ borderColor: BORDER }}>
@@ -328,7 +328,7 @@ export default function ContentPage() {
               type="button"
               onClick={() => setTab(id)}
               className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                tab === id ? "text-white" : "text-slate-400 hover:text-white"
+                tab === id ? "text-slate-900" : "text-slate-500 hover:text-slate-900"
               }`}
               style={{
                 backgroundColor: tab === id ? ACCENT : "transparent",
@@ -343,9 +343,9 @@ export default function ContentPage() {
           <section className="space-y-4 rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
             {tab === "social" ? (
               <label className="block text-sm">
-                <span className="text-xs text-slate-400">Platform</span>
+                <span className="text-xs text-slate-500">Platform</span>
                 <select
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={platform}
                   onChange={(e) => setPlatform(e.target.value)}
                 >
@@ -360,9 +360,9 @@ export default function ContentPage() {
 
             {tab === "email" ? (
               <label className="block text-sm">
-                <span className="text-xs text-slate-400">Campaign type</span>
+                <span className="text-xs text-slate-500">Campaign type</span>
                 <select
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={campaignType}
                   onChange={(e) => setCampaignType(e.target.value)}
                 >
@@ -375,9 +375,9 @@ export default function ContentPage() {
             ) : null}
 
             <label className="block text-sm">
-              <span className="text-xs text-slate-400">Topic</span>
+              <span className="text-xs text-slate-500">Topic</span>
               <input
-                className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="What should this piece cover?"
@@ -385,9 +385,9 @@ export default function ContentPage() {
             </label>
 
             <label className="block text-sm">
-              <span className="text-xs text-slate-400">Template</span>
+              <span className="text-xs text-slate-500">Template</span>
               <select
-                className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                 value={templateKey}
                 onChange={(e) => setTemplateKey(e.target.value)}
               >
@@ -405,9 +405,9 @@ export default function ContentPage() {
             </label>
 
             <label className="block text-sm">
-              <span className="text-xs text-slate-400">Practice area</span>
+              <span className="text-xs text-slate-500">Practice area</span>
               <select
-                className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                 value={practiceArea}
                 onChange={(e) => setPracticeArea(e.target.value)}
               >
@@ -419,18 +419,18 @@ export default function ContentPage() {
               </select>
             </label>
 
-            <div className="rounded border border-[#2a3f5f] bg-[#0f1729] p-3 text-sm">
+            <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-slate-400">SEO keyword assistant (Semrush + competitor gaps)</p>
+                <p className="text-xs text-slate-500">SEO keyword assistant (Semrush + competitor gaps)</p>
                 <button
                   type="button"
                   onClick={() => void loadSeoBrief(topic, practiceArea)}
-                  className="rounded border border-[#2a3f5f] px-2 py-1 text-xs text-slate-200"
+                  className="rounded border border-[#e2e8f0] px-2 py-1 text-xs text-slate-700"
                 >
                   Refresh
                 </button>
               </div>
-              <label className="mt-2 flex items-center gap-2 text-xs text-slate-300">
+              <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
                 <input
                   type="checkbox"
                   checked={includeSeoGuidance}
@@ -441,13 +441,13 @@ export default function ContentPage() {
               {seoBriefLoading ? <p className="mt-2 text-xs text-slate-500">Loading SEO brief...</p> : null}
               {seoBriefError ? <p className="mt-2 text-xs text-rose-300">{seoBriefError}</p> : null}
               {seoBrief ? (
-                <div className="mt-2 space-y-2 text-xs text-slate-300">
+                <div className="mt-2 space-y-2 text-xs text-slate-600">
                   <p>
-                    <span className="text-slate-400">Target keywords:</span>{" "}
+                    <span className="text-slate-500">Target keywords:</span>{" "}
                     {seoBrief.targetKeywords.join(", ") || "—"}
                   </p>
                   <p>
-                    <span className="text-slate-400">Long-tail ideas:</span>{" "}
+                    <span className="text-slate-500">Long-tail ideas:</span>{" "}
                     {seoBrief.longTailKeywords.slice(0, 3).join(" | ") || "—"}
                   </p>
                 </div>
@@ -457,9 +457,9 @@ export default function ContentPage() {
             {tab === "blog" ? (
               <>
                 <label className="block text-sm">
-                  <span className="text-xs text-slate-400">Length</span>
+                  <span className="text-xs text-slate-500">Length</span>
                   <select
-                    className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                    className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                     value={length}
                     onChange={(e) =>
                       setLength(e.target.value as "short" | "medium" | "long")
@@ -471,9 +471,9 @@ export default function ContentPage() {
                   </select>
                 </label>
                 <label className="block text-sm">
-                  <span className="text-xs text-slate-400">Tone</span>
+                  <span className="text-xs text-slate-500">Tone</span>
                   <select
-                    className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                    className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                     value={tone}
                     onChange={(e) => setTone(e.target.value)}
                   >
@@ -485,9 +485,9 @@ export default function ContentPage() {
               </>
             ) : (
               <label className="block text-sm">
-                <span className="text-xs text-slate-400">Tone</span>
+                <span className="text-xs text-slate-500">Tone</span>
                 <select
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={tone}
                   onChange={(e) => setTone(e.target.value)}
                 >
@@ -498,12 +498,12 @@ export default function ContentPage() {
               </label>
             )}
 
-            <label className="flex cursor-pointer items-center gap-2 rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200">
+            <label className="flex cursor-pointer items-center gap-2 rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={useBrandVoice}
                 onChange={(e) => setUseBrandVoice(e.target.checked)}
-                className="h-4 w-4 rounded border-[#2a3f5f] bg-[#0f1729] text-[#185FA5]"
+                className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5]"
               />
               Generate with brand voice
             </label>
@@ -514,7 +514,7 @@ export default function ContentPage() {
               type="button"
               disabled={loading || !topic.trim()}
               onClick={() => void generate()}
-              className="w-full rounded-lg py-3 text-sm font-semibold text-white disabled:opacity-50"
+              className="w-full rounded-lg py-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
               style={{ backgroundColor: ACCENT }}
             >
               {loading ? "Generating…" : "Generate"}
@@ -522,9 +522,9 @@ export default function ContentPage() {
           </section>
 
           <section className="space-y-3 rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
-            <h2 className="text-sm font-semibold text-white">Preview</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Preview</h2>
             {tab === "email" && emailSubject ? (
-              <div className="rounded border border-[#2a3f5f] bg-[#0f1729] p-3 text-sm">
+              <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-3 text-sm">
                 <span className="text-xs text-slate-500">Subject</span>
                 <p className="font-medium text-[#185FA5]">{emailSubject}</p>
               </div>
@@ -532,13 +532,13 @@ export default function ContentPage() {
             {tab === "social" ? (
               <p className="text-xs text-slate-500">{socialChars} characters</p>
             ) : null}
-            <div className="max-h-[480px] overflow-y-auto whitespace-pre-wrap rounded border border-[#2a3f5f] bg-[#0f1729] p-4 text-sm text-slate-200">
+            <div className="max-h-[480px] overflow-y-auto whitespace-pre-wrap rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-700">
               {preview || "Generated content appears here."}
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="rounded-lg border border-[#2a3f5f] px-4 py-2 text-sm"
+                className="rounded-lg border border-[#e2e8f0] px-4 py-2 text-sm"
                 onClick={() => {
                   if (preview) void navigator.clipboard.writeText(preview);
                 }}
@@ -548,7 +548,7 @@ export default function ContentPage() {
               {tab === "blog" ? (
                 <button
                   type="button"
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-900"
                   style={{ backgroundColor: "#166534" }}
                   onClick={() => void saveBlog()}
                 >
@@ -563,12 +563,12 @@ export default function ContentPage() {
         </div>
 
         <section className="rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
-          <h2 className="text-lg font-semibold text-white">Brand voice</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <h2 className="text-lg font-semibold text-slate-900">Brand voice</h2>
+          <p className="mt-1 text-sm text-slate-500">
             Saved context is injected into every generation request.
           </p>
           <textarea
-            className="mt-4 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-3 text-sm text-white"
+            className="mt-4 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-3 text-sm text-slate-900"
             rows={5}
             value={brandVoice}
             onChange={(e) => setBrandVoice(e.target.value)}
@@ -578,23 +578,23 @@ export default function ContentPage() {
             type="button"
             disabled={brandLoading}
             onClick={() => void saveBrandVoice()}
-            className="mt-3 rounded-lg px-4 py-2 text-sm font-medium text-white"
+            className="mt-3 rounded-lg px-4 py-2 text-sm font-medium text-slate-900"
             style={{ backgroundColor: ACCENT }}
           >
             {brandLoading ? "Saving…" : "Save brand voice"}
           </button>
           {profile ? (
-            <div className="mt-4 rounded border border-[#2a3f5f] bg-[#0f1729] p-4 text-sm text-slate-200">
-              <p className="font-semibold text-white">Guidelines summary</p>
-              <p className="mt-2 text-slate-300">{profile.guidelinesSummary}</p>
+            <div className="mt-4 rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Guidelines summary</p>
+              <p className="mt-2 text-slate-600">{profile.guidelinesSummary}</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">Tone</p>
-                  <p className="mt-1 text-slate-300">{profile.tone.join(", ") || "—"}</p>
+                  <p className="mt-1 text-slate-600">{profile.tone.join(", ") || "—"}</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">Legal terms</p>
-                  <p className="mt-1 text-slate-300">{profile.legalTerms.join(", ") || "—"}</p>
+                  <p className="mt-1 text-slate-600">{profile.legalTerms.join(", ") || "—"}</p>
                 </div>
               </div>
             </div>
@@ -602,22 +602,22 @@ export default function ContentPage() {
         </section>
 
         <section className="rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
-          <h2 className="text-lg font-semibold text-white">Upload brand documents</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <h2 className="text-lg font-semibold text-slate-900">Upload brand documents</h2>
+          <p className="mt-1 text-sm text-slate-500">
             Upload PDF assets used to train writing style and legal messaging.
           </p>
           {docError ? <p className="mt-3 text-sm text-rose-300">{docError}</p> : null}
           {docMessage ? <p className="mt-3 text-sm text-emerald-300">{docMessage}</p> : null}
-          {uploadProgress ? <p className="mt-2 text-xs text-slate-400">{uploadProgress}</p> : null}
+          {uploadProgress ? <p className="mt-2 text-xs text-slate-500">{uploadProgress}</p> : null}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <div className="rounded border border-[#2a3f5f] bg-[#0f1729] p-4">
-              <p className="font-medium text-white">Firm brand documents (PDF)</p>
+            <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-4">
+              <p className="font-medium text-slate-900">Firm brand documents (PDF)</p>
               <p className="mt-1 text-xs text-slate-500">
                 Upload brand voice guides, website copy decks, and legal content standards.
               </p>
               <input
-                className="mt-3 block w-full text-sm text-slate-300"
+                className="mt-3 block w-full text-sm text-slate-600"
                 type="file"
                 accept=".pdf,application/pdf"
                 multiple
@@ -627,19 +627,19 @@ export default function ContentPage() {
                 type="button"
                 disabled={uploadingType !== null}
                 onClick={() => void uploadDocs("brand")}
-                className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 disabled:opacity-50"
                 style={{ backgroundColor: ACCENT }}
               >
                 {uploadingType === "brand" ? "Processing..." : "Train brand voice from PDFs"}
               </button>
             </div>
-            <div className="rounded border border-[#2a3f5f] bg-[#0f1729] p-4">
-              <p className="font-medium text-white">Sample marketing content (PDF)</p>
+            <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-4">
+              <p className="font-medium text-slate-900">Sample marketing content (PDF)</p>
               <p className="mt-1 text-xs text-slate-500">
                 Upload past newsletters, social exports, and campaign writeups for pattern analysis.
               </p>
               <input
-                className="mt-3 block w-full text-sm text-slate-300"
+                className="mt-3 block w-full text-sm text-slate-600"
                 type="file"
                 accept=".pdf,application/pdf"
                 multiple
@@ -649,7 +649,7 @@ export default function ContentPage() {
                 type="button"
                 disabled={uploadingType !== null}
                 onClick={() => void uploadDocs("sample")}
-                className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 disabled:opacity-50"
                 style={{ backgroundColor: "#1d9e75" }}
               >
                 {uploadingType === "sample" ? "Processing..." : "Analyze sample marketing PDFs"}
@@ -658,14 +658,14 @@ export default function ContentPage() {
           </div>
 
           <div className="mt-5">
-            <p className="text-sm font-medium text-white">Uploaded documents</p>
+            <p className="text-sm font-medium text-slate-900">Uploaded documents</p>
             <ul className="mt-2 space-y-2">
               {documents.slice(0, 10).map((doc) => (
                 <li
                   key={doc.id}
-                  className="rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-xs text-slate-300"
+                  className="rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-xs text-slate-600"
                 >
-                  <span className="font-medium text-slate-200">{doc.filename}</span>
+                  <span className="font-medium text-slate-700">{doc.filename}</span>
                   <span className="ml-2 text-slate-500">
                     ({doc.document_type}, {doc.text_length.toLocaleString()} chars)
                   </span>

@@ -16,16 +16,16 @@ export default function SeoRouteError({
 
   return (
     <div
-      className="min-h-screen text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, Helvetica, sans-serif" }}
+      className="min-h-screen text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <main className="mx-auto max-w-3xl space-y-4 px-4 py-10 sm:px-6 lg:px-8">
         <h1 className="text-2xl font-semibold">SEO page failed to render</h1>
-        <p className="text-sm text-slate-300">
+        <p className="text-sm text-slate-600">
           This route deployed correctly but threw while rendering. Most often this is an upstream
           data source (for example Semrush) rejecting the request.
         </p>
-        <pre className="overflow-x-auto rounded-md border border-[#2a3f5f] bg-[#1a2540] p-4 text-xs text-amber-200">
+        <pre className="overflow-x-auto rounded-md border border-[#e2e8f0] bg-[#ffffff] p-4 text-xs text-amber-700">
           {error.message}
           {error.digest ? `\n\ndigest: ${error.digest}` : ""}
         </pre>
@@ -39,7 +39,7 @@ export default function SeoRouteError({
           </button>
           <Link
             href="/seo"
-            className="rounded border border-[#2a3f5f] bg-[#1a2540] px-3 py-1.5 text-sm text-slate-200"
+            className="rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700"
           >
             Back to SEO overview
           </Link>

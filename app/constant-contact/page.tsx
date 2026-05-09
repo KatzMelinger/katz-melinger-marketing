@@ -15,9 +15,9 @@ import {
 
 import { MarketingNav } from "@/components/marketing-nav";
 
-const BG = "#0f1729";
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const BG = "#ffffff";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 const CC_BRAND = "#F47B20";
 
@@ -855,8 +855,8 @@ export default function ConstantContactPage() {
       onClick={() => setActiveTab(id)}
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
         activeTab === id
-          ? "bg-[#1a2540] text-white ring-1 ring-[#185FA5]/50"
-          : "text-slate-400 hover:bg-[#1a2540]/60 hover:text-white"
+          ? "bg-[#ffffff] text-white ring-1 ring-[#185FA5]/50"
+          : "text-slate-500 hover:bg-[#ffffff]/60 hover:text-slate-900"
       }`}
     >
       {label}
@@ -865,18 +865,18 @@ export default function ConstantContactPage() {
 
   return (
     <div
-      className="min-h-full text-white"
+      className="min-h-full text-slate-900"
       style={{ backgroundColor: BG, fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Constant Contact</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="text-2xl font-semibold text-slate-900">Constant Contact</h1>
+          <p className="mt-1 text-sm text-slate-500">
             Campaigns, lists, automation, and performance analytics. Data refreshes every
             30 seconds on the active tab.
           </p>
-          <div className="mt-4 flex flex-wrap gap-2 border-b border-[#2a3f5f] pb-3">
+          <div className="mt-4 flex flex-wrap gap-2 border-b border-[#e2e8f0] pb-3">
             {tabBtn("campaigns", "Campaigns")}
             {tabBtn("lists", "Lists")}
             {tabBtn("automation", "Automation")}
@@ -899,7 +899,7 @@ export default function ConstantContactPage() {
             style={{ backgroundColor: "#22170f", borderColor: "#f59e0b66", color: "#fef3c7" }}
             role="alert"
           >
-            <p className="font-medium text-amber-200">Constant Contact connection required</p>
+            <p className="font-medium text-amber-700">Constant Contact connection required</p>
             <p className="mt-1">{authPrompt}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
@@ -909,7 +909,7 @@ export default function ConstantContactPage() {
                   window.location.assign(authActionUrl || buildOauthStartUrl("/constant-contact"));
                 }}
                 disabled={oauthStarting}
-                className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-60"
                 style={{ backgroundColor: CC_BRAND }}
               >
                 {oauthStarting ? "Redirecting to Constant Contact..." : "Connect to Constant Contact"}
@@ -921,12 +921,12 @@ export default function ConstantContactPage() {
                   setOauthStarting(false);
                   void loadCampaigns();
                 }}
-                className="inline-flex items-center rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200 hover:bg-[#1a2540]"
+                className="inline-flex items-center rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-[#ffffff]"
               >
                 Retry check
               </button>
             </div>
-            <p className="mt-2 text-xs text-amber-200/80">
+            <p className="mt-2 text-xs text-amber-700/80">
               You will be redirected to Constant Contact OAuth and returned to this page.
             </p>
           </div>
@@ -934,7 +934,7 @@ export default function ConstantContactPage() {
 
         {activeTab === "campaigns" && campaignsError ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
             role="alert"
           >
@@ -944,7 +944,7 @@ export default function ConstantContactPage() {
 
         {activeTab === "lists" && listsError ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
             role="alert"
           >
@@ -967,7 +967,7 @@ export default function ConstantContactPage() {
 
         {activeTab === "automation" && automationError ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
             role="alert"
           >
@@ -977,7 +977,7 @@ export default function ConstantContactPage() {
 
         {activeTab === "analytics" && analyticsError ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
             role="alert"
           >
@@ -997,24 +997,24 @@ export default function ConstantContactPage() {
                   type="button"
                   onClick={() => void loadCampaigns()}
                   disabled={campaignsLoading}
-                  className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-1.5 text-sm text-slate-200 hover:bg-[#1a2540] disabled:opacity-50"
+                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
                 >
                   {campaignsLoading ? "Refreshing…" : "Refresh"}
                 </button>
               </div>
 
               {campaignsLoading && campaigns.length === 0 ? (
-                <p className="text-sm text-slate-400" aria-live="polite">
+                <p className="text-sm text-slate-500" aria-live="polite">
                   Loading campaigns…
                 </p>
               ) : null}
 
               {!campaignsLoading && campaigns.length === 0 && !campaignsError ? (
-                <p className="text-sm text-slate-400">No campaigns returned.</p>
+                <p className="text-sm text-slate-500">No campaigns returned.</p>
               ) : null}
 
               {campaigns.length > 0 ? (
-                <ul className="divide-y divide-[#2a3f5f]/80">
+                <ul className="divide-y divide-[#e2e8f0]/80">
                   {campaigns.map((c, index) => {
                     const id = String(c.campaign_id ?? c.name ?? `row-${index}`);
                     return (
@@ -1023,17 +1023,17 @@ export default function ConstantContactPage() {
                         className="flex flex-col gap-1 py-4 first:pt-0 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div>
-                          <p className="font-medium text-white">{c.name ?? "Untitled"}</p>
+                          <p className="font-medium text-slate-900">{c.name ?? "Untitled"}</p>
                           <p className="mt-0.5 text-xs text-slate-500">
                             {c.campaign_id ? `ID: ${String(c.campaign_id)}` : null}
                           </p>
                         </div>
-                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300">
+                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
                           <span>
                             Status:{" "}
-                            <span className="text-slate-100">{formatStatus(c.current_status)}</span>
+                            <span className="text-slate-800">{formatStatus(c.current_status)}</span>
                           </span>
-                          <span className="tabular-nums text-slate-400">
+                          <span className="tabular-nums text-slate-500">
                             Created:{" "}
                             {formatDate(
                               typeof c.created_at === "string" ? c.created_at : undefined,
@@ -1052,14 +1052,14 @@ export default function ConstantContactPage() {
               style={{ backgroundColor: CARD, borderColor: BORDER }}
             >
               <h2 className="mb-1 text-lg font-semibold">Create campaign</h2>
-              <p className="mb-4 text-sm text-slate-400">
-                Sends a <span className="text-slate-300">POST /emails</span> draft (custom code).
+              <p className="mb-4 text-sm text-slate-500">
+                Sends a <span className="text-slate-600">POST /emails</span> draft (custom code).
                 Sender must come from{" "}
-                <code className="rounded bg-[#0f1729] px-1 text-xs text-[#94a3b8]">
+                <code className="rounded bg-[#ffffff] px-1 text-xs text-[#94a3b8]">
                   NEXT_PUBLIC_CC_FROM_EMAIL
                 </code>{" "}
                 (and optionally{" "}
-                <code className="rounded bg-[#0f1729] px-1 text-xs text-[#94a3b8]">
+                <code className="rounded bg-[#ffffff] px-1 text-xs text-[#94a3b8]">
                   NEXT_PUBLIC_CC_FROM_NAME
                 </code>
                 ).
@@ -1085,7 +1085,7 @@ export default function ConstantContactPage() {
 
               <form className="space-y-4" onSubmit={(e) => void handleCreate(e)}>
                 <div>
-                  <label htmlFor="cc-name" className="block text-sm font-medium text-slate-300">
+                  <label htmlFor="cc-name" className="block text-sm font-medium text-slate-600">
                     Name
                   </label>
                   <input
@@ -1095,13 +1095,13 @@ export default function ConstantContactPage() {
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
                     style={{ borderColor: BORDER }}
                     autoComplete="off"
                   />
                 </div>
                 <div>
-                  <label htmlFor="cc-subject" className="block text-sm font-medium text-slate-300">
+                  <label htmlFor="cc-subject" className="block text-sm font-medium text-slate-600">
                     Subject
                   </label>
                   <input
@@ -1111,12 +1111,12 @@ export default function ConstantContactPage() {
                     required
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
                     autoComplete="off"
                   />
                 </div>
                 <div>
-                  <label htmlFor="cc-html" className="block text-sm font-medium text-slate-300">
+                  <label htmlFor="cc-html" className="block text-sm font-medium text-slate-600">
                     HTML content
                   </label>
                   <textarea
@@ -1126,17 +1126,17 @@ export default function ConstantContactPage() {
                     rows={8}
                     value={htmlContent}
                     onChange={(e) => setHtmlContent(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 font-mono text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 font-mono text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
                     placeholder="<p>Hello…</p>"
                   />
                   <p className="mt-1 text-xs text-slate-500">
-                    If you omit <code className="text-slate-400">[[trackingImage]]</code>, it is
+                    If you omit <code className="text-slate-500">[[trackingImage]]</code>, it is
                     prepended automatically for opens tracking.
                   </p>
                 </div>
 
                 <div>
-                  <span className="block text-sm font-medium text-slate-300">
+                  <span className="block text-sm font-medium text-slate-600">
                     Lists (optional)
                   </span>
                   {listsLoading && contactLists.length === 0 ? (
@@ -1145,18 +1145,18 @@ export default function ConstantContactPage() {
                     </p>
                   ) : contactLists.length > 0 ? (
                     <>
-                      <ul className="mt-2 max-h-44 space-y-2 overflow-y-auto rounded-md border border-[#2a3f5f] bg-[#0f1729] p-3">
+                      <ul className="mt-2 max-h-44 space-y-2 overflow-y-auto rounded-md border border-[#e2e8f0] bg-[#ffffff] p-3">
                         {contactLists.map((list) => {
                           const id = list.list_id ? String(list.list_id) : "";
                           if (!id) return null;
                           return (
                             <li key={id}>
-                              <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-300">
+                              <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-600">
                                 <input
                                   type="checkbox"
                                   checked={selectedListIds.includes(id)}
                                   onChange={() => toggleCampaignList(id)}
-                                  className="mt-1 h-4 w-4 rounded border-[#2a3f5f] bg-[#0f1729] text-[#185FA5] focus:ring-[#185FA5]"
+                                  className="mt-1 h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5] focus:ring-[#185FA5]"
                                 />
                                 <span>
                                   {list.name ?? id}
@@ -1174,7 +1174,7 @@ export default function ConstantContactPage() {
                       </ul>
                       <p className="mt-2 text-xs text-slate-500">
                         Selected lists are sent as{" "}
-                        <code className="text-slate-400">contact_list_ids</code> on create.
+                        <code className="text-slate-500">contact_list_ids</code> on create.
                       </p>
                     </>
                   ) : (
@@ -1188,7 +1188,7 @@ export default function ConstantContactPage() {
                 <button
                   type="submit"
                   disabled={createLoading}
-                  className="rounded-md px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+                  className="rounded-md px-4 py-2 text-sm font-medium text-slate-900 transition-opacity disabled:opacity-50"
                   style={{ backgroundColor: ACCENT }}
                 >
                   {createLoading ? "Creating…" : "Create draft campaign"}
@@ -1209,24 +1209,24 @@ export default function ConstantContactPage() {
                 type="button"
                 onClick={() => void loadContactLists()}
                 disabled={listsLoading}
-                className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-1.5 text-sm text-slate-200 hover:bg-[#1a2540] disabled:opacity-50"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
               >
                 {listsLoading ? "Refreshing…" : "Refresh"}
               </button>
             </div>
 
             {listsLoading && contactLists.length === 0 ? (
-              <p className="text-sm text-slate-400" aria-live="polite">
+              <p className="text-sm text-slate-500" aria-live="polite">
                 Loading lists…
               </p>
             ) : null}
 
             {!listsLoading && contactLists.length === 0 && !listsError ? (
-              <p className="text-sm text-slate-400">No contact lists returned.</p>
+              <p className="text-sm text-slate-500">No contact lists returned.</p>
             ) : null}
 
             {contactLists.length > 0 ? (
-              <ul className="divide-y divide-[#2a3f5f]/80">
+              <ul className="divide-y divide-[#e2e8f0]/80">
                 {contactLists.map((row, index) => {
                   const id = row.list_id ? String(row.list_id) : `list-${index}`;
                   const listId = row.list_id ? String(row.list_id) : "";
@@ -1243,12 +1243,12 @@ export default function ConstantContactPage() {
                   return (
                     <li key={id} className="flex flex-col gap-3 py-5 first:pt-0 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0 flex-1 space-y-1">
-                        <p className="font-medium text-white">{row.name ?? "Untitled list"}</p>
-                        <p className="text-sm text-slate-400">
-                          <span className="text-slate-300">Contacts:</span> {count}
+                        <p className="font-medium text-slate-900">{row.name ?? "Untitled list"}</p>
+                        <p className="text-sm text-slate-500">
+                          <span className="text-slate-600">Contacts:</span> {count}
                         </p>
-                        <p className="text-sm text-slate-400">
-                          <span className="text-slate-300">Description:</span> {desc}
+                        <p className="text-sm text-slate-500">
+                          <span className="text-slate-600">Description:</span> {desc}
                         </p>
                         <p className="text-xs text-slate-500">
                           Last sync:{" "}
@@ -1260,7 +1260,7 @@ export default function ConstantContactPage() {
                           type="button"
                           disabled={!listId || syncingListId !== null}
                           onClick={() => listId && void handleSyncList(listId)}
-                          className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-100 hover:bg-[#1a2540] disabled:opacity-50"
+                          className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-800 hover:bg-[#ffffff] disabled:opacity-50"
                           style={
                             syncingListId === listId
                               ? { borderColor: ACCENT, color: "#fff" }
@@ -1290,7 +1290,7 @@ export default function ConstantContactPage() {
                   type="button"
                   onClick={() => void loadAutomation()}
                   disabled={automationLoading}
-                  className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-1.5 text-sm text-slate-200 hover:bg-[#1a2540] disabled:opacity-50"
+                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
                 >
                   {automationLoading ? "Refreshing…" : "Refresh"}
                 </button>
@@ -1300,7 +1300,7 @@ export default function ConstantContactPage() {
                     setShowCreateRule((v) => !v);
                     setCreateRuleError(null);
                   }}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-white"
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-900"
                   style={{ backgroundColor: ACCENT }}
                 >
                   {showCreateRule ? "Close form" : "Create Rule"}
@@ -1310,10 +1310,10 @@ export default function ConstantContactPage() {
 
             {showCreateRule ? (
               <form
-                className="mb-8 space-y-4 rounded-lg border border-[#2a3f5f] bg-[#0f1729]/50 p-4"
+                className="mb-8 space-y-4 rounded-lg border border-[#e2e8f0] bg-[#ffffff]/50 p-4"
                 onSubmit={(e) => void handleCreateRule(e)}
               >
-                <h3 className="text-base font-semibold text-white">New rule</h3>
+                <h3 className="text-base font-semibold text-slate-900">New rule</h3>
                 {createRuleError ? (
                   <div
                     className="rounded-lg border border-red-900/50 bg-red-950/40 p-3 text-sm text-red-100"
@@ -1323,7 +1323,7 @@ export default function ConstantContactPage() {
                   </div>
                 ) : null}
                 <div>
-                  <label htmlFor="rule-name" className="block text-sm font-medium text-slate-300">
+                  <label htmlFor="rule-name" className="block text-sm font-medium text-slate-600">
                     Name
                   </label>
                   <input
@@ -1333,12 +1333,12 @@ export default function ConstantContactPage() {
                     required
                     value={ruleName}
                     onChange={(e) => setRuleName(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
                     autoComplete="off"
                   />
                 </div>
                 <div>
-                  <label htmlFor="rule-trigger" className="block text-sm font-medium text-slate-300">
+                  <label htmlFor="rule-trigger" className="block text-sm font-medium text-slate-600">
                     Trigger type
                   </label>
                   <select
@@ -1348,7 +1348,7 @@ export default function ConstantContactPage() {
                     onChange={(e) =>
                       setRuleTrigger(e.target.value as AutomationTrigger)
                     }
-                    className="mt-1 w-full rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
                   >
                     {AUTOMATION_TRIGGERS.map((t) => (
                       <option key={t} value={t}>
@@ -1358,7 +1358,7 @@ export default function ConstantContactPage() {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="rule-sequence" className="block text-sm font-medium text-slate-300">
+                  <label htmlFor="rule-sequence" className="block text-sm font-medium text-slate-600">
                     Email sequence
                   </label>
                   <textarea
@@ -1367,24 +1367,24 @@ export default function ConstantContactPage() {
                     rows={6}
                     value={ruleSequence}
                     onChange={(e) => setRuleSequence(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 font-mono text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 font-mono text-sm text-white outline-none ring-[#185FA5] focus:ring-2"
                     placeholder={"Day 0: Welcome email\nDay 3: Follow-up\nDay 7: Check-in"}
                   />
                   <p className="mt-1 text-xs text-slate-500">One line per step: Day X: Subject line</p>
                 </div>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
                   <input
                     type="checkbox"
                     checked={ruleActive}
                     onChange={(e) => setRuleActive(e.target.checked)}
-                    className="h-4 w-4 rounded border-[#2a3f5f] bg-[#0f1729] text-[#185FA5] focus:ring-[#185FA5]"
+                    className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5] focus:ring-[#185FA5]"
                   />
                   Active
                 </label>
                 <button
                   type="submit"
                   disabled={createRuleLoading}
-                  className="rounded-md px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+                  className="rounded-md px-4 py-2 text-sm font-medium text-slate-900 transition-opacity disabled:opacity-50"
                   style={{ backgroundColor: ACCENT }}
                 >
                   {createRuleLoading ? "Saving…" : "Save rule"}
@@ -1393,7 +1393,7 @@ export default function ConstantContactPage() {
             ) : null}
 
             {automationLoading && automationRules.length === 0 ? (
-              <p className="text-sm text-slate-400" aria-live="polite">
+              <p className="text-sm text-slate-500" aria-live="polite">
                 Loading automation rules…
               </p>
             ) : null}
@@ -1401,11 +1401,11 @@ export default function ConstantContactPage() {
             {!automationLoading &&
             automationRules.length === 0 &&
             !automationError ? (
-              <p className="text-sm text-slate-400">No automation rules yet.</p>
+              <p className="text-sm text-slate-500">No automation rules yet.</p>
             ) : null}
 
             {automationRules.length > 0 ? (
-              <ul className="divide-y divide-[#2a3f5f]/80">
+              <ul className="divide-y divide-[#e2e8f0]/80">
                 {automationRules.map((row, index) => {
                   const id = String(row.id ?? `rule-${index}`);
                   const seqCount =
@@ -1421,11 +1421,11 @@ export default function ConstantContactPage() {
                     typeof row.active === "boolean" ? row.active : false;
                   return (
                     <li key={id} className="py-4 first:pt-0">
-                      <p className="font-medium text-white">{row.name ?? "Untitled rule"}</p>
-                      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-400">
+                      <p className="font-medium text-slate-900">{row.name ?? "Untitled rule"}</p>
+                      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-500">
                         <span>
                           <span className="text-slate-500">Trigger:</span>{" "}
-                          <span className="text-slate-200">
+                          <span className="text-slate-700">
                             {row.trigger_type ?? "—"}
                           </span>
                         </span>
@@ -1437,13 +1437,13 @@ export default function ConstantContactPage() {
                         </span>
                         <span>
                           <span className="text-slate-500">Emails in sequence:</span>{" "}
-                          <span className="tabular-nums text-slate-200">{seqCount}</span>
+                          <span className="tabular-nums text-slate-700">{seqCount}</span>
                         </span>
                       </div>
                       {typeof row.email_sequence === "string" &&
                       row.email_sequence.trim() ? (
                         <pre
-                          className="mt-3 max-h-36 overflow-auto rounded border border-[#2a3f5f]/70 bg-[#0f1729]/80 p-3 font-mono text-xs whitespace-pre-wrap text-slate-400"
+                          className="mt-3 max-h-36 overflow-auto rounded border border-[#e2e8f0]/70 bg-[#ffffff]/80 p-3 font-mono text-xs whitespace-pre-wrap text-slate-500"
                           tabIndex={0}
                         >
                           {row.email_sequence}
@@ -1475,14 +1475,14 @@ export default function ConstantContactPage() {
                   type="button"
                   onClick={() => void loadAnalytics()}
                   disabled={analyticsLoading}
-                  className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-1.5 text-sm text-slate-200 hover:bg-[#1a2540] disabled:opacity-50"
+                  className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
                 >
                   {analyticsLoading ? "Refreshing…" : "Refresh"}
                 </button>
               </div>
 
               {analyticsLoading && !analyticsSummary ? (
-                <p className="text-sm text-slate-400" aria-live="polite">
+                <p className="text-sm text-slate-500" aria-live="polite">
                   Loading analytics…
                 </p>
               ) : null}
@@ -1490,30 +1490,30 @@ export default function ConstantContactPage() {
               {analyticsSummary ? (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <article
-                    className="rounded-lg border border-[#2a3f5f]/80 p-4"
-                    style={{ backgroundColor: "#0f1729" }}
+                    className="rounded-lg border border-[#e2e8f0]/80 p-4"
+                    style={{ backgroundColor: "#ffffff" }}
                   >
-                    <p className="text-sm text-slate-400">Total campaigns</p>
-                    <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    <p className="text-sm text-slate-500">Total campaigns</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
                       {analyticsSummary.total_campaigns.toLocaleString()}
                     </p>
                   </article>
                   <article
-                    className="rounded-lg border border-[#2a3f5f]/80 p-4"
-                    style={{ backgroundColor: "#0f1729" }}
+                    className="rounded-lg border border-[#e2e8f0]/80 p-4"
+                    style={{ backgroundColor: "#ffffff" }}
                   >
-                    <p className="text-sm text-slate-400">Total contacts</p>
-                    <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    <p className="text-sm text-slate-500">Total contacts</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
                       {analyticsSummary.total_contacts.toLocaleString()}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">Across contact lists</p>
                   </article>
                   <article
-                    className="rounded-lg border border-[#2a3f5f]/80 p-4"
-                    style={{ backgroundColor: "#0f1729" }}
+                    className="rounded-lg border border-[#e2e8f0]/80 p-4"
+                    style={{ backgroundColor: "#ffffff" }}
                   >
-                    <p className="text-sm text-slate-400">Total opens</p>
-                    <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    <p className="text-sm text-slate-500">Total opens</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
                       {analyticsSummary.total_opens.toLocaleString()}
                     </p>
                     <p
@@ -1530,10 +1530,10 @@ export default function ConstantContactPage() {
                     </p>
                   </article>
                   <article
-                    className="rounded-lg border border-[#2a3f5f]/80 p-4"
-                    style={{ backgroundColor: "#0f1729" }}
+                    className="rounded-lg border border-[#e2e8f0]/80 p-4"
+                    style={{ backgroundColor: "#ffffff" }}
                   >
-                    <p className="text-sm text-slate-400">Revenue generated</p>
+                    <p className="text-sm text-slate-500">Revenue generated</p>
                     <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-300">
                       {formatUsd(analyticsSummary.revenue_generated)}
                     </p>
@@ -1546,7 +1546,7 @@ export default function ConstantContactPage() {
 
               {chartRows.length > 0 ? (
                 <div className="mt-8">
-                  <h3 className="mb-3 text-base font-semibold text-white">
+                  <h3 className="mb-3 text-base font-semibold text-slate-900">
                     Opens & clicks (recent campaigns)
                   </h3>
                   <div className="h-[300px] w-full min-w-0">
@@ -1588,16 +1588,16 @@ export default function ConstantContactPage() {
             >
               <h2 className="mb-4 text-lg font-semibold">Recent campaign performance</h2>
               {analyticsLoading && sortedPerformanceRows.length === 0 ? (
-                <p className="text-sm text-slate-400">Loading…</p>
+                <p className="text-sm text-slate-500">Loading…</p>
               ) : null}
               {!analyticsLoading && sortedPerformanceRows.length === 0 && !analyticsError ? (
-                <p className="text-sm text-slate-400">No campaign metrics available yet.</p>
+                <p className="text-sm text-slate-500">No campaign metrics available yet.</p>
               ) : null}
               {sortedPerformanceRows.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                     <thead>
-                      <tr className="border-b border-[#2a3f5f] text-slate-400">
+                      <tr className="border-b border-[#e2e8f0] text-slate-500">
                         <th className="pb-3 pr-4 font-medium">Campaign</th>
                         <th className="pb-3 pr-4 font-medium">Send date</th>
                         <th className="pb-3 pr-4 font-medium tabular-nums">Opens</th>
@@ -1606,11 +1606,11 @@ export default function ConstantContactPage() {
                         <th className="pb-3 font-medium tabular-nums">Click rate</th>
                       </tr>
                     </thead>
-                    <tbody className="text-slate-200">
+                    <tbody className="text-slate-700">
                       {sortedPerformanceRows.map((row) => (
-                        <tr key={row.campaign_id} className="border-b border-[#2a3f5f]/50">
-                          <td className="py-2 pr-4 text-white">{row.campaign_name}</td>
-                          <td className="py-2 pr-4 text-slate-400">
+                        <tr key={row.campaign_id} className="border-b border-[#e2e8f0]/50">
+                          <td className="py-2 pr-4 text-slate-900">{row.campaign_name}</td>
+                          <td className="py-2 pr-4 text-slate-500">
                             {row.send_date ? formatDate(row.send_date) : "—"}
                           </td>
                           <td className="py-2 pr-4 tabular-nums">{row.opens.toLocaleString()}</td>
@@ -1646,15 +1646,15 @@ export default function ConstantContactPage() {
                 Server log (Supabase) plus this browser&apos;s recent CMS syncs.
               </p>
               {mergedSyncActivity.length === 0 ? (
-                <p className="text-sm text-slate-400">No sync activity recorded yet.</p>
+                <p className="text-sm text-slate-500">No sync activity recorded yet.</p>
               ) : (
-                <ul className="divide-y divide-[#2a3f5f]/80">
+                <ul className="divide-y divide-[#e2e8f0]/80">
                   {mergedSyncActivity.map((row, i) => (
                     <li key={`${row.at}-${row.list_id}-${i}`} className="py-3 first:pt-0">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <p className="text-sm text-white">
+                        <p className="text-sm text-slate-900">
                           List{" "}
-                          <span className="font-mono text-xs text-slate-400">
+                          <span className="font-mono text-xs text-slate-500">
                             {row.list_id ?? "—"}
                           </span>
                         </p>
@@ -1662,16 +1662,16 @@ export default function ConstantContactPage() {
                           {formatDate(row.at)} ·{" "}
                           <span
                             className={
-                              row.source === "server" ? "text-sky-400" : "text-slate-400"
+                              row.source === "server" ? "text-sky-400" : "text-slate-500"
                             }
                           >
                             {row.source === "server" ? "Server" : "This device"}
                           </span>
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-slate-400">
+                      <p className="mt-1 text-sm text-slate-500">
                         Synced{" "}
-                        <span className="tabular-nums text-slate-200">
+                        <span className="tabular-nums text-slate-700">
                           {row.synced_count.toLocaleString()}
                         </span>{" "}
                         contact(s)

@@ -34,14 +34,14 @@ export function SeoAddCompetitorForm() {
   }
 
   return (
-    <section className="max-w-2xl rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
-      <label className="block text-sm text-slate-300">
+    <section className="max-w-2xl rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
+      <label className="block text-sm text-slate-600">
         Competitor domain
         <input
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
           placeholder="examplelawfirm.com"
-          className="mt-2 w-full rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+          className="mt-2 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
         />
       </label>
       <button
@@ -54,7 +54,7 @@ export function SeoAddCompetitorForm() {
       </button>
       {message ? <p className="mt-3 text-sm text-emerald-300">{message}</p> : null}
       {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
-      <div className="mt-5 text-xs text-slate-400">
+      <div className="mt-5 text-xs text-slate-500">
         Added domains become available across competitor dashboard views immediately for this app instance.
       </div>
       <Link href="/seo/competitors" className="mt-4 inline-block text-xs text-sky-300 underline">

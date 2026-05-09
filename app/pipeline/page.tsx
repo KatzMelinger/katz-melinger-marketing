@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS public.sales_activities (
   created_at timestamptz DEFAULT now()
 );`;
 
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 const STAGES = [
@@ -290,25 +290,25 @@ export default function PipelinePage() {
 
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto flex max-w-[1600px] gap-4 px-4 py-8 lg:px-6">
         <div className="min-w-0 flex-1 space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold text-white">
+              <h1 className="text-2xl font-semibold text-slate-900">
                 PracticeOS pipeline
               </h1>
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-500">
                 B2B sales · law firm prospects
               </p>
             </div>
             <button
               type="button"
               onClick={() => setModalOpen(true)}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-900"
               style={{ backgroundColor: ACCENT }}
             >
               Add prospect
@@ -317,20 +317,20 @@ export default function PipelinePage() {
 
           {needsSchema ? (
             <div
-              className="rounded-xl border border-sky-800/40 p-6 text-sm text-slate-200"
+              className="rounded-xl border border-sky-800/40 p-6 text-sm text-slate-700"
               style={{ backgroundColor: CARD }}
             >
-              <p className="text-base font-semibold text-white">
+              <p className="text-base font-semibold text-slate-900">
                 Set up the pipeline tables
               </p>
-              <p className="mt-2 text-slate-400">
-                The <code className="text-slate-200">prospects</code> table was not found.
+              <p className="mt-2 text-slate-500">
+                The <code className="text-slate-700">prospects</code> table was not found.
                 In the Supabase SQL editor, run the full file{" "}
                 <code className="text-sky-300">scripts/pipeline-schema.sql</code> (or paste
                 the excerpt below), then refresh this page.
               </p>
               <pre
-                className="mt-4 max-h-64 overflow-auto rounded-lg border border-[#2a3f5f] bg-[#0f1729] p-4 text-xs leading-relaxed text-slate-300"
+                className="mt-4 max-h-64 overflow-auto rounded-lg border border-[#e2e8f0] bg-[#ffffff] p-4 text-xs leading-relaxed text-slate-600"
                 tabIndex={0}
               >
                 {PIPELINE_SCHEMA_SNIPPET}
@@ -344,7 +344,7 @@ export default function PipelinePage() {
               style={{ backgroundColor: CARD }}
             >
               {loadErr} — if the table is missing, run{" "}
-              <code className="text-white">scripts/pipeline-schema.sql</code> in Supabase.
+              <code className="text-slate-900">scripts/pipeline-schema.sql</code> in Supabase.
             </div>
           ) : null}
 
@@ -354,14 +354,14 @@ export default function PipelinePage() {
           >
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div>
-                <p className="text-xs text-slate-400">Pipeline value (excl. lost)</p>
-                <p className="text-xl font-semibold text-white">
+                <p className="text-xs text-slate-500">Pipeline value (excl. lost)</p>
+                <p className="text-xl font-semibold text-slate-900">
                   {fmtMrr(pipelineValue)}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Active prospects</p>
-                <p className="text-xl font-semibold text-white">
+                <p className="text-xs text-slate-500">Active prospects</p>
+                <p className="text-xl font-semibold text-slate-900">
                   {
                     prospects.filter(
                       (p) =>
@@ -373,14 +373,14 @@ export default function PipelinePage() {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Projected MRR (sum est.)</p>
+                <p className="text-xs text-slate-500">Projected MRR (sum est.)</p>
                 <p className="text-xl font-semibold text-[#185FA5]">
                   {fmtMrr(pipelineValue)}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">By stage (sample)</p>
-                <p className="text-sm text-slate-300">
+                <p className="text-xs text-slate-500">By stage (sample)</p>
+                <p className="text-sm text-slate-600">
                   Lead: {stageCounts["Lead"] ?? 0} · Trial:{" "}
                   {stageCounts["Trial"] ?? 0}
                 </p>
@@ -396,7 +396,7 @@ export default function PipelinePage() {
                 style={{ backgroundColor: "#131d33", borderColor: BORDER }}
               >
                 <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     {stage}
                   </h3>
                   <span className="text-xs text-slate-500">
@@ -412,13 +412,13 @@ export default function PipelinePage() {
                       className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
                         selected?.id === p.id
                           ? "border-[#185FA5] bg-[#185FA5]/15"
-                          : "border-[#2a3f5f] bg-[#1a2540] hover:border-slate-500"
+                          : "border-[#e2e8f0] bg-[#ffffff] hover:border-slate-500"
                       }`}
                     >
-                      <p className="font-semibold text-white">
+                      <p className="font-semibold text-slate-900">
                         {p.firm_name ?? "—"}
                       </p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-slate-500">
                         {p.contact_name ?? "—"}
                       </p>
                       <p className="mt-1 text-xs text-[#185FA5]">
@@ -430,7 +430,7 @@ export default function PipelinePage() {
                         </p>
                       ) : null}
                       <select
-                        className="mt-2 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-2 py-1 text-xs text-white"
+                        className="mt-2 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-2 py-1 text-xs text-slate-900"
                         value={p.stage ?? "Lead"}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => {
@@ -459,19 +459,19 @@ export default function PipelinePage() {
             style={{ backgroundColor: CARD, borderColor: BORDER }}
           >
             <div className="mb-3 flex items-start justify-between gap-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-slate-900">
                 {selected.firm_name}
               </h2>
               <button
                 type="button"
                 onClick={() => setSelected(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-500 hover:text-slate-900"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
-            <dl className="space-y-2 text-sm text-slate-300">
+            <dl className="space-y-2 text-sm text-slate-600">
               <div>
                 <dt className="text-xs text-slate-500">Contact</dt>
                 <dd>{selected.contact_name ?? "—"}</dd>
@@ -495,7 +495,7 @@ export default function PipelinePage() {
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Notes</dt>
-                <dd className="whitespace-pre-wrap text-slate-200">
+                <dd className="whitespace-pre-wrap text-slate-700">
                   {selected.notes ?? "—"}
                 </dd>
               </div>
@@ -503,7 +503,7 @@ export default function PipelinePage() {
             {mockEngagementScore(selected.trial_firm_id) != null ? (
               <div
                 className="mt-4 rounded-lg border border-emerald-500/30 p-3"
-                style={{ backgroundColor: "#0f1729" }}
+                style={{ backgroundColor: "#ffffff" }}
               >
                 <p className="text-xs font-semibold text-emerald-300">
                   Engagement score (preview)
@@ -519,25 +519,25 @@ export default function PipelinePage() {
             <button
               type="button"
               onClick={() => setActivityModal(true)}
-              className="mt-4 w-full rounded-lg py-2 text-sm font-medium text-white"
+              className="mt-4 w-full rounded-lg py-2 text-sm font-medium text-slate-900"
               style={{ backgroundColor: ACCENT }}
             >
               Add activity
             </button>
-            <h3 className="mt-6 text-sm font-semibold text-white">
+            <h3 className="mt-6 text-sm font-semibold text-slate-900">
               Activity log
             </h3>
-            <ul className="mt-2 max-h-64 space-y-2 overflow-y-auto text-xs text-slate-400">
+            <ul className="mt-2 max-h-64 space-y-2 overflow-y-auto text-xs text-slate-500">
               {activities.map((a) => (
                 <li
                   key={a.id}
-                  className="rounded border border-[#2a3f5f] p-2"
-                  style={{ backgroundColor: "#0f1729" }}
+                  className="rounded border border-[#e2e8f0] p-2"
+                  style={{ backgroundColor: "#ffffff" }}
                 >
                   <span className="font-medium text-[#185FA5]">{a.type}</span> ·{" "}
                   {new Date(a.created_at).toLocaleString()}
                   {a.notes ? (
-                    <p className="mt-1 text-slate-300">{a.notes}</p>
+                    <p className="mt-1 text-slate-600">{a.notes}</p>
                   ) : null}
                 </li>
               ))}
@@ -558,7 +558,7 @@ export default function PipelinePage() {
               style={{ backgroundColor: CARD, borderColor: BORDER }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-semibold text-white">New prospect</h3>
+              <h3 className="text-lg font-semibold text-slate-900">New prospect</h3>
               <div className="mt-4 space-y-3 text-sm">
                 {(
                   [
@@ -573,9 +573,9 @@ export default function PipelinePage() {
                   ] as const
                 ).map(([key, label]) => (
                   <label key={key} className="block">
-                    <span className="text-xs text-slate-400">{label}</span>
+                    <span className="text-xs text-slate-500">{label}</span>
                     <input
-                      className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                      className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                       value={form[key]}
                       onChange={(e) =>
                         setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -589,14 +589,14 @@ export default function PipelinePage() {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="rounded-lg border border-[#2a3f5f] px-4 py-2 text-sm"
+                  className="rounded-lg border border-[#e2e8f0] px-4 py-2 text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-900"
                   style={{ backgroundColor: ACCENT }}
                 >
                   Save
@@ -618,11 +618,11 @@ export default function PipelinePage() {
               style={{ backgroundColor: CARD, borderColor: BORDER }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-semibold text-white">Add activity</h3>
+              <h3 className="text-lg font-semibold text-slate-900">Add activity</h3>
               <label className="mt-4 block text-sm">
-                <span className="text-xs text-slate-400">Type</span>
+                <span className="text-xs text-slate-500">Type</span>
                 <select
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={actForm.type}
                   onChange={(e) =>
                     setActForm((a) => ({ ...a, type: e.target.value }))
@@ -636,9 +636,9 @@ export default function PipelinePage() {
                 </select>
               </label>
               <label className="mt-3 block text-sm">
-                <span className="text-xs text-slate-400">Notes</span>
+                <span className="text-xs text-slate-500">Notes</span>
                 <textarea
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   rows={3}
                   value={actForm.notes}
                   onChange={(e) =>
@@ -647,10 +647,10 @@ export default function PipelinePage() {
                 />
               </label>
               <label className="mt-3 block text-sm">
-                <span className="text-xs text-slate-400">Next follow-up</span>
+                <span className="text-xs text-slate-500">Next follow-up</span>
                 <input
                   type="date"
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={actForm.next_followup}
                   onChange={(e) =>
                     setActForm((a) => ({ ...a, next_followup: e.target.value }))
@@ -658,9 +658,9 @@ export default function PipelinePage() {
                 />
               </label>
               <label className="mt-3 block text-sm">
-                <span className="text-xs text-slate-400">Staff</span>
+                <span className="text-xs text-slate-500">Staff</span>
                 <input
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={actForm.staff_member}
                   onChange={(e) =>
                     setActForm((a) => ({ ...a, staff_member: e.target.value }))
@@ -671,14 +671,14 @@ export default function PipelinePage() {
                 <button
                   type="button"
                   onClick={() => setActivityModal(false)}
-                  className="rounded-lg border border-[#2a3f5f] px-4 py-2 text-sm"
+                  className="rounded-lg border border-[#e2e8f0] px-4 py-2 text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-900"
                   style={{ backgroundColor: ACCENT }}
                 >
                   Save activity

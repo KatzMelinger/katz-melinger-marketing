@@ -137,9 +137,9 @@ export default async function AttributionPage() {
 
   return (
     <div
-      className="min-h-full text-white"
+      className="min-h-full text-slate-900"
       style={{
-        backgroundColor: "#0f1729",
+        backgroundColor: "#ffffff",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
@@ -147,8 +147,8 @@ export default async function AttributionPage() {
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Attribution</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="text-2xl font-semibold text-slate-900">Attribution</h1>
+          <p className="mt-1 text-sm text-slate-500">
             Complete funnel: CallRail calls to CMS intakes, matters, settlements,
             and channel economics.
           </p>
@@ -176,22 +176,22 @@ export default async function AttributionPage() {
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: "ROI (all channels)", value: fmtPct(globalRoiPct), bg: "#1a2540" },
-            { label: "CPA", value: fmtUsd(globalCpa), bg: "#1a2540" },
-            { label: "Lifetime value", value: fmtUsd(globalLtv), bg: "#1a2540" },
+            { label: "ROI (all channels)", value: fmtPct(globalRoiPct), bg: "#ffffff" },
+            { label: "CPA", value: fmtUsd(globalCpa), bg: "#ffffff" },
+            { label: "Lifetime value", value: fmtUsd(globalLtv), bg: "#ffffff" },
             {
               label: "Spend efficiency",
               value: `${globalEfficiency.toFixed(2)}x`,
-              bg: "#1a2540",
+              bg: "#ffffff",
             },
           ].map((metric) => (
             <article
               key={metric.label}
-              className="rounded-xl border border-[#2a3f5f] p-5 shadow-sm"
+              className="rounded-xl border border-[#e2e8f0] p-5 shadow-sm"
               style={{ backgroundColor: metric.bg }}
             >
-              <p className="text-sm font-medium text-slate-300">{metric.label}</p>
-              <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight text-white">
+              <p className="text-sm font-medium text-slate-600">{metric.label}</p>
+              <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight text-slate-900">
                 {metric.value}
               </p>
             </article>
@@ -199,16 +199,16 @@ export default async function AttributionPage() {
         </section>
 
         <section
-          className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-          style={{ backgroundColor: "#1a2540" }}
+          className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+          style={{ backgroundColor: "#ffffff" }}
         >
-          <h2 className="mb-4 text-lg font-semibold text-white">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900">
             Source funnel and economics
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-[#2a3f5f] text-slate-400">
+                <tr className="border-b border-[#e2e8f0] text-slate-500">
                   <th className="pb-3 pr-4 font-medium">Source</th>
                   <th className="pb-3 pr-4 font-medium">Calls</th>
                   <th className="pb-3 pr-4 font-medium">Intakes</th>
@@ -222,10 +222,10 @@ export default async function AttributionPage() {
                   <th className="pb-3 font-medium">Spend efficiency</th>
                 </tr>
               </thead>
-              <tbody className="text-slate-200">
+              <tbody className="text-slate-700">
                 {combinedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-8 text-center text-slate-400">
+                    <td colSpan={11} className="py-8 text-center text-slate-500">
                       No funnel rows. Confirm CallRail and CMS endpoints.
                     </td>
                   </tr>
@@ -233,14 +233,14 @@ export default async function AttributionPage() {
                   combinedRows.map((row) => (
                     <tr
                       key={row.source}
-                      className="border-b border-[#2a3f5f]/60 last:border-0"
+                      className="border-b border-[#e2e8f0]/60 last:border-0"
                     >
-                      <td className="py-3 pr-4 font-medium text-white">{row.source}</td>
+                      <td className="py-3 pr-4 font-medium text-slate-900">{row.source}</td>
                       <td className="py-3 pr-4 tabular-nums">{row.calls}</td>
                       <td className="py-3 pr-4 tabular-nums">{row.intakes}</td>
                       <td className="py-3 pr-4 tabular-nums">{row.matters}</td>
                       <td className="py-3 pr-4 tabular-nums">{row.settlements}</td>
-                      <td className="py-3 pr-4 tabular-nums font-medium text-white">
+                      <td className="py-3 pr-4 tabular-nums font-medium text-slate-900">
                         {fmtUsd(row.revenue)}
                       </td>
                       <td className="py-3 pr-4 tabular-nums">{fmtUsd(row.spend)}</td>
@@ -260,19 +260,19 @@ export default async function AttributionPage() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           <section
-            className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-            style={{ backgroundColor: "#1a2540" }}
+            className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+            style={{ backgroundColor: "#ffffff" }}
           >
-            <h2 className="mb-4 text-lg font-semibold text-white">
+            <h2 className="mb-4 text-lg font-semibold text-slate-900">
               Revenue by marketing channel
             </h2>
             <RechartsPie data={revenuePie} />
           </section>
           <section
-            className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-            style={{ backgroundColor: "#1a2540" }}
+            className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+            style={{ backgroundColor: "#ffffff" }}
           >
-            <h2 className="mb-4 text-lg font-semibold text-white">
+            <h2 className="mb-4 text-lg font-semibold text-slate-900">
               Marketing spend by channel
             </h2>
             <RechartsPie data={spendPie} />

@@ -1,24 +1,19 @@
 @import "tailwindcss";
 
 /**
- * Force dark theme app-wide. The dashboard's brand palette is dark navy
- * regardless of the user's OS color-scheme preference, so we override the
- * media-query default and have Tailwind's `dark:` variant key off the
- * `.dark` class on <html> instead.
+ * Light dashboard theme. We want a friendlier, modern feel — white surfaces
+ * with slate borders, brand blue (#185FA5) for accents. The legacy pages
+ * (calls / analytics / attribution / SEO / etc) hardcoded a dark navy palette;
+ * a global sed pass converted those hex codes to light equivalents so this
+ * theme is consistent across both legacy and new pages.
  */
-@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
-}
-
-.dark {
-  /* Dashboard navy — used by Tailwind's bg-background / text-foreground when
-     the html element carries the .dark class (which it always does, set in
-     app/layout.tsx). */
-  --background: #0f1729;
-  --foreground: #ededed;
+  --foreground: #0f172a;     /* slate-900 */
+  --muted: #f1f5f9;          /* slate-100 */
+  --border: #e2e8f0;         /* slate-200 */
+  --accent: #185FA5;         /* brand blue */
 }
 
 @theme inline {

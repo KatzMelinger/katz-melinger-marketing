@@ -15,14 +15,14 @@ import {
 import { GoogleServiceAccountSetup } from "@/components/google-service-account-setup";
 import { MarketingNav } from "@/components/marketing-nav";
 
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 function positionBadgeClass(pos: number): string {
   if (pos >= 1 && pos <= 3) return "bg-emerald-500/25 text-emerald-200 ring-emerald-500/40";
   if (pos <= 10) return "bg-sky-500/25 text-sky-200 ring-sky-500/40";
-  return "bg-slate-600/40 text-slate-300 ring-slate-500/30";
+  return "bg-slate-600/40 text-slate-600 ring-slate-500/30";
 }
 
 function formatGscDate(d: string): string {
@@ -108,14 +108,14 @@ export default function SearchConsolePage() {
 
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Search Console</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="text-2xl font-semibold text-slate-900">Search Console</h1>
+          <p className="mt-1 text-sm text-slate-500">
             Last 28 days
             {overview?.propertyUrl ? (
               <span className="text-slate-500"> · {overview.propertyUrl}</span>
@@ -125,7 +125,7 @@ export default function SearchConsolePage() {
 
         {err ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
           >
             {err}
@@ -186,7 +186,7 @@ export default function SearchConsolePage() {
           <div className="h-[320px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
-                <CartesianGrid stroke="#2a3f5f" strokeDasharray="3 3" />
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 10 }} />
                 <YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <YAxis
@@ -233,7 +233,7 @@ export default function SearchConsolePage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b text-slate-400" style={{ borderColor: BORDER }}>
+                <tr className="border-b text-slate-500" style={{ borderColor: BORDER }}>
                   <th className="pb-3 pr-4 font-medium">Query</th>
                   <th className="pb-3 pr-4 font-medium">Position</th>
                   <th className="pb-3 pr-4 font-medium">Clicks</th>
@@ -241,10 +241,10 @@ export default function SearchConsolePage() {
                   <th className="pb-3 font-medium">CTR</th>
                 </tr>
               </thead>
-              <tbody className="text-slate-200">
+              <tbody className="text-slate-700">
                 {keywords.map((k) => (
-                  <tr key={k.query} className="border-b border-[#2a3f5f]/60">
-                    <td className="py-2 pr-4 text-white">{k.query}</td>
+                  <tr key={k.query} className="border-b border-[#e2e8f0]/60">
+                    <td className="py-2 pr-4 text-slate-900">{k.query}</td>
                     <td className="py-2 pr-4">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${positionBadgeClass(k.position)}`}
@@ -272,17 +272,17 @@ export default function SearchConsolePage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b text-slate-400" style={{ borderColor: BORDER }}>
+                <tr className="border-b text-slate-500" style={{ borderColor: BORDER }}>
                   <th className="pb-3 pr-4 font-medium">Page</th>
                   <th className="pb-3 pr-4 font-medium">Clicks</th>
                   <th className="pb-3 pr-4 font-medium">Impressions</th>
                   <th className="pb-3 font-medium">CTR</th>
                 </tr>
               </thead>
-              <tbody className="text-slate-200">
+              <tbody className="text-slate-700">
                 {pages.map((p) => (
-                  <tr key={p.page} className="border-b border-[#2a3f5f]/60">
-                    <td className="max-w-md truncate py-2 pr-4 font-mono text-xs text-white">
+                  <tr key={p.page} className="border-b border-[#e2e8f0]/60">
+                    <td className="max-w-md truncate py-2 pr-4 font-mono text-xs text-slate-900">
                       {p.page}
                     </td>
                     <td className="py-2 pr-4 tabular-nums">{p.clicks}</td>

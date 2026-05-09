@@ -56,15 +56,15 @@ function formatStartTime(iso: string): string {
 
 const STATUS_BADGE: Record<CallStatus, { bg: string; ring: string; fg: string; label: string }> = {
   Answered: { bg: "bg-emerald-500/20", ring: "ring-emerald-500/30", fg: "text-emerald-300", label: "Answered" },
-  Voicemail: { bg: "bg-amber-500/20", ring: "ring-amber-500/30", fg: "text-amber-200", label: "Voicemail" },
+  Voicemail: { bg: "bg-amber-500/20", ring: "ring-amber-500/30", fg: "text-amber-700", label: "Voicemail" },
   Missed: { bg: "bg-rose-500/20", ring: "ring-rose-500/30", fg: "text-rose-300", label: "Missed" },
 };
 
 function scoreBadgeClass(score: number | null | undefined): { color: string; label: string } {
-  if (score == null) return { color: "bg-slate-500/20 text-slate-300 ring-slate-500/30", label: "—" };
+  if (score == null) return { color: "bg-slate-500/20 text-slate-600 ring-slate-500/30", label: "—" };
   if (score >= 85) return { color: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/30", label: `${score}` };
   if (score >= 70) return { color: "bg-blue-500/20 text-blue-300 ring-blue-500/30", label: `${score}` };
-  if (score >= 50) return { color: "bg-amber-500/20 text-amber-200 ring-amber-500/30", label: `${score}` };
+  if (score >= 50) return { color: "bg-amber-500/20 text-amber-700 ring-amber-500/30", label: `${score}` };
   return { color: "bg-rose-500/20 text-rose-300 ring-rose-500/30", label: `${score}` };
 }
 
@@ -181,15 +181,15 @@ export default function CallsPage() {
 
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, Helvetica, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-white">Call tracking</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Call tracking</h1>
+            <p className="mt-1 text-sm text-slate-500">
               CallRail call log with AI sales-coach scoring against the firm&apos;s SOPs
               {source ? ` · source: ${source}` : ""}
             </p>
@@ -205,7 +205,7 @@ export default function CallsPage() {
             <button
               onClick={() => void runScorePending()}
               disabled={busy}
-              className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-sm font-medium text-[#5fa1d8] hover:bg-[#1a2540] disabled:opacity-50"
+              className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-sm font-medium text-[#5fa1d8] hover:bg-[#ffffff] disabled:opacity-50"
             >
               Score pending
             </button>
@@ -213,7 +213,7 @@ export default function CallsPage() {
         </div>
 
         {error ? (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
             {error}
           </div>
         ) : null}
@@ -251,30 +251,30 @@ export default function CallsPage() {
         </section>
 
         <section
-          className="rounded-xl border border-[#2a3f5f] p-4 shadow-sm sm:p-6"
-          style={{ backgroundColor: "#1a2540" }}
+          className="rounded-xl border border-[#e2e8f0] p-4 shadow-sm sm:p-6"
+          style={{ backgroundColor: "#ffffff" }}
         >
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <input
-              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white placeholder:text-slate-500"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
               placeholder="Search name, phone, agent"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
             <input
               type="date"
-              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
             />
             <input
               type="date"
-              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
               value={to}
               onChange={(e) => setTo(e.target.value)}
             />
             <select
-              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
               value={src}
               onChange={(e) => setSrc(e.target.value)}
             >
@@ -286,7 +286,7 @@ export default function CallsPage() {
               ))}
             </select>
             <select
-              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
               value={status}
               onChange={(e) => setStatus(e.target.value as typeof status)}
             >
@@ -296,7 +296,7 @@ export default function CallsPage() {
               <option value="missed">Missed</option>
             </select>
             <select
-              className="rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
               value={language}
               onChange={(e) => setLanguage(e.target.value as typeof language)}
             >
@@ -310,13 +310,13 @@ export default function CallsPage() {
         </section>
 
         <section
-          className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-          style={{ backgroundColor: "#1a2540" }}
+          className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+          style={{ backgroundColor: "#ffffff" }}
         >
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-[#2a3f5f] text-slate-400">
+                <tr className="border-b border-[#e2e8f0] text-slate-500">
                   <th className="pb-3 pr-4 font-medium">Caller</th>
                   <th className="pb-3 pr-4 font-medium">Phone</th>
                   <th className="pb-3 pr-4 font-medium">Source</th>
@@ -328,7 +328,7 @@ export default function CallsPage() {
                   <th className="pb-3 font-medium">Date</th>
                 </tr>
               </thead>
-              <tbody className="text-slate-200">
+              <tbody className="text-slate-700">
                 {filtered.map((row) => {
                   const callerName = row.customer_name?.trim() || "Unknown caller";
                   const callerNumber = row.customer_phone_number?.trim() || "—";
@@ -344,9 +344,9 @@ export default function CallsPage() {
                     <tr
                       key={row.id}
                       onClick={() => router.push(`/calls/${encodeURIComponent(row.id)}`)}
-                      className="border-b border-[#2a3f5f]/60 last:border-0 hover:bg-[#172037] cursor-pointer"
+                      className="border-b border-[#e2e8f0]/60 last:border-0 hover:bg-[#172037] cursor-pointer"
                     >
-                      <td className="py-3 pr-4 font-medium text-white">
+                      <td className="py-3 pr-4 font-medium text-slate-900">
                         <Link
                           href={`/calls/${encodeURIComponent(row.id)}`}
                           onClick={(e) => e.stopPropagation()}
@@ -355,7 +355,7 @@ export default function CallsPage() {
                           {callerName}
                         </Link>
                       </td>
-                      <td className="py-3 pr-4 tabular-nums text-slate-300">{callerNumber}</td>
+                      <td className="py-3 pr-4 tabular-nums text-slate-600">{callerNumber}</td>
                       <td className="py-3 pr-4">{sourceLabel}</td>
                       <td className="py-3 pr-4 tabular-nums">{duration}</td>
                       <td className="py-3 pr-4">
@@ -365,14 +365,14 @@ export default function CallsPage() {
                           {stBadge.label}
                         </span>
                       </td>
-                      <td className="py-3 pr-4 text-xs uppercase text-slate-400">{lang}</td>
+                      <td className="py-3 pr-4 text-xs uppercase text-slate-500">{lang}</td>
                       <td className="py-3 pr-4">
                         <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${sb.color}`}>
                           {sb.label}
                         </span>
                       </td>
-                      <td className="py-3 pr-4 text-slate-400">{row.lead_status?.trim() || "—"}</td>
-                      <td className="py-3 text-slate-400">{formatStartTime(row.start_time)}</td>
+                      <td className="py-3 pr-4 text-slate-500">{row.lead_status?.trim() || "—"}</td>
+                      <td className="py-3 text-slate-500">{formatStartTime(row.start_time)}</td>
                     </tr>
                   );
                 })}

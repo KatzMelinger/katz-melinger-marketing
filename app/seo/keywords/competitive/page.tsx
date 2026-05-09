@@ -48,7 +48,7 @@ export default async function KeywordCompetitivePage(props: PageProps) {
       title="Keyword Battles"
       subtitle="Compare target rankings against specific law firm competitors and prioritize high-impact gaps."
     >
-      <section className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
+      <section className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
         <h2 className="text-lg font-semibold">Choose competitor</h2>
         <div className="mt-3 flex flex-wrap gap-2">
           {(competitors.trackedDomains ?? []).map((domain) => (
@@ -58,7 +58,7 @@ export default async function KeywordCompetitivePage(props: PageProps) {
               className={`rounded border px-3 py-1 text-xs ${
                 selected === domain
                   ? "border-[#185FA5] bg-[#185FA5] text-white"
-                  : "border-[#2a3f5f] bg-[#0f1729] text-slate-200"
+                  : "border-[#e2e8f0] bg-[#ffffff] text-slate-700"
               }`}
             >
               {domain}
@@ -67,11 +67,11 @@ export default async function KeywordCompetitivePage(props: PageProps) {
         </div>
       </section>
 
-      <section className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
+      <section className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
         <h2 className="text-lg font-semibold">Head-to-head rankings: {data.competitor || selected || "—"}</h2>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[780px] text-left text-sm">
-            <thead className="border-b border-[#2a3f5f] text-slate-400">
+            <thead className="border-b border-[#e2e8f0] text-slate-500">
               <tr>
                 <th className="pb-2 pr-3 font-medium">Keyword</th>
                 <th className="pb-2 pr-3 font-medium">Their position</th>
@@ -82,8 +82,8 @@ export default async function KeywordCompetitivePage(props: PageProps) {
             </thead>
             <tbody>
               {(data.opportunities ?? []).map((row) => (
-                <tr key={row.keyword} className="border-b border-[#2a3f5f]/60 last:border-0">
-                  <td className="py-2 pr-3 text-white">{row.keyword}</td>
+                <tr key={row.keyword} className="border-b border-[#e2e8f0]/60 last:border-0">
+                  <td className="py-2 pr-3 text-slate-900">{row.keyword}</td>
                   <td className="py-2 pr-3">{row.competitorPosition}</td>
                   <td className="py-2 pr-3">{row.ourPosition || "Not ranking"}</td>
                   <td className="py-2 pr-3 tabular-nums">{formatNumber(row.searchVolume)}</td>

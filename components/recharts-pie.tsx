@@ -30,7 +30,7 @@ type Props = {
 export function RechartsPie({ data, valueMode = "currency" }: Props) {
   if (!data.length) {
     return (
-      <p className="text-sm text-slate-400">No data for chart.</p>
+      <p className="text-sm text-slate-500">No data for chart.</p>
     );
   }
   return (

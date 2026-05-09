@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
 
-const BG = "#0f1729";
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const BG = "#ffffff";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 const REFRESH_MS = 30_000;
@@ -782,8 +782,8 @@ export default function LocalSeoPlatformPage() {
       onClick={() => setActiveTab(id)}
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
         activeTab === id
-          ? "bg-[#1a2540] text-white ring-1 ring-[#185FA5]/50"
-          : "text-slate-400 hover:bg-[#1a2540]/60 hover:text-white"
+          ? "bg-[#ffffff] text-white ring-1 ring-[#185FA5]/50"
+          : "text-slate-500 hover:bg-[#ffffff]/60 hover:text-slate-900"
       }`}
     >
       {label}
@@ -792,15 +792,15 @@ export default function LocalSeoPlatformPage() {
 
   return (
     <div
-      className="min-h-full text-white"
+      className="min-h-full text-slate-900"
       style={{ backgroundColor: BG, fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-white">Local SEO</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-semibold text-slate-900">Local SEO</h1>
+            <p className="mt-1 text-sm text-slate-500">
               Google Business Profile data from the Business Profile API; rankings and
               citations use sample data until those sources are connected. Auto-refresh
               every {Math.round(REFRESH_MS / 1000)}s.
@@ -820,23 +820,23 @@ export default function LocalSeoPlatformPage() {
             type="button"
             onClick={() => void load()}
             disabled={loading || isRefreshing}
-            className="self-start rounded-md border border-[#2a3f5f] bg-[#0f1729] px-4 py-2 text-sm text-slate-200 hover:bg-[#1a2540] disabled:opacity-50"
+            className="self-start rounded-md border border-[#e2e8f0] bg-[#ffffff] px-4 py-2 text-sm text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
           >
             {loading || isRefreshing ? "Refreshing…" : "Refresh data"}
           </button>
         </div>
 
-        <label className="inline-flex items-center gap-2 text-xs text-slate-400">
+        <label className="inline-flex items-center gap-2 text-xs text-slate-500">
           <input
             type="checkbox"
             checked={useCachedDiscovery}
             onChange={(e) => setUseCachedDiscovery(e.target.checked)}
-            className="h-4 w-4 rounded border-[#2a3f5f] bg-[#0f1729] text-[#185FA5] focus:ring-[#185FA5]"
+            className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5] focus:ring-[#185FA5]"
           />
           Use cached account/location discovery when available (reduces Google API calls)
         </label>
 
-        <div className="flex flex-wrap gap-2 border-b border-[#2a3f5f] pb-3">
+        <div className="flex flex-wrap gap-2 border-b border-[#e2e8f0] pb-3">
           {tabBtn("gbp", "Google Business Profile")}
           {tabBtn("reviews", "Reviews")}
           {tabBtn("rankings", "Rankings")}
@@ -845,12 +845,12 @@ export default function LocalSeoPlatformPage() {
 
         {rateLimitRetryAt ? (
           <div
-            className="rounded-lg border border-amber-700/60 bg-amber-950/30 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-700/60 bg-amber-950/30 p-4 text-sm text-amber-800"
             role="status"
           >
             Google Business Profile API quota is temporarily rate-limited. Retrying in{" "}
             <span className="font-semibold tabular-nums">{retryCountdownSec}s</span>.
-            <span className="ml-2 text-amber-200/80">
+            <span className="ml-2 text-amber-700/80">
               Tip: keep "Use cached account/location discovery" enabled to reduce calls.
             </span>
           </div>
@@ -858,7 +858,7 @@ export default function LocalSeoPlatformPage() {
 
         {error ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
             role="alert"
           >
@@ -871,8 +871,8 @@ export default function LocalSeoPlatformPage() {
             className="rounded-xl border p-6"
             style={{ backgroundColor: CARD, borderColor: BORDER }}
           >
-            <h2 className="text-lg font-semibold text-white">Select Business Profile location</h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <h2 className="text-lg font-semibold text-slate-900">Select Business Profile location</h2>
+            <p className="mt-1 text-sm text-slate-500">
               The configured location ID is missing or invalid. Choose an account and location from discovery.
             </p>
             {recoveryState?.discoveryError ? (
@@ -880,9 +880,9 @@ export default function LocalSeoPlatformPage() {
             ) : null}
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="block text-sm">
-                <span className="text-xs text-slate-400">Business account</span>
+                <span className="text-xs text-slate-500">Business account</span>
                 <select
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={selectedAccountId}
                   onChange={(e) => {
                     setSelectedAccountId(e.target.value);
@@ -899,9 +899,9 @@ export default function LocalSeoPlatformPage() {
                 </select>
               </label>
               <label className="block text-sm">
-                <span className="text-xs text-slate-400">Location</span>
+                <span className="text-xs text-slate-500">Location</span>
                 <select
-                  className="mt-1 w-full rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-white"
+                  className="mt-1 w-full rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-slate-900"
                   value={selectedLocationId}
                   onChange={(e) => setSelectedLocationId(e.target.value)}
                   disabled={!selectedAccountId || discoveringLocations}
@@ -920,7 +920,7 @@ export default function LocalSeoPlatformPage() {
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="rounded-md px-3 py-2 text-sm font-medium text-white"
+                className="rounded-md px-3 py-2 text-sm font-medium text-slate-900"
                 style={{ backgroundColor: ACCENT }}
                 onClick={() => void load()}
                 disabled={
@@ -935,7 +935,7 @@ export default function LocalSeoPlatformPage() {
               </button>
               <button
                 type="button"
-                className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200 hover:bg-[#1a2540]"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-[#ffffff]"
                 onClick={() => void discoverAccounts({ forceNetwork: true })}
                 disabled={discoveringAccounts || discoveringLocations}
               >
@@ -943,7 +943,7 @@ export default function LocalSeoPlatformPage() {
               </button>
               <button
                 type="button"
-                className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200 hover:bg-[#1a2540]"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700 hover:bg-[#ffffff]"
                 onClick={() => {
                   const cachedAccounts = readTimedCache<
                     Array<{ accountId: string; name: string }>
@@ -968,21 +968,21 @@ export default function LocalSeoPlatformPage() {
             className="rounded-xl border border-dashed border-slate-600 p-4 text-sm"
             style={{ backgroundColor: "#0c1220" }}
           >
-            <h2 className="font-semibold text-slate-200">
+            <h2 className="font-semibold text-slate-700">
               Google Business Profile debug (dev only)
             </h2>
             <p className="mt-1 text-xs text-slate-500">
               Terminal logs (with GOOGLE_DEBUG_AUTH=1) show full GBP request URLs. Required
               OAuth scope for these APIs:{" "}
-              <code className="text-slate-400">
+              <code className="text-slate-500">
                 https://www.googleapis.com/auth/business.manage
               </code>
             </p>
             <div className="mt-3 space-y-2">
-              <p className="text-xs font-medium text-slate-400">
+              <p className="text-xs font-medium text-slate-500">
                 Service account JSON (server-side check)
               </p>
-              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+              <pre className="max-h-40 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
                 {saStatus != null
                   ? JSON.stringify(saStatus, null, 2)
                   : "Loading…"}
@@ -990,7 +990,7 @@ export default function LocalSeoPlatformPage() {
               <button
                 type="button"
                 disabled={gbpTestLoading}
-                className="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 disabled:opacity-50"
+                className="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-600 disabled:opacity-50"
                 onClick={() => {
                   void (async () => {
                     setGbpTestLoading(true);
@@ -1018,7 +1018,7 @@ export default function LocalSeoPlatformPage() {
                   : "Run GBP credential test (Account Management + v4 location)"}
               </button>
               {gbpTest != null ? (
-                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-300">
+                <pre className="max-h-64 overflow-auto rounded border border-slate-700 bg-[#0a0f18] p-2 text-xs text-slate-600">
                   {JSON.stringify(gbpTest, null, 2)}
                 </pre>
               ) : null}
@@ -1028,14 +1028,14 @@ export default function LocalSeoPlatformPage() {
 
         {!error && gbpWarnings.length > 0 ? (
           <div
-            className="rounded-lg border border-[#185FA5]/40 p-4 text-sm text-slate-200"
+            className="rounded-lg border border-[#185FA5]/40 p-4 text-sm text-slate-700"
             style={{ backgroundColor: CARD }}
             role="status"
           >
             <p className="font-medium" style={{ color: ACCENT }}>
               Partial Google data
             </p>
-            <ul className="mt-2 list-inside list-disc text-slate-400">
+            <ul className="mt-2 list-inside list-disc text-slate-500">
               {gbpWarnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}
@@ -1045,7 +1045,7 @@ export default function LocalSeoPlatformPage() {
 
         {loading && !business ? (
           <div
-            className="rounded-xl border p-8 text-center text-slate-400"
+            className="rounded-xl border p-8 text-center text-slate-500"
             style={{ backgroundColor: CARD, borderColor: BORDER }}
           >
             <p className="text-sm" aria-live="polite">
@@ -1064,15 +1064,15 @@ export default function LocalSeoPlatformPage() {
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-slate-500">Name</dt>
-                  <dd className="font-medium text-white">{business.name}</dd>
+                  <dd className="font-medium text-slate-900">{business.name}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Phone</dt>
-                  <dd className="text-slate-200">{business.phone}</dd>
+                  <dd className="text-slate-700">{business.phone}</dd>
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="text-slate-500">Address</dt>
-                  <dd className="text-slate-200">{business.address}</dd>
+                  <dd className="text-slate-700">{business.address}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Website</dt>
@@ -1090,13 +1090,13 @@ export default function LocalSeoPlatformPage() {
                         {business.website}
                       </a>
                     ) : (
-                      <span className="text-slate-200">{business.website || "—"}</span>
+                      <span className="text-slate-700">{business.website || "—"}</span>
                     )}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Hours</dt>
-                  <dd className="text-slate-200">{business.hoursSummary}</dd>
+                  <dd className="text-slate-700">{business.hoursSummary}</dd>
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="text-slate-500">Categories</dt>
@@ -1104,7 +1104,7 @@ export default function LocalSeoPlatformPage() {
                     {business.categories.map((c) => (
                       <span
                         key={c}
-                        className="rounded-full border border-[#2a3f5f] bg-[#0f1729] px-2 py-0.5 text-xs text-slate-300"
+                        className="rounded-full border border-[#e2e8f0] bg-[#ffffff] px-2 py-0.5 text-xs text-slate-600"
                       >
                         {c}
                       </span>
@@ -1122,7 +1122,7 @@ export default function LocalSeoPlatformPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] border-collapse text-left text-sm">
                   <thead>
-                    <tr className="border-b border-[#2a3f5f] text-slate-400">
+                    <tr className="border-b border-[#e2e8f0] text-slate-500">
                       <th className="pb-3 pr-4 font-medium">Rating</th>
                       <th className="pb-3 pr-4 font-medium">Author</th>
                       <th className="pb-3 pr-4 font-medium">Comment</th>
@@ -1130,15 +1130,15 @@ export default function LocalSeoPlatformPage() {
                       <th className="pb-3 font-medium">Response</th>
                     </tr>
                   </thead>
-                  <tbody className="text-slate-200">
+                  <tbody className="text-slate-700">
                     {gbpReviews.map((r) => (
-                      <tr key={r.id} className="border-b border-[#2a3f5f]/50">
+                      <tr key={r.id} className="border-b border-[#e2e8f0]/50">
                         <td className="py-2 pr-4 tabular-nums text-amber-300">
                           {"★".repeat(r.rating)}
                           <span className="text-slate-600">{"★".repeat(5 - r.rating)}</span>
                         </td>
                         <td className="py-2 pr-4">{r.author}</td>
-                        <td className="max-w-md py-2 pr-4 text-slate-300">{r.comment}</td>
+                        <td className="max-w-md py-2 pr-4 text-slate-600">{r.comment}</td>
                         <td className="py-2 pr-4 text-slate-500">{r.date}</td>
                         <td className="py-2">
                           <span
@@ -1176,7 +1176,7 @@ export default function LocalSeoPlatformPage() {
                     type="button"
                     disabled={posting}
                     onClick={() => void createLocalPost("STANDARD")}
-                    className="rounded-md px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                    className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-900 hover:opacity-90 disabled:opacity-50"
                     style={{ backgroundColor: ACCENT }}
                   >
                     {posting ? "Working…" : "New announcement"}
@@ -1185,7 +1185,7 @@ export default function LocalSeoPlatformPage() {
                     type="button"
                     disabled={posting}
                     onClick={() => void createLocalPost("EVENT")}
-                    className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-[#1a2540] disabled:opacity-50"
+                    className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
                   >
                     New event
                   </button>
@@ -1193,7 +1193,7 @@ export default function LocalSeoPlatformPage() {
                     type="button"
                     disabled={posting}
                     onClick={() => void createLocalPost("OFFER")}
-                    className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-[#1a2540] disabled:opacity-50"
+                    className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-[#ffffff] disabled:opacity-50"
                   >
                     New offer
                   </button>
@@ -1202,11 +1202,11 @@ export default function LocalSeoPlatformPage() {
                   {posts.map((p) => (
                     <li
                       key={p.id}
-                      className="rounded-lg border border-[#2a3f5f]/80 bg-[#0f1729]/60 p-3 text-sm"
+                      className="rounded-lg border border-[#e2e8f0]/80 bg-[#ffffff]/60 p-3 text-sm"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium text-white">{p.title}</span>
-                        <span className="rounded bg-[#1a2540] px-2 py-0.5 text-xs uppercase text-slate-400">
+                        <span className="font-medium text-slate-900">{p.title}</span>
+                        <span className="rounded bg-[#ffffff] px-2 py-0.5 text-xs uppercase text-slate-500">
                           {p.type}
                         </span>
                       </div>
@@ -1229,7 +1229,7 @@ export default function LocalSeoPlatformPage() {
                 <button
                   type="button"
                   disabled
-                  className="mb-4 rounded-md px-3 py-2 text-sm font-medium text-slate-400 ring-1 ring-[#2a3f5f]"
+                  className="mb-4 rounded-md px-3 py-2 text-sm font-medium text-slate-500 ring-1 ring-[#e2e8f0]"
                 >
                   Upload in Google Business Profile
                 </button>
@@ -1240,10 +1240,10 @@ export default function LocalSeoPlatformPage() {
                     {photos.map((ph) => (
                       <li
                         key={ph.id}
-                        className="flex flex-col gap-1 rounded-lg border border-[#2a3f5f]/60 p-3 text-sm"
+                        className="flex flex-col gap-1 rounded-lg border border-[#e2e8f0]/60 p-3 text-sm"
                         style={{ backgroundColor: BG }}
                       >
-                        <span className="font-medium text-slate-200">{ph.label}</span>
+                        <span className="font-medium text-slate-700">{ph.label}</span>
                         <span className="text-xs capitalize text-slate-500">{ph.kind}</span>
                         <span className="text-xs text-slate-600">Added {ph.addedAt}</span>
                       </li>
@@ -1257,7 +1257,7 @@ export default function LocalSeoPlatformPage() {
 
         {!loading && business && activeTab === "reviews" ? (
           <div className="space-y-6">
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-500">
               Multi-platform review aggregation. Google reviews are live from Business Profile;
               Yelp, Avvo, and Facebook rows are sample data until those APIs are connected.
               Use templates below to draft responses, then reply in each platform.
@@ -1270,8 +1270,8 @@ export default function LocalSeoPlatformPage() {
                 className="rounded-xl border p-5"
                 style={{ backgroundColor: CARD, borderColor: BORDER }}
               >
-                <p className="text-sm text-slate-400">Blended rating</p>
-                <p className="mt-1 text-3xl font-semibold tabular-nums text-white">
+                <p className="text-sm text-slate-500">Blended rating</p>
+                <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
                   {overallRating.toFixed(2)}
                   <span className="text-lg text-slate-500"> /5</span>
                 </p>
@@ -1290,8 +1290,8 @@ export default function LocalSeoPlatformPage() {
                     className="rounded-xl border p-5"
                     style={{ backgroundColor: CARD, borderColor: BORDER }}
                   >
-                    <p className="text-sm text-slate-400">{platformLabel(p)}</p>
-                    <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    <p className="text-sm text-slate-500">{platformLabel(p)}</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
                       {subset.length ? avg.toFixed(1) : "—"}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
@@ -1322,7 +1322,7 @@ export default function LocalSeoPlatformPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] border-collapse text-left text-sm">
                   <thead>
-                    <tr className="border-b border-[#2a3f5f] text-slate-400">
+                    <tr className="border-b border-[#e2e8f0] text-slate-500">
                       <th className="pb-3 pr-4 font-medium">Platform</th>
                       <th className="pb-3 pr-4 font-medium">Rating</th>
                       <th className="pb-3 pr-4 font-medium">Author</th>
@@ -1336,15 +1336,15 @@ export default function LocalSeoPlatformPage() {
                       const norm = normalizeRating(r) * 5;
                       const bad = norm < 3.5 || r.needsResponse;
                       return (
-                        <tr key={r.id} className="border-b border-[#2a3f5f]/50">
-                          <td className="py-2 pr-4 text-slate-300">
+                        <tr key={r.id} className="border-b border-[#e2e8f0]/50">
+                          <td className="py-2 pr-4 text-slate-600">
                             {platformLabel(r.platform)}
                           </td>
-                          <td className="py-2 pr-4 tabular-nums text-slate-200">
+                          <td className="py-2 pr-4 tabular-nums text-slate-700">
                             {r.rating}/{r.maxRating}
                           </td>
                           <td className="py-2 pr-4">{r.author}</td>
-                          <td className="max-w-xs py-2 pr-4 text-slate-400">
+                          <td className="max-w-xs py-2 pr-4 text-slate-500">
                             {r.comment}
                           </td>
                           <td className="py-2 pr-4 text-slate-500">{r.date}</td>
@@ -1372,12 +1372,12 @@ export default function LocalSeoPlatformPage() {
                 {templates.map((t) => (
                   <li
                     key={t.id}
-                    className="rounded-lg border border-[#2a3f5f] bg-[#0f1729]/50 p-4"
+                    className="rounded-lg border border-[#e2e8f0] bg-[#ffffff]/50 p-4"
                   >
                     <p className="font-medium" style={{ color: ACCENT }}>
                       {t.label}
                     </p>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-300">{t.body}</p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600">{t.body}</p>
                     <button
                       type="button"
                       onClick={() =>
@@ -1408,7 +1408,7 @@ export default function LocalSeoPlatformPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[800px] border-collapse text-left text-sm">
                   <thead>
-                    <tr className="border-b border-[#2a3f5f] text-slate-400">
+                    <tr className="border-b border-[#e2e8f0] text-slate-500">
                       <th className="pb-3 pr-4 font-medium">Keyword</th>
                       <th className="pb-3 pr-4 font-medium">Your rank</th>
                       <th className="pb-3 pr-4 font-medium">Change</th>
@@ -1418,9 +1418,9 @@ export default function LocalSeoPlatformPage() {
                   </thead>
                   <tbody>
                     {keywordRankings.map((k) => (
-                      <tr key={k.keyword} className="border-b border-[#2a3f5f]/50">
-                        <td className="py-2 pr-4 font-medium text-white">{k.keyword}</td>
-                        <td className="py-2 pr-4 tabular-nums text-slate-200">
+                      <tr key={k.keyword} className="border-b border-[#e2e8f0]/50">
+                        <td className="py-2 pr-4 font-medium text-slate-900">{k.keyword}</td>
+                        <td className="py-2 pr-4 tabular-nums text-slate-700">
                           {k.rank === null ? (
                             <span className="text-slate-500">Not in top 50</span>
                           ) : (
@@ -1460,14 +1460,14 @@ export default function LocalSeoPlatformPage() {
               <p className="mb-4 text-xs text-slate-500">
                 Average rank across the same keyword set (mock).
               </p>
-              <ul className="divide-y divide-[#2a3f5f]/60">
+              <ul className="divide-y divide-[#e2e8f0]/60">
                 {competitors.map((c) => (
                   <li
                     key={c.id}
                     className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0"
                   >
-                    <span className="font-medium text-white">{c.name}</span>
-                    <span className="tabular-nums text-slate-300">
+                    <span className="font-medium text-slate-900">{c.name}</span>
+                    <span className="tabular-nums text-slate-600">
                       Avg rank: {c.avgRank.toFixed(1)}
                       {c.trend === "up" ? (
                         <span className="ml-2 text-emerald-400">↑</span>
@@ -1497,7 +1497,7 @@ export default function LocalSeoPlatformPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#2a3f5f] text-slate-400">
+                  <tr className="border-b border-[#e2e8f0] text-slate-500">
                     <th className="pb-3 pr-4 font-medium">Directory</th>
                     <th className="pb-3 pr-4 font-medium">NAP</th>
                     <th className="pb-3 pr-4 font-medium">Issues</th>
@@ -1508,12 +1508,12 @@ export default function LocalSeoPlatformPage() {
                   {citations.map((c) => {
                     const tone = napTone(c.napMatch);
                     return (
-                      <tr key={c.id} className="border-b border-[#2a3f5f]/50">
-                        <td className="py-3 pr-4 font-medium text-white">{c.directory}</td>
+                      <tr key={c.id} className="border-b border-[#e2e8f0]/50">
+                        <td className="py-3 pr-4 font-medium text-slate-900">{c.directory}</td>
                         <td className={`py-3 pr-4 font-medium ${tone.className}`}>
                           {tone.label}
                         </td>
-                        <td className="py-3 pr-4 text-slate-400">
+                        <td className="py-3 pr-4 text-slate-500">
                           {c.issues.length ? (
                             <ul className="list-inside list-disc text-xs">
                               {c.issues.map((issue) => (

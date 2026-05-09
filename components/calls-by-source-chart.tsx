@@ -20,7 +20,7 @@ export function CallsBySourceChart({ data }: Props) {
   if (!data.length) {
     return (
       <div
-        className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed border-white/10 text-sm text-slate-400"
+        className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed border-white/10 text-sm text-slate-500"
         style={{ backgroundColor: "rgba(15, 23, 41, 0.35)" }}
       >
         No call data by source yet.

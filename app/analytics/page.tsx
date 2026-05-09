@@ -20,8 +20,8 @@ import {
 import { GoogleServiceAccountSetup } from "@/components/google-service-account-setup";
 import { MarketingNav } from "@/components/marketing-nav";
 
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 const PIE_COLORS = ["#185FA5", "#1D9E75", "#CA8A04", "#A855F7", "#64748b"];
@@ -114,21 +114,21 @@ export default function AnalyticsPage() {
 
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-slate-900">
             Google Analytics 4
           </h1>
-          <p className="mt-1 text-sm text-slate-400">Last 30 days</p>
+          <p className="mt-1 text-sm text-slate-500">Last 30 days</p>
         </div>
 
         {loadErr ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
           >
             {loadErr}
@@ -188,7 +188,7 @@ export default function AnalyticsPage() {
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartDays}>
-                <CartesianGrid stroke="#2a3f5f" strokeDasharray="3 3" />
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <Tooltip
@@ -220,7 +220,7 @@ export default function AnalyticsPage() {
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={sources} layout="vertical" margin={{ left: 8 }}>
-                  <CartesianGrid stroke="#2a3f5f" strokeDasharray="3 3" />
+                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
                   <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <YAxis
                     type="category"
@@ -288,19 +288,19 @@ export default function AnalyticsPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b text-slate-400" style={{ borderColor: BORDER }}>
+                <tr className="border-b text-slate-500" style={{ borderColor: BORDER }}>
                   <th className="pb-3 pr-4 font-medium">Page path</th>
                   <th className="pb-3 pr-4 font-medium">Views</th>
                   <th className="pb-3 font-medium">Avg duration</th>
                 </tr>
               </thead>
-              <tbody className="text-slate-200">
+              <tbody className="text-slate-700">
                 {pages.map((row) => (
                   <tr
                     key={row.pagePath}
-                    className="border-b border-[#2a3f5f]/60"
+                    className="border-b border-[#e2e8f0]/60"
                   >
-                    <td className="py-2 pr-4 font-mono text-xs text-white">
+                    <td className="py-2 pr-4 font-mono text-xs text-slate-900">
                       {row.pagePath}
                     </td>
                     <td className="py-2 pr-4 tabular-nums">

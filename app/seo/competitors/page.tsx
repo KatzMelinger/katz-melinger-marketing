@@ -31,21 +31,21 @@ export default async function SeoCompetitorsPage() {
       subtitle="Monitor legal-market competitors, compare keyword visibility, and drill into domain-level intelligence."
     >
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Tracked competitors</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Tracked competitors</p>
           <p className="mt-2 text-2xl font-semibold">{formatNumber(data.trackedDomains?.length ?? 0)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Semrush market set</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Semrush market set</p>
           <p className="mt-2 text-2xl font-semibold">{formatNumber(data.semrushCompetitors?.length ?? 0)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Actions</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Actions</p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             <Link href="/seo/competitors/add" className="rounded bg-[#185FA5] px-2 py-1 text-white">
               Add competitor
             </Link>
-            <Link href="/seo/keywords/competitive" className="rounded border border-[#2a3f5f] px-2 py-1 text-slate-200">
+            <Link href="/seo/keywords/competitive" className="rounded border border-[#e2e8f0] px-2 py-1 text-slate-700">
               Keyword battles
             </Link>
           </div>
@@ -53,15 +53,15 @@ export default async function SeoCompetitorsPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
           <h2 className="text-lg font-semibold">Tracked competitor domains</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {(data.trackedDomains ?? []).map((domain) => (
-              <li key={domain} className="flex items-center justify-between rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
-                <span className="text-slate-200">{domain}</span>
+              <li key={domain} className="flex items-center justify-between rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
+                <span className="text-slate-700">{domain}</span>
                 <Link
                   href={`/seo/competitors/${encodeURIComponent(domain)}`}
-                  className="rounded border border-[#2a3f5f] px-2 py-1 text-xs text-slate-200 hover:border-[#185FA5] hover:text-white"
+                  className="rounded border border-[#e2e8f0] px-2 py-1 text-xs text-slate-700 hover:border-[#185FA5] hover:text-white"
                 >
                   View details
                 </Link>
@@ -69,11 +69,11 @@ export default async function SeoCompetitorsPage() {
             ))}
           </ul>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
           <h2 className="text-lg font-semibold">Market visibility snapshot</h2>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[540px] text-left text-sm">
-              <thead className="border-b border-[#2a3f5f] text-slate-400">
+              <thead className="border-b border-[#e2e8f0] text-slate-500">
                 <tr>
                   <th className="pb-2 pr-3 font-medium">Domain</th>
                   <th className="pb-2 pr-3 font-medium">Common keywords</th>
@@ -82,8 +82,8 @@ export default async function SeoCompetitorsPage() {
               </thead>
               <tbody>
                 {(data.semrushCompetitors ?? []).slice(0, 15).map((item) => (
-                  <tr key={item.domain} className="border-b border-[#2a3f5f]/60 last:border-0">
-                    <td className="py-2 pr-3 text-white">{item.domain}</td>
+                  <tr key={item.domain} className="border-b border-[#e2e8f0]/60 last:border-0">
+                    <td className="py-2 pr-3 text-slate-900">{item.domain}</td>
                     <td className="py-2 pr-3">{formatNumber(item.commonKeywords)}</td>
                     <td className="py-2">{formatNumber(item.estimatedTraffic)}</td>
                   </tr>

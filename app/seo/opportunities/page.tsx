@@ -45,32 +45,32 @@ export default async function SeoOpportunitiesPage(props: Props) {
       subtitle="Prioritized keyword and backlink opportunities based on competitor gaps and legal search demand."
     >
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Selected competitor</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Selected competitor</p>
           <p className="mt-2 text-lg font-semibold">{data.selectedCompetitor || "—"}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Keyword quick wins</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Keyword quick wins</p>
           <p className="mt-2 text-2xl font-semibold">{formatNumber(data.summary?.keywordQuickWins ?? 0)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Missing target terms</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Missing target terms</p>
           <p className="mt-2 text-2xl font-semibold">{formatNumber(data.missingTargetKeywords?.length ?? 0)}</p>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Toxic links to review</p>
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Toxic links to review</p>
           <p className="mt-2 text-2xl font-semibold">{formatNumber(data.summary?.toxicLinksToDisavow ?? 0)}</p>
         </article>
       </section>
 
-      <section className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
+      <section className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
         <h2 className="text-lg font-semibold">Competitor selector</h2>
         <div className="mt-3 flex flex-wrap gap-2">
           {(data.competitors ?? []).map((domain) => (
             <Link
               key={domain}
               href={`/seo/opportunities?competitor=${encodeURIComponent(domain)}`}
-              className="rounded border border-[#2a3f5f] bg-[#0f1729] px-3 py-1 text-xs text-slate-200 hover:border-[#185FA5] hover:text-white"
+              className="rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-1 text-xs text-slate-700 hover:border-[#185FA5] hover:text-white"
             >
               {domain}
             </Link>
@@ -79,11 +79,11 @@ export default async function SeoOpportunitiesPage(props: Props) {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
           <h2 className="text-lg font-semibold">Keyword quick wins</h2>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[620px] text-left text-sm">
-              <thead className="border-b border-[#2a3f5f] text-slate-400">
+              <thead className="border-b border-[#e2e8f0] text-slate-500">
                 <tr>
                   <th className="pb-2 pr-3 font-medium">Keyword</th>
                   <th className="pb-2 pr-3 font-medium">Their pos</th>
@@ -93,8 +93,8 @@ export default async function SeoOpportunitiesPage(props: Props) {
               </thead>
               <tbody>
                 {(data.quickWins ?? []).map((row) => (
-                  <tr key={row.keyword} className="border-b border-[#2a3f5f]/60 last:border-0">
-                    <td className="py-2 pr-3 text-white">{row.keyword}</td>
+                  <tr key={row.keyword} className="border-b border-[#e2e8f0]/60 last:border-0">
+                    <td className="py-2 pr-3 text-slate-900">{row.keyword}</td>
                     <td className="py-2 pr-3">{row.competitorPosition}</td>
                     <td className="py-2 pr-3">{row.ourPosition || "Not ranking"}</td>
                     <td className="py-2">{row.opportunityScore}</td>
@@ -104,16 +104,16 @@ export default async function SeoOpportunitiesPage(props: Props) {
             </table>
           </div>
         </article>
-        <article className="rounded-xl border border-[#2a3f5f] bg-[#1a2540] p-5">
+        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-5">
           <h2 className="text-lg font-semibold">Content and link opportunities</h2>
-          <ul className="mt-3 space-y-2 text-sm text-slate-200">
+          <ul className="mt-3 space-y-2 text-sm text-slate-700">
             {(data.longTailSuggestions ?? []).map((keyword) => (
-              <li key={keyword} className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
+              <li key={keyword} className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
                 Content idea: {keyword}
               </li>
             ))}
             {(data.topLinkGaps ?? []).map((item) => (
-              <li key={item.domain} className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2">
+              <li key={item.domain} className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2">
                 Link target: {item.domain} - {item.opportunity}
               </li>
             ))}

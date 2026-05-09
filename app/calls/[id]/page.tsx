@@ -9,13 +9,13 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, Helvetica, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <Link href="/calls" className="text-sm text-slate-400 hover:text-white">
+          <Link href="/calls" className="text-sm text-slate-500 hover:text-slate-900">
             ← Back to calls
           </Link>
         </div>

@@ -85,9 +85,9 @@ export default async function MarketingReviewsPage() {
 
   return (
     <div
-      className="min-h-full text-white"
+      className="min-h-full text-slate-900"
       style={{
-        backgroundColor: "#0f1729",
+        backgroundColor: "#ffffff",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
@@ -95,8 +95,8 @@ export default async function MarketingReviewsPage() {
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Reviews overview</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="text-2xl font-semibold text-slate-900">Reviews overview</h1>
+          <p className="mt-1 text-sm text-slate-500">
             Reputation snapshot from your review database.
           </p>
         </div>
@@ -107,9 +107,9 @@ export default async function MarketingReviewsPage() {
           </div>
         ) : null}
 
-        <section className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm" style={{ backgroundColor: "#1a2540" }}>
-          <h2 className="text-lg font-semibold text-white">Reputation snapshot</h2>
-          <p className="mt-1 text-sm text-slate-400">
+        <section className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm" style={{ backgroundColor: "#ffffff" }}>
+          <h2 className="text-lg font-semibold text-slate-900">Reputation snapshot</h2>
+          <p className="mt-1 text-sm text-slate-500">
             Aggregate metrics across all platforms in the table.
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
@@ -118,7 +118,7 @@ export default async function MarketingReviewsPage() {
               style={{ backgroundColor: "#185FA5" }}
             >
               <p className="text-sm font-medium text-white/90">Average rating</p>
-              <p className="mt-3 text-3xl font-semibold tabular-nums text-white">
+              <p className="mt-3 text-3xl font-semibold tabular-nums text-slate-900">
                 {total ? avg.toFixed(2) : "—"}
               </p>
             </article>
@@ -127,7 +127,7 @@ export default async function MarketingReviewsPage() {
               style={{ backgroundColor: "#166534" }}
             >
               <p className="text-sm font-medium text-white/90">Total reviews</p>
-              <p className="mt-3 text-3xl font-semibold tabular-nums text-white">
+              <p className="mt-3 text-3xl font-semibold tabular-nums text-slate-900">
                 {total}
               </p>
             </article>
@@ -136,7 +136,7 @@ export default async function MarketingReviewsPage() {
               style={{ backgroundColor: "#475569" }}
             >
               <p className="text-sm font-medium text-white/90">Response rate</p>
-              <p className="mt-3 text-3xl font-semibold tabular-nums text-white">
+              <p className="mt-3 text-3xl font-semibold tabular-nums text-slate-900">
                 {total ? `${responseRate}%` : "—"}
               </p>
               <p className="mt-1 text-xs text-white/70">
@@ -146,23 +146,23 @@ export default async function MarketingReviewsPage() {
           </div>
 
           {!errorMessage && total === 0 ? (
-            <div className="mt-8 rounded-lg border border-dashed border-white/15 bg-[#0f1729]/60 p-8 text-center">
-              <p className="text-sm text-slate-300">
-                No reviews yet. Add rows to the <code className="text-slate-200">reviews</code> table
+            <div className="mt-8 rounded-lg border border-dashed border-white/15 bg-[#ffffff]/60 p-8 text-center">
+              <p className="text-sm text-slate-600">
+                No reviews yet. Add rows to the <code className="text-slate-700">reviews</code> table
                 in Supabase or sync from your CMS.
               </p>
               <Link
                 href="/reviews#log-review"
-                className="mt-4 inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                className="mt-4 inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-900 transition-opacity hover:opacity-90"
                 style={{ backgroundColor: "#185FA5" }}
               >
                 Log your first review
               </Link>
               <p id="log-review" className="mt-6 scroll-mt-24 text-xs text-slate-500">
-                Tip: include <code className="text-slate-400">platform</code>,{" "}
-                <code className="text-slate-400">rating</code>,{" "}
-                <code className="text-slate-400">status</code>, and{" "}
-                <code className="text-slate-400">review_date</code> for best results.
+                Tip: include <code className="text-slate-500">platform</code>,{" "}
+                <code className="text-slate-500">rating</code>,{" "}
+                <code className="text-slate-500">status</code>, and{" "}
+                <code className="text-slate-500">review_date</code> for best results.
               </p>
             </div>
           ) : null}
@@ -171,19 +171,19 @@ export default async function MarketingReviewsPage() {
         {total > 0 ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section
-              className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-              style={{ backgroundColor: "#1a2540" }}
+              className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+              style={{ backgroundColor: "#ffffff" }}
             >
-              <h2 className="mb-4 text-lg font-semibold text-white">
+              <h2 className="mb-4 text-lg font-semibold text-slate-900">
                 Platform breakdown
               </h2>
               <RechartsPie data={platformChart} valueMode="number" />
             </section>
             <section
-              className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-              style={{ backgroundColor: "#1a2540" }}
+              className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+              style={{ backgroundColor: "#ffffff" }}
             >
-              <h2 className="mb-4 text-lg font-semibold text-white">
+              <h2 className="mb-4 text-lg font-semibold text-slate-900">
                 Rating distribution
               </h2>
               <RechartsPie data={ratingChart} valueMode="number" />
@@ -193,14 +193,14 @@ export default async function MarketingReviewsPage() {
 
         {total > 0 ? (
           <section
-            className="rounded-xl border border-[#2a3f5f] p-6 shadow-sm"
-            style={{ backgroundColor: "#1a2540" }}
+            className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+            style={{ backgroundColor: "#ffffff" }}
           >
-            <h2 className="mb-4 text-lg font-semibold text-white">Recent reviews</h2>
+            <h2 className="mb-4 text-lg font-semibold text-slate-900">Recent reviews</h2>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] border-collapse text-left text-sm text-slate-200">
+              <table className="w-full min-w-[640px] border-collapse text-left text-sm text-slate-700">
                 <thead>
-                  <tr className="border-b border-[#2a3f5f] text-slate-400">
+                  <tr className="border-b border-[#e2e8f0] text-slate-500">
                     <th className="pb-3 pr-4 font-medium">Platform</th>
                     <th className="pb-3 pr-4 font-medium">Reviewer</th>
                     <th className="pb-3 pr-4 font-medium">Rating</th>
@@ -216,18 +216,18 @@ export default async function MarketingReviewsPage() {
                     return (
                       <tr
                         key={row.id}
-                        className="border-b border-[#2a3f5f]/60 last:border-0"
+                        className="border-b border-[#e2e8f0]/60 last:border-0"
                       >
-                        <td className="py-3 pr-4 font-medium text-white">
+                        <td className="py-3 pr-4 font-medium text-slate-900">
                           {row.platform ?? "—"}
                         </td>
                         <td className="py-3 pr-4">{row.reviewer_name ?? "—"}</td>
                         <td className="py-3 pr-4 tabular-nums">{row.rating ?? "—"}</td>
-                        <td className="py-3 pr-4 text-slate-400">
+                        <td className="py-3 pr-4 text-slate-500">
                           {row.review_date ?? "—"}
                         </td>
                         <td className="py-3 pr-4">{row.status ?? "—"}</td>
-                        <td className="py-3 text-slate-300">
+                        <td className="py-3 text-slate-600">
                           {excerpt}
                           {(row.review_text ?? "").length > 120 ? "…" : ""}
                         </td>

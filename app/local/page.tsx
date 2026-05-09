@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
 
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 type LocalPayload = {
@@ -59,14 +59,14 @@ export default function LocalSeoPage() {
 
   return (
     <div
-      className="min-h-full text-white"
-      style={{ backgroundColor: "#0f1729", fontFamily: "Arial, sans-serif" }}
+      className="min-h-full text-slate-900"
+      style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Local SEO Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="text-2xl font-semibold text-slate-900">Local SEO Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">
             Google Business Profile management, review workflows, and local
             visibility tracking.
           </p>
@@ -74,7 +74,7 @@ export default function LocalSeoPage() {
 
         {error ? (
           <div
-            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-100"
+            className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800"
             style={{ backgroundColor: CARD }}
           >
             {error}
@@ -121,13 +121,13 @@ export default function LocalSeoPage() {
               {(data?.reviews ?? []).map((review) => (
                 <article
                   key={review.id}
-                  className="rounded-lg border border-[#2a3f5f] p-4 text-sm"
+                  className="rounded-lg border border-[#e2e8f0] p-4 text-sm"
                 >
-                  <p className="font-semibold text-white">
+                  <p className="font-semibold text-slate-900">
                     {review.author} · {review.rating}/5
                   </p>
-                  <p className="mt-1 text-slate-300">{review.comment}</p>
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                  <p className="mt-1 text-slate-600">{review.comment}</p>
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
                     <span>{new Date(review.date).toLocaleDateString()}</span>
                     <button
                       type="button"
@@ -149,16 +149,16 @@ export default function LocalSeoPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px] border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#2a3f5f] text-slate-400">
+                  <tr className="border-b border-[#e2e8f0] text-slate-500">
                     <th className="pb-3 pr-4 font-medium">Keyword</th>
                     <th className="pb-3 pr-4 font-medium">Current</th>
                     <th className="pb-3 font-medium">Previous</th>
                   </tr>
                 </thead>
-                <tbody className="text-slate-200">
+                <tbody className="text-slate-700">
                   {(data?.rankings ?? []).map((row) => (
-                    <tr key={row.keyword} className="border-b border-[#2a3f5f]/60">
-                      <td className="py-2 pr-4 text-white">{row.keyword}</td>
+                    <tr key={row.keyword} className="border-b border-[#e2e8f0]/60">
+                      <td className="py-2 pr-4 text-slate-900">{row.keyword}</td>
                       <td className="py-2 pr-4 tabular-nums">#{row.currentPosition}</td>
                       <td className="py-2 tabular-nums">#{row.previousPosition}</td>
                     </tr>
@@ -179,9 +179,9 @@ export default function LocalSeoPage() {
               {(data?.citations ?? []).map((citation) => (
                 <div
                   key={citation.directory}
-                  className="flex items-center justify-between rounded-lg border border-[#2a3f5f] px-4 py-3"
+                  className="flex items-center justify-between rounded-lg border border-[#e2e8f0] px-4 py-3"
                 >
-                  <span className="text-white">{citation.directory}</span>
+                  <span className="text-slate-900">{citation.directory}</span>
                   <span className={`font-semibold capitalize ${citationTone(citation.consistency)}`}>
                     {citation.consistency}
                   </span>
@@ -199,10 +199,10 @@ export default function LocalSeoPage() {
               {(data?.competitors ?? []).map((row) => (
                 <div
                   key={row.name}
-                  className="rounded-lg border border-[#2a3f5f] px-4 py-3"
+                  className="rounded-lg border border-[#e2e8f0] px-4 py-3"
                 >
-                  <p className="font-semibold text-white">{row.name}</p>
-                  <p className="mt-1 text-slate-300">
+                  <p className="font-semibold text-slate-900">{row.name}</p>
+                  <p className="mt-1 text-slate-600">
                     Rating {row.avgRating.toFixed(1)} · Reviews {row.reviewCount}
                   </p>
                 </div>
@@ -215,8 +215,8 @@ export default function LocalSeoPage() {
           className="rounded-xl border border-dashed p-6"
           style={{ backgroundColor: CARD, borderColor: "#185FA5" }}
         >
-          <h2 className="text-lg font-semibold text-white">Review request automation</h2>
-          <p className="mt-2 text-sm text-slate-300">
+          <h2 className="text-lg font-semibold text-slate-900">Review request automation</h2>
+          <p className="mt-2 text-sm text-slate-600">
             Trigger post-case review requests via SMS/email after matters close.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -225,7 +225,7 @@ export default function LocalSeoPage() {
             </button>
             <button
               type="button"
-              className="rounded-md border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-200"
+              className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-700"
             >
               Connect automation workflow
             </button>

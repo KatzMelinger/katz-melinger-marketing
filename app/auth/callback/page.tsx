@@ -3,9 +3,9 @@
 import { Suspense, useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const BG = "#0f1729";
-const CARD = "#1a2540";
-const BORDER = "#2a3f5f";
+const BG = "#ffffff";
+const CARD = "#ffffff";
+const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 function decodeOAuthParam(s: string): string {
@@ -43,8 +43,8 @@ function CallbackInner() {
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
         MarketOS
       </p>
-      <h1 className="mt-1 text-xl font-semibold text-white">OAuth callback</h1>
-      <p className="mt-2 text-sm text-slate-400">
+      <h1 className="mt-1 text-xl font-semibold text-slate-900">OAuth callback</h1>
+      <p className="mt-2 text-sm text-slate-500">
         This page captures the redirect from your OAuth provider. Copy the authorization
         code below to finish the token exchange manually.
       </p>
@@ -56,9 +56,9 @@ function CallbackInner() {
           role="alert"
         >
           <p className="font-medium text-rose-300">Authorization failed</p>
-          <p className="mt-2 font-mono text-sm text-slate-200">{oauthError}</p>
+          <p className="mt-2 font-mono text-sm text-slate-700">{oauthError}</p>
           {errorDescription ? (
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-slate-500">
               {decodeOAuthParam(errorDescription)}
             </p>
           ) : null}
@@ -70,8 +70,8 @@ function CallbackInner() {
           role="alert"
         >
           <p className="font-medium text-rose-300">No authorization code found</p>
-          <p className="mt-2 text-sm text-slate-400">
-            The URL should include <code className="text-slate-300">?code=...</code>{" "}
+          <p className="mt-2 text-sm text-slate-500">
+            The URL should include <code className="text-slate-600">?code=...</code>{" "}
             after you approve access. Start the authorization flow again from your app.
           </p>
         </div>
@@ -81,9 +81,9 @@ function CallbackInner() {
             className="rounded-xl border p-6"
             style={{ backgroundColor: CARD, borderColor: BORDER }}
           >
-            <p className="text-sm font-medium text-slate-400">Authorization code</p>
+            <p className="text-sm font-medium text-slate-500">Authorization code</p>
             <pre
-              className="mt-3 max-h-48 overflow-auto rounded-lg border border-[#2a3f5f] bg-[#0f1729] p-4 font-mono text-xs leading-relaxed break-all text-slate-200"
+              className="mt-3 max-h-48 overflow-auto rounded-lg border border-[#e2e8f0] bg-[#ffffff] p-4 font-mono text-xs leading-relaxed break-all text-slate-700"
               tabIndex={0}
             >
               {code}
@@ -91,26 +91,26 @@ function CallbackInner() {
             <button
               type="button"
               onClick={() => void handleCopy()}
-              className="mt-4 rounded-md px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="mt-4 rounded-md px-4 py-2 text-sm font-medium text-slate-900 transition-opacity hover:opacity-90 disabled:opacity-50"
               style={{ backgroundColor: ACCENT }}
             >
               {copied ? "Copied!" : "Copy code"}
             </button>
             {copyErr ? (
-              <p className="mt-3 text-sm text-amber-200">{copyErr}</p>
+              <p className="mt-3 text-sm text-amber-700">{copyErr}</p>
             ) : null}
           </div>
 
           <div
-            className="rounded-xl border p-6 text-sm text-slate-300"
+            className="rounded-xl border p-6 text-sm text-slate-600"
             style={{ backgroundColor: CARD, borderColor: BORDER }}
           >
-            <p className="font-semibold text-white">Next steps</p>
-            <ol className="mt-3 list-decimal space-y-2 pl-5 text-slate-400">
+            <p className="font-semibold text-slate-900">Next steps</p>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-slate-500">
               <li>Copy the code above.</li>
               <li>
                 Exchange it at your provider’s token URL using{" "}
-                <code className="text-slate-300">grant_type=authorization_code</code>, plus
+                <code className="text-slate-600">grant_type=authorization_code</code>, plus
                 client ID, client secret, redirect URI, and the code.
               </li>
               <li>
@@ -128,12 +128,12 @@ function CallbackInner() {
 export default function AuthCallbackPage() {
   return (
     <div
-      className="min-h-full text-white"
+      className="min-h-full text-slate-900"
       style={{ backgroundColor: BG, fontFamily: "Arial, sans-serif" }}
     >
       <Suspense
         fallback={
-          <div className="px-4 py-12 text-center text-sm text-slate-400">Loading…</div>
+          <div className="px-4 py-12 text-center text-sm text-slate-500">Loading…</div>
         }
       >
         <CallbackInner />

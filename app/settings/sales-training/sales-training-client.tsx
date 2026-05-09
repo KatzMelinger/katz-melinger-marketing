@@ -87,18 +87,18 @@ export function SalesTrainingClient() {
     }
   }
 
-  if (loading) return <p className="text-slate-400">Loading…</p>;
+  if (loading) return <p className="text-slate-500">Loading…</p>;
   if (!data) return <p className="text-rose-400">{error ?? "No data"}</p>;
 
   return (
     <div className="space-y-6">
       {error ? (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
           {error}
         </div>
       ) : null}
 
-      <div className="flex gap-1 rounded-lg bg-[#1a2540] p-1 ring-1 ring-[#2a3f5f]">
+      <div className="flex gap-1 rounded-lg bg-[#ffffff] p-1 ring-1 ring-[#e2e8f0]">
         <TabButton active={tab === "consultation"} onClick={() => setTab("consultation")}>
           Consultation rubric ({data.rubric.consultation.length})
         </TabButton>
@@ -129,7 +129,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       onClick={onClick}
       className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-        active ? "bg-[#185FA5] text-white" : "text-slate-400 hover:text-white"
+        active ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
       }`}
     >
       {children}
@@ -171,34 +171,34 @@ function DimensionCard({
     criteria !== dimension.criteriaText;
 
   return (
-    <article className="rounded-xl border border-[#2a3f5f] p-5" style={{ backgroundColor: "#1a2540" }}>
+    <article className="rounded-xl border border-[#e2e8f0] p-5" style={{ backgroundColor: "#ffffff" }}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           {editing ? (
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm font-medium text-white"
+              className="w-full rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm font-medium text-slate-900"
             />
           ) : (
-            <h3 className="text-base font-semibold text-white">{dimension.dimensionName}</h3>
+            <h3 className="text-base font-semibold text-slate-900">{dimension.dimensionName}</h3>
           )}
           <p className="mt-1 text-xs text-slate-500">
-            key: <code className="text-slate-400">{dimension.dimensionKey}</code>
+            key: <code className="text-slate-500">{dimension.dimensionKey}</code>
             {dimension.sopReference ? ` · SOP ${dimension.sopReference}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-400">Max</label>
+          <label className="text-xs text-slate-500">Max</label>
           {editing ? (
             <input
               type="number"
               value={max}
               onChange={(e) => setMax(Math.max(1, Math.min(100, parseInt(e.target.value || "0", 10))))}
-              className="w-16 rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-2 py-1 text-sm text-white"
+              className="w-16 rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-2 py-1 text-sm text-slate-900"
             />
           ) : (
-            <span className="text-sm text-white">{dimension.maxScore}</span>
+            <span className="text-sm text-slate-900">{dimension.maxScore}</span>
           )}
         </div>
       </div>
@@ -207,10 +207,10 @@ function DimensionCard({
           value={criteria}
           onChange={(e) => setCriteria(e.target.value)}
           rows={5}
-          className="mt-3 w-full rounded-lg border border-[#2a3f5f] bg-[#0f1729] px-3 py-2 text-sm text-slate-100"
+          className="mt-3 w-full rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-800"
         />
       ) : (
-        <p className="mt-3 text-sm leading-relaxed text-slate-300">{dimension.criteriaText}</p>
+        <p className="mt-3 text-sm leading-relaxed text-slate-600">{dimension.criteriaText}</p>
       )}
       <div className="mt-3 flex justify-end gap-2">
         {editing ? (
@@ -222,7 +222,7 @@ function DimensionCard({
                 setCriteria(dimension.criteriaText);
                 setEditing(false);
               }}
-              className="rounded-lg px-3 py-1 text-xs text-slate-400 hover:text-white"
+              className="rounded-lg px-3 py-1 text-xs text-slate-500 hover:text-slate-900"
             >
               Cancel
             </button>
@@ -240,7 +240,7 @@ function DimensionCard({
         ) : (
           <button
             onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-[#0f1729]"
+            className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-[#ffffff]"
           >
             Edit
           </button>
@@ -271,12 +271,12 @@ function MaterialsView({
         return (
           <article
             key={id}
-            className="rounded-xl border border-[#2a3f5f] p-4"
-            style={{ backgroundColor: "#1a2540" }}
+            className="rounded-xl border border-[#e2e8f0] p-4"
+            style={{ backgroundColor: "#ffffff" }}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-white">{m.file_name}</h3>
+                <h3 className="text-sm font-semibold text-slate-900">{m.file_name}</h3>
                 <p className="mt-1 text-xs text-slate-500">
                   {m.section_code ?? "—"} · {m.doc_type} · {m.full_text.length.toLocaleString()} chars
                   {m.source === "embedded" ? " · embedded default" : ""}
@@ -284,13 +284,13 @@ function MaterialsView({
               </div>
               <button
                 onClick={() => setOpenId(open ? null : id)}
-                className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-[#0f1729]"
+                className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-1 text-xs text-[#5fa1d8] hover:bg-[#ffffff]"
               >
                 {open ? "Hide" : "View"}
               </button>
             </div>
             {open ? (
-              <pre className="mt-3 max-h-[400px] overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#0f1729] p-3 text-xs text-slate-200 ring-1 ring-[#2a3f5f]">
+              <pre className="mt-3 max-h-[400px] overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#ffffff] p-3 text-xs text-slate-700 ring-1 ring-[#e2e8f0]">
                 {m.full_text}
               </pre>
             ) : null}
