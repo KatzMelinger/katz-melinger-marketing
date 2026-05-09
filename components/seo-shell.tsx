@@ -11,6 +11,8 @@ export const SEO_ROUTES = [
   { href: "/seo/competitors/add", label: "Add Competitor" },
   { href: "/seo/opportunities", label: "Opportunities" },
   { href: "/seo/technical", label: "Technical SEO" },
+  { href: "/seo/cannibalization", label: "Cannibalization" },
+  { href: "/seo/internal-links", label: "Internal Links" },
 ] as const;
 
 export function formatNumber(value: number): string {
