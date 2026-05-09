@@ -110,6 +110,53 @@ export default function EmailPage() {
           </div>
         ) : null}
 
+        {data && !data.connected ? (
+          <div
+            className="rounded-xl border p-6"
+            style={{ backgroundColor: CARD, borderColor: BORDER }}
+          >
+            <h2 className="text-xl font-semibold text-slate-900">
+              Constant Contact not connected
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              The email dashboard is showing zeros because the Constant Contact
+              integration isn't authorized yet.
+            </p>
+            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+              <li>
+                In Vercel project settings, set:{" "}
+                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                  CONSTANT_CONTACT_CLIENT_ID
+                </code>
+                ,{" "}
+                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                  CONSTANT_CONTACT_CLIENT_SECRET
+                </code>
+                , and{" "}
+                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                  CONSTANT_CONTACT_LIST_ID
+                </code>
+                .
+              </li>
+              <li>Redeploy.</li>
+              <li>
+                Visit{" "}
+                <a className="text-[#185FA5] underline" href="/api/constant-contact/oauth">
+                  /api/constant-contact/oauth
+                </a>{" "}
+                once to authorize the firm's account.
+              </li>
+              <li>
+                Reload this page — live metrics will populate. Check{" "}
+                <a className="text-[#185FA5] underline" href="/integrations">
+                  /integrations
+                </a>{" "}
+                for full status.
+              </li>
+            </ol>
+          </div>
+        ) : null}
+
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {[
             {

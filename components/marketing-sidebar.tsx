@@ -63,6 +63,7 @@ const GROUPS: NavGroup[] = [
       { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
       { label: "Content", href: "/content", icon: "✎" },
       { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
+      { label: "Integrations", href: "/integrations", icon: "🔌" },
       { label: "Settings", href: "/settings", icon: "⚙" },
     ],
   },
@@ -157,10 +158,12 @@ export function MarketingSidebar() {
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.label)}
-                  className="w-full flex items-center justify-between px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                  className="w-full flex items-center justify-between px-2 py-2 text-sm font-semibold tracking-tight text-slate-900 hover:text-[#185FA5]"
                 >
                   <span>{group.label}</span>
-                  <span aria-hidden>{openGroups[group.label] ? "▾" : "▸"}</span>
+                  <span aria-hidden className="text-xs text-slate-500">
+                    {openGroups[group.label] ? "▾" : "▸"}
+                  </span>
                 </button>
               )}
               {open && (

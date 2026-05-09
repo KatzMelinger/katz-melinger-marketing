@@ -163,6 +163,50 @@ export default function SocialPage() {
           </div>
         ) : null}
 
+        {data && !data.connected ? (
+          <div
+            className="rounded-xl border p-6"
+            style={{ backgroundColor: CARD, borderColor: BORDER }}
+          >
+            <h2 className="text-xl font-semibold text-slate-900">
+              Metricool not connected
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              The social dashboard is showing zeros because Metricool credentials
+              aren't set in the environment.
+            </p>
+            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+              <li>
+                In Metricool → Settings → API, copy your token, user ID, and
+                blog ID.
+              </li>
+              <li>
+                In Vercel project settings, set:{" "}
+                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                  METRICOOL_API_TOKEN
+                </code>
+                ,{" "}
+                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                  METRICOOL_USER_ID
+                </code>
+                ,{" "}
+                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                  METRICOOL_BLOG_ID
+                </code>
+                .
+              </li>
+              <li>Redeploy and reload this page.</li>
+              <li>
+                Check{" "}
+                <a className="text-[#185FA5] underline" href="/integrations">
+                  /integrations
+                </a>{" "}
+                if anything still looks wrong.
+              </li>
+            </ol>
+          </div>
+        ) : null}
+
         {isDev ? (
           <section
             className="rounded-xl border border-dashed border-slate-600 p-4 text-sm"
