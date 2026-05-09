@@ -24,7 +24,14 @@ import { getSupabaseAdmin } from "./supabase-server";
 export type Purpose = "gbp";
 
 export const PURPOSE_SCOPES: Record<Purpose, string[]> = {
-  gbp: ["https://www.googleapis.com/auth/business.manage"],
+  // 'openid' and 'email' let us fetch the granting user's email so the
+  // /integrations page can show "Connected as foo@bar.com" instead of
+  // "(unknown)". Doesn't grant access to anything beyond identity.
+  gbp: [
+    "openid",
+    "email",
+    "https://www.googleapis.com/auth/business.manage",
+  ],
 };
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
