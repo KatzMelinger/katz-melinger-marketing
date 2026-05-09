@@ -198,7 +198,7 @@ export default function SearchConsolePage() {
                   contentStyle={{
                     backgroundColor: CARD,
                     border: `1px solid ${BORDER}`,
-                    color: "#fff",
+                    color: "#0f172a",
                   }}
                 />
                 <Legend />

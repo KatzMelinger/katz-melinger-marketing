@@ -66,11 +66,11 @@ export function CallsBySourceChart({ data }: Props) {
             backgroundColor: "rgba(15, 23, 41, 0.95)",
             border: "1px solid rgba(255, 255, 255, 0.15)",
             borderRadius: "8px",
-            color: "#ffffff",
+            color: "#0f172a",
             fontFamily: "Arial, Helvetica, sans-serif",
           }}
-          labelStyle={{ color: "#ffffff" }}
-          itemStyle={{ color: "#ffffff" }}
+          labelStyle={{ color: "#0f172a" }}
+          itemStyle={{ color: "#0f172a" }}
         />
         <Bar
           dataKey="calls"

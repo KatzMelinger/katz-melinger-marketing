@@ -261,7 +261,7 @@ export default function SocialPage() {
                     contentStyle={{
                       backgroundColor: CARD,
                       border: `1px solid ${BORDER}`,
-                      color: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                   <Line
@@ -301,7 +301,7 @@ export default function SocialPage() {
                     contentStyle={{
                       backgroundColor: CARD,
                       border: `1px solid ${BORDER}`,
-                      color: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                 </PieChart>
@@ -382,7 +382,7 @@ export default function SocialPage() {
                     contentStyle={{
                       backgroundColor: CARD,
                       border: `1px solid ${BORDER}`,
-                      color: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                   <Bar dataKey="followers" fill={ACCENT} />

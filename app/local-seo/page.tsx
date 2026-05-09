@@ -782,7 +782,7 @@ export default function LocalSeoPlatformPage() {
       onClick={() => setActiveTab(id)}
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
         activeTab === id
-          ? "bg-[#ffffff] text-white ring-1 ring-[#185FA5]/50"
+          ? "bg-[#ffffff] text-slate-900 ring-1 ring-[#185FA5]/50"
           : "text-slate-500 hover:bg-[#ffffff]/60 hover:text-slate-900"
       }`}
     >

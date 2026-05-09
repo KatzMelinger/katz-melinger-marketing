@@ -43,7 +43,7 @@ export function SeoShell({
               <Link
                 key={route.href}
                 href={route.href}
-                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs text-slate-700 transition hover:border-[#185FA5] hover:text-white"
+                className="rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-1.5 text-xs text-slate-700 transition hover:border-[#185FA5] hover:text-slate-900"
               >
                 {route.label}
               </Link>

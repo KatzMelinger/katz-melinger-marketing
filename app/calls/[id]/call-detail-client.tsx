@@ -216,7 +216,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
               <button
                 onClick={() => void runScore()}
                 disabled={scoring || !c.transcription}
-                className="rounded-lg bg-[#185FA5] px-3 py-2 text-xs font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
+                className="rounded-lg bg-[#185FA5] px-3 py-2 text-xs font-medium text-slate-900 hover:bg-[#1369c4] disabled:opacity-50"
               >
                 {scoring ? "Scoring…" : score ? "Re-score" : "Score this call"}
               </button>
@@ -266,7 +266,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
                 <button
                   onClick={() => setView("manager")}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
-                    view === "manager" ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
+                    view === "manager" ? "bg-[#185FA5] text-slate-900" : "text-slate-500 hover:text-slate-900"
                   }`}
                 >
                   Manager view
@@ -274,7 +274,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
                 <button
                   onClick={() => setView("screener")}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
-                    view === "screener" ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
+                    view === "screener" ? "bg-[#185FA5] text-slate-900" : "text-slate-500 hover:text-slate-900"
                   }`}
                 >
                   Screener view

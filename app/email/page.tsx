@@ -167,7 +167,7 @@ export default function EmailPage() {
                     contentStyle={{
                       backgroundColor: CARD,
                       border: `1px solid ${BORDER}`,
-                      color: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                   <Line type="monotone" dataKey="openRate" stroke={ACCENT} />
@@ -192,7 +192,7 @@ export default function EmailPage() {
                     contentStyle={{
                       backgroundColor: CARD,
                       border: `1px solid ${BORDER}`,
-                      color: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                   <Bar dataKey="contacts" fill={ACCENT} />

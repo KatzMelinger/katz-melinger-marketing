@@ -195,7 +195,7 @@ export default function AnalyticsPage() {
                   contentStyle={{
                     backgroundColor: CARD,
                     border: `1px solid ${BORDER}`,
-                    color: "#fff",
+                    color: "#0f172a",
                   }}
                 />
                 <Area
@@ -232,7 +232,7 @@ export default function AnalyticsPage() {
                     contentStyle={{
                       backgroundColor: CARD,
                       border: `1px solid ${BORDER}`,
-                      color: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                   <Bar dataKey="sessions" fill={ACCENT} name="Sessions" />
@@ -270,7 +270,7 @@ export default function AnalyticsPage() {
                     contentStyle={{
                       backgroundColor: CARD,
                       border: `1px solid ${BORDER}`,
-                      color: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                   <Legend />

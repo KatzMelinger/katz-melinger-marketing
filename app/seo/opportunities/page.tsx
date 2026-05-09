@@ -70,7 +70,7 @@ export default async function SeoOpportunitiesPage(props: Props) {
             <Link
               key={domain}
               href={`/seo/opportunities?competitor=${encodeURIComponent(domain)}`}
-              className="rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-1 text-xs text-slate-700 hover:border-[#185FA5] hover:text-white"
+              className="rounded border border-[#e2e8f0] bg-[#ffffff] px-3 py-1 text-xs text-slate-700 hover:border-[#185FA5] hover:text-slate-900"
             >
               {domain}
             </Link>

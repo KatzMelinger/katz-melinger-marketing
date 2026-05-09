@@ -130,7 +130,7 @@ export default async function SeoPage() {
             <Link
               key={href}
               href={href}
-              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-3 text-sm text-slate-700 hover:border-[#185FA5] hover:text-white"
+              className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-3 text-sm text-slate-700 hover:border-[#185FA5] hover:text-slate-900"
             >
               {label}
             </Link>
