@@ -23,6 +23,8 @@ type Integration = {
   set: string[];
   hint?: string;
   feature_pages: string[];
+  actions?: { label: string; href: string; method?: "GET" | "POST"; tone?: "primary" | "danger" }[];
+  meta?: Record<string, string | null>;
 };
 
 type Payload = {
@@ -67,6 +69,7 @@ function statusTone(s: Status): { dot: string; pill: string } {
 export default function IntegrationsPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -81,7 +84,33 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     refresh();
+    // OAuth callback redirects back to /integrations?gbp=connected (or =error&reason=...)
+    const params = new URLSearchParams(window.location.search);
+    const gbp = params.get("gbp");
+    if (gbp === "connected") {
+      setBanner({ tone: "ok", text: "Google Business Profile connected." });
+    } else if (gbp === "error") {
+      const reason = params.get("reason") ?? "unknown";
+      setBanner({ tone: "err", text: `Google Business Profile connect failed: ${reason}` });
+    }
+    if (gbp) {
+      // Strip the params so a refresh doesn't re-show the banner.
+      window.history.replaceState({}, "", "/integrations");
+    }
   }, []);
+
+  const runAction = async (action: { href: string; method?: "GET" | "POST" }) => {
+    if (action.method === "POST") {
+      try {
+        await fetch(action.href, { method: "POST" });
+        refresh();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      window.location.href = action.href;
+    }
+  };
 
   return (
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
@@ -101,6 +130,18 @@ export default function IntegrationsPage() {
           {loading ? "Checking…" : "Re-check"}
         </button>
       </div>
+
+      {banner && (
+        <div
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+            banner.tone === "ok"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800"
+          }`}
+        >
+          {banner.text}
+        </div>
+      )}
 
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
@@ -129,7 +170,7 @@ export default function IntegrationsPage() {
                 {data.integrations
                   .filter((i) => i.category === cat)
                   .map((i) => (
-                    <IntegrationRow key={i.id} integration={i} />
+                    <IntegrationRow key={i.id} integration={i} onAction={runAction} />
                   ))}
               </div>
             </div>
@@ -165,7 +206,13 @@ function SummaryTile({
   );
 }
 
-function IntegrationRow({ integration }: { integration: Integration }) {
+function IntegrationRow({
+  integration,
+  onAction,
+}: {
+  integration: Integration;
+  onAction: (a: { href: string; method?: "GET" | "POST" }) => void | Promise<void>;
+}) {
   const tones = statusTone(integration.status);
   return (
     <div className="border border-slate-200 rounded-lg p-4 bg-white">
@@ -188,6 +235,36 @@ function IntegrationRow({ integration }: { integration: Integration }) {
 
       {integration.hint && (
         <p className="text-xs text-slate-600 mt-2">{integration.hint}</p>
+      )}
+
+      {integration.meta && Object.keys(integration.meta).length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
+          {Object.entries(integration.meta).map(([k, v]) =>
+            v ? (
+              <span key={k}>
+                <span className="font-medium text-slate-600">{k}:</span> {v}
+              </span>
+            ) : null,
+          )}
+        </div>
+      )}
+
+      {integration.actions && integration.actions.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {integration.actions.map((a) => (
+            <button
+              key={a.label}
+              onClick={() => onAction(a)}
+              className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                a.tone === "danger"
+                  ? "border border-red-300 text-red-700 hover:bg-red-50"
+                  : "bg-[#185FA5] text-white hover:bg-[#1f6fb8]"
+              }`}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
       )}
 
       {(integration.missing.length > 0 || integration.set.length > 0) && (

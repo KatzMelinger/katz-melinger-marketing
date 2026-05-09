@@ -16,6 +16,36 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
+type GBPState = {
+  status: Status;
+  granted_email: string | null;
+  expires_at: string | null;
+};
+
+async function gbpOAuthState(): Promise<GBPState> {
+  const supabase = getSupabaseServer();
+  if (!supabase) return { status: "missing_env", granted_email: null, expires_at: null };
+  const haveClient =
+    Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID?.trim()) &&
+    Boolean(process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim());
+  if (!haveClient) return { status: "missing_env", granted_email: null, expires_at: null };
+  try {
+    const { data } = await supabase
+      .from("google_oauth_tokens")
+      .select("granted_email, expires_at")
+      .eq("purpose", "gbp")
+      .maybeSingle();
+    if (!data) return { status: "needs_oauth", granted_email: null, expires_at: null };
+    return {
+      status: "connected",
+      granted_email: (data.granted_email as string | null) ?? null,
+      expires_at: (data.expires_at as string | null) ?? null,
+    };
+  } catch {
+    return { status: "needs_oauth", granted_email: null, expires_at: null };
+  }
+}
+
 type Status = "connected" | "missing_env" | "needs_oauth" | "error";
 
 type Integration = {
@@ -27,6 +57,9 @@ type Integration = {
   set: string[];
   hint?: string;
   feature_pages: string[];
+  // Optional: actions the user can take from the UI (Connect, Disconnect).
+  actions?: { label: string; href: string; method?: "GET" | "POST"; tone?: "primary" | "danger" }[];
+  meta?: Record<string, string | null>;
 };
 
 function present(name: string): boolean {
@@ -71,6 +104,7 @@ function googleServiceAccountStatus(): Status {
 
 export async function GET() {
   const items: Integration[] = [];
+  const gbp = await gbpOAuthState();
 
   // ---- AI providers ----
   items.push({
@@ -192,6 +226,32 @@ export async function GET() {
         : "missing_env",
     hint: "Required for FB / IG / X / LinkedIn metrics on the Social page. Find tokens in Metricool → Settings → API.",
     feature_pages: ["/social"],
+  });
+
+  // ---- Google Business Profile (OAuth user-consent) ----
+  items.push({
+    id: "gbp-oauth",
+    label: "Google Business Profile (OAuth)",
+    category: "Search",
+    ...envCheck(["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"]),
+    status: gbp.status,
+    hint:
+      gbp.status === "missing_env"
+        ? "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET (your existing 'KM Dashboard' OAuth client works). Then click Connect."
+        : gbp.status === "needs_oauth"
+          ? "OAuth client configured. Click Connect to grant the dashboard access to Google Business Profile (requires a Google account that manages the listing). Approval from Google for the GBP API may also be needed for production volume."
+          : `Connected as ${gbp.granted_email ?? "(unknown)"}. Token auto-refreshes.`,
+    feature_pages: ["/local-seo", "/reviews"],
+    actions:
+      gbp.status === "connected"
+        ? [{ label: "Reconnect", href: "/api/google/oauth/start?purpose=gbp", tone: "primary" }, { label: "Disconnect", href: "/api/google/oauth/disconnect?purpose=gbp", method: "POST", tone: "danger" }]
+        : gbp.status === "needs_oauth"
+          ? [{ label: "Connect Google Business Profile", href: "/api/google/oauth/start?purpose=gbp", tone: "primary" }]
+          : undefined,
+    meta:
+      gbp.status === "connected"
+        ? { granted_email: gbp.granted_email, expires_at: gbp.expires_at }
+        : undefined,
   });
 
   // ---- Database ----
