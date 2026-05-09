@@ -19,7 +19,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type NavItem = { label: string; href: string; icon: string };
+type Role = "user" | "admin";
+type NavItem = { label: string; href: string; icon: string; adminOnly?: boolean };
 type NavGroup = { label: string; items: NavItem[] };
 
 const GROUPS: NavGroup[] = [
@@ -63,8 +64,9 @@ const GROUPS: NavGroup[] = [
       { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
       { label: "Content", href: "/content", icon: "✎" },
       { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
-      { label: "Integrations", href: "/integrations", icon: "🔌" },
-      { label: "Settings", href: "/settings", icon: "⚙" },
+      { label: "Integrations", href: "/integrations", icon: "🔌", adminOnly: true },
+      { label: "Users", href: "/admin/users", icon: "👥", adminOnly: true },
+      { label: "Settings", href: "/settings", icon: "⚙", adminOnly: true },
     ],
   },
 ];
@@ -78,6 +80,8 @@ function isActive(pathname: string | null, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+type Me = { id: string; email: string; role: Role };
+
 export function MarketingSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -85,6 +89,7 @@ export function MarketingSidebar() {
     Object.fromEntries(GROUPS.map((g) => [g.label, true])),
   );
   const [hydrated, setHydrated] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
     setHydrated(true);
@@ -98,7 +103,19 @@ export function MarketingSidebar() {
     } catch {
       /* ignore */
     }
+    // Load the current user so we can hide admin links and show the user menu.
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setMe(d?.user ?? null))
+      .catch(() => setMe(null));
   }, []);
+
+  const signOut = async () => {
+    await fetch("/api/auth/signout", { method: "POST" });
+    window.location.href = "/login";
+  };
+
+  const isAdmin = me?.role === "admin";
 
   const toggleCollapsed = () => {
     const next = !collapsed;
@@ -124,7 +141,7 @@ export function MarketingSidebar() {
 
   return (
     <aside
-      className="shrink-0 border-r border-slate-200 sticky top-0 h-screen overflow-y-auto z-30 bg-slate-50"
+      className="shrink-0 border-r border-slate-200 sticky top-0 h-screen overflow-y-auto z-30 bg-slate-50 flex flex-col"
       style={{
         width,
         transition: hydrated ? "width 150ms ease" : undefined,
@@ -149,9 +166,11 @@ export function MarketingSidebar() {
         </button>
       </div>
 
-      <nav className="flex flex-col px-2 py-3 gap-2">
+      <nav className="flex flex-col px-2 py-3 gap-2 flex-1">
         {GROUPS.map((group) => {
           const open = collapsed || openGroups[group.label];
+          const visibleItems = group.items.filter((it) => !it.adminOnly || isAdmin);
+          if (visibleItems.length === 0) return null;
           return (
             <div key={group.label}>
               {!collapsed && (
@@ -168,7 +187,7 @@ export function MarketingSidebar() {
               )}
               {open && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {group.items.map((item) => {
+                  {visibleItems.map((item) => {
                     const active = isActive(pathname, item.href);
                     return (
                       <Link
@@ -194,6 +213,33 @@ export function MarketingSidebar() {
           );
         })}
       </nav>
+
+      {me && (
+        <div className="border-t border-slate-200 px-2 py-3">
+          {!collapsed ? (
+            <div className="px-2 space-y-2">
+              <div className="text-xs">
+                <div className="font-medium text-slate-900 truncate">{me.email}</div>
+                <div className="text-[11px] text-slate-500 capitalize">{me.role}</div>
+              </div>
+              <button
+                onClick={signOut}
+                className="w-full text-xs px-2 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:border-red-400 hover:text-red-700"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={signOut}
+              className="w-full text-base text-slate-500 hover:text-red-700 flex items-center justify-center"
+              title={`Sign out (${me.email})`}
+            >
+              ⏻
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   );
 }
