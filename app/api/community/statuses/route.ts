@@ -10,7 +10,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
-const VALID_PLATFORMS = ["reddit", "hackernews", "news"] as const;
+const VALID_PLATFORMS = ["reddit", "hackernews", "news", "youtube"] as const;
 
 export async function GET(req: NextRequest) {
   const platform = req.nextUrl.searchParams.get("platform");

@@ -13,7 +13,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
-const VALID_PLATFORMS = ["reddit", "hackernews", "news"] as const;
+const VALID_PLATFORMS = ["reddit", "hackernews", "news", "youtube"] as const;
 const VALID_STATUSES = ["new", "responded", "skipped", "starred"] as const;
 
 export async function PATCH(

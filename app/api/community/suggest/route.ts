@@ -12,7 +12,7 @@ import { suggestResponse, type Platform } from "@/lib/community-suggester";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const VALID: Platform[] = ["reddit", "quora", "avvo"];
+const VALID: Platform[] = ["reddit", "quora", "avvo", "youtube"];
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));

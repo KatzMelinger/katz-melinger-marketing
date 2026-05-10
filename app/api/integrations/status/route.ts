@@ -179,6 +179,18 @@ export async function GET() {
     feature_pages: ["/seo/technical"],
   });
 
+  // ---- YouTube Data API (community comment scanner) ----
+  items.push({
+    id: "youtube",
+    label: "YouTube Data API",
+    category: "Social",
+    ...envCheck(["YOUTUBE_API_KEY"]),
+    status: present("YOUTUBE_API_KEY") ? "connected" : "missing_env",
+    hint:
+      "Free Google API key. Powers the YouTube comment scanner on /community. Get one at console.cloud.google.com → APIs & Services → Credentials → API key, restricted to YouTube Data API v3. ~600 quota units per scan against a 10,000/day cap.",
+    feature_pages: ["/community"],
+  });
+
   // ---- Clarity (heatmaps + session recordings; no secret value, just an ID) ----
   items.push({
     id: "clarity",

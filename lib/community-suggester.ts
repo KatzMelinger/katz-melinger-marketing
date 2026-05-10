@@ -15,7 +15,7 @@
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import { getFirmContext } from "./firm-context";
 
-export type Platform = "reddit" | "quora" | "avvo";
+export type Platform = "reddit" | "quora" | "avvo" | "youtube";
 
 const ETIQUETTE: Record<Platform, string> = {
   reddit: `Reddit etiquette:
@@ -24,6 +24,13 @@ const ETIQUETTE: Record<Platform, string> = {
 - Cite specific legal concepts (FLSA, NYLL, NYSHRL, FMLA, etc) where they apply.
 - Suggest documenting evidence, knowing time limits, and consulting *an* employment attorney (not specifically Katz Melinger) for case-specific advice.
 - Use markdown lists when you have 3+ steps. Keep paragraphs short.`,
+  youtube: `YouTube comment etiquette:
+- Short and direct. 2-4 sentences max. YouTube comments are scanned, not read carefully.
+- Lead with the most useful insight or actionable suggestion.
+- Cite NY/NJ specifics if relevant (e.g., "in New York, NYLL Section 195…").
+- One subtle attribution at the end like "(employment lawyer)" or "(an employment law firm)" is OK — don't push the firm name aggressively.
+- Suggest consulting an employment attorney for specifics. No links to the firm site (YouTube hides comments with links).
+- Plain text only — no markdown formatting.`,
   quora: `Quora etiquette:
 - Expert tone. Demonstrate domain knowledge with specific statutes, case examples, and clear breakdowns.
 - Long-form OK (300-700 words). Use H2 / bullet structure if helpful.
@@ -46,6 +53,8 @@ export type Suggestion = {
 const WARNING: Record<Platform, string> = {
   reddit:
     "Review before posting. Reddit's anti-promotion rules are strict — frame as helpful legal information, not advertising.",
+  youtube:
+    "Review before posting. Keep it short. YouTube hides comments with links and downranks anything pushy.",
   quora:
     "Review before posting. Quora rewards expert depth; one short bio mention is OK at the end but the substance should stand alone.",
   avvo:

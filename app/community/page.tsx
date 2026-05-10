@@ -22,8 +22,24 @@ import {
   DashPill,
 } from "@/components/dashboard-ui";
 
-type Tab = "reddit" | "hackernews" | "news" | "tiktok" | "quora" | "avvo";
+type Tab = "reddit" | "hackernews" | "news" | "youtube" | "tiktok" | "quora" | "avvo";
 type PostStatus = "new" | "responded" | "skipped" | "starred";
+
+type YouTubePost = {
+  id: string;
+  title: string;
+  snippet: string;
+  url: string;
+  videoId: string;
+  videoTitle: string;
+  channelTitle: string;
+  author: string;
+  videoViews: number;
+  likes: number;
+  created: number;
+  relevanceScore: number;
+  matchedKeywords: string[];
+};
 
 type RedditPost = {
   id: string;
@@ -101,6 +117,7 @@ export default function CommunityPage() {
         {[
           { id: "reddit", label: "Reddit" },
           { id: "hackernews", label: "Hacker News" },
+          { id: "youtube", label: "YouTube" },
           { id: "news", label: "News (NY/NJ)" },
           { id: "tiktok", label: "TikTok" },
           { id: "quora", label: "Quora" },
@@ -122,6 +139,7 @@ export default function CommunityPage() {
 
       {tab === "reddit" && <RedditTab />}
       {tab === "hackernews" && <HackerNewsTab />}
+      {tab === "youtube" && <YouTubeTab />}
       {tab === "news" && <NewsTab />}
       {tab === "tiktok" && <TikTokTab />}
       {(tab === "quora" || tab === "avvo") && <PasteTab platform={tab} />}
@@ -129,7 +147,7 @@ export default function CommunityPage() {
   );
 }
 
-type ScanItem = (RedditPost | HNPost) & { __platform: "reddit" | "hackernews" };
+type ScanItem = (RedditPost | HNPost | YouTubePost) & { __platform: "reddit" | "hackernews" | "youtube" };
 
 function ScannerTab({
   platform,
@@ -138,7 +156,7 @@ function ScannerTab({
   parseResults,
   renderHeader,
 }: {
-  platform: "reddit" | "hackernews";
+  platform: "reddit" | "hackernews" | "youtube";
   scanUrl: string;
   emptyHint: string;
   parseResults: (data: unknown) => ScanItem[];
@@ -520,6 +538,32 @@ function HackerNewsTab() {
           <>
             <DashPill tone="violet">HN</DashPill>
             <span className="text-xs text-slate-500">▲ {h.points} · 💬 {h.numComments}</span>
+          </>
+        );
+      }}
+    />
+  );
+}
+
+function YouTubeTab() {
+  return (
+    <ScannerTab
+      platform="youtube"
+      scanUrl="/api/community/youtube/scan"
+      emptyHint="Searches YouTube for recent employment-law videos and surfaces the highest-engagement comments worth jumping into. Requires YOUTUBE_API_KEY (free Google API)."
+      parseResults={(data) => {
+        const d = data as { posts?: YouTubePost[] };
+        return (d.posts ?? []).map((p) => ({ ...p, __platform: "youtube" as const }));
+      }}
+      renderHeader={(p) => {
+        const y = p as YouTubePost & { __platform: "youtube" };
+        return (
+          <>
+            <DashPill tone="red">YT</DashPill>
+            <span className="text-xs text-slate-500 truncate max-w-[280px]">
+              {y.channelTitle}
+            </span>
+            <span className="text-xs text-slate-500">▲ {y.likes}</span>
           </>
         );
       }}
