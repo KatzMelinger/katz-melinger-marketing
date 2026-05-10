@@ -104,10 +104,10 @@ type RawEntry = {
 };
 
 function parseAtomEntry(entry: string, fallbackSub: string): RawEntry | null {
-  const titleMatch = entry.match(/<title[^>]*>(.*?)<\/title>/s);
+  const titleMatch = entry.match(/<title[^>]*>([\s\S]*?)<\/title>/);
   const linkMatch = entry.match(/<link[^>]*href="([^"]+)"/);
-  const contentMatch = entry.match(/<content[^>]*>(.*?)<\/content>/s);
-  const updatedMatch = entry.match(/<updated[^>]*>(.*?)<\/updated>/s);
+  const contentMatch = entry.match(/<content[^>]*>([\s\S]*?)<\/content>/);
+  const updatedMatch = entry.match(/<updated[^>]*>([\s\S]*?)<\/updated>/);
   const authorMatch = entry.match(/<author>[\s\S]*?<name>([^<]+)<\/name>/);
   const subreddit = (entry.match(/\/r\/([^/]+)\//) ?? [, fallbackSub])[1];
 
