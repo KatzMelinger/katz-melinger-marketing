@@ -33,6 +33,7 @@ const GROUPS: NavGroup[] = [
       { label: "Pipeline", href: "/pipeline", icon: "▥" },
       { label: "Attribution", href: "/attribution", icon: "⎔" },
       { label: "Analytics", href: "/analytics", icon: "▣" },
+      { label: "Clarity", href: "/clarity", icon: "🔥" },
     ],
   },
   {

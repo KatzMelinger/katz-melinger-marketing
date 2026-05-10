@@ -179,6 +179,18 @@ export async function GET() {
     feature_pages: ["/seo/technical"],
   });
 
+  // ---- Clarity (heatmaps + session recordings; no secret value, just an ID) ----
+  items.push({
+    id: "clarity",
+    label: "Microsoft Clarity",
+    category: "Search",
+    ...envCheck(["CLARITY_PROJECT_ID"]),
+    status: present("CLARITY_PROJECT_ID") ? "connected" : "missing_env",
+    hint:
+      "Free heatmaps + session recordings. Project ID is not a secret (it's already in the public tracking script). Sign up at clarity.microsoft.com, paste the script on your site, then add CLARITY_PROJECT_ID here.",
+    feature_pages: ["/clarity"],
+  });
+
   // ---- Calls ----
   items.push({
     id: "callrail",
