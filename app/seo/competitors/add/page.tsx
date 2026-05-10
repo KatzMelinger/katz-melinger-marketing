@@ -1,14 +1,12 @@
-import { SeoAddCompetitorForm } from "@/components/seo-add-competitor-form";
-import { SeoShell } from "@/components/seo-shell";
+/**
+ * Legacy /seo/competitors/add page.
+ *
+ * Adding competitors is now done inline on /seo/competitors. This route
+ * permanently redirects to keep any existing bookmarks / links working.
+ */
+
+import { redirect } from "next/navigation";
 
 export default function AddCompetitorPage() {
-  return (
-    <SeoShell
-      title="Add Competitor Domain"
-      subtitle="Track specific law firm domains for keyword and backlink intelligence."
-    >
-      <SeoAddCompetitorForm />
-    </SeoShell>
-  );
+  redirect("/seo/competitors");
 }
-
