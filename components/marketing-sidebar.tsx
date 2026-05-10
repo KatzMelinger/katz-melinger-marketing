@@ -65,6 +65,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
       { label: "Content", href: "/content", icon: "✎" },
+      { label: "Prompts", href: "/prompts", icon: "✨" },
       { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
       { label: "Integrations", href: "/integrations", icon: "🔌", adminOnly: true },
       { label: "Users", href: "/admin/users", icon: "👥", adminOnly: true },
