@@ -1,0 +1,473 @@
+"use client";
+
+/**
+ * Content Intelligence — three AI tools for the planning stage of content:
+ *
+ *   Topics    — Generate article-level headline + angle ideas by practice area
+ *   Trending  — Surface current NY/NJ employment-law news with urgency
+ *   Metadata  — Generate full SEO metadata for a planned piece
+ *
+ * Posts (LinkedIn/X/Reddit/FB) and Site Audit live on other tabs already
+ * (Multi-format Batch + AI Search), so they're not duplicated here.
+ */
+
+import { useState } from "react";
+import Link from "next/link";
+import { ContentNav } from "@/components/content-nav";
+import {
+  DashCard,
+  DashButton,
+  DashInput,
+  DashSelect,
+  DashSpinner,
+  DashPill,
+} from "@/components/dashboard-ui";
+
+type Tab = "topics" | "trends" | "metadata";
+
+const PRACTICE_AREAS = [
+  "All",
+  "Employment Discrimination",
+  "FMLA",
+  "Wage & Hour Claims",
+  "Wrongful Termination",
+  "Sexual Harassment at Work",
+  "Severance Negotiations",
+  "Commercial Collections",
+  "Judgment Enforcement",
+];
+
+type TopicRow = {
+  headline: string;
+  summary: string;
+  practiceArea: string;
+  contentType: string;
+  relevance: string;
+};
+
+type TrendRow = {
+  topic: string;
+  whyTrending: string;
+  suggestedAngle: string;
+  urgency: "hot" | "warm" | "evergreen";
+  platforms: string[];
+};
+
+type Metadata = {
+  metaTitle?: string;
+  metaDescription?: string;
+  urlSlug?: string;
+  primaryKeyword?: string;
+  secondaryKeywords?: string[];
+  ogTitle?: string;
+  ogDescription?: string;
+  schemaType?: string;
+  internalLinkSuggestions?: string[];
+  headerOutline?: string[];
+  targetWordCount?: number;
+  seoTips?: string[];
+};
+
+function urgencyTone(u: string): "red" | "amber" | "emerald" {
+  if (u === "hot") return "red";
+  if (u === "warm") return "amber";
+  return "emerald";
+}
+
+export default function IntelligencePage() {
+  const [tab, setTab] = useState<Tab>("topics");
+  const [practiceArea, setPracticeArea] = useState("All");
+  const [topics, setTopics] = useState<TopicRow[]>([]);
+  const [trends, setTrends] = useState<TrendRow[]>([]);
+  const [metadata, setMetadata] = useState<Metadata | null>(null);
+  const [metaTopic, setMetaTopic] = useState("");
+  const [metaPageType, setMetaPageType] = useState("blog_post");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copy = async (value: string, key: string) => {
+    await navigator.clipboard.writeText(value);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const fetchTopics = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content/intelligence/topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ practiceArea, count: 6 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed");
+      setTopics(data.topics ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTrends = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content/intelligence/trends", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ practiceArea }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed");
+      setTrends(data.trends ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMetadata = async () => {
+    if (!metaTopic.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content/intelligence/metadata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: metaTopic.trim(), pageType: metaPageType }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed");
+      setMetadata(data.metadata ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Content studio</h1>
+        <p className="text-sm text-slate-600 mt-1">
+          AI-powered topic ideas, trend tracking, and SEO metadata for new content.
+        </p>
+      </div>
+      <ContentNav />
+
+      <div className="flex gap-1 border-b border-slate-200 mb-4">
+        {[
+          { id: "topics", label: "Topic ideas" },
+          { id: "trends", label: "Trending" },
+          { id: "metadata", label: "SEO metadata" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as Tab)}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] ${
+              tab === t.id
+                ? "border-[#185FA5] text-[#185FA5]"
+                : "border-transparent text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mb-4 border border-red-200 bg-red-50 text-red-800 rounded-md px-3 py-2 text-sm">
+          {error}
+        </div>
+      )}
+
+      {tab === "topics" && (
+        <div className="space-y-4">
+          <DashCard>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-48">
+                <label className="text-xs font-medium text-slate-700">Practice area</label>
+                <DashSelect
+                  value={practiceArea}
+                  onChange={(e) => setPracticeArea(e.target.value)}
+                  className="w-full mt-1"
+                >
+                  {PRACTICE_AREAS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </DashSelect>
+              </div>
+              <DashButton onClick={fetchTopics} disabled={loading}>
+                {loading ? <DashSpinner /> : "Suggest topics"}
+              </DashButton>
+            </div>
+          </DashCard>
+
+          {topics.length > 0 && (
+            <div className="grid md:grid-cols-2 gap-3">
+              {topics.map((t, i) => (
+                <DashCard key={i}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h3 className="text-sm font-semibold text-slate-900">{t.headline}</h3>
+                    <DashPill tone="neutral">{t.contentType?.replace(/_/g, " ")}</DashPill>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-2">{t.summary}</p>
+                  <div className="text-xs text-slate-500 italic border-l-2 border-slate-200 pl-2 mb-3">
+                    {t.relevance}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-[#185FA5]">{t.practiceArea}</span>
+                    <div className="flex gap-1">
+                      <Link
+                        href={`/content/batch?topic=${encodeURIComponent(t.headline)}`}
+                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                      >
+                        → Generate
+                      </Link>
+                      <button
+                        onClick={() => {
+                          setMetaTopic(t.headline);
+                          setTab("metadata");
+                        }}
+                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                      >
+                        SEO
+                      </button>
+                      <button
+                        onClick={() => copy(t.headline, `topic-${i}`)}
+                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400"
+                      >
+                        {copied === `topic-${i}` ? "✓" : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+                </DashCard>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "trends" && (
+        <div className="space-y-4">
+          <DashCard>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-48">
+                <label className="text-xs font-medium text-slate-700">Practice area</label>
+                <DashSelect
+                  value={practiceArea}
+                  onChange={(e) => setPracticeArea(e.target.value)}
+                  className="w-full mt-1"
+                >
+                  {PRACTICE_AREAS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </DashSelect>
+              </div>
+              <DashButton onClick={fetchTrends} disabled={loading}>
+                {loading ? <DashSpinner /> : "Find trending topics"}
+              </DashButton>
+            </div>
+          </DashCard>
+
+          {trends.length > 0 && (
+            <div className="space-y-3">
+              {trends.map((t, i) => (
+                <DashCard key={i}>
+                  <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
+                    <h3 className="text-sm font-semibold text-slate-900">{t.topic}</h3>
+                    <DashPill tone={urgencyTone(t.urgency)}>{t.urgency}</DashPill>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-2">{t.whyTrending}</p>
+                  <div className="bg-[#185FA5]/5 border border-[#185FA5]/20 rounded-md p-2 mb-2">
+                    <span className="text-xs font-medium text-[#185FA5]">Suggested angle:</span>
+                    <p className="text-xs text-slate-700 mt-0.5">{t.suggestedAngle}</p>
+                  </div>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex gap-1 flex-wrap">
+                      {(t.platforms ?? []).map((p, j) => (
+                        <DashPill key={j} tone="neutral">
+                          {p}
+                        </DashPill>
+                      ))}
+                    </div>
+                    <Link
+                      href={`/content/batch?topic=${encodeURIComponent(t.suggestedAngle || t.topic)}`}
+                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                    >
+                      → Generate posts
+                    </Link>
+                  </div>
+                </DashCard>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "metadata" && (
+        <div className="space-y-4">
+          <DashCard>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-700">Topic / headline</label>
+                <DashInput
+                  value={metaTopic}
+                  onChange={(e) => setMetaTopic(e.target.value)}
+                  placeholder="e.g. Statute of limitations on NY wage theft claims"
+                  className="w-full mt-1"
+                />
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex-1 min-w-48">
+                  <label className="text-xs font-medium text-slate-700">Page type</label>
+                  <DashSelect
+                    value={metaPageType}
+                    onChange={(e) => setMetaPageType(e.target.value)}
+                    className="w-full mt-1"
+                  >
+                    <option value="blog_post">Blog post</option>
+                    <option value="landing_page">Landing page</option>
+                    <option value="service_page">Service page</option>
+                    <option value="guide">Guide</option>
+                  </DashSelect>
+                </div>
+                <DashButton onClick={fetchMetadata} disabled={loading || !metaTopic.trim()}>
+                  {loading ? <DashSpinner /> : "Generate SEO metadata"}
+                </DashButton>
+              </div>
+            </div>
+          </DashCard>
+
+          {metadata && (
+            <div className="space-y-3">
+              <DashCard>
+                <h3 className="text-sm font-semibold mb-3">Optimized metadata</h3>
+                <div className="space-y-2">
+                  <Field label="Meta title" value={metadata.metaTitle} id="meta-title" copied={copied} onCopy={copy} />
+                  <Field label="Meta description" value={metadata.metaDescription} id="meta-desc" copied={copied} onCopy={copy} />
+                  <Field label="URL slug" value={metadata.urlSlug} id="meta-slug" copied={copied} onCopy={copy} />
+                  <Field label="OG title" value={metadata.ogTitle} id="og-title" copied={copied} onCopy={copy} />
+                  <Field label="OG description" value={metadata.ogDescription} id="og-desc" copied={copied} onCopy={copy} />
+                  <Field label="Schema type" value={metadata.schemaType} id="schema" copied={copied} onCopy={copy} />
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-200 space-y-2">
+                  {metadata.primaryKeyword && (
+                    <div className="text-xs">
+                      <span className="font-medium text-slate-700">Primary keyword: </span>
+                      <DashPill tone="violet">{metadata.primaryKeyword}</DashPill>
+                    </div>
+                  )}
+                  {metadata.secondaryKeywords && metadata.secondaryKeywords.length > 0 && (
+                    <div className="text-xs">
+                      <span className="font-medium text-slate-700">Secondary keywords: </span>
+                      <span className="inline-flex flex-wrap gap-1 align-middle">
+                        {metadata.secondaryKeywords.map((k, i) => (
+                          <DashPill key={i} tone="neutral">
+                            {k}
+                          </DashPill>
+                        ))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </DashCard>
+
+              {metadata.headerOutline && metadata.headerOutline.length > 0 && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-2">Recommended structure</h3>
+                  <div className="space-y-1">
+                    {metadata.headerOutline.map((h, i) => {
+                      const isH1 = h.toLowerCase().startsWith("h1");
+                      const isH2 = h.toLowerCase().startsWith("h2");
+                      return (
+                        <p
+                          key={i}
+                          className={`text-xs ${
+                            isH1 ? "font-bold" : isH2 ? "font-medium ml-3" : "ml-6 text-slate-600"
+                          }`}
+                        >
+                          {h}
+                        </p>
+                      );
+                    })}
+                  </div>
+                  {metadata.targetWordCount && (
+                    <p className="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-200">
+                      Target word count:{" "}
+                      <span className="font-medium text-slate-900">
+                        {metadata.targetWordCount.toLocaleString()}
+                      </span>
+                    </p>
+                  )}
+                </DashCard>
+              )}
+
+              {metadata.seoTips && metadata.seoTips.length > 0 && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-2 text-emerald-700">SEO tips</h3>
+                  <ul className="space-y-1 text-xs text-slate-700 list-disc pl-5">
+                    {metadata.seoTips.map((tip, i) => (
+                      <li key={i}>{tip}</li>
+                    ))}
+                  </ul>
+                </DashCard>
+              )}
+
+              {metadata.internalLinkSuggestions &&
+                metadata.internalLinkSuggestions.length > 0 && (
+                  <DashCard>
+                    <h3 className="text-sm font-semibold mb-2">Internal linking strategy</h3>
+                    <ul className="space-y-1 text-xs text-slate-700">
+                      {metadata.internalLinkSuggestions.map((link, i) => (
+                        <li key={i}>→ {link}</li>
+                      ))}
+                    </ul>
+                  </DashCard>
+                )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  id,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  value: string | undefined;
+  id: string;
+  copied: string | null;
+  onCopy: (v: string, k: string) => void;
+}) {
+  if (!value) return null;
+  return (
+    <div>
+      <span className="text-xs font-medium text-slate-700">{label}</span>
+      <div className="mt-1 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+        <p className="text-xs font-mono text-slate-900 truncate">{value}</p>
+        <button
+          onClick={() => onCopy(value, id)}
+          className="shrink-0 text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400"
+        >
+          {copied === id ? "✓" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}

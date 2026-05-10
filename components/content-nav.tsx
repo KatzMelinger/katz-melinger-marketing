@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/content", label: "Generate" },
   { href: "/content/batch", label: "Multi-format batch" },
+  { href: "/content/intelligence", label: "Intelligence" },
   { href: "/content/pipeline", label: "Pipeline" },
   { href: "/content/sources", label: "Source material" },
   { href: "/content/drafts", label: "Saved drafts" },
