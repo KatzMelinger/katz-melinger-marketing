@@ -4,6 +4,8 @@ import type { ParsedGoogleApiError } from "@/lib/google-api-errors";
 import { parseGoogleApiErrorResponse } from "@/lib/google-api-errors";
 import {
   GBP_ACCOUNT_MANAGEMENT_V1_BASE,
+  GBP_BUSINESS_INFO_V1_BASE,
+  GBP_LOCATION_READ_MASK,
   GBP_MYBUSINESS_V4_BASE,
   GBP_OAUTH_SCOPE,
   gbpFetch,
@@ -58,20 +60,23 @@ function stripLocationPrefix(id: string): string {
 }
 
 function toReadableError(status: number, parsed: ParsedGoogleApiError): string {
-  const detail = parsed.message;
+  const detail = parsed.message?.trim() || `HTTP ${status}`;
   if (status === 404) {
-    return `Location not found (404). The selected location ID may be invalid for this account. Use location discovery to select a valid location. Details: ${detail}`;
+    return `Location not found (404). Most common causes: (1) the saved location ID is a Google Place ID like "ChIJ…" rather than a Business Profile location ID — re-run discovery to select a valid one; (2) the location was deleted or the linked account changed. Google says: ${detail}`;
   }
   if (status === 403) {
-    return `Forbidden (403). Ensure the service account has Business Profile access (Manager/Owner) and both APIs are enabled. Details: ${detail}`;
+    return `Forbidden (403). The connected account doesn't have access to this location, or the Business Information / Account Management APIs aren't enabled in the GCP project. Google says: ${detail}`;
   }
   if (status === 429) {
-    return `Rate limited (429). Retrying may be required. Details: ${detail}`;
+    return `Rate limited (429). Wait and retry. Google says: ${detail}`;
   }
   if (status === 401) {
-    return `Authentication failed (401). Verify GOOGLE_SERVICE_ACCOUNT_JSON and required scope ${GBP_OAUTH_SCOPE}. Details: ${detail}`;
+    return `Authentication failed (401). Re-connect Google Business Profile from /integrations or verify GOOGLE_SERVICE_ACCOUNT_JSON. Google says: ${detail}`;
   }
-  return detail || `Google API error (${status})`;
+  if (status === 400) {
+    return `Bad request (400). Often means an invalid location ID format or missing readMask. Google says: ${detail}`;
+  }
+  return `Google API error (${status}): ${detail}`;
 }
 
 async function jsonErrorPayload(
@@ -338,7 +343,9 @@ async function fetchLocations(
   retryAfterSeconds: number | null;
 }> {
   const acc = encodeURIComponent(accountId);
-  const base = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations?pageSize=100`;
+  // v1 Business Information API requires a readMask. We request the same
+  // shape we render in the UI; see GBP_LOCATION_READ_MASK in lib/gbp-http.
+  const base = `${GBP_BUSINESS_INFO_V1_BASE}/accounts/${acc}/locations?pageSize=100&readMask=${encodeURIComponent(GBP_LOCATION_READ_MASK)}`;
   const url = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
   const res = await gbpFetchWithRetry("locations-list", url, token);
   if (!res.ok) {
@@ -473,7 +480,11 @@ export async function GET(req: Request) {
 
   const acc = encodeURIComponent(accountId);
   const loc = encodeURIComponent(locationId);
-  const locationName = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}`;
+  // Reviews + media still live under the legacy v4 API (Google never built
+  // v1 equivalents). Single-location detail moved to v1 Business Information.
+  const locationNameV4 = `${GBP_MYBUSINESS_V4_BASE}/accounts/${acc}/locations/${loc}`;
+  const locationNameV1 = `${GBP_BUSINESS_INFO_V1_BASE}/locations/${loc}?readMask=${encodeURIComponent(GBP_LOCATION_READ_MASK)}`;
+  const locationName = locationNameV4; // backwards compat — reviews/media block uses this
 
   try {
     if (action === "reviews") {
@@ -542,7 +553,8 @@ export async function GET(req: Request) {
       );
     }
 
-    const locRes = await gbpFetchWithRetry("dashboard-location", locationName, auth.token);
+    // Single-location detail uses v1 Business Information; v4 was deprecated.
+    const locRes = await gbpFetchWithRetry("dashboard-location", locationNameV1, auth.token);
 
     if (!locRes.ok) {
       const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(locRes);

@@ -44,7 +44,13 @@ export function parseGoogleApiErrorJson(
       details = err?.details;
       errors = err?.errors;
     } catch {
-      message = bodyText.slice(0, 2000);
+      // Non-JSON response — Google's edge layer sometimes returns the
+      // generic HTML 404 / 502 page instead of a JSON envelope. Strip
+      // markup so the UI doesn't render a wall of HTML; surface only the
+      // meaningful sentence (the <title> tag).
+      const titleMatch = bodyText.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      const stripped = titleMatch?.[1]?.trim() ?? bodyText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      message = stripped.slice(0, 300) || `HTTP ${httpStatus}`;
     }
   }
 
