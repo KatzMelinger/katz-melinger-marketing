@@ -1,6 +1,12 @@
+/**
+ * GET    /api/seo/competitors             — tracked + Semrush-suggested
+ * POST   /api/seo/competitors             — body: { domain, source? }
+ * DELETE /api/seo/competitors?domain=…    — remove a tracked competitor
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 
-import { addCompetitor, listCompetitors } from "@/lib/seo-competitors";
+import { addCompetitor, listCompetitors, removeCompetitor } from "@/lib/seo-competitors";
 import { getOrganicCompetitors } from "@/lib/seo-intelligence";
 import { SEMRUSH_DOMAIN } from "@/lib/semrush";
 
@@ -10,12 +16,20 @@ export async function GET() {
   try {
     const [semrushCompetitors, trackedDomains] = await Promise.all([
       getOrganicCompetitors(SEMRUSH_DOMAIN, 20),
-      Promise.resolve(listCompetitors()),
+      listCompetitors(),
     ]);
+
+    const trackedSet = new Set(trackedDomains);
+    const suggestedFromSemrush = semrushCompetitors.map((c) => ({
+      ...c,
+      tracked: trackedSet.has(c.domain),
+    }));
 
     return NextResponse.json({
       trackedDomains,
       semrushCompetitors,
+      suggestedFromSemrush,
+      // Legacy field kept for backwards compatibility.
       suggestedDomains: semrushCompetitors.slice(0, 8).map((item) => item.domain),
     });
   } catch (e) {
@@ -33,23 +47,25 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const domain =
-    body && typeof body === "object" && typeof (body as { domain?: unknown }).domain === "string"
-      ? (body as { domain: string }).domain
-      : "";
+  const obj = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const domain = typeof obj.domain === "string" ? obj.domain : "";
+  const source = obj.source === "suggested" ? "suggested" : "manual";
 
-  const result = addCompetitor(domain);
+  const result = await addCompetitor(domain, source);
   if (!result.ok) {
-    return NextResponse.json(
-      { error: result.reason ?? "Invalid domain" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: result.reason ?? "Invalid domain" }, { status: 400 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    added: result.domain,
-    trackedDomains: listCompetitors(),
-  });
+  const trackedDomains = await listCompetitors();
+  return NextResponse.json({ ok: true, added: result.domain, trackedDomains });
 }
 
+export async function DELETE(request: NextRequest) {
+  const domain = request.nextUrl.searchParams.get("domain") ?? "";
+  const result = await removeCompetitor(domain);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.reason ?? "Failed" }, { status: 400 });
+  }
+  const trackedDomains = await listCompetitors();
+  return NextResponse.json({ ok: true, removed: result.domain, trackedDomains });
+}

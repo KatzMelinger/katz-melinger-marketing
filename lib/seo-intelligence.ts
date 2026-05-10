@@ -13,10 +13,15 @@ type SemrushRecord = Record<string, string>;
 export type KeywordRow = {
   keyword: string;
   position: number;
+  previousPosition: number;
+  positionDelta: number; // positive = moved up (better rank), negative = moved down
   searchVolume: number;
   keywordDifficulty: number;
   trendScore: number;
   estimatedTraffic: number;
+  cpc: number;
+  trafficCost: number;
+  competition: number;
   url: string;
 };
 
@@ -134,9 +139,16 @@ async function fetchSemrushRowsFromAnalytics(
 function parseKeywordRow(row: SemrushRecord): KeywordRow {
   const keyword = row["Keyword"] ?? row["Ph"] ?? "";
   const position = parseIntSafe(row["Position"] ?? row["Po"] ?? "");
+  const previousPosition = parseIntSafe(row["Previous Position"] ?? row["Pp"] ?? "");
+  // Semrush returns "Position Difference" as a positive number when the keyword
+  // moved up (e.g. went from rank 8 to rank 3 = +5). We mirror that convention.
+  const positionDelta = parseIntSafe(row["Position Difference"] ?? row["Pd"] ?? "");
   const volume = parseIntSafe(row["Search Volume"] ?? row["Nq"] ?? "");
   const kd = asNumber(row["KD %"] ?? row["Kd"] ?? row["Keyword Difficulty"]);
   const traffic = parseIntSafe(row["Traffic"] ?? row["Tr"] ?? "");
+  const cpc = asNumber(row["CPC"] ?? row["Cp"] ?? "");
+  const trafficCost = asNumber(row["Traffic Cost"] ?? row["Tc"] ?? "");
+  const competition = asNumber(row["Competition"] ?? row["Co"] ?? "");
   const url = row["Url"] ?? row["Ur"] ?? "";
   const trend = toPercent(
     Math.max(10, Math.min(100, (volume / 200) * 20 + (100 - kd) * 0.8)),
@@ -144,10 +156,15 @@ function parseKeywordRow(row: SemrushRecord): KeywordRow {
   return {
     keyword,
     position,
+    previousPosition,
+    positionDelta,
     searchVolume: volume,
     keywordDifficulty: Math.round(kd),
     trendScore: trend,
     estimatedTraffic: traffic,
+    cpc,
+    trafficCost,
+    competition,
     url,
   };
 }
@@ -173,7 +190,7 @@ export async function getDomainOrganicKeywords(
     display_limit: String(limit),
     display_sort: "tr_desc",
     export_decode: "1",
-    export_columns: "Ph,Po,Nq,Kd,Tr,Ur",
+    export_columns: "Ph,Po,Pp,Pd,Nq,Kd,Cp,Co,Tr,Tc,Ur",
   });
   return rows.map(parseKeywordRow).filter((row) => row.keyword);
 }
@@ -198,10 +215,15 @@ export async function getTrackedKeywordPerformance(
     return {
       keyword: target,
       position: 0,
+      previousPosition: 0,
+      positionDelta: 0,
       searchVolume: 0,
       keywordDifficulty: 0,
       trendScore: 0,
       estimatedTraffic: 0,
+      cpc: 0,
+      trafficCost: 0,
+      competition: 0,
       url: "",
       isTargetKeyword: true,
     };

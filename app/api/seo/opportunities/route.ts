@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const competitor = request.nextUrl.searchParams.get("competitor");
     const tracked = await getTrackedKeywordPerformance(SEMRUSH_DOMAIN);
-    const domains = listCompetitors();
+    const domains = await listCompetitors();
     const selectedCompetitor = competitor || domains[0] || "";
     const [gaps, backlinks] = await Promise.all([
       selectedCompetitor ? getKeywordGapVsCompetitor(selectedCompetitor, SEMRUSH_DOMAIN) : [],

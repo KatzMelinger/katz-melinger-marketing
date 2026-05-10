@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     if (!competitor) {
       return NextResponse.json({
         domain: SEMRUSH_DOMAIN,
-        competitors: listCompetitors(),
+        competitors: await listCompetitors(),
         ...base,
       });
     }

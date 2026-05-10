@@ -23,7 +23,7 @@ export async function GET() {
 
     return NextResponse.json({
       domain: SEMRUSH_DOMAIN,
-      competitors: listCompetitors(),
+      competitors: await listCompetitors(),
       overview,
       domains,
       newBacklinksLast30d: Math.max(4, Math.round(domains.length * 0.32)),

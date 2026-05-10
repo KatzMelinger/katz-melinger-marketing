@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const brief = await buildContentSeoBrief({
       topic,
       practiceArea,
-      competitorDomains: listCompetitors(),
+      competitorDomains: await listCompetitors(),
     });
     return NextResponse.json(brief);
   } catch (e) {
