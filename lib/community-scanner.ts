@@ -264,6 +264,26 @@ export const QUORA_LINKS: { label: string; url: string }[] = [
   { label: "Search: NJ employment", url: "https://www.quora.com/search?q=New%20Jersey%20employment%20law" },
 ];
 
+// TikTok is bot-protected for scraping but its UI is fully public to browse.
+// We just provide curated hashtag + search deep-links.
+export const TIKTOK_LINKS: { label: string; url: string }[] = [
+  { label: "#EmploymentLaw", url: "https://www.tiktok.com/tag/employmentlaw" },
+  { label: "#WorkplaceRights", url: "https://www.tiktok.com/tag/workplacerights" },
+  { label: "#WageTheft", url: "https://www.tiktok.com/tag/wagetheft" },
+  { label: "#HRTok", url: "https://www.tiktok.com/tag/hrtok" },
+  { label: "#LayoffTok", url: "https://www.tiktok.com/tag/layofftok" },
+  { label: "#Quitmyjob", url: "https://www.tiktok.com/tag/quitmyjob" },
+  { label: "#FiredFromWork", url: "https://www.tiktok.com/tag/firedfromwork" },
+  { label: "#WorkplaceDiscrimination", url: "https://www.tiktok.com/tag/workplacediscrimination" },
+  { label: "#Severance", url: "https://www.tiktok.com/tag/severance" },
+  { label: "#LawyerTok", url: "https://www.tiktok.com/tag/lawyertok" },
+  { label: "Search: NYC employment lawyer", url: "https://www.tiktok.com/search?q=NYC%20employment%20lawyer" },
+  { label: "Search: workplace harassment", url: "https://www.tiktok.com/search?q=workplace%20harassment" },
+  { label: "Search: unpaid overtime", url: "https://www.tiktok.com/search?q=unpaid%20overtime" },
+  { label: "Search: wrongful termination NY", url: "https://www.tiktok.com/search?q=wrongful%20termination%20New%20York" },
+  { label: "Discover trending sounds", url: "https://www.tiktok.com/discover" },
+];
+
 export const AVVO_LINKS: { label: string; url: string }[] = [
   { label: "Employment Q&A — New York", url: "https://www.avvo.com/topics/employment/legal-question-and-answer/state/ny" },
   { label: "Employment Q&A — New Jersey", url: "https://www.avvo.com/topics/employment/legal-question-and-answer/state/nj" },

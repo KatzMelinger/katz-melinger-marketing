@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { QUORA_LINKS, AVVO_LINKS } from "@/lib/community-scanner";
+import { QUORA_LINKS, AVVO_LINKS, TIKTOK_LINKS } from "@/lib/community-scanner";
 
 export const runtime = "nodejs";
 
@@ -14,5 +14,6 @@ export async function GET(req: NextRequest) {
   const platform = req.nextUrl.searchParams.get("platform");
   if (platform === "quora") return NextResponse.json({ links: QUORA_LINKS });
   if (platform === "avvo") return NextResponse.json({ links: AVVO_LINKS });
-  return NextResponse.json({ error: "platform must be quora|avvo" }, { status: 400 });
+  if (platform === "tiktok") return NextResponse.json({ links: TIKTOK_LINKS });
+  return NextResponse.json({ error: "platform must be quora|avvo|tiktok" }, { status: 400 });
 }

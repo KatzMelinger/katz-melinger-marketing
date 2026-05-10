@@ -23,7 +23,18 @@ import {
   DashPill,
 } from "@/components/dashboard-ui";
 
-type Tab = "topics" | "trends" | "metadata";
+type Tab = "topics" | "trends" | "metadata" | "social";
+
+type SocialPlatform = "tiktok" | "instagram" | "linkedin" | "twitter" | "facebook" | "youtube_shorts";
+
+type SocialPlaybook = {
+  hashtags?: { broad?: string[]; niche?: string[] };
+  hooks?: string[];
+  captions?: string[];
+  best_times?: string;
+  visual_ideas?: string[];
+  platform_tips?: string[];
+};
 
 const PRACTICE_AREAS = [
   "All",
@@ -82,6 +93,9 @@ export default function IntelligencePage() {
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [metaTopic, setMetaTopic] = useState("");
   const [metaPageType, setMetaPageType] = useState("blog_post");
+  const [socialTopic, setSocialTopic] = useState("");
+  const [socialPlatform, setSocialPlatform] = useState<SocialPlatform>("tiktok");
+  const [playbook, setPlaybook] = useState<SocialPlaybook | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -130,6 +144,26 @@ export default function IntelligencePage() {
     }
   };
 
+  const fetchSocial = async () => {
+    if (!socialTopic.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content/intelligence/social", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: socialTopic.trim(), platform: socialPlatform }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed");
+      setPlaybook(data.playbook ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchMetadata = async () => {
     if (!metaTopic.trim()) return;
     setLoading(true);
@@ -160,11 +194,12 @@ export default function IntelligencePage() {
       </div>
       <ContentNav />
 
-      <div className="flex gap-1 border-b border-slate-200 mb-4">
+      <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">
         {[
           { id: "topics", label: "Topic ideas" },
           { id: "trends", label: "Trending" },
           { id: "metadata", label: "SEO metadata" },
+          { id: "social", label: "Social media IQ" },
         ].map((t) => (
           <button
             key={t.id}
@@ -434,6 +469,176 @@ export default function IntelligencePage() {
                     </ul>
                   </DashCard>
                 )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "social" && (
+        <div className="space-y-4">
+          <DashCard>
+            <p className="text-xs text-slate-500 mb-3">
+              Hashtag packs, video hooks, captions, posting times, and visual
+              ideas for any platform — generated against your firm voice.{" "}
+              <span className="italic">
+                Heads up: this uses Claude's general platform knowledge, not
+                live trending data. For "what sound is hot today" use the
+                TikTok / Discover launcher on /community.
+              </span>
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-700">Topic / story angle</label>
+                <DashInput
+                  value={socialTopic}
+                  onChange={(e) => setSocialTopic(e.target.value)}
+                  placeholder="e.g. Why severance offers usually leave money on the table"
+                  className="w-full mt-1"
+                />
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex-1 min-w-48">
+                  <label className="text-xs font-medium text-slate-700">Platform</label>
+                  <DashSelect
+                    value={socialPlatform}
+                    onChange={(e) => setSocialPlatform(e.target.value as SocialPlatform)}
+                    className="w-full mt-1"
+                  >
+                    <option value="tiktok">TikTok</option>
+                    <option value="instagram">Instagram (Reels + Feed)</option>
+                    <option value="youtube_shorts">YouTube Shorts</option>
+                    <option value="linkedin">LinkedIn</option>
+                    <option value="twitter">X / Twitter</option>
+                    <option value="facebook">Facebook</option>
+                  </DashSelect>
+                </div>
+                <DashButton onClick={fetchSocial} disabled={loading || !socialTopic.trim()}>
+                  {loading ? <DashSpinner /> : "Generate playbook"}
+                </DashButton>
+              </div>
+            </div>
+          </DashCard>
+
+          {playbook && (
+            <div className="space-y-3">
+              {playbook.hashtags && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-3">Hashtag pack</h3>
+                  {playbook.hashtags.broad && playbook.hashtags.broad.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs font-medium text-slate-700 mb-1">Broad</div>
+                      <div className="flex flex-wrap gap-1">
+                        {playbook.hashtags.broad.map((h, i) => (
+                          <DashPill key={i} tone="blue">
+                            {h.startsWith("#") ? h : `#${h}`}
+                          </DashPill>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {playbook.hashtags.niche && playbook.hashtags.niche.length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-slate-700 mb-1">Niche / geo</div>
+                      <div className="flex flex-wrap gap-1">
+                        {playbook.hashtags.niche.map((h, i) => (
+                          <DashPill key={i} tone="violet">
+                            {h.startsWith("#") ? h : `#${h}`}
+                          </DashPill>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    onClick={() =>
+                      copy(
+                        [
+                          ...(playbook.hashtags?.broad ?? []),
+                          ...(playbook.hashtags?.niche ?? []),
+                        ]
+                          .map((h) => (h.startsWith("#") ? h : `#${h}`))
+                          .join(" "),
+                        "hashtags",
+                      )
+                    }
+                    className="mt-3 text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400"
+                  >
+                    {copied === "hashtags" ? "✓ Copied all" : "Copy all hashtags"}
+                  </button>
+                </DashCard>
+              )}
+
+              {playbook.hooks && playbook.hooks.length > 0 && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-2">Video hooks</h3>
+                  <div className="space-y-2">
+                    {playbook.hooks.map((h, i) => (
+                      <div
+                        key={i}
+                        className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md p-3 flex items-start justify-between gap-2"
+                      >
+                        <span className="whitespace-pre-wrap">{h}</span>
+                        <button
+                          onClick={() => copy(h, `hook-${i}`)}
+                          className="shrink-0 text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400"
+                        >
+                          {copied === `hook-${i}` ? "✓" : "Copy"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </DashCard>
+              )}
+
+              {playbook.captions && playbook.captions.length > 0 && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-2">Caption variants</h3>
+                  <div className="space-y-2">
+                    {playbook.captions.map((c, i) => (
+                      <div
+                        key={i}
+                        className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md p-3 flex items-start justify-between gap-2"
+                      >
+                        <span className="whitespace-pre-wrap">{c}</span>
+                        <button
+                          onClick={() => copy(c, `cap-${i}`)}
+                          className="shrink-0 text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400"
+                        >
+                          {copied === `cap-${i}` ? "✓" : "Copy"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </DashCard>
+              )}
+
+              {playbook.visual_ideas && playbook.visual_ideas.length > 0 && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-2">Visual treatment ideas</h3>
+                  <ul className="space-y-1 text-sm text-slate-700 list-disc pl-5">
+                    {playbook.visual_ideas.map((v, i) => (
+                      <li key={i}>{v}</li>
+                    ))}
+                  </ul>
+                </DashCard>
+              )}
+
+              {playbook.platform_tips && playbook.platform_tips.length > 0 && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-2 text-emerald-700">Platform tips</h3>
+                  <ul className="space-y-1 text-sm text-slate-700 list-disc pl-5">
+                    {playbook.platform_tips.map((t, i) => (
+                      <li key={i}>{t}</li>
+                    ))}
+                  </ul>
+                </DashCard>
+              )}
+
+              {playbook.best_times && (
+                <DashCard>
+                  <h3 className="text-sm font-semibold mb-2">Best times to post</h3>
+                  <p className="text-sm text-slate-700">{playbook.best_times}</p>
+                </DashCard>
+              )}
             </div>
           )}
         </div>

@@ -22,7 +22,7 @@ import {
   DashPill,
 } from "@/components/dashboard-ui";
 
-type Tab = "reddit" | "hackernews" | "news" | "quora" | "avvo";
+type Tab = "reddit" | "hackernews" | "news" | "tiktok" | "quora" | "avvo";
 type PostStatus = "new" | "responded" | "skipped" | "starred";
 
 type RedditPost = {
@@ -102,6 +102,7 @@ export default function CommunityPage() {
           { id: "reddit", label: "Reddit" },
           { id: "hackernews", label: "Hacker News" },
           { id: "news", label: "News (NY/NJ)" },
+          { id: "tiktok", label: "TikTok" },
           { id: "quora", label: "Quora" },
           { id: "avvo", label: "Avvo" },
         ].map((t) => (
@@ -122,6 +123,7 @@ export default function CommunityPage() {
       {tab === "reddit" && <RedditTab />}
       {tab === "hackernews" && <HackerNewsTab />}
       {tab === "news" && <NewsTab />}
+      {tab === "tiktok" && <TikTokTab />}
       {(tab === "quora" || tab === "avvo") && <PasteTab platform={tab} />}
     </div>
   );
@@ -637,6 +639,112 @@ function NewsTab() {
           </div>
         </DashCard>
       ))}
+    </div>
+  );
+}
+
+function TikTokTab() {
+  const [links, setLinks] = useState<{ label: string; url: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/community/links?platform=tiktok")
+      .then((r) => r.json())
+      .then((d) => setLinks(d.links ?? []))
+      .catch(() => setLinks([]));
+  }, []);
+
+  const hashtags = links.filter((l) => l.label.startsWith("#"));
+  const searches = links.filter((l) => l.label.startsWith("Search"));
+  const discover = links.filter((l) => !l.label.startsWith("#") && !l.label.startsWith("Search"));
+
+  return (
+    <div className="space-y-4">
+      <DashCard>
+        <h3 className="text-sm font-semibold mb-2">Browse trending TikTok</h3>
+        <p className="text-xs text-slate-600 mb-3">
+          TikTok blocks automated scraping of comments and trending sounds, so
+          this is a curated launcher: jump straight to the hashtag and search
+          pages most relevant for the firm. For producing your own TikTok
+          videos (hooks, hashtag packs, captions, visual ideas), use{" "}
+          <a
+            href="/content/intelligence?tab=social"
+            className="text-[#185FA5] underline"
+          >
+            Content Studio → Intelligence → Social media IQ
+          </a>
+          .
+        </p>
+
+        {hashtags.length > 0 && (
+          <div className="mb-4">
+            <div className="text-xs font-medium text-slate-700 mb-2">Topic hashtags</div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {hashtags.map((link) => (
+                <a
+                  key={link.url}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                >
+                  <span className="truncate">{link.label}</span>
+                  <span className="text-slate-400 text-xs">↗</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {searches.length > 0 && (
+          <div className="mb-4">
+            <div className="text-xs font-medium text-slate-700 mb-2">Search the firm's niche</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {searches.map((link) => (
+                <a
+                  key={link.url}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                >
+                  <span className="truncate">{link.label}</span>
+                  <span className="text-slate-400 text-xs">↗</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {discover.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-700 mb-2">Discover what's hot</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {discover.map((link) => (
+                <a
+                  key={link.url}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                >
+                  <span className="truncate">{link.label}</span>
+                  <span className="text-slate-400 text-xs">↗</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </DashCard>
+
+      <DashCard>
+        <h3 className="text-sm font-semibold mb-2">How to use this</h3>
+        <ol className="text-xs text-slate-700 list-decimal pl-5 space-y-1">
+          <li>Click into a hashtag — see what's trending. Note the angles, hooks, and styles.</li>
+          <li>Save anything that sparks an idea (TikTok's bookmark feature works well here).</li>
+          <li>Open <a href="/content/intelligence?tab=social" className="text-[#185FA5] underline">Social media IQ</a>, paste the angle as a topic, pick TikTok, and Claude generates hashtag pack + 3 video hooks + 5 caption variants + visual treatment ideas.</li>
+          <li>Shoot the video, post it, link to your firm bio.</li>
+        </ol>
+      </DashCard>
     </div>
   );
 }
