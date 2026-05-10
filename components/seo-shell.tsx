@@ -7,6 +7,7 @@ export const SEO_ROUTES = [
   { href: "/seo/keywords", label: "Keywords" },
   { href: "/seo/keywords/competitive", label: "Keyword Battles" },
   { href: "/seo/backlinks", label: "Backlinks" },
+  { href: "/seo/link-strategy", label: "Link Strategy" },
   { href: "/seo/competitors", label: "Competitors" },
   { href: "/seo/competitors/add", label: "Add Competitor" },
   { href: "/seo/opportunities", label: "Opportunities" },
