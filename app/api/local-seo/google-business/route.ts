@@ -35,9 +35,13 @@ type CachedHttpResponse = {
   expiresAt: number;
 };
 
-const MIN_REQUEST_GAP_MS = 500;
-const DEFAULT_GET_CACHE_MS = 60_000;
-const NEGATIVE_GET_CACHE_MS = 20_000;
+// GBP dev-tier quota is 10 req/min until production access is approved.
+// Bumping the positive cache to 5 min and negative to 1 min to stretch it
+// — location info doesn't change minute-to-minute and we don't want every
+// page view to burn quota.
+const MIN_REQUEST_GAP_MS = 1000;
+const DEFAULT_GET_CACHE_MS = 5 * 60_000;
+const NEGATIVE_GET_CACHE_MS = 60_000;
 
 const responseCache = new Map<string, CachedHttpResponse>();
 const inFlightRequests = new Map<string, Promise<Response>>();

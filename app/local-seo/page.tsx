@@ -9,7 +9,13 @@ const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
-const REFRESH_MS = 30_000;
+// GBP API has a default dev-tier quota of ~10 requests/minute. Each page
+// load fires several calls (location detail + reviews + media + posts), so
+// auto-refresh is OFF by default — the user can hit "Refresh data" manually.
+// If you've been approved for production GBP API quota (600 QPM), you can
+// safely flip AUTO_REFRESH back on.
+const AUTO_REFRESH = false;
+const REFRESH_MS = 5 * 60_000;
 const DISCOVERY_CACHE_TTL_MS = 10 * 60_000;
 const GBP_ACCOUNTS_CACHE_KEY = "gbp:accounts:cache:v1";
 const GBP_LOCATIONS_CACHE_PREFIX = "gbp:locations:cache:v1:";
@@ -742,6 +748,7 @@ export default function LocalSeoPlatformPage() {
   }, [discoverLocations, selectedAccountId]);
 
   useEffect(() => {
+    if (!AUTO_REFRESH) return;
     const id = window.setInterval(() => {
       void load({ silent: true });
     }, REFRESH_MS);
@@ -801,9 +808,11 @@ export default function LocalSeoPlatformPage() {
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">Local SEO</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Google Business Profile data from the Business Profile API; rankings and
-              citations use sample data until those sources are connected. Auto-refresh
-              every {Math.round(REFRESH_MS / 1000)}s.
+              Google Business Profile data from the Business Profile API; rankings
+              and citations use sample data until those sources are connected.
+              {AUTO_REFRESH
+                ? ` Auto-refresh every ${Math.round(REFRESH_MS / 1000)}s.`
+                : " Click Refresh data to pull live numbers (auto-refresh is off to stay under GBP's dev-tier quota of 10 req/min)."}
             </p>
             {lastLoadedAt ? (
               <p className="mt-1 text-xs text-slate-500">
