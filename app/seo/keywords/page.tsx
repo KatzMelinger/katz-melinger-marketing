@@ -12,6 +12,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { SeoShell, formatNumber } from "@/components/seo-shell";
+import {
+  classifyKeywordGeo,
+  passesGeoFilter,
+  REGION_FILTER_OPTIONS,
+  STATE_FILTER_OPTIONS,
+  type RegionFilter,
+  type StateFilter,
+} from "@/lib/keyword-geo";
 
 type KeywordRow = {
   keyword: string;
@@ -52,51 +60,8 @@ type SortKey =
   | "cpc"
   | "trafficCost";
 
-// Used to flag keywords that explicitly reference a non-target state. The
-// firm is NY/NJ-only — anything mentioning these is almost certainly noise
-// (Semrush returns US-wide data and the site shows up incidentally for
-// out-of-state queries).
-const NY_NJ_TERMS = [
-  "new york", "ny ", " ny", "nyc", "manhattan", "brooklyn", "queens", "bronx",
-  "staten island", "long island", "westchester",
-  "new jersey", " nj", "nj ", "newark", "jersey city", "hoboken", "trenton",
-];
-
-const OTHER_STATE_TERMS = [
-  "california", " ca ", " ca,", " ca.", "california", "los angeles", "san francisco",
-  "san diego", "oakland", "sacramento",
-  "texas", " tx", "houston", "dallas", "austin", "san antonio",
-  "florida", " fl", "miami", "orlando", "tampa", "jacksonville",
-  "illinois", " il", "chicago",
-  "massachusetts", " ma ", "boston",
-  "pennsylvania", " pa ", "philadelphia", "pittsburgh",
-  "ohio", " oh", "cleveland", "columbus",
-  "michigan", " mi ", "detroit",
-  "georgia", " ga", "atlanta",
-  "north carolina", "south carolina", "charlotte", "raleigh",
-  "washington", "seattle", " dc",
-  "colorado", "denver",
-  "arizona", "phoenix",
-  "nevada", "las vegas",
-  "oregon", "portland",
-  "minnesota", "minneapolis",
-  "wisconsin", "milwaukee",
-  "missouri", "st. louis", "kansas city",
-  "tennessee", "nashville", "memphis",
-  "virginia", "richmond",
-  "maryland", "baltimore",
-];
-
-function classifyGeo(keyword: string): "ny_nj" | "other_state" | "generic" {
-  const lc = " " + keyword.toLowerCase() + " ";
-  for (const t of NY_NJ_TERMS) {
-    if (lc.includes(t)) return "ny_nj";
-  }
-  for (const t of OTHER_STATE_TERMS) {
-    if (lc.includes(t)) return "other_state";
-  }
-  return "generic";
-}
+// Geo classification + filter logic now lives in lib/keyword-geo so the
+// /seo/keywords/competitive page can share it.
 
 export default function SeoKeywordsPage() {
   const [data, setData] = useState<KeywordResponse | null>(null);
@@ -107,7 +72,8 @@ export default function SeoKeywordsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showRanking, setShowRanking] = useState<"all" | "top10" | "top50" | "missing">("all");
   // Default hides out-of-state keywords since the firm is NY/NJ-only.
-  const [geoFilter, setGeoFilter] = useState<"ny_nj_and_generic" | "ny_nj_only" | "all">("ny_nj_and_generic");
+  const [stateFilter, setStateFilter] = useState<StateFilter>("ny_nj_and_generic");
+  const [regionFilter, setRegionFilter] = useState<RegionFilter>("all");
 
   useEffect(() => {
     setLoading(true);
@@ -132,9 +98,8 @@ export default function SeoKeywordsPage() {
       if (showRanking === "top10" && !(r.position > 0 && r.position <= 10)) return false;
       if (showRanking === "top50" && !(r.position > 0 && r.position <= 50)) return false;
       if (showRanking === "missing" && !(r.position === 0 || r.position > 100)) return false;
-      const geo = classifyGeo(r.keyword);
-      if (geoFilter === "ny_nj_only" && geo !== "ny_nj") return false;
-      if (geoFilter === "ny_nj_and_generic" && geo === "other_state") return false;
+      const geo = classifyKeywordGeo(r.keyword);
+      if (!passesGeoFilter(geo, stateFilter, regionFilter)) return false;
       return true;
     });
     filtered.sort((a, b) => {
@@ -149,7 +114,7 @@ export default function SeoKeywordsPage() {
       return sortDir === "asc" ? aNum - bNum : bNum - aNum;
     });
     return filtered;
-  }, [data, search, sortKey, sortDir, showRanking, geoFilter]);
+  }, [data, search, sortKey, sortDir, showRanking, stateFilter, regionFilter]);
 
   const setSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -213,16 +178,28 @@ export default function SeoKeywordsPage() {
               <option value="missing">Missing / unranked</option>
             </select>
             <select
-              value={geoFilter}
-              onChange={(e) =>
-                setGeoFilter(e.target.value as "ny_nj_and_generic" | "ny_nj_only" | "all")
-              }
+              value={stateFilter}
+              onChange={(e) => setStateFilter(e.target.value as StateFilter)}
               className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0]"
-              title="Hide keywords mentioning out-of-state locations (the firm is NY/NJ-only, but Semrush returns US-wide data)"
+              title="State scope (Semrush returns US-wide data; default hides explicit out-of-state keywords)"
             >
-              <option value="ny_nj_and_generic">NY/NJ + generic (default)</option>
-              <option value="ny_nj_only">NY/NJ only</option>
-              <option value="all">All geos (incl. CA, TX, etc.)</option>
+              {STATE_FILTER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={regionFilter}
+              onChange={(e) => setRegionFilter(e.target.value as RegionFilter)}
+              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0]"
+              title="Narrow to a specific borough / county / NJ region"
+            >
+              {REGION_FILTER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -269,7 +246,20 @@ export default function SeoKeywordsPage() {
                 </tr>
               )}
               {sorted.map((item) => {
-                const geo = classifyGeo(item.keyword);
+                const geo = classifyKeywordGeo(item.keyword);
+                const badgeLabel = geo.city
+                  ? geo.city
+                  : geo.state === "ny"
+                    ? "NY"
+                    : geo.state === "nj"
+                      ? "NJ"
+                      : geo.state === "other_state"
+                        ? "out-of-state"
+                        : null;
+                const badgeTone =
+                  geo.state === "other_state"
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200";
                 return (
                 <tr
                   key={item.keyword}
@@ -277,14 +267,9 @@ export default function SeoKeywordsPage() {
                 >
                   <td className="py-2 pr-3 text-slate-900 font-medium">
                     {item.keyword}
-                    {geo === "ny_nj" && (
-                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        NY/NJ
-                      </span>
-                    )}
-                    {geo === "other_state" && (
-                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                        out-of-state
+                    {badgeLabel && (
+                      <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${badgeTone}`}>
+                        {badgeLabel}
                       </span>
                     )}
                   </td>
