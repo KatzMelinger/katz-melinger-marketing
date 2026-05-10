@@ -54,6 +54,7 @@ const GROUPS: NavGroup[] = [
     label: "Reach & Reputation",
     items: [
       { label: "Social", href: "/social", icon: "♺" },
+      { label: "Community", href: "/community", icon: "💬" },
       { label: "Email", href: "/email", icon: "✉" },
       { label: "Local SEO", href: "/local-seo", icon: "⌖" },
       { label: "Reviews", href: "/reviews", icon: "★" },
