@@ -252,7 +252,10 @@ async function gbpFetchWithRetry(
   url: string,
   token: string,
   init?: RequestInit,
-  retries = 2,
+  // Retries default to 0 — at GBP's 10 req/min dev quota, retrying just
+  // turns one over-quota call into three over-quota calls. We surface the
+  // 429 to the UI which shows a cooldown timer; the user retries by hand.
+  retries = 0,
 ): Promise<Response> {
   const method = init?.method ?? "GET";
   const key = cacheKey(method, url);
@@ -562,7 +565,13 @@ export async function GET(req: Request) {
 
     if (!locRes.ok) {
       const { friendly, parsed, retryAfterSeconds } = await jsonErrorPayload(locRes);
-      const discovered = await fetchLocations(auth.token, accountId);
+      // Don't auto-fire discovery on a 429 — that'd double the quota burn.
+      // The user can click "Find locations" in the discovery panel after the
+      // rate limit cools off.
+      const discovered =
+        locRes.status === 429
+          ? { ok: true as const, locations: [] }
+          : await fetchLocations(auth.token, accountId);
       return NextResponse.json(
         {
           error: friendly,
@@ -580,21 +589,25 @@ export async function GET(req: Request) {
       );
     }
 
+    // Dashboard initial render only fetches reviews. Media + Local Posts are
+    // lazy-loaded by the individual tabs (action=media, action=localPosts) so
+    // we don't burn 4 calls every time someone opens the page on dev-tier
+    // GBP quota (10 req/min).
     const revRes = await gbpFetchWithRetry(
       "dashboard-reviews",
       `${locationName}/reviews?pageSize=50`,
       auth.token,
     );
-    const mediaRes = await gbpFetchWithRetry(
-      "dashboard-media",
-      `${locationName}/media?pageSize=50`,
-      auth.token,
-    );
-    const postsRes = await gbpFetchWithRetry(
-      "dashboard-local-posts",
-      `${locationName}/localPosts?pageSize=50`,
-      auth.token,
-    );
+    // Stub out media + posts on the initial dashboard payload — the page
+    // will pull them on demand if the user clicks into those views.
+    const mediaRes = new Response(JSON.stringify({ mediaItems: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const postsRes = new Response(JSON.stringify({ localPosts: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
 
     const location = (await locRes.json()) as Record<string, unknown>;
     const primary = (location.categories as { primaryCategory?: { displayName?: string } })
