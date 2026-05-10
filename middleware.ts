@@ -80,10 +80,13 @@ export const config = {
   matcher: [
     /*
      * Match every route except:
+     * - api/* — pages do server-side internal fetches to /api routes that
+     *   don't carry the user's session cookie; routing them through this
+     *   middleware would 302 to /login, the page would parse HTML as JSON,
+     *   and renders would silently fail. API routes handle their own
+     *   access (service-role for data; admin routes call requireAdmin).
      * - _next/static, _next/image, favicon, images
-     * - api routes that we explicitly opt out via PUBLIC_PATHS above
-     * The exclusion is via the negative lookahead.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
