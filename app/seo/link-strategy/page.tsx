@@ -19,6 +19,7 @@ import {
   DashSpinner,
   DashPill,
 } from "@/components/dashboard-ui";
+import { SeoShell } from "@/components/seo-shell";
 
 type ExternalLink = {
   url: string;
@@ -132,17 +133,11 @@ export default function LinkStrategyPage() {
   };
 
   return (
-    <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-      <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Link-building strategy</h1>
-          <p className="text-sm text-slate-600 mt-1 max-w-2xl">
-            Crawls the firm's sitemap to map outbound links, then asks Claude
-            for a structured outreach plan: target categories, specific
-            organizations to pitch, email templates, reciprocal link ideas,
-            content-for-links suggestions, and a 3-month plan.
-          </p>
-        </div>
+    <SeoShell
+      title="Link-building strategy"
+      subtitle="Crawls the firm's sitemap to map outbound links, then asks Claude for a structured outreach plan: target categories, specific organizations to pitch, email templates, reciprocal link ideas, content-for-links suggestions, and a 3-month plan."
+    >
+      <div className="flex items-start justify-end gap-3 flex-wrap">
         <DashButton onClick={generate} disabled={generating}>
           {generating ? <DashSpinner /> : strategy ? "Regenerate" : "Generate strategy"}
         </DashButton>
@@ -405,7 +400,7 @@ export default function LinkStrategyPage() {
           )}
         </DashCard>
       </div>
-    </div>
+    </SeoShell>
   );
 }
 

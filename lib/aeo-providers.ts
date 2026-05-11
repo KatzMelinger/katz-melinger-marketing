@@ -234,39 +234,66 @@ const geminiProvider: AEOProvider = {
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent` +
       `?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-        systemInstruction: {
-          parts: [
-            {
-              text:
-                "You are a helpful assistant. When asked for recommendations, " +
-                "name specific organizations or firms with the URL of their " +
-                "primary website.",
-            },
-          ],
-        },
-      }),
-      signal: AbortSignal.timeout(45_000),
+    const body = JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      tools: [{ google_search: {} }],
+      systemInstruction: {
+        parts: [
+          {
+            text:
+              "You are a helpful assistant. When asked for recommendations, " +
+              "name specific organizations or firms with the URL of their " +
+              "primary website.",
+          },
+        ],
+      },
     });
-    if (!res.ok) {
-      throw new Error(`Gemini: ${res.status} ${res.statusText} ${await res.text()}`);
+
+    // Gemini's free tier rate-limits aggressively. Retry once on 429/503 with
+    // a small backoff before we let the error bubble up to safeAsk.
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: AbortSignal.timeout(45_000),
+      });
+      if (res.ok) break;
+      if (attempt === 0 && (res.status === 429 || res.status === 503)) {
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      break;
+    }
+    if (!res || !res.ok) {
+      const status = res?.status ?? 0;
+      const body = res ? await res.text() : "no response";
+      throw new Error(`Gemini ${status}: ${body.slice(0, 300)}`);
     }
     const data = (await res.json()) as {
       candidates?: {
         content?: { parts?: { text?: string }[] };
+        finishReason?: string;
         groundingMetadata?: {
           groundingChunks?: { web?: { uri?: string; title?: string } }[];
         };
       }[];
+      promptFeedback?: { blockReason?: string };
     };
+
+    if (data.promptFeedback?.blockReason) {
+      throw new Error(`Gemini blocked: ${data.promptFeedback.blockReason}`);
+    }
     const cand = data.candidates?.[0];
-    const text = cand?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-    const grounding = cand?.groundingMetadata?.groundingChunks ?? [];
+    if (!cand) {
+      throw new Error("Gemini returned no candidates");
+    }
+    const text = cand.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+    if (!text.trim() && cand.finishReason && cand.finishReason !== "STOP") {
+      throw new Error(`Gemini finished without text (reason: ${cand.finishReason})`);
+    }
+    const grounding = cand.groundingMetadata?.groundingChunks ?? [];
     const explicit: AEOCitation[] = grounding
       .map((g): AEOCitation | null => {
         if (!g.web?.uri) return null;
