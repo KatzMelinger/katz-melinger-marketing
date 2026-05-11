@@ -11,6 +11,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { ANTI_AI_VOICE_RULES } from "./anti-ai-voice";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
@@ -90,6 +91,8 @@ ${args.competitorGaps?.length ? `- Competitor gaps to address: ${args.competitor
 
   const system = `You are a marketing copywriter for Katz Melinger PLLC.
 ${firm}
+
+${ANTI_AI_VOICE_RULES}
 ${skillsContext ? `\n${skillsContext}\n` : ""}
 Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.
 Avoid legalese. Never fabricate case results or guarantees. Stay compliant — recommend speaking with an attorney rather than asserting outcomes.

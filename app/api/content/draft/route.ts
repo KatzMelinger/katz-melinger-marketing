@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 
+import { ANTI_AI_VOICE_RULES } from "@/lib/anti-ai-voice";
 import {
   getBrandVoiceContext,
   getLatestBrandProfile,
@@ -83,6 +84,8 @@ export async function POST(req: Request) {
         : "About 1000 words for blog.";
 
   const system = `You are a marketing copywriter for Katz Melinger PLLC, a plaintiff-side employment law firm in New York City. The firm represents workers in wage & hour, discrimination, class actions, judgment enforcement, severance, and related matters. Voice: professional but approachable, focused on helping workers understand their rights—never corporate or cold.
+
+${ANTI_AI_VOICE_RULES}
 
 ${skillsContext ? `${skillsContext}\n` : ""}
 ${brandVoice ? `Brand voice notes from the firm:\n${brandVoice}\n` : ""}
