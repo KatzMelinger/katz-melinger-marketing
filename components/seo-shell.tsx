@@ -13,6 +13,7 @@ export const SEO_ROUTES = [
   { href: "/seo/technical", label: "Technical SEO" },
   { href: "/seo/cannibalization", label: "Cannibalization" },
   { href: "/seo/internal-links", label: "Internal Links" },
+  { href: "/seo/recent", label: "Recent" },
 ] as const;
 
 export function formatNumber(value: number): string {

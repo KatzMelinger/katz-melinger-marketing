@@ -15,7 +15,9 @@
 
 import { useEffect, useState } from "react";
 
+import { RecentSearchesStrip } from "@/components/recent-searches-strip";
 import { SeoShell, formatNumber } from "@/components/seo-shell";
+import { recordSearch } from "@/lib/recent-searches";
 
 type IssueUrl = { url: string; position: number };
 type Issue = {
@@ -67,6 +69,12 @@ export default function CannibalizationPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "high" | "medium" | "low">("all");
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (search.trim().length < 3) return;
+    const t = setTimeout(() => recordSearch("cannibalization", search), 1200);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const refresh = async () => {
     setLoading(true);
@@ -160,6 +168,8 @@ export default function CannibalizationPage() {
           </button>
         </div>
       </div>
+
+      <RecentSearchesStrip scope="cannibalization" limit={6} onPick={setSearch} />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Total issues" value={formatNumber(snapshot?.total_issues ?? 0)} />

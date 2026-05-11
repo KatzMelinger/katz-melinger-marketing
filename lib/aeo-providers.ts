@@ -220,8 +220,40 @@ const perplexityProvider: AEOProvider = {
 // ---------------------------------------------------------------------------
 // Gemini (uses google-search grounding when available)
 // ---------------------------------------------------------------------------
+//
+// We try a chain of models. 2.5-flash is the default, but it gets overloaded
+// during peak hours (503 "high demand"). When that happens we drop back to
+// 1.5-flash which has way more headroom. This gives us answers during spikes
+// instead of dead rows in the AEO dashboard.
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-1.5-flash"] as const;
+const GEMINI_MODEL = GEMINI_MODELS[0];
+
+async function callGemini(model: string, prompt: string, apiKey: string): Promise<Response> {
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` +
+    `?key=${encodeURIComponent(apiKey)}`;
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }],
+    systemInstruction: {
+      parts: [
+        {
+          text:
+            "You are a helpful assistant. When asked for recommendations, " +
+            "name specific organizations or firms with the URL of their " +
+            "primary website.",
+        },
+      ],
+    },
+  });
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    signal: AbortSignal.timeout(45_000),
+  });
+}
 
 const geminiProvider: AEOProvider = {
   id: "gemini",
@@ -231,45 +263,31 @@ const geminiProvider: AEOProvider = {
   async ask(prompt: string) {
     const started = Date.now();
     const apiKey = process.env.GEMINI_API_KEY!;
-    const url =
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent` +
-      `?key=${encodeURIComponent(apiKey)}`;
-    const body = JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      tools: [{ google_search: {} }],
-      systemInstruction: {
-        parts: [
-          {
-            text:
-              "You are a helpful assistant. When asked for recommendations, " +
-              "name specific organizations or firms with the URL of their " +
-              "primary website.",
-          },
-        ],
-      },
-    });
 
-    // Gemini's free tier rate-limits aggressively. Retry once on 429/503 with
-    // a small backoff before we let the error bubble up to safeAsk.
     let res: Response | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal: AbortSignal.timeout(45_000),
-      });
-      if (res.ok) break;
-      if (attempt === 0 && (res.status === 429 || res.status === 503)) {
-        await new Promise((r) => setTimeout(r, 2000));
-        continue;
+    let modelUsed: string = GEMINI_MODEL;
+    for (const model of GEMINI_MODELS) {
+      // Up to 2 attempts on each model — one immediate, one after a 2s backoff
+      // — before moving on to the next model in the fallback chain.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        res = await callGemini(model, prompt, apiKey);
+        modelUsed = model;
+        if (res.ok) break;
+        if (attempt === 0 && (res.status === 429 || res.status === 503)) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        break;
       }
-      break;
+      if (res && res.ok) break;
+      // Only fall through to next model on overload-type errors.
+      if (res && res.status !== 429 && res.status !== 503) break;
     }
+
     if (!res || !res.ok) {
       const status = res?.status ?? 0;
       const body = res ? await res.text() : "no response";
-      throw new Error(`Gemini ${status}: ${body.slice(0, 300)}`);
+      throw new Error(`Gemini ${status} (${modelUsed}): ${body.slice(0, 300)}`);
     }
     const data = (await res.json()) as {
       candidates?: {
@@ -307,7 +325,7 @@ const geminiProvider: AEOProvider = {
     const merged = explicit.length > 0 ? explicit : extractCitationsFromText(text);
     return {
       provider: "gemini",
-      model: GEMINI_MODEL,
+      model: modelUsed,
       text,
       citations: merged,
       latencyMs: Date.now() - started,

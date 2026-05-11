@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { RecentSearchesStrip } from "@/components/recent-searches-strip";
 import { SeoShell, formatNumber } from "@/components/seo-shell";
 import {
   classifyKeywordGeo,
@@ -20,6 +21,7 @@ import {
   type RegionFilter,
   type StateFilter,
 } from "@/lib/keyword-geo";
+import { recordSearch } from "@/lib/recent-searches";
 
 type KeywordRow = {
   keyword: string;
@@ -68,6 +70,15 @@ export default function SeoKeywordsPage() {
   const [competitive, setCompetitive] = useState<KeywordResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+
+  // Debounced recent-search log. Records once the user pauses typing for 1.2s
+  // and the query is at least 3 chars — avoids logging every keystroke.
+  useEffect(() => {
+    if (search.trim().length < 3) return;
+    const t = setTimeout(() => recordSearch("keywords", search), 1200);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const [sortKey, setSortKey] = useState<SortKey>("estimatedTraffic");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showRanking, setShowRanking] = useState<"all" | "top10" | "top50" | "missing">("all");
@@ -202,6 +213,10 @@ export default function SeoKeywordsPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="mb-3">
+          <RecentSearchesStrip scope="keywords" limit={6} onPick={setSearch} />
         </div>
 
         {loading && !data && <p className="text-sm text-slate-500">Loading…</p>}

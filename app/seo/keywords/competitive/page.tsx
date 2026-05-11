@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { RecentSearchesStrip } from "@/components/recent-searches-strip";
 import { SeoShell, formatNumber } from "@/components/seo-shell";
 import {
   classifyKeywordGeo,
@@ -19,6 +20,7 @@ import {
   type RegionFilter,
   type StateFilter,
 } from "@/lib/keyword-geo";
+import { recordSearch } from "@/lib/recent-searches";
 
 type Opportunity = {
   keyword: string;
@@ -41,6 +43,18 @@ export default function KeywordCompetitivePage() {
   const [regionFilter, setRegionFilter] = useState<RegionFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("opportunityScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    if (search.trim().length < 3) return;
+    const t = setTimeout(() => recordSearch("battles", search), 1200);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Whenever the user picks a competitor, log that selection too — it's the
+  // real "search" on this page.
+  useEffect(() => {
+    if (selected) recordSearch("battles", selected);
+  }, [selected]);
 
   useEffect(() => {
     setLoadingDomains(true);
@@ -158,6 +172,10 @@ export default function KeywordCompetitivePage() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="mb-3">
+          <RecentSearchesStrip scope="battles" limit={6} onPick={setSearch} />
         </div>
 
         {loadingOpps && <p className="text-sm text-slate-500">Loading…</p>}
