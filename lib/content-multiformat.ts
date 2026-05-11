@@ -12,6 +12,7 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { getFirmContext } from "./firm-context";
+import { buildSkillsContext } from "./content-skills";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 
 export type FormatKey =
@@ -63,7 +64,10 @@ export async function generateMultiFormat(args: {
   sourceText?: string | null;
 }): Promise<MultiFormatResult> {
   const supabase = getSupabaseAdmin();
-  const firm = await getFirmContext();
+  const [firm, skillsContext] = await Promise.all([
+    getFirmContext(),
+    buildSkillsContext(),
+  ]);
 
   const requestedSpec = args.formats
     .map((f) => `- ${f}: ${FORMAT_INSTRUCTIONS[f]}`)
@@ -86,7 +90,7 @@ ${args.competitorGaps?.length ? `- Competitor gaps to address: ${args.competitor
 
   const system = `You are a marketing copywriter for Katz Melinger PLLC.
 ${firm}
-
+${skillsContext ? `\n${skillsContext}\n` : ""}
 Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.
 Avoid legalese. Never fabricate case results or guarantees. Stay compliant — recommend speaking with an attorney rather than asserting outcomes.
 

@@ -10,6 +10,7 @@ const TABS = [
   { href: "/content/pipeline", label: "Pipeline" },
   { href: "/content/sources", label: "Source material" },
   { href: "/content/drafts", label: "Saved drafts" },
+  { href: "/content/skills", label: "Skills" },
 ];
 
 export function ContentNav() {

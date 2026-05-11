@@ -5,6 +5,7 @@ import {
   getBrandVoiceContext,
   getLatestBrandProfile,
 } from "@/lib/content-brand-voice";
+import { buildSkillsContext } from "@/lib/content-skills";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -66,9 +67,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "topic required" }, { status: 400 });
   }
 
-  const [brandVoice, profile] = useBrandVoice
-    ? await Promise.all([getBrandVoiceContext(), getLatestBrandProfile()])
-    : ["", null];
+  const [brandVoice, profile, skillsContext] = useBrandVoice
+    ? await Promise.all([
+        getBrandVoiceContext(),
+        getLatestBrandProfile(),
+        buildSkillsContext(),
+      ])
+    : ["", null, ""];
 
   const lengthGuide =
     length === "short"
@@ -79,6 +84,7 @@ export async function POST(req: Request) {
 
   const system = `You are a marketing copywriter for Katz Melinger PLLC, a plaintiff-side employment law firm in New York City. The firm represents workers in wage & hour, discrimination, class actions, judgment enforcement, severance, and related matters. Voice: professional but approachable, focused on helping workers understand their rights—never corporate or cold.
 
+${skillsContext ? `${skillsContext}\n` : ""}
 ${brandVoice ? `Brand voice notes from the firm:\n${brandVoice}\n` : ""}
 ${profile ? `Brand guidelines summary:\n${profile.guidelinesSummary}\n` : ""}
 ${profile?.legalTerms?.length ? `Prefer legal terminology:\n${profile.legalTerms.join(", ")}\n` : ""}
