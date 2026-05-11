@@ -175,37 +175,47 @@ export default function EmailPage() {
               Constant Contact not connected
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              The email dashboard is showing zeros because the Constant Contact
-              integration isn't authorized yet.
+              {data.error
+                ? `The dashboard is empty because Constant Contact returned: ${data.error}`
+                : "The email dashboard is empty because Constant Contact isn't authorized."}{" "}
+              OAuth tokens expire — if this used to work, the most likely cause is that
+              the access + refresh token pair was revoked or expired. Click below to
+              re-authorize and the metrics will populate after one redirect.
             </p>
-            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-700">
-              <li>
-                In Vercel project settings, set:{" "}
-                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
-                  CONSTANT_CONTACT_CLIENT_ID
-                </code>{" "}
-                and{" "}
-                <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
-                  CONSTANT_CONTACT_CLIENT_SECRET
-                </code>
-                . List ID is optional — you'll pick lists from a dropdown after connecting.
-              </li>
-              <li>Redeploy.</li>
-              <li>
-                Visit{" "}
-                <a className="text-[#185FA5] underline" href="/api/constant-contact/oauth">
-                  /api/constant-contact/oauth
-                </a>{" "}
-                once to authorize the firm's account.
-              </li>
-              <li>
-                Reload this page — live metrics will populate. Check{" "}
-                <a className="text-[#185FA5] underline" href="/integrations">
-                  /integrations
-                </a>{" "}
-                for full status.
-              </li>
-            </ol>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <a
+                className="inline-block rounded-md bg-[#185FA5] text-white px-4 py-2 text-sm font-medium hover:bg-[#1f6fb8]"
+                href="/api/constant-contact/oauth"
+              >
+                Reconnect Constant Contact
+              </a>
+              <a
+                className="inline-block rounded-md border border-slate-300 text-slate-700 px-4 py-2 text-sm hover:border-slate-400"
+                href="/integrations"
+              >
+                Open integrations status
+              </a>
+            </div>
+            <details className="mt-4">
+              <summary className="text-xs text-slate-500 cursor-pointer">
+                First-time setup instructions
+              </summary>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+                <li>
+                  In Vercel project settings, set{" "}
+                  <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                    CONSTANT_CONTACT_CLIENT_ID
+                  </code>{" "}
+                  and{" "}
+                  <code className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-xs">
+                    CONSTANT_CONTACT_CLIENT_SECRET
+                  </code>
+                  .
+                </li>
+                <li>Redeploy.</li>
+                <li>Click "Reconnect Constant Contact" above to authorize the firm's account.</li>
+              </ol>
+            </details>
           </div>
         ) : null}
 

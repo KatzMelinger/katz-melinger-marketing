@@ -25,6 +25,7 @@ export default async function SeoPage() {
   const base = await getRequestOrigin();
 
   let data: OverviewData = {};
+  const apiErrors: string[] = [];
   try {
     const [keywordsRes, backlinksRes, competitorsRes] = await Promise.all([
       fetch(`${base}/api/seo/keywords`, { cache: "no-store" }),
@@ -32,17 +33,29 @@ export default async function SeoPage() {
       fetch(`${base}/api/seo/competitors`, { cache: "no-store" }),
     ]);
     const keywords = (await keywordsRes.json()) as OverviewData;
-    const backlinks = (await backlinksRes.json()) as { overview?: OverviewData["overview"] };
+    const backlinks = (await backlinksRes.json()) as {
+      overview?: OverviewData["overview"];
+      error?: string;
+    };
     const competitors = (await competitorsRes.json()) as {
       semrushCompetitors?: Array<{ domain: string; commonKeywords: number }>;
+      error?: string;
     };
+    if (keywords.error) apiErrors.push(`Keywords API: ${keywords.error}`);
+    if (backlinks.error) apiErrors.push(`Backlinks API: ${backlinks.error}`);
+    if (competitors.error) apiErrors.push(`Competitors API: ${competitors.error}`);
     data = {
       ...keywords,
       overview: backlinks.overview,
       semrushCompetitors: competitors.semrushCompetitors,
     };
-  } catch {
-    data = { error: "Unable to load SEO overview data right now." };
+  } catch (e) {
+    data = {
+      error:
+        e instanceof Error
+          ? `Couldn't load SEO data: ${e.message}`
+          : "Unable to load SEO overview data right now.",
+    };
   }
 
   const trackedCount = data.tracked?.length ?? 0;
@@ -54,6 +67,17 @@ export default async function SeoPage() {
   const authority = data.overview?.authorityScore ?? 0;
   const backlinks = data.overview?.totalBacklinks ?? 0;
 
+  // If every counter is zero AND we got no explicit errors, something is wrong
+  // upstream (Semrush returning empty, quota burnt, etc.) — say so instead of
+  // pretending the dashboard rendered fine.
+  const allZero =
+    trackedCount === 0 &&
+    rankingTop10 === 0 &&
+    missing === 0 &&
+    authority === 0 &&
+    backlinks === 0 &&
+    competitors.length === 0;
+
   return (
     <SeoShell
       title="SEO Intelligence Dashboard"
@@ -62,6 +86,29 @@ export default async function SeoPage() {
       {data.error ? (
         <div className="rounded-xl border border-amber-700/50 bg-[#ffffff] p-4 text-sm text-amber-800">
           {data.error}
+        </div>
+      ) : null}
+      {apiErrors.length > 0 ? (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+          <div className="font-medium mb-2">SEO API returned errors:</div>
+          <ul className="list-disc pl-5 space-y-1">
+            {apiErrors.map((msg) => (
+              <li key={msg}>{msg}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-red-700">
+            Most likely cause: SEMRUSH_API_KEY is missing, invalid, or out of
+            quota. Check Vercel env vars or the Semrush account dashboard.
+          </p>
+        </div>
+      ) : allZero ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          The page loaded but every metric came back zero. Semrush either
+          returned no rows or the call silently failed. Check{" "}
+          <Link href="/integrations" className="underline">
+            /integrations
+          </Link>{" "}
+          to confirm the Semrush key is healthy.
         </div>
       ) : null}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
