@@ -1,14 +1,20 @@
 /**
  * AI search readiness crawler.
  *
- * Walks a site (sitemap-first, falling back to the homepage), pulls structured
- * data, content shape, and AI-bot robots.txt rules, and returns the raw signals
- * for an LLM to score in the analyze route.
+ * Strategic-sample crawler: picks the homepage, the top traffic-driving pages
+ * from Search Console, and the most "service-like" pages from the sitemap.
+ * For each page we pull structured data, content shape, and AI-bot robots.txt
+ * rules. The raw signals are scored by Claude in the analyze route.
  *
- * Crawls up to 10 URLs per run to stay well under the route's 300s budget.
+ * Capped at 10 URLs per run to stay inside the route's 300s budget.
  */
 
+import { getGoogleAccessToken } from "@/lib/google-access-token";
+import { gscSiteUrlEncoded } from "@/lib/gsc-site-url";
 import { logger } from "@/lib/logger";
+
+const MAX_CRAWL_PAGES = 10;
+const GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
 
 export interface AICrawlerBot {
   name: string;
@@ -467,33 +473,150 @@ async function crawlPageForAI(url: string, host: string): Promise<AIReadinessPag
   };
 }
 
-export async function runAICrawl(input?: string): Promise<AISiteCrawlResult> {
-  const { base, host } = normalizeBaseUrl(input || "");
-  let pageUrls: string[] = [];
-
+async function fetchSitemapUrls(base: string, host: string): Promise<string[]> {
+  const urls: string[] = [];
   try {
-    const sitemapRes = await fetch(`${base}/sitemap.xml`, {
+    const res = await fetch(`${base}/sitemap.xml`, {
       headers: { "User-Agent": USER_AGENT },
       signal: AbortSignal.timeout(10000),
     });
-    if (sitemapRes.ok) {
-      const xml = await sitemapRes.text();
-      const urlRegex = /<loc>(.*?)<\/loc>/g;
-      let m: RegExpExecArray | null;
-      while ((m = urlRegex.exec(xml)) !== null) {
-        const u = m[1].trim();
-        if (u && u.includes(host)) pageUrls.push(u);
-      }
+    if (!res.ok) return urls;
+    const xml = await res.text();
+    const urlRegex = /<loc>(.*?)<\/loc>/g;
+    let m: RegExpExecArray | null;
+    while ((m = urlRegex.exec(xml)) !== null) {
+      const u = m[1].trim();
+      if (u && u.includes(host)) urls.push(u);
     }
   } catch {
     logger.warn({ host }, "Sitemap fetch failed");
   }
+  return urls;
+}
 
-  if (pageUrls.length === 0) pageUrls = [base];
+async function fetchTopGscPages(limit: number): Promise<string[]> {
+  try {
+    const auth = await getGoogleAccessToken([GSC_SCOPE]);
+    if ("error" in auth) return [];
+
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 28);
+    const ymd = (d: Date) => d.toISOString().slice(0, 10);
+
+    const res = await fetch(
+      `https://searchconsole.googleapis.com/webmasters/v3/sites/${gscSiteUrlEncoded()}/searchAnalytics/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          startDate: ymd(start),
+          endDate: ymd(end),
+          dimensions: ["page"],
+          rowLimit: limit,
+          orderBy: [{ field: "clicks", sortOrder: "descending" }],
+        }),
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    if (!res.ok) return [];
+    const json = (await res.json()) as { rows?: { keys?: string[] }[] };
+    return (json.rows ?? [])
+      .map((r) => r.keys?.[0] ?? "")
+      .filter((u) => u.startsWith("http"));
+  } catch (err) {
+    logger.warn(
+      { error: err instanceof Error ? err.message : String(err) },
+      "GSC top pages fetch failed",
+    );
+    return [];
+  }
+}
+
+/**
+ * Score a sitemap URL by how likely it represents an evergreen service page
+ * (the kind AI assistants are most likely to cite). Higher is better.
+ *
+ *  - Shallow paths beat deep ones.
+ *  - Practice-area / service / attorney keywords get a bump.
+ *  - Blog/news/archive paths get penalized.
+ */
+function scoreSitemapUrl(rawUrl: string): number {
+  let score = 0;
+  let path: string;
+  try {
+    path = new URL(rawUrl).pathname.toLowerCase().replace(/\/$/, "");
+  } catch {
+    return -100;
+  }
+  if (!path || path === "/") return 50; // homepage handled separately, but be safe
+
+  const segments = path.split("/").filter(Boolean);
+  score -= segments.length * 5;
+
+  const serviceKeywords = [
+    "practice", "service", "attorney", "lawyer", "employment", "discrimination",
+    "harassment", "wage", "wrongful", "retaliation", "fmla", "overtime",
+    "severance", "contract", "non-compete", "whistleblower",
+  ];
+  if (serviceKeywords.some((kw) => path.includes(kw))) score += 30;
+
+  const penalty = ["/blog/", "/news/", "/tag/", "/category/", "/author/", "/wp-", "/feed", "/page/"];
+  if (penalty.some((p) => path.includes(p))) score -= 40;
+
+  return score;
+}
+
+function selectStrategicUrls(
+  base: string,
+  sitemapUrls: string[],
+  gscUrls: string[],
+): string[] {
+  const picked: string[] = [];
+  const seen = new Set<string>();
+  const canonical = (u: string) => u.replace(/\/$/, "").toLowerCase();
+
+  const add = (u: string) => {
+    const key = canonical(u);
+    if (seen.has(key)) return;
+    seen.add(key);
+    picked.push(u);
+  };
+
+  add(base);
+
+  for (const u of gscUrls) {
+    if (picked.length >= MAX_CRAWL_PAGES) break;
+    add(u);
+  }
+
+  const ranked = [...sitemapUrls]
+    .filter((u) => !seen.has(canonical(u)))
+    .map((u) => ({ url: u, score: scoreSitemapUrl(u) }))
+    .sort((a, b) => b.score - a.score);
+
+  for (const { url } of ranked) {
+    if (picked.length >= MAX_CRAWL_PAGES) break;
+    add(url);
+  }
+
+  return picked;
+}
+
+export async function runAICrawl(input?: string): Promise<AISiteCrawlResult> {
+  const { base, host } = normalizeBaseUrl(input || "");
+
+  const [sitemapUrls, gscUrls] = await Promise.all([
+    fetchSitemapUrls(base, host),
+    fetchTopGscPages(6),
+  ]);
 
   const robotsTxt = await fetchRobotsTxt(base);
 
-  const pagesToCrawl = pageUrls.slice(0, 10);
+  const pagesToCrawl = selectStrategicUrls(base, sitemapUrls, gscUrls);
   const pages: AIReadinessPageData[] = [];
 
   for (const url of pagesToCrawl) {
