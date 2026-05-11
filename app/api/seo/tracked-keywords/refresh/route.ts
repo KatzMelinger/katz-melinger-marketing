@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import {
   getDomainKeywords,
   getKeywordDifficulty,
+  getPhraseMetrics,
   type SemrushKeywordRow,
 } from "@/lib/semrush";
 
@@ -55,10 +56,12 @@ export async function POST() {
       );
     }
 
-    // Find which tracked keywords still need a difficulty score (Semrush
-    // domain_organic doesn't include KD), and batch-fetch them.
-    const keywordsNeedingKd: string[] = [];
+    // For each tracked keyword try to match it against the firm's organic
+    // report. If we have no match we still want volume + difficulty in the UI
+    // — pull those via phrase_these / phrase_kdi for the unmatched set.
     const matchByKeyword = new Map<string, SemrushKeywordRow | null>();
+    const unmatchedPhrases: string[] = [];
+    const phrasesNeedingKd: string[] = [];
 
     for (const item of items) {
       const target = item.keyword.toLowerCase().trim();
@@ -76,14 +79,29 @@ export async function POST() {
       matchByKeyword.set(item.id, partial);
 
       if (partial && partial.difficulty === null) {
-        keywordsNeedingKd.push(partial.keyword);
+        phrasesNeedingKd.push(partial.keyword);
+      }
+      if (!partial) {
+        unmatchedPhrases.push(item.keyword);
+        phrasesNeedingKd.push(item.keyword);
       }
     }
 
-    const kdMap =
-      keywordsNeedingKd.length > 0
-        ? await getKeywordDifficulty(keywordsNeedingKd).catch(() => new Map())
-        : new Map<string, number>();
+    const [kdMap, metricsMap] = await Promise.all([
+      phrasesNeedingKd.length > 0
+        ? getKeywordDifficulty(phrasesNeedingKd).catch(
+            () => new Map<string, number>(),
+          )
+        : Promise.resolve(new Map<string, number>()),
+      unmatchedPhrases.length > 0
+        ? getPhraseMetrics(unmatchedPhrases).catch(
+            () =>
+              new Map<string, { volume: number; cpc: number; competition: number }>(),
+          )
+        : Promise.resolve(
+            new Map<string, { volume: number; cpc: number; competition: number }>(),
+          ),
+    ]);
 
     // Apply updates row by row. Could be batched with .upsert, but per-row
     // gives us cleaner error handling and the volume here is small (typically
@@ -92,23 +110,39 @@ export async function POST() {
     const now = new Date().toISOString();
     for (const item of items) {
       const match = matchByKeyword.get(item.id);
-      if (!match) continue;
+      const target = item.keyword.toLowerCase().trim();
 
-      const newRank = match.position;
-      const difficulty =
-        match.difficulty ??
-        kdMap.get(match.keyword.toLowerCase().trim()) ??
-        item.difficulty ?? // keep prior value if Semrush returned nothing new
-        null;
+      let newRank: number | null;
+      let searchVolume: number | null;
+      let difficulty: number | null;
+      let url: string | null;
+
+      if (match) {
+        newRank = match.position;
+        searchVolume = match.volume;
+        difficulty =
+          match.difficulty ??
+          kdMap.get(match.keyword.toLowerCase().trim()) ??
+          item.difficulty ??
+          null;
+        url = match.url;
+      } else {
+        // Not ranked — surface what we can from phrase-level Semrush data.
+        const metrics = metricsMap.get(target);
+        newRank = null;
+        searchVolume = metrics ? metrics.volume : item.search_volume ?? null;
+        difficulty = kdMap.get(target) ?? item.difficulty ?? null;
+        url = null;
+      }
 
       const { error: updateErr } = await supabase
         .from("seo_keywords")
         .update({
           previous_rank: item.current_rank,
           current_rank: newRank,
-          search_volume: match.volume,
+          search_volume: searchVolume,
           difficulty,
-          url: match.url,
+          url,
           last_checked_at: now,
         })
         .eq("id", item.id);

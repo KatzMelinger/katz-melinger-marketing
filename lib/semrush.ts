@@ -256,6 +256,62 @@ export async function getKeywordDifficulty(
 }
 
 /**
+ * Look up search volume / CPC / competition for one or more phrases via the
+ * phrase_these endpoint. Use this for keywords the firm doesn't rank for —
+ * domain_organic only returns ranked keywords. Returns a map of lowercase
+ * keyword -> metrics.
+ */
+export async function getPhraseMetrics(
+  phrases: string[],
+  database: string = SEMRUSH_DATABASE,
+): Promise<Map<string, { volume: number; cpc: number; competition: number }>> {
+  const out = new Map<string, { volume: number; cpc: number; competition: number }>();
+  if (phrases.length === 0) return out;
+
+  const key = getApiKey();
+
+  // phrase_these caps at 100 phrases per request.
+  const chunks: string[][] = [];
+  for (let i = 0; i < phrases.length; i += 100) {
+    chunks.push(phrases.slice(i, i + 100));
+  }
+
+  for (const chunk of chunks) {
+    const params = new URLSearchParams({
+      type: "phrase_these",
+      key,
+      phrase: chunk.join(";"),
+      database,
+      export_columns: "Ph,Nq,Cp,Co",
+    });
+
+    try {
+      const res = await fetch(`${SEO_BASE}?${params.toString()}`, {
+        method: "GET",
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) continue;
+
+      const text = await res.text();
+      if (text.startsWith("ERROR")) continue;
+
+      const rows = parseSemrushCsvObjects(text);
+      for (const r of rows) {
+        const phrase = r["Keyword"]?.toLowerCase().trim();
+        const volume = parseIntSafe(r["Search Volume"]);
+        const cpc = toNum(r["CPC"]) ?? 0;
+        const competition = toNum(r["Competition"]) ?? 0;
+        if (phrase) out.set(phrase, { volume, cpc, competition });
+      }
+    } catch {
+      // skip this chunk, keep going
+    }
+  }
+
+  return out;
+}
+
+/**
  * Convenience: look up a single keyword on the firm's domain. Used by the
  * "add tracked keyword" flow to populate initial position/volume/difficulty.
  */
@@ -283,9 +339,20 @@ export async function lookupKeywordRanking(
       );
 
     if (!partial) {
-      const kdMap = await getKeywordDifficulty([keyword]);
+      // Firm doesn't rank for this keyword — but we still want its volume
+      // and difficulty for the tracker UI. Hit phrase_these + phrase_kdi.
+      const [metricsMap, kdMap] = await Promise.all([
+        getPhraseMetrics([keyword]).catch(() => new Map()),
+        getKeywordDifficulty([keyword]).catch(() => new Map()),
+      ]);
+      const m = metricsMap.get(normalized);
       const difficulty = kdMap.get(normalized) ?? null;
-      return { currentRank: null, searchVolume: null, difficulty, url: null };
+      return {
+        currentRank: null,
+        searchVolume: m ? m.volume : null,
+        difficulty,
+        url: null,
+      };
     }
 
     let difficulty = partial.difficulty;
