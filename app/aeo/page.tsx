@@ -481,6 +481,166 @@ function SentimentRow({ label, count, tone }: { label: string; count: number; to
   );
 }
 
+type NoShowRecommendation = {
+  summary: string;
+  priority: "high" | "medium" | "low";
+  why: string;
+  contentIdeas: { title: string; format: string; rationale: string }[];
+  schemaToAdd: string[];
+  citationOpportunities: { domain: string; reason: string }[];
+  competitorsToBeat: { name: string; whyTheyWin: string }[];
+};
+
+function NoShowRecommendations({ pd }: { pd: Dashboard["promptDetail"][number] }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rec, setRec] = useState<NoShowRecommendation | null>(null);
+
+  const generate = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/aeo/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: pd.prompt,
+          providerResponses: pd.cells
+            .filter((c) => !c.error && c.responsePreview)
+            .map((c) => ({
+              provider: c.provider,
+              text: c.responsePreview,
+              citations: [],
+            })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed");
+      setRec(data.recommendation as NoShowRecommendation);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!rec) {
+    return (
+      <div className="p-3 border-t border-black/10 dark:border-white/10 bg-amber-50/50 dark:bg-amber-900/10">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="text-xs text-amber-900 dark:text-amber-200 max-w-md">
+            The firm didn't appear in any LLM's answer here. Ask Claude what
+            content / schema / citations would change that.
+          </div>
+          <button
+            type="button"
+            onClick={generate}
+            disabled={loading}
+            className="text-xs rounded-md bg-[#185FA5] text-white px-3 py-1.5 hover:bg-[#1f6fb8] disabled:opacity-50 shrink-0"
+          >
+            {loading ? "Analyzing…" : "Why aren't we appearing?"}
+          </button>
+        </div>
+        {error && (
+          <div className="mt-2 text-xs text-red-700 dark:text-red-400">{error}</div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 border-t border-black/10 dark:border-white/10 bg-amber-50/50 dark:bg-amber-900/10 space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Pill
+          tone={
+            rec.priority === "high"
+              ? "red"
+              : rec.priority === "medium"
+                ? "amber"
+                : "neutral"
+          }
+        >
+          {rec.priority} priority
+        </Pill>
+        <button
+          type="button"
+          onClick={generate}
+          disabled={loading}
+          className="ml-auto text-[11px] text-slate-500 hover:text-slate-900 underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          {loading ? "…" : "Regenerate"}
+        </button>
+      </div>
+
+      <p className="text-sm font-medium">{rec.summary}</p>
+      {rec.why && <p className="text-xs text-slate-700 dark:text-slate-300">{rec.why}</p>}
+
+      {rec.contentIdeas?.length > 0 && (
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1.5">
+            Content to publish
+          </div>
+          <ul className="space-y-2">
+            {rec.contentIdeas.map((idea, i) => (
+              <li key={i} className="text-xs bg-white dark:bg-slate-900 border border-black/10 dark:border-white/10 rounded p-2">
+                <div className="font-medium">{idea.title}</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  {idea.format} · {idea.rationale}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {rec.schemaToAdd?.length > 0 && (
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1.5">
+            Schema markup to add
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {rec.schemaToAdd.map((s, i) => (
+              <Pill key={i} tone="violet">{s}</Pill>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {rec.citationOpportunities?.length > 0 && (
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1.5">
+            Sites to get cited on
+          </div>
+          <ul className="space-y-1">
+            {rec.citationOpportunities.map((c, i) => (
+              <li key={i} className="text-xs">
+                <span className="font-mono text-[#185FA5]">{c.domain}</span> —{" "}
+                <span className="text-slate-700 dark:text-slate-300">{c.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {rec.competitorsToBeat?.length > 0 && (
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 mb-1.5">
+            Competitors winning here
+          </div>
+          <ul className="space-y-1">
+            {rec.competitorsToBeat.map((c, i) => (
+              <li key={i} className="text-xs">
+                <span className="font-medium">{c.name}</span> —{" "}
+                <span className="text-slate-700 dark:text-slate-300">{c.whyTheyWin}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PromptRow({ pd }: { pd: Dashboard["promptDetail"][number] }) {
   const [open, setOpen] = useState(false);
   const anyMention = pd.cells.some((c) => c.selfMentioned);
@@ -504,6 +664,7 @@ function PromptRow({ pd }: { pd: Dashboard["promptDetail"][number] }) {
         </div>
         <span className="text-sm opacity-50">{open ? "▴" : "▾"}</span>
       </button>
+      {open && !anyMention && <NoShowRecommendations pd={pd} />}
       {open && (
         <div className="border-t border-black/10 dark:border-white/10 divide-y divide-black/5 dark:divide-white/5">
           {pd.cells.map((c, i) => (
