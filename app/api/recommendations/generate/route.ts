@@ -7,7 +7,12 @@
  */
 
 import { NextResponse } from "next/server";
+
 import { generateRecommendations } from "@/lib/ai-recommendations";
+import {
+  listSuppressedTitles,
+  persistGeneratedRecommendations,
+} from "@/lib/recommendation-items";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
@@ -15,9 +20,12 @@ export const maxDuration = 300;
 
 export async function POST() {
   try {
-    const result = await generateRecommendations();
+    // Skip anything the user has already marked done or disregarded so Claude
+    // doesn't keep proposing work that's been completed or rejected.
+    const suppressTitles = await listSuppressedTitles();
+    const result = await generateRecommendations({ suppressTitles });
 
-    // Persist to history so the user can revisit past sets.
+    // Persist the whole batch to history (for the batch-replay sidebar)…
     let historyId: string | null = null;
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -37,7 +45,20 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({ ...result, history_id: historyId });
+    // …and each recommendation as a tracked item with status='active' (skips
+    // any title that already exists in any bucket).
+    const { inserted, skipped } = await persistGeneratedRecommendations(
+      result.recommendations,
+      historyId,
+    );
+
+    return NextResponse.json({
+      ...result,
+      history_id: historyId,
+      itemsInserted: inserted,
+      itemsSkipped: skipped,
+      suppressedCount: suppressTitles.length,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "generate failed";
     return NextResponse.json({ error: message }, { status: 500 });

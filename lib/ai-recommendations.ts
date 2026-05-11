@@ -115,7 +115,9 @@ async function loadSEOContext() {
   };
 }
 
-export async function generateRecommendations(): Promise<{
+export async function generateRecommendations(
+  opts: { suppressTitles?: string[] } = {},
+): Promise<{
   recommendations: Recommendation[];
   generatedAt: string;
   evidence: { aeoRows: number; keywords: number; cannibalization: number };
@@ -125,6 +127,11 @@ export async function generateRecommendations(): Promise<{
     loadLatestAEOSnapshot(),
     loadSEOContext(),
   ]);
+
+  const suppress = (opts.suppressTitles ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 200);
 
   const aeoSummary = aeo.rows.length === 0
     ? "(no AEO run yet)"
@@ -166,6 +173,13 @@ export async function generateRecommendations(): Promise<{
 
   const systemPrompt = `You are a marketing strategist for a law firm. You receive a snapshot of the firm's current SEO and AI-search performance and produce a prioritized list of actions. Be specific, name pages, name competitors, name prompts. Avoid platitudes. Optimize for actionability.`;
 
+  const suppressBlock =
+    suppress.length > 0
+      ? `\n\nThe user has already completed OR rejected these recommendations. Do NOT suggest them again, and do NOT suggest near-duplicates. Pick fresh actions:\n${suppress
+          .map((t) => `- ${t}`)
+          .join("\n")}`
+      : "";
+
   const userPrompt = `Firm context:
 ${firm}
 
@@ -176,7 +190,7 @@ Top tracked keywords:
 ${keywordSummary}
 
 Cannibalization issues:
-${cannibSummary}
+${cannibSummary}${suppressBlock}
 
 Produce 6–12 recommendations. Each must point at concrete evidence above. Return JSON only:
 

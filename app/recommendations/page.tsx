@@ -3,16 +3,42 @@
 /**
  * Claude-powered marketing recommendations.
  *
- * Pulls the latest AEO + SEO + cannibalization snapshot, sends it to Claude,
- * and renders a prioritized action list with rationale and evidence so the
- * marketer can verify each suggestion against the underlying data.
+ * Tab-based: Active | Done | Hold | Disregard | History.
  *
- * Fast enough to run on demand — single Claude round-trip — so we don't
- * persist; the user clicks Generate whenever they want a fresh take.
+ *   - Generate creates new active items and skips anything already marked
+ *     done or disregarded (so Claude doesn't keep re-proposing rejected work).
+ *   - Each card has buttons to park the recommendation in Done / Hold /
+ *     Disregard, or push it back to Active.
+ *   - History keeps the legacy per-batch view so the user can still see what
+ *     a previous run produced.
+ *
+ * State lives in Supabase (`recommendation_items`); the UI just renders.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
 import { MarketingNav } from "@/components/marketing-nav";
+
+type StatusTab = "active" | "done" | "hold" | "disregard";
+
+type RecCategory = "seo" | "aeo" | "content" | "technical" | "local" | "social";
+type RecEffort = "low" | "medium" | "high";
+type RecImpact = "low" | "medium" | "high";
+
+type Item = {
+  id: string;
+  title: string;
+  rationale: string;
+  category: RecCategory;
+  effort: RecEffort;
+  impact: RecImpact;
+  evidence: string;
+  status: StatusTab;
+  sourceGenerationId: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 type HistoryItem = {
   id: string;
@@ -21,31 +47,35 @@ type HistoryItem = {
   created_at: string;
 };
 
-type Recommendation = {
-  title: string;
-  rationale: string;
-  category: "seo" | "aeo" | "content" | "technical" | "local" | "social";
-  effort: "low" | "medium" | "high";
-  impact: "low" | "medium" | "high";
-  evidence: string;
-};
-
-type Result = {
-  recommendations: Recommendation[];
-  generatedAt: string;
+type GenerateResult = {
+  recommendations: unknown[];
   evidence: { aeoRows: number; keywords: number; cannibalization: number };
+  itemsInserted: number;
+  itemsSkipped: number;
+  suppressedCount: number;
+  generatedAt: string;
 };
 
-function Pill({ tone, children }: { tone: "emerald" | "red" | "amber" | "blue" | "violet" | "neutral"; children: React.ReactNode }) {
+function Pill({
+  tone,
+  children,
+}: {
+  tone: "emerald" | "red" | "amber" | "blue" | "violet" | "neutral";
+  children: React.ReactNode;
+}) {
   const colors: Record<string, string> = {
-    emerald: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-    red: "bg-red-500/15 text-red-700 dark:text-red-400",
-    amber: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-    blue: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-    violet: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
-    neutral: "bg-black/5 dark:bg-white/10 opacity-80",
+    emerald: "bg-emerald-500/15 text-emerald-700",
+    red: "bg-red-500/15 text-red-700",
+    amber: "bg-amber-500/15 text-amber-700",
+    blue: "bg-blue-500/15 text-blue-700",
+    violet: "bg-violet-500/15 text-violet-700",
+    neutral: "bg-slate-100 text-slate-700",
   };
-  return <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${colors[tone]}`}>{children}</span>;
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${colors[tone]}`}>
+      {children}
+    </span>
+  );
 }
 
 function impactTone(s: string): "emerald" | "amber" | "neutral" {
@@ -53,13 +83,11 @@ function impactTone(s: string): "emerald" | "amber" | "neutral" {
   if (s === "medium") return "amber";
   return "neutral";
 }
-
 function effortTone(s: string): "blue" | "amber" | "red" {
   if (s === "low") return "blue";
   if (s === "medium") return "amber";
   return "red";
 }
-
 function categoryTone(c: string): "violet" | "blue" | "amber" | "emerald" | "neutral" {
   if (c === "aeo") return "violet";
   if (c === "seo") return "blue";
@@ -68,13 +96,38 @@ function categoryTone(c: string): "violet" | "blue" | "amber" | "emerald" | "neu
   return "neutral";
 }
 
+const TABS: { id: StatusTab; label: string }[] = [
+  { id: "active", label: "Active" },
+  { id: "done", label: "Done" },
+  { id: "hold", label: "Hold" },
+  { id: "disregard", label: "Disregard" },
+];
+
 export default function RecommendationsPage() {
-  const [result, setResult] = useState<Result | null>(null);
+  const [tab, setTab] = useState<StatusTab | "history">("active");
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [genStatus, setGenStatus] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
 
-  const refreshHistory = async () => {
+  const refreshItems = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/recommendations/items", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed");
+      setItems((data.items ?? []) as Item[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshHistory = useCallback(async () => {
     try {
       const res = await fetch("/api/recommendations/history");
       const data = await res.json();
@@ -82,146 +135,285 @@ export default function RecommendationsPage() {
     } catch {
       /* ignore */
     }
-  };
+  }, []);
 
   useEffect(() => {
+    refreshItems();
     refreshHistory();
-  }, []);
+  }, [refreshItems, refreshHistory]);
 
   const generate = async () => {
     setGenerating(true);
     setError(null);
+    setGenStatus(null);
     try {
       const res = await fetch("/api/recommendations/generate", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to generate");
-      setResult(data);
-      refreshHistory();
+      setGenStatus(data as GenerateResult);
+      await Promise.all([refreshItems(), refreshHistory()]);
+      setTab("active");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate");
+    } finally {
+      setGenerating(false);
     }
-    setGenerating(false);
   };
 
-  const loadFromHistory = async (id: string) => {
+  const setStatus = async (id: string, status: StatusTab) => {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)));
     try {
-      const res = await fetch(`/api/recommendations/history?id=${id}`);
-      const data = await res.json();
-      if (!res.ok) return;
-      setResult({
-        recommendations: data.recommendations,
-        evidence: data.evidence,
-        generatedAt: data.created_at,
+      await fetch(`/api/recommendations/items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
       });
     } catch {
-      /* ignore */
+      refreshItems();
     }
   };
 
-  // Sort: high impact + low effort first.
-  const sorted = (result?.recommendations ?? []).slice().sort((a, b) => {
-    const score = (r: Recommendation) =>
-      ({ high: 3, medium: 2, low: 1 }[r.impact] ?? 0) - ({ high: 2, medium: 1, low: 0 }[r.effort] ?? 0);
-    return score(b) - score(a);
+  const remove = async (id: string) => {
+    if (!window.confirm("Permanently delete this recommendation?")) return;
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    try {
+      await fetch(`/api/recommendations/items/${id}`, { method: "DELETE" });
+    } catch {
+      refreshItems();
+    }
+  };
+
+  const counts = {
+    active: items.filter((i) => i.status === "active").length,
+    done: items.filter((i) => i.status === "done").length,
+    hold: items.filter((i) => i.status === "hold").length,
+    disregard: items.filter((i) => i.status === "disregard").length,
+  };
+
+  // Active tab: sort high-impact / low-effort first. Other tabs: most recent first.
+  const visible = (
+    tab === "history"
+      ? []
+      : items.filter((i) => i.status === tab).slice()
+  ).sort((a, b) => {
+    if (tab === "active") {
+      const score = (r: Item) =>
+        ({ high: 3, medium: 2, low: 1 }[r.impact] ?? 0) -
+        ({ high: 2, medium: 1, low: 0 }[r.effort] ?? 0);
+      return score(b) - score(a);
+    }
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
 
   return (
     <>
       <MarketingNav />
       <div className="p-6 space-y-6 mx-auto max-w-7xl">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">AI recommendations</h1>
-          <p className="text-sm opacity-70 mt-1 max-w-2xl">
-            Claude reads the firm's latest AEO sweep, tracked SEO keywords, and
-            cannibalization snapshot, then suggests prioritized actions with
-            evidence pointing back to the rows above.
-          </p>
-          {result && (
-            <p className="text-xs opacity-60 mt-1">
-              Generated {new Date(result.generatedAt).toLocaleString()} · evidence:{" "}
-              {result.evidence.aeoRows} AEO rows, {result.evidence.keywords} keywords,{" "}
-              {result.evidence.cannibalization} cannibalization issues
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">AI recommendations</h1>
+            <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+              Claude reads the firm's latest AEO sweep, tracked SEO keywords, and
+              cannibalization snapshot, then suggests prioritized actions.
+              Mark items Done, Hold, or Disregard to keep the active list tight —
+              Done + Disregard items are skipped on the next Generate.
             </p>
-          )}
-        </div>
-        <button
-          onClick={generate}
-          disabled={generating}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-foreground text-background disabled:opacity-50"
-        >
-          {generating ? "Thinking…" : result ? "Regenerate" : "Generate"}
-        </button>
-      </div>
-
-      {error && (
-        <div className="border border-red-500/40 rounded-lg p-3 text-sm text-red-700 dark:text-red-400">{error}</div>
-      )}
-
-      {history.length > 0 && (
-        <div className="border border-slate-200 rounded-lg p-4">
-          <div className="text-xs font-medium uppercase tracking-wider opacity-60 mb-2">
-            Recent generations
           </div>
-          <div className="flex flex-wrap gap-2">
-            {history.map((h) => (
+          <button
+            onClick={generate}
+            disabled={generating}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+          >
+            {generating ? "Thinking…" : "Generate"}
+          </button>
+        </div>
+
+        {genStatus && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            Added {genStatus.itemsInserted} new active{" "}
+            {genStatus.itemsInserted === 1 ? "item" : "items"}
+            {genStatus.itemsSkipped > 0
+              ? `, skipped ${genStatus.itemsSkipped} duplicate${genStatus.itemsSkipped === 1 ? "" : "s"}`
+              : ""}
+            {genStatus.suppressedCount > 0
+              ? `. Told Claude to avoid ${genStatus.suppressedCount} previously-resolved title${genStatus.suppressedCount === 1 ? "" : "s"}.`
+              : "."}
+          </div>
+        )}
+
+        {error && (
+          <div className="border border-red-300 bg-red-50 rounded-md p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-1 border-b border-slate-200">
+          {TABS.map((t) => {
+            const active = tab === t.id;
+            return (
               <button
-                key={h.id}
-                onClick={() => loadFromHistory(h.id)}
-                className="text-xs px-2 py-1 rounded border border-slate-200 hover:border-[#185FA5] hover:text-[#185FA5] transition-colors"
-                title={`${h.rec_count} recs · ${new Date(h.created_at).toLocaleString()}`}
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] transition-colors ${
+                  active
+                    ? "border-[#185FA5] text-[#185FA5]"
+                    : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
+                }`}
               >
-                <span className="font-medium">{new Date(h.created_at).toLocaleDateString()}</span>
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                  {h.rec_count}
-                </span>
-                <span className="ml-2 opacity-60">
-                  {new Date(h.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {t.label}{" "}
+                <span
+                  className={`ml-1 px-1.5 py-0.5 rounded-full text-[11px] ${
+                    active ? "bg-[#185FA5]/15 text-[#185FA5]" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {counts[t.id]}
                 </span>
               </button>
+            );
+          })}
+          <button
+            onClick={() => setTab("history")}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] transition-colors ${
+              tab === "history"
+                ? "border-[#185FA5] text-[#185FA5]"
+                : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
+            }`}
+          >
+            History
+          </button>
+        </div>
+
+        {tab === "history" ? (
+          history.length === 0 ? (
+            <div className="border border-slate-200 rounded-lg p-10 text-center text-sm text-slate-500">
+              No past generations yet.
+            </div>
+          ) : (
+            <div className="border border-slate-200 rounded-lg p-4">
+              <div className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                Past generation batches
+              </div>
+              <ul className="space-y-1.5">
+                {history.map((h) => (
+                  <li key={h.id} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-700">
+                      {new Date(h.created_at).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {h.rec_count} recommendation{h.rec_count === 1 ? "" : "s"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        ) : loading && items.length === 0 ? (
+          <div className="border border-slate-200 rounded-lg p-10 text-center text-sm text-slate-500">
+            Loading…
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="border border-slate-200 rounded-lg p-10 text-center space-y-2">
+            <div className="text-3xl" aria-hidden>
+              ✦
+            </div>
+            <h3 className="text-lg font-semibold">
+              {tab === "active"
+                ? "No active recommendations"
+                : tab === "done"
+                  ? "Nothing marked done yet"
+                  : tab === "hold"
+                    ? "Nothing on hold"
+                    : "Nothing disregarded"}
+            </h3>
+            <p className="text-sm text-slate-600 max-w-md mx-auto">
+              {tab === "active"
+                ? "Click Generate to ask Claude for prioritized actions based on your current AEO + SEO data."
+                : "Mark items in the Active tab to fill this bucket."}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {visible.map((r) => (
+              <RecCard
+                key={r.id}
+                item={r}
+                onStatus={(s) => setStatus(r.id, s)}
+                onDelete={() => remove(r.id)}
+              />
             ))}
           </div>
-        </div>
-      )}
-
-      {!result && !generating && (
-        <div className="border border-black/10 dark:border-white/10 rounded-lg p-10 text-center space-y-2">
-          <div className="text-3xl" aria-hidden>✦</div>
-          <h3 className="text-lg font-semibold">No recommendations yet</h3>
-          <p className="text-sm opacity-70 max-w-md mx-auto">
-            Click Generate to ask Claude for prioritized actions based on your
-            current AEO and SEO data.
-          </p>
-        </div>
-      )}
-
-      {generating && !result && (
-        <div className="border border-black/10 dark:border-white/10 rounded-lg p-10 text-center text-sm opacity-70">
-          Reading your latest data…
-        </div>
-      )}
-
-      {sorted.length > 0 && (
-        <div className="space-y-3">
-          {sorted.map((r, i) => (
-            <div key={i} className="border border-black/10 dark:border-white/10 rounded-lg p-4">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="text-sm font-medium">{r.title}</div>
-                <div className="flex items-center gap-1.5">
-                  <Pill tone={categoryTone(r.category)}>{r.category}</Pill>
-                  <Pill tone={impactTone(r.impact)}>impact: {r.impact}</Pill>
-                  <Pill tone={effortTone(r.effort)}>effort: {r.effort}</Pill>
-                </div>
-              </div>
-              <p className="text-xs opacity-80 mt-2">{r.rationale}</p>
-              <p className="text-[11px] opacity-60 italic mt-2 border-l-2 border-black/10 dark:border-white/15 pl-2">
-                Evidence: {r.evidence}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+        )}
       </div>
     </>
+  );
+}
+
+function RecCard({
+  item,
+  onStatus,
+  onDelete,
+}: {
+  item: Item;
+  onStatus: (s: StatusTab) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="border border-slate-200 rounded-lg p-4 bg-white">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="text-sm font-medium text-slate-900 min-w-0 flex-1">
+          {item.title}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Pill tone={categoryTone(item.category)}>{item.category}</Pill>
+          <Pill tone={impactTone(item.impact)}>impact: {item.impact}</Pill>
+          <Pill tone={effortTone(item.effort)}>effort: {item.effort}</Pill>
+        </div>
+      </div>
+      <p className="text-xs text-slate-700 mt-2">{item.rationale}</p>
+      <p className="text-[11px] text-slate-500 italic mt-2 border-l-2 border-slate-200 pl-2">
+        Evidence: {item.evidence}
+      </p>
+
+      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+        {item.status !== "active" && (
+          <button
+            onClick={() => onStatus("active")}
+            className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+          >
+            ↺ Move back to Active
+          </button>
+        )}
+        {item.status !== "done" && (
+          <button
+            onClick={() => onStatus("done")}
+            className="text-xs px-2.5 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+          >
+            ✓ Done
+          </button>
+        )}
+        {item.status !== "hold" && (
+          <button
+            onClick={() => onStatus("hold")}
+            className="text-xs px-2.5 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50"
+          >
+            ⏸ Hold
+          </button>
+        )}
+        {item.status !== "disregard" && (
+          <button
+            onClick={() => onStatus("disregard")}
+            className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+          >
+            ✕ Disregard
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          className="ml-auto text-[11px] text-slate-400 hover:text-red-600"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
   );
 }
