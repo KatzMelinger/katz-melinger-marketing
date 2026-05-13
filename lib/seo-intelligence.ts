@@ -1,4 +1,6 @@
 import {
+  getKeywordDifficulty,
+  getPhraseMetrics,
   parseIntSafe,
   parseSemrushCsv,
   rowToRecord,
@@ -7,6 +9,7 @@ import {
   SEMRUSH_DATABASE,
   SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
+import { listTargets } from "@/lib/seo-targets";
 
 type SemrushRecord = Record<string, string>;
 
@@ -169,7 +172,18 @@ function parseKeywordRow(row: SemrushRecord): KeywordRow {
   };
 }
 
-export function getTargetKeywords(): string[] {
+/**
+ * Source of truth is the Supabase seo_target_keywords table (managed via
+ * /api/seo/keywords/targets). If the DB is unreachable we fall back to env
+ * and then to the legacy hardcoded list so the page never returns empty.
+ */
+export async function getTargetKeywords(): Promise<string[]> {
+  try {
+    const fromDb = await listTargets();
+    if (fromDb.length > 0) return fromDb;
+  } catch {
+    // fall through to env / defaults
+  }
   const fromEnv = (process.env.SEO_TARGET_KEYWORDS ?? "")
     .split(",")
     .map((value) => value.trim().toLowerCase())
@@ -203,31 +217,63 @@ export async function getTrackedKeywordPerformance(
   trendingKeywords: Array<{ keyword: string; searchVolume: number; trendScore: number }>;
   longTailSuggestions: string[];
 }> {
-  const targets = getTargetKeywords();
-  const rows = await getDomainOrganicKeywords(domain, 120);
+  const targets = await getTargetKeywords();
+  // Pull up to 1000 keywords (Semrush per-request max) so targets that rank
+  // outside the top-120-by-traffic still get picked up via exact match.
+  const rows = await getDomainOrganicKeywords(domain, 1000);
   const byKeyword = new Map(rows.map((row) => [row.keyword.toLowerCase(), row]));
 
-  const tracked = targets.map((target) => {
+  const initial = targets.map((target) => {
     const hit = byKeyword.get(target.toLowerCase());
     if (hit) {
-      return { ...hit, isTargetKeyword: true };
+      return { row: { ...hit, isTargetKeyword: true }, hit: true };
     }
     return {
-      keyword: target,
-      position: 0,
-      previousPosition: 0,
-      positionDelta: 0,
-      searchVolume: 0,
-      keywordDifficulty: 0,
-      trendScore: 0,
-      estimatedTraffic: 0,
-      cpc: 0,
-      trafficCost: 0,
-      competition: 0,
-      url: "",
-      isTargetKeyword: true,
+      row: {
+        keyword: target,
+        position: 0,
+        previousPosition: 0,
+        positionDelta: 0,
+        searchVolume: 0,
+        keywordDifficulty: 0,
+        trendScore: 0,
+        estimatedTraffic: 0,
+        cpc: 0,
+        trafficCost: 0,
+        competition: 0,
+        url: "",
+        isTargetKeyword: true,
+      },
+      hit: false,
     };
   });
+
+  // For targets that don't appear in domain_organic (i.e. the firm doesn't
+  // rank in Google's top 100), still populate volume/CPC/KD so the row shows
+  // useful info — that's the whole point of "target" tracking.
+  const missingPhrases = initial.filter((i) => !i.hit).map((i) => i.row.keyword);
+  if (missingPhrases.length > 0) {
+    const [metrics, kdMap] = await Promise.all([
+      getPhraseMetrics(missingPhrases).catch(() => new Map()),
+      getKeywordDifficulty(missingPhrases).catch(() => new Map()),
+    ]);
+    for (const item of initial) {
+      if (item.hit) continue;
+      const key = item.row.keyword.toLowerCase();
+      const m = metrics.get(key);
+      if (m) {
+        item.row.searchVolume = m.volume;
+        item.row.cpc = m.cpc;
+        item.row.competition = m.competition;
+      }
+      const kd = kdMap.get(key);
+      if (typeof kd === "number") {
+        item.row.keywordDifficulty = Math.round(kd);
+      }
+    }
+  }
+
+  const tracked = initial.map((i) => i.row);
 
   const missingTargets = tracked
     .filter((item) => item.position <= 0)
