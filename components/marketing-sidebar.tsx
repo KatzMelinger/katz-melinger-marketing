@@ -44,6 +44,7 @@ const GROUPS: NavGroup[] = [
       { label: "Opportunities", href: "/seo/opportunities", icon: "✨" },
       { label: "Cannibalization", href: "/seo/cannibalization", icon: "⚠" },
       { label: "Internal Links", href: "/seo/internal-links", icon: "⇄" },
+      { label: "PR Pitches", href: "/seo/pr-pitches", icon: "📰" },
       { label: "Local SEO", href: "/local-seo", icon: "⌖" },
       { label: "Keyword Research", href: "/keyword-research", icon: "🔎" },
       { label: "Search Console", href: "/search-console", icon: "🔍" },

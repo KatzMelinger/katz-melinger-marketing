@@ -34,7 +34,12 @@ export async function GET() {
         .slice(0, 10)
         .map((domain) => ({
           domain: domain.domain,
-          reason: "Relevant legal referral source with healthy authority score.",
+          authorityScore: domain.authorityScore,
+          backlinks: domain.backlinks,
+          reason:
+            domain.authorityScore >= 60
+              ? "High-authority site (AS ≥ 60). Top-tier referral target — pursue editorial coverage or directory listings."
+              : "Healthy authority (AS 40-59). Worth pitching for legal directory listing, expert quote, or guest content.",
         })),
     });
   } catch (e) {

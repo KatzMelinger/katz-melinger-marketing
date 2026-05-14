@@ -140,6 +140,12 @@ export default async function SeoHubPage() {
         "Link graph across the firm's site — orphans, anchor distribution, pillar pages.",
     },
     {
+      href: "/seo/pr-pitches",
+      label: "PR Pitch Generator",
+      description:
+        "Paste a journalist query (Qwoted/Featured/SourceBottle/email) and get a tailored pitch + pull-quote.",
+    },
+    {
       href: "/local-seo",
       label: "Local SEO",
       description:
