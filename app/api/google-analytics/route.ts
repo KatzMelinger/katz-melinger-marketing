@@ -220,8 +220,161 @@ export async function GET(req: Request) {
       return NextResponse.json({ pages });
     }
 
+    if (action === "ai-referrals") {
+      // Sessions referred from AI answer engines: ChatGPT, Claude,
+      // Perplexity, Gemini/Bard, Copilot, You.com, Phind. GA4 stores the
+      // referrer host in sessionSource; we filter inListFilter to keep
+      // one query simple and capture variants (chat.openai.com,
+      // chatgpt.com, etc.).
+      const AI_HOSTS = [
+        "chat.openai.com",
+        "chatgpt.com",
+        "claude.ai",
+        "perplexity.ai",
+        "www.perplexity.ai",
+        "gemini.google.com",
+        "bard.google.com",
+        "copilot.microsoft.com",
+        "you.com",
+        "phind.com",
+      ];
+      const filter = {
+        filter: {
+          fieldName: "sessionSource",
+          inListFilter: { values: AI_HOSTS, caseSensitive: false },
+        },
+      };
+
+      const [bySourceRes, byPageRes, byDayRes, totalsRes] = await Promise.all([
+        runReport(property, token, {
+          dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+          dimensions: [{ name: "sessionSource" }],
+          metrics: [
+            { name: "sessions" },
+            { name: "activeUsers" },
+            { name: "newUsers" },
+            { name: "conversions" },
+          ],
+          dimensionFilter: filter,
+          orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+          limit: 25,
+        }),
+        runReport(property, token, {
+          dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+          dimensions: [{ name: "pagePath" }, { name: "sessionSource" }],
+          metrics: [{ name: "sessions" }, { name: "screenPageViews" }],
+          dimensionFilter: filter,
+          orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+          limit: 30,
+        }),
+        runReport(property, token, {
+          dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+          dimensions: [{ name: "date" }],
+          metrics: [{ name: "sessions" }],
+          dimensionFilter: filter,
+          orderBys: [{ dimension: { dimensionName: "date" } }],
+          limit: 40,
+        }),
+        runReport(property, token, {
+          dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+          metrics: [
+            { name: "sessions" },
+            { name: "activeUsers" },
+            { name: "newUsers" },
+            { name: "conversions" },
+            { name: "engagementRate" },
+            { name: "averageSessionDuration" },
+          ],
+          dimensionFilter: filter,
+        }),
+      ]);
+
+      const errs: string[] = [];
+      type Row = {
+        dimensionValues?: { value?: string }[];
+        metricValues?: { value?: string }[];
+      };
+
+      let bySource: Array<{
+        source: string;
+        sessions: number;
+        activeUsers: number;
+        newUsers: number;
+        conversions: number;
+      }> = [];
+      if (bySourceRes.ok) {
+        bySource = ((bySourceRes.json as { rows?: Row[] }).rows ?? []).map((r) => ({
+          source: r.dimensionValues?.[0]?.value ?? "",
+          sessions: num(r.metricValues?.[0]?.value),
+          activeUsers: num(r.metricValues?.[1]?.value),
+          newUsers: num(r.metricValues?.[2]?.value),
+          conversions: num(r.metricValues?.[3]?.value),
+        }));
+      } else {
+        errs.push(bySourceRes.message);
+      }
+
+      let byPage: Array<{
+        page: string;
+        source: string;
+        sessions: number;
+        pageViews: number;
+      }> = [];
+      if (byPageRes.ok) {
+        byPage = ((byPageRes.json as { rows?: Row[] }).rows ?? []).map((r) => ({
+          page: r.dimensionValues?.[0]?.value ?? "",
+          source: r.dimensionValues?.[1]?.value ?? "",
+          sessions: num(r.metricValues?.[0]?.value),
+          pageViews: num(r.metricValues?.[1]?.value),
+        }));
+      } else {
+        errs.push(byPageRes.message);
+      }
+
+      let byDay: Array<{ date: string; sessions: number }> = [];
+      if (byDayRes.ok) {
+        byDay = ((byDayRes.json as { rows?: Row[] }).rows ?? []).map((r) => ({
+          date: r.dimensionValues?.[0]?.value ?? "",
+          sessions: num(r.metricValues?.[0]?.value),
+        }));
+      } else {
+        errs.push(byDayRes.message);
+      }
+
+      let totals = {
+        sessions: 0,
+        activeUsers: 0,
+        newUsers: 0,
+        conversions: 0,
+        engagementRate: 0,
+        averageSessionDuration: 0,
+      };
+      if (totalsRes.ok) {
+        const mv = ((totalsRes.json as { rows?: Row[] }).rows ?? [])[0]?.metricValues ?? [];
+        totals = {
+          sessions: num(mv[0]?.value),
+          activeUsers: num(mv[1]?.value),
+          newUsers: num(mv[2]?.value),
+          conversions: num(mv[3]?.value),
+          engagementRate: num(mv[4]?.value),
+          averageSessionDuration: num(mv[5]?.value),
+        };
+      } else {
+        errs.push(totalsRes.message);
+      }
+
+      return NextResponse.json({
+        totals,
+        bySource,
+        byPage,
+        byDay,
+        hosts: AI_HOSTS,
+        ...(errs.length ? { error: errs.join(" · ") } : {}),
+      });
+    }
+
     return NextResponse.json(
-      { error: `Unknown action "${action}". Use overview, traffic, or pages.` },
+      { error: `Unknown action "${action}". Use overview, traffic, pages, or ai-referrals.` },
       { status: 400 },
     );
   } catch (e) {

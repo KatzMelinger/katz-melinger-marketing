@@ -126,6 +126,18 @@ export default async function AiHubPage() {
       metric: promptCount > 0 ? `${promptCount} active` : undefined,
     },
     {
+      href: "/ai/referrals",
+      label: "AI engine referrals",
+      description:
+        "GA4-sourced view of sessions where users arrived from ChatGPT, Claude, Perplexity, Gemini, or Copilot — last 30 days.",
+    },
+    {
+      href: "/ai/bot-traffic",
+      label: "AI bot crawls",
+      description:
+        "GPTBot / ClaudeBot / PerplexityBot / Google-Extended hits to katzmelinger.com. Requires external ingest setup.",
+    },
+    {
       href: "/clarity",
       label: "Clarity behavior",
       description:
