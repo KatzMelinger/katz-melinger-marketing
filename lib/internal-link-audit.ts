@@ -77,27 +77,70 @@ async function fetchPageHtml(url: string): Promise<string | null> {
   }
 }
 
+/**
+ * Resolve a sitemap to a flat list of page URLs.
+ *
+ * Handles sitemap-index files (WordPress + Yoast SEO ship one of these by
+ * default — sitemap.xml points to post-sitemap.xml, page-sitemap.xml, etc.).
+ * Before this, the audit treated every <loc> as a page URL, so it would
+ * "crawl" 6 sub-sitemap XML files that contain zero anchor tags and report
+ * 0 internal links.
+ *
+ * Strategy:
+ *   - Detect <sitemapindex> wrapper OR <loc>s that look like .xml sitemaps
+ *   - Recursively fetch sub-sitemaps (depth-limited, visited-tracked)
+ *   - Filter out anything that still looks like a sitemap before returning
+ */
 async function resolveSeedUrls(base: string, host: string): Promise<string[]> {
-  try {
-    const res = await fetch(`${base}/sitemap.xml`, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (res.ok) {
-      const xml = await res.text();
-      const urls: string[] = [];
-      const re = /<loc>(.*?)<\/loc>/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(xml)) !== null) {
-        const u = m[1].trim();
-        const n = normalize(u, host);
-        if (n) urls.push(n);
-      }
-      if (urls.length > 0) return urls;
+  const MAX_DEPTH = 3;
+  const visited = new Set<string>();
+  const pages = new Set<string>();
+
+  async function fetchAndExpand(sitemapUrl: string, depth: number): Promise<void> {
+    if (depth > MAX_DEPTH) return;
+    if (visited.has(sitemapUrl)) return;
+    visited.add(sitemapUrl);
+
+    let xml = "";
+    try {
+      const res = await fetch(sitemapUrl, {
+        headers: { "User-Agent": USER_AGENT },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "follow",
+      });
+      if (!res.ok) return;
+      xml = await res.text();
+    } catch {
+      return;
     }
-  } catch {
-    // fall through
+
+    const isIndex = /<sitemapindex\b/i.test(xml);
+    const re = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+    let m: RegExpExecArray | null;
+    const subSitemaps: string[] = [];
+    while ((m = re.exec(xml)) !== null) {
+      const u = m[1].trim();
+      if (!u) continue;
+      // Anything that still looks like a sitemap (.xml, .xml.gz) is a
+      // sub-sitemap to expand, not a page to crawl.
+      if (isIndex || /\.xml(\.gz)?(\?|$)/i.test(u)) {
+        subSitemaps.push(u);
+      } else {
+        const n = normalize(u, host);
+        if (n) pages.add(n);
+      }
+    }
+
+    // Recurse into sub-sitemaps after collecting them, so a sitemap that
+    // mixes pages + sub-references still works.
+    for (const sub of subSitemaps) {
+      await fetchAndExpand(sub, depth + 1);
+    }
   }
+
+  await fetchAndExpand(`${base}/sitemap.xml`, 0);
+
+  if (pages.size > 0) return Array.from(pages);
   return [base];
 }
 
