@@ -215,6 +215,106 @@ async function fetchCmsAttribution(): Promise<CmsAttributionBreakdown[]> {
   }
 }
 
+type HubSnapshot = {
+  primaryValue: string;
+  primaryLabel: string;
+  detail: string;
+};
+
+async function fetchSeoSnapshot(): Promise<HubSnapshot> {
+  try {
+    const base = await getRequestOrigin();
+    const res = await fetch(`${base}/api/seo/keywords`, { cache: "no-store" });
+    if (!res.ok) throw new Error("not ok");
+    const j = (await res.json()) as {
+      tracked?: Array<{ position: number; estimatedTraffic?: number }>;
+    };
+    const tracked = j.tracked ?? [];
+    const top10 = tracked.filter((t) => t.position > 0 && t.position <= 10).length;
+    const traffic = tracked.reduce((s, t) => s + (t.estimatedTraffic ?? 0), 0);
+    return {
+      primaryValue: traffic.toLocaleString(),
+      primaryLabel: "est. monthly traffic",
+      detail: `${top10} top-10 rankings · ${tracked.length} tracked`,
+    };
+  } catch {
+    return {
+      primaryValue: "—",
+      primaryLabel: "est. monthly traffic",
+      detail: "SEO data unavailable",
+    };
+  }
+}
+
+async function fetchAiSnapshot(): Promise<HubSnapshot> {
+  try {
+    const base = await getRequestOrigin();
+    const res = await fetch(`${base}/api/aeo/dashboard`, { cache: "no-store" });
+    if (!res.ok) throw new Error("not ok");
+    const j = (await res.json()) as { score?: number; averageScore?: number; totalRuns?: number };
+    const score = j.score ?? j.averageScore ?? null;
+    return {
+      primaryValue: score != null ? Math.round(score).toString() : "—",
+      primaryLabel: "AEO score",
+      detail: j.totalRuns ? `${j.totalRuns} prompt runs` : "AI visibility tracking",
+    };
+  } catch {
+    return {
+      primaryValue: "—",
+      primaryLabel: "AEO score",
+      detail: "AI metrics not configured",
+    };
+  }
+}
+
+async function fetchSocialSnapshot(): Promise<HubSnapshot> {
+  try {
+    const base = await getRequestOrigin();
+    const res = await fetch(`${base}/api/social/metricool`, { cache: "no-store" });
+    if (!res.ok) throw new Error("not ok");
+    const j = (await res.json()) as {
+      connected?: boolean;
+      overview?: Array<{ followers: number; engagementRate: number; postsThisMonth: number }>;
+    };
+    const total = (j.overview ?? []).reduce((s, r) => s + (r.followers ?? 0), 0);
+    const posts = (j.overview ?? []).reduce((s, r) => s + (r.postsThisMonth ?? 0), 0);
+    return {
+      primaryValue: total > 0 ? total.toLocaleString() : "—",
+      primaryLabel: "followers (all platforms)",
+      detail: posts > 0 ? `${posts} posts this month` : "Configure Metricool",
+    };
+  } catch {
+    return {
+      primaryValue: "—",
+      primaryLabel: "followers",
+      detail: "Social metrics unavailable",
+    };
+  }
+}
+
+async function fetchCampaignsSnapshot(): Promise<HubSnapshot> {
+  try {
+    const base = await getRequestOrigin();
+    const res = await fetch(`${base}/api/constant-contact/lists`, { cache: "no-store" });
+    if (!res.ok) throw new Error("not ok");
+    const j = (await res.json()) as {
+      lists?: Array<{ membership_count?: number }>;
+    };
+    const total = (j.lists ?? []).reduce((s, l) => s + (l.membership_count ?? 0), 0);
+    return {
+      primaryValue: total > 0 ? total.toLocaleString() : "—",
+      primaryLabel: "email contacts",
+      detail: `${j.lists?.length ?? 0} lists active`,
+    };
+  } catch {
+    return {
+      primaryValue: "—",
+      primaryLabel: "email contacts",
+      detail: "Constant Contact not configured",
+    };
+  }
+}
+
 function DashboardSkeleton() {
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -260,14 +360,27 @@ function DashboardSkeleton() {
 }
 
 async function DashboardMain() {
-  const [summary, callsPayload, intakeBySource, attributionBreakdown, reputation] =
-    await Promise.all([
-      fetchSummary(),
-      fetchCalls(),
-      fetchIntakesBySource(),
-      fetchCmsAttribution(),
-      fetchReputationSnapshot(),
-    ]);
+  const [
+    summary,
+    callsPayload,
+    intakeBySource,
+    attributionBreakdown,
+    reputation,
+    seoSnap,
+    aiSnap,
+    socialSnap,
+    campaignsSnap,
+  ] = await Promise.all([
+    fetchSummary(),
+    fetchCalls(),
+    fetchIntakesBySource(),
+    fetchCmsAttribution(),
+    fetchReputationSnapshot(),
+    fetchSeoSnapshot(),
+    fetchAiSnapshot(),
+    fetchSocialSnapshot(),
+    fetchCampaignsSnapshot(),
+  ]);
 
   const totalCalls = summary.totalCalls ?? 0;
   const answeredCalls = summary.answeredCalls ?? 0;
@@ -305,7 +418,81 @@ async function DashboardMain() {
         </p>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          Ops Hubs
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <HubTile
+            href="/seo"
+            eyebrow="SEO Ops"
+            title="Organic search"
+            primaryValue={seoSnap.primaryValue}
+            primaryLabel={seoSnap.primaryLabel}
+            detail={seoSnap.detail}
+            tone="#185FA5"
+          />
+          <HubTile
+            href="/ai"
+            eyebrow="AI Ops"
+            title="AI visibility"
+            primaryValue={aiSnap.primaryValue}
+            primaryLabel={aiSnap.primaryLabel}
+            detail={aiSnap.detail}
+            tone="#7C3AED"
+          />
+          <HubTile
+            href="/social"
+            eyebrow="Social Ops"
+            title="Owned + earned reach"
+            primaryValue={socialSnap.primaryValue}
+            primaryLabel={socialSnap.primaryLabel}
+            detail={socialSnap.detail}
+            tone="#166534"
+          />
+          <HubTile
+            href="/campaigns"
+            eyebrow="Campaigns Ops"
+            title="Paid + email"
+            primaryValue={campaignsSnap.primaryValue}
+            primaryLabel={campaignsSnap.primaryLabel}
+            detail={campaignsSnap.detail}
+            tone="#B45309"
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <Link
+            href="/alerts"
+            className="rounded-md border border-[#e2e8f0] bg-white px-3 py-1.5 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+          >
+            🔔 Alerts
+          </Link>
+          <Link
+            href="/recommendations"
+            className="rounded-md border border-[#e2e8f0] bg-white px-3 py-1.5 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+          >
+            💡 Recommendations
+          </Link>
+          <Link
+            href="/analytics"
+            className="rounded-md border border-[#e2e8f0] bg-white px-3 py-1.5 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+          >
+            ▣ Analytics
+          </Link>
+          <Link
+            href="/attribution"
+            className="rounded-md border border-[#e2e8f0] bg-white px-3 py-1.5 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+          >
+            ⎔ Attribution
+          </Link>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          Acquisition snapshot
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <article
           className="rounded-xl border border-white/5 p-5 shadow-sm"
           style={{ backgroundColor: "#185FA5" }}
@@ -345,6 +532,7 @@ async function DashboardMain() {
             {formatDurationSeconds(avgDuration)}
           </p>
         </article>
+        </div>
       </section>
 
       <section
@@ -553,5 +741,44 @@ export default async function Home() {
         <DashboardMain />
       </Suspense>
     </div>
+  );
+}
+
+function HubTile({
+  href,
+  eyebrow,
+  title,
+  primaryValue,
+  primaryLabel,
+  detail,
+  tone,
+}: {
+  href: string;
+  eyebrow: string;
+  title: string;
+  primaryValue: string;
+  primaryLabel: string;
+  detail: string;
+  tone: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group block rounded-xl border border-transparent p-5 shadow-sm transition hover:border-white/30 hover:shadow-md"
+      style={{ backgroundColor: tone }}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-white/70">
+        {eyebrow}
+      </p>
+      <p className="mt-1 text-base font-semibold text-white">{title}</p>
+      <p className="mt-3 text-3xl font-semibold tabular-nums text-white">
+        {primaryValue}
+      </p>
+      <p className="mt-0.5 text-[11px] text-white/80">{primaryLabel}</p>
+      <p className="mt-3 text-xs text-white/80">{detail}</p>
+      <p className="mt-3 text-xs font-medium text-white/90 group-hover:underline">
+        Open hub →
+      </p>
+    </Link>
   );
 }
