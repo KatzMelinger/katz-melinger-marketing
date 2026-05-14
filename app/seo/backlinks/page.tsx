@@ -637,17 +637,24 @@ export default function SeoBacklinksPage() {
                       </p>
                     )}
                     {samples && samples !== "loading" && samples.length > 0 && (
-                      <ul className="space-y-1 text-xs">
+                      <ul className="space-y-1.5 text-xs">
                         {samples.map((s, i) => (
                           <li key={i} className="flex items-start gap-2">
-                            <span className="font-mono text-slate-500 shrink-0">
+                            <AuthorityBadge score={s.pageAuthorityScore} />
+                            <span
+                              className={`font-mono shrink-0 text-[10px] px-1 rounded ${
+                                s.nofollow
+                                  ? "bg-slate-100 text-slate-500"
+                                  : "bg-emerald-50 text-emerald-700"
+                              }`}
+                            >
                               {s.nofollow ? "nofollow" : "follow"}
                             </span>
                             <a
                               href={s.sourceUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-[#185FA5] hover:underline truncate"
+                              className="text-[#185FA5] hover:underline truncate min-w-0"
                             >
                               {s.sourceTitle || s.sourceUrl}
                             </a>
