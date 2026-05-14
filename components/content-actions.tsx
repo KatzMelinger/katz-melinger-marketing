@@ -27,6 +27,13 @@ export type ContentIdea = {
   suggestedHeadings: string[];
 };
 
+export type FanOutPrompt = {
+  prompt: string;
+  intent: "informational" | "commercial" | "transactional" | "comparison";
+  funnel: "tofu" | "mofu" | "bofu";
+  rationale: string;
+};
+
 /**
  * Maps UI content-type options to the API contract for /api/content/draft.
  * `apiContentType` is one of "blog" | "social" | "email" — webpage / faq /
@@ -117,6 +124,12 @@ export function useContentActions() {
   // row's menu is open (only one open at a time).
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
+  // Fan-out modal — long-tail LLM prompts for a keyword.
+  const [fanOutFor, setFanOutFor] = useState<string | null>(null);
+  const [fanOutLoading, setFanOutLoading] = useState(false);
+  const [fanOutError, setFanOutError] = useState<string | null>(null);
+  const [fanOutPrompts, setFanOutPrompts] = useState<FanOutPrompt[]>([]);
+
   const openRecs = async (keyword: string) => {
     setRecsFor(keyword);
     setRecsIdeas([]);
@@ -145,6 +158,36 @@ export function useContentActions() {
     setRecsFor(null);
     setRecsIdeas([]);
     setRecsError(null);
+  };
+
+  const openFanOut = async (keyword: string) => {
+    setFanOutFor(keyword);
+    setFanOutPrompts([]);
+    setFanOutError(null);
+    setFanOutLoading(true);
+    try {
+      const res = await fetch("/api/seo/keywords/fan-out", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keyword }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setFanOutError(json?.error ?? "Failed to load prompts");
+        return;
+      }
+      setFanOutPrompts(Array.isArray(json?.prompts) ? json.prompts : []);
+    } catch (e) {
+      setFanOutError(e instanceof Error ? e.message : "Failed to load prompts");
+    } finally {
+      setFanOutLoading(false);
+    }
+  };
+
+  const closeFanOut = () => {
+    setFanOutFor(null);
+    setFanOutPrompts([]);
+    setFanOutError(null);
   };
 
   const createDraft = async (params: {
@@ -261,15 +304,37 @@ export function useContentActions() {
           }
         />
       )}
+
+      {fanOutFor && (
+        <FanOutModal
+          keyword={fanOutFor}
+          loading={fanOutLoading}
+          error={fanOutError}
+          prompts={fanOutPrompts}
+          creatingKey={creatingKey}
+          onClose={closeFanOut}
+          onCreate={(p, contentTypeId) =>
+            createDraft({
+              topic: p.prompt,
+              keyword: fanOutFor,
+              contentTypeId,
+              busyKey: `fanout:${p.prompt}`,
+            })
+          }
+        />
+      )}
     </>
   );
 
   return {
     openRecs,
+    openFanOut,
     createDraft,
     creatingKey,
     recsLoading,
     recsFor,
+    fanOutLoading,
+    fanOutFor,
     menuFor,
     setMenuFor,
     modal,
@@ -308,6 +373,14 @@ export function ContentActionsRow({
         title="See AI-generated content ideas to rank for this keyword"
       >
         {actions.recsLoading && actions.recsFor === keyword ? "…" : "Ideas"}
+      </button>
+      <button
+        onClick={() => actions.openFanOut(keyword)}
+        disabled={actions.fanOutLoading && actions.fanOutFor === keyword}
+        className="text-xs px-2 py-1 rounded border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+        title="Long-tail prompts buyers actually type into LLMs"
+      >
+        {actions.fanOutLoading && actions.fanOutFor === keyword ? "…" : "Fan-out"}
       </button>
       <div className="inline-flex">
         <button
@@ -524,6 +597,203 @@ function RecommendationsModal({
                   </div>
                 </div>
               </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const FUNNEL_TONE: Record<FanOutPrompt["funnel"], string> = {
+  tofu: "border-blue-200 bg-blue-50 text-blue-700",
+  mofu: "border-amber-200 bg-amber-50 text-amber-700",
+  bofu: "border-emerald-200 bg-emerald-50 text-emerald-700",
+};
+
+const INTENT_TONE: Record<FanOutPrompt["intent"], string> = {
+  informational: "border-slate-200 bg-slate-50 text-slate-700",
+  commercial: "border-violet-200 bg-violet-50 text-violet-700",
+  transactional: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  comparison: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
+function FanOutModal({
+  keyword,
+  loading,
+  error,
+  prompts,
+  creatingKey,
+  onClose,
+  onCreate,
+}: {
+  keyword: string;
+  loading: boolean;
+  error: string | null;
+  prompts: FanOutPrompt[];
+  creatingKey: string | null;
+  onClose: () => void;
+  onCreate: (p: FanOutPrompt, contentTypeId: string) => void;
+}) {
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | FanOutPrompt["funnel"]>("all");
+
+  const filtered = filter === "all" ? prompts : prompts.filter((p) => p.funnel === filter);
+
+  const copyPrompt = async (p: string) => {
+    try {
+      await navigator.clipboard.writeText(p);
+    } catch {
+      /* clipboard might be blocked */
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-[#e2e8f0] bg-white px-5 py-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Content fan-out for</p>
+            <h3 className="mt-1 text-lg font-semibold">{keyword}</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              How real buyers prompt ChatGPT, Claude, Perplexity, and Gemini. Each is a content
+              opportunity — pick a funnel stage to filter.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-5">
+          {loading && (
+            <p className="text-sm text-slate-500">Generating long-tail prompts… (typically 5-10s)</p>
+          )}
+          {error && (
+            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+          {!loading && !error && prompts.length === 0 && (
+            <p className="text-sm text-slate-500">No prompts returned.</p>
+          )}
+
+          {prompts.length > 0 && (
+            <div className="mb-3 flex items-center gap-1 rounded-lg border border-[#e2e8f0] bg-white p-1 w-fit">
+              {(["all", "tofu", "mofu", "bofu"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`text-xs px-2 py-1 rounded uppercase tracking-wider ${
+                    filter === f
+                      ? "bg-[#185FA5] text-white"
+                      : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {f === "all" ? "All" : f}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <ul className="space-y-3">
+            {filtered.map((p) => {
+              const isPickerOpen = pickerFor === p.prompt;
+              return (
+                <li
+                  key={p.prompt}
+                  className="rounded-lg border border-[#e2e8f0] bg-white p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900">{p.prompt}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 uppercase tracking-wider ${FUNNEL_TONE[p.funnel]}`}
+                        >
+                          {p.funnel}
+                        </span>
+                        <span
+                          className={`rounded border px-1.5 py-0.5 ${INTENT_TONE[p.intent]}`}
+                        >
+                          {p.intent}
+                        </span>
+                      </div>
+                      {p.rationale && (
+                        <p className="mt-2 text-[11px] italic text-slate-500">
+                          Content angle: {p.rationale}
+                        </p>
+                      )}
+                    </div>
+                    <div className="relative shrink-0">
+                      <div className="inline-flex">
+                        <button
+                          onClick={() => copyPrompt(p.prompt)}
+                          className="rounded-l border border-[#e2e8f0] px-2 py-1.5 text-xs hover:border-[#185FA5] hover:text-[#185FA5]"
+                          title="Copy prompt"
+                        >
+                          📋
+                        </button>
+                        <button
+                          onClick={() => onCreate(p, "blog_post")}
+                          disabled={creatingKey === `fanout:${p.prompt}`}
+                          className="bg-[#185FA5] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                        >
+                          {creatingKey === `fanout:${p.prompt}` ? "…" : "Create"}
+                        </button>
+                        <button
+                          onClick={() => setPickerFor(isPickerOpen ? null : p.prompt)}
+                          disabled={creatingKey === `fanout:${p.prompt}`}
+                          className="rounded-r bg-[#185FA5] px-1.5 py-1.5 text-xs text-white hover:bg-[#1f6fb8] disabled:opacity-50 border-l border-white/20"
+                          title="Pick content type"
+                        >
+                          ▾
+                        </button>
+                      </div>
+                      {isPickerOpen && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-30"
+                            onClick={() => setPickerFor(null)}
+                            aria-hidden
+                          />
+                          <div className="absolute right-0 top-full z-40 mt-1 w-64 rounded-lg border border-[#e2e8f0] bg-white shadow-lg">
+                            <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                              Create as…
+                            </p>
+                            <ul>
+                              {CONTENT_TYPES.map((t) => (
+                                <li key={t.id}>
+                                  <button
+                                    onClick={() => {
+                                      setPickerFor(null);
+                                      onCreate(p, t.id);
+                                    }}
+                                    className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                                  >
+                                    <p className="text-xs font-medium text-slate-900">{t.label}</p>
+                                    <p className="text-[11px] text-slate-500">{t.description}</p>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </li>
               );
             })}
           </ul>
