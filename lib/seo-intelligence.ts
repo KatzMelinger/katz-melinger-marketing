@@ -385,6 +385,86 @@ export async function getBacklinkDomains(domain = SEMRUSH_DOMAIN): Promise<Backl
     .sort((a, b) => b.backlinks - a.backlinks);
 }
 
+export type RecentBacklink = {
+  sourceUrl: string;
+  sourceTitle: string;
+  sourceDomain: string;
+  pageAuthorityScore: number;
+  firstSeenIso: string | null;
+  lastSeenIso: string | null;
+  nofollow: boolean;
+};
+
+function unixToIso(value: string | undefined): string | null {
+  if (!value) return null;
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n * 1000).toISOString();
+}
+
+function domainOf(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Returns the most recently discovered backlinks. Used by the New (30d)
+ * drill-down on the backlinks page — clicking the stat opens this list.
+ *
+ * `sort` controls which axis we sort by:
+ *   - "first_seen_desc" → newest backlinks (default; powers "New 30d")
+ *   - "last_seen_asc"   → backlinks Semrush hasn't seen recently (proxy
+ *                         for lost / decaying links; powers "Lost 30d")
+ */
+export async function getRecentBacklinks(
+  domain = SEMRUSH_DOMAIN,
+  options: { limit?: number; sort?: "first_seen_desc" | "last_seen_asc" } = {},
+): Promise<RecentBacklink[]> {
+  const sort = options.sort ?? "first_seen_desc";
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+  const rows = await fetchSemrushRowsFromAnalytics({
+    type: "backlinks",
+    target: safeDomain(domain),
+    target_type: "root_domain",
+    display_limit: String(limit),
+    display_sort: sort,
+    export_columns: "source_url,source_title,first_seen,last_seen,page_ascore,nofollow",
+    export_decode: "1",
+  });
+  return rows
+    .map((row) => {
+      const sourceUrl = row.source_url ?? row.Source_url ?? "";
+      return {
+        sourceUrl,
+        sourceTitle: row.source_title ?? row.Source_title ?? "",
+        sourceDomain: domainOf(sourceUrl),
+        pageAuthorityScore: parseIntSafe(row.page_ascore ?? row.Page_ascore ?? ""),
+        firstSeenIso: unixToIso(row.first_seen ?? row.First_seen),
+        lastSeenIso: unixToIso(row.last_seen ?? row.Last_seen),
+        nofollow: (row.nofollow ?? row.Nofollow ?? "").toString().toLowerCase() === "true",
+      };
+    })
+    .filter((b) => b.sourceUrl);
+}
+
+/**
+ * Sample backlinks for a single referring domain — used when the user
+ * expands a row in the Disavow Manager or the Domains table to inspect
+ * what pages on that domain link back.
+ */
+export async function getBacklinksForDomain(
+  referringDomain: string,
+  targetDomain = SEMRUSH_DOMAIN,
+  limit = 20,
+): Promise<RecentBacklink[]> {
+  const cleaned = referringDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const all = await getRecentBacklinks(targetDomain, { limit: 200 });
+  return all.filter((b) => b.sourceDomain === cleaned).slice(0, limit);
+}
+
 export async function getOrganicCompetitors(
   domain = SEMRUSH_DOMAIN,
   limit = 20,

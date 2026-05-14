@@ -16,7 +16,10 @@ import { logger } from "./logger";
 import { getSupabaseAdmin } from "./supabase-server";
 
 const USER_AGENT = "KMDashboard-LinkAuditor/1.0";
-const MAX_PAGES = 30;
+// Bumped from 30 to 100 so the audit picks up a meaningful slice of the
+// site's link graph. With sitemap-index expansion in place, 30 pages
+// barely scratched the post archive for a WordPress site.
+const MAX_PAGES = 100;
 
 type CrawlNode = {
   url: string;
