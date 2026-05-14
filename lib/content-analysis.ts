@@ -31,6 +31,13 @@ function countSyllables(word: string): number {
   return matches ? Math.max(1, matches.length) : 1;
 }
 
+export type CashBreakdown = {
+  conversationalAuthority: number;
+  answerCompleteness: number;
+  sourceExpertise: number;
+  humanAttribution: number;
+};
+
 export type ContentAnalysis = {
   readability_score: number;
   reading_grade_level: number;
@@ -42,6 +49,9 @@ export type ContentAnalysis = {
   aeo_findings: string[];
   brand_voice_score: number;
   brand_voice_findings: string[];
+  cash_score: number;
+  cash_breakdown: CashBreakdown;
+  cash_findings: string[];
   summary: string;
 };
 
@@ -158,6 +168,95 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
   return { score: Math.max(0, Math.min(100, score)), findings };
 }
 
+/**
+ * CASH scoring: Conversational Authority + Answer Completeness +
+ * Source Expertise + Human Attribution. Maps the Q1 2026 AI Search deck's
+ * content QA framework. Distinct from heuristic AEO scoring (which checks
+ * for FAQ blocks, lists, stats, etc.) — CASH evaluates voice, expertise,
+ * and source credibility from the model's perspective as a reader.
+ */
+async function cashScore(body: string): Promise<{
+  score: number;
+  breakdown: CashBreakdown;
+  findings: string[];
+}> {
+  const truncated = body.slice(0, 6000);
+
+  const system = `You are evaluating legal content for citation-worthiness by AI answer engines (ChatGPT, Claude, Perplexity, Gemini). You score on the CASH framework:
+
+C - Conversational Authority: Does it read like an expert speaking, not marketing fluff?
+A - Answer Completeness: Does it actually answer the question fully, with deadlines, statutes, scenarios?
+S - Source Expertise: Are claims grounded — case names, statutes, agency citations, real data?
+H - Human Attribution: Is the author identified with credentials? Bio? Real human accountability?
+
+Be strict — most published content scores 40-65. A 70+ should feel genuinely authoritative.`;
+
+  const user = `Draft to score:
+"""
+${truncated}
+"""
+
+Return JSON only:
+{
+  "conversationalAuthority": <0-100>,
+  "answerCompleteness": <0-100>,
+  "sourceExpertise": <0-100>,
+  "humanAttribution": <0-100>,
+  "findings": [
+    "[C] <one specific observation about voice>",
+    "[A] <one specific observation about completeness>",
+    "[S] <one specific observation about sourcing>",
+    "[H] <one specific observation about attribution>"
+  ]
+}
+
+Each finding must start with [C], [A], [S], or [H] to tag which pillar it applies to. 4-8 findings total, only specifics — no vague "could be better" notes.`;
+
+  try {
+    const resp = await getAnthropic().messages.create({
+      model: KEYWORD_RESEARCH_MODEL,
+      max_tokens: 1200,
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const parsed = extractJSON<{
+      conversationalAuthority: number;
+      answerCompleteness: number;
+      sourceExpertise: number;
+      humanAttribution: number;
+      findings: string[];
+    }>(text);
+    const c = Math.max(0, Math.min(100, parsed.conversationalAuthority ?? 0));
+    const a = Math.max(0, Math.min(100, parsed.answerCompleteness ?? 0));
+    const s = Math.max(0, Math.min(100, parsed.sourceExpertise ?? 0));
+    const h = Math.max(0, Math.min(100, parsed.humanAttribution ?? 0));
+    // Weighted: completeness + sourcing matter most for AI citation.
+    const overall = Math.round(c * 0.22 + a * 0.3 + s * 0.3 + h * 0.18);
+    return {
+      score: overall,
+      breakdown: {
+        conversationalAuthority: c,
+        answerCompleteness: a,
+        sourceExpertise: s,
+        humanAttribution: h,
+      },
+      findings: Array.isArray(parsed.findings) ? parsed.findings : [],
+    };
+  } catch {
+    return {
+      score: 0,
+      breakdown: {
+        conversationalAuthority: 0,
+        answerCompleteness: 0,
+        sourceExpertise: 0,
+        humanAttribution: 0,
+      },
+      findings: ["CASH scoring failed; check Anthropic API key."],
+    };
+  }
+}
+
 async function brandVoiceMatch(body: string): Promise<{ score: number; findings: string[]; summary: string }> {
   const firm = await getFirmContext();
   const truncated = body.slice(0, 6000); // keep prompt small
@@ -214,7 +313,9 @@ export async function analyzeDraft(args: {
   const grade = fleschKincaidGrade(words.length, sentences, syllables);
 
   const aeo = heuristicAEO(body);
-  const brand = await brandVoiceMatch(body);
+  // Run brand voice + CASH in parallel — both are Claude calls and
+  // independent of each other.
+  const [brand, cash] = await Promise.all([brandVoiceMatch(body), cashScore(body)]);
 
   const analysis: ContentAnalysis = {
     readability_score: normalizeReadability(flesch),
@@ -227,13 +328,35 @@ export async function analyzeDraft(args: {
     aeo_findings: aeo.findings,
     brand_voice_score: brand.score,
     brand_voice_findings: brand.findings,
+    cash_score: cash.score,
+    cash_breakdown: cash.breakdown,
+    cash_findings: cash.findings,
     summary: brand.summary,
   };
 
-  await supabase.from("content_analyses").insert({
+  // If the CASH migration hasn't been run yet, this insert will fail because
+  // cash_* columns don't exist. Catch + retry without CASH fields so the
+  // rest of the analysis still persists.
+  const { error } = await supabase.from("content_analyses").insert({
     draft_id: draftId,
     ...analysis,
   });
+  if (error && /cash_/.test(error.message)) {
+    await supabase.from("content_analyses").insert({
+      draft_id: draftId,
+      readability_score: analysis.readability_score,
+      reading_grade_level: analysis.reading_grade_level,
+      word_count: analysis.word_count,
+      sentence_count: analysis.sentence_count,
+      keyword_density: analysis.keyword_density,
+      target_keyword_hits: analysis.target_keyword_hits,
+      aeo_score: analysis.aeo_score,
+      aeo_findings: analysis.aeo_findings,
+      brand_voice_score: analysis.brand_voice_score,
+      brand_voice_findings: analysis.brand_voice_findings,
+      summary: analysis.summary,
+    });
+  }
 
   return analysis;
 }

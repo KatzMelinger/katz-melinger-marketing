@@ -47,6 +47,14 @@ type Analysis = {
   aeo_findings: string[];
   brand_voice_score: number;
   brand_voice_findings: string[];
+  cash_score?: number;
+  cash_breakdown?: {
+    conversationalAuthority: number;
+    answerCompleteness: number;
+    sourceExpertise: number;
+    humanAttribution: number;
+  };
+  cash_findings?: string[];
   summary: string;
 };
 
@@ -309,15 +317,29 @@ export default function DraftsPage() {
 }
 
 function AnalysisCard({ analysis }: { analysis: Analysis }) {
+  const cash = analysis.cash_breakdown;
   return (
     <DashCard>
       <div className="text-sm font-medium mb-3">Analysis</div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <ScoreTile label="Readability" value={analysis.readability_score} />
         <ScoreTile label="AEO" value={analysis.aeo_score} />
         <ScoreTile label="Brand voice" value={analysis.brand_voice_score} />
+        <ScoreTile
+          label="CASH (AI cite)"
+          value={analysis.cash_score ?? 0}
+          hint="Conversational Authority / Answer / Source / Human"
+        />
         <Tile label="Words" value={analysis.word_count} />
       </div>
+      {cash && (
+        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+          <CashPillar label="Conversational" letter="C" value={cash.conversationalAuthority} />
+          <CashPillar label="Answer" letter="A" value={cash.answerCompleteness} />
+          <CashPillar label="Source" letter="S" value={cash.sourceExpertise} />
+          <CashPillar label="Human" letter="H" value={cash.humanAttribution} />
+        </div>
+      )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
         <div>
           <div className="text-xs font-medium text-slate-700 mb-1">AEO findings</div>
@@ -332,6 +354,18 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
           </ul>
         </div>
       </div>
+      {analysis.cash_findings && analysis.cash_findings.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-medium text-slate-700 mb-1">
+            CASH findings (AI citation-worthiness)
+          </div>
+          <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
+            {analysis.cash_findings.map((f, i) => (
+              <li key={i}>{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {Object.keys(analysis.target_keyword_hits).length > 0 && (
         <div className="mt-4">
           <div className="text-xs font-medium text-slate-700 mb-1">Target keyword hits</div>
@@ -357,11 +391,19 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
   );
 }
 
-function ScoreTile({ label, value }: { label: string; value: number }) {
+function ScoreTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+}) {
   const tone = value >= 70 ? "emerald" : value >= 40 ? "amber" : "red";
   const color = tone === "emerald" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : "text-red-700";
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
+    <div className="rounded-lg border border-slate-200 p-3" title={hint}>
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
       <div className="text-xs text-slate-500 mt-1">{label}</div>
       <div className="mt-2"><DashBar pct={value} tone={tone === "emerald" ? "self" : "blue"} /></div>
@@ -374,6 +416,32 @@ function Tile({ label, value }: { label: string; value: number | string }) {
     <div className="rounded-lg border border-slate-200 p-3">
       <div className="text-2xl font-bold">{value}</div>
       <div className="text-xs text-slate-500 mt-1">{label}</div>
+    </div>
+  );
+}
+
+function CashPillar({
+  label,
+  letter,
+  value,
+}: {
+  label: string;
+  letter: string;
+  value: number;
+}) {
+  const tone =
+    value >= 70
+      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+      : value >= 40
+        ? "border-amber-300 bg-amber-50 text-amber-700"
+        : "border-red-300 bg-red-50 text-red-700";
+  return (
+    <div className={`rounded-md border px-2 py-1.5 ${tone}`}>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-mono text-xs font-bold">{letter}</span>
+        <span className="text-base font-semibold tabular-nums">{value}</span>
+      </div>
+      <div className="text-[10px] opacity-80">{label}</div>
     </div>
   );
 }
