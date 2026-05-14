@@ -20,6 +20,12 @@ const TEMPLATE_INSTRUCTIONS: Record<string, string> = {
     "Structure as newsletter: headline, 2-4 short sections, and one clear call to action.",
   social_post:
     "Write as social update with strong opening line, concise core message, and soft CTA.",
+  webpage:
+    "Structure as a conversion-focused service/landing page: 1) hero with H1 and value proposition, 2) who this is for, 3) signs you may have a claim, 4) how the firm helps, 5) what to expect (process), 6) FAQs, 7) strong CTA to schedule a free consultation. Use scannable H2s and short paragraphs. Include trust signals (free consultation, no fee unless we win where applicable).",
+  faq:
+    "Structure as an FAQ article optimized for People Also Ask and AI answer engines: open with a 1-paragraph summary, then 6-12 Q&A pairs with clear question H2s and concise answers (2-4 sentences). End with a CTA.",
+  guide:
+    "Structure as a comprehensive pillar guide: 1) table of contents, 2) introduction explaining who the guide is for, 3) 4-7 deep H2 sections covering rights/process/deadlines/evidence/damages/FAQs, 4) closing summary, 5) CTA. Include NY-specific statutes and deadlines where relevant.",
 };
 
 export async function POST(req: Request) {

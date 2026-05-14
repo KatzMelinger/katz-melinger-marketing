@@ -11,6 +11,11 @@
  */
 
 import { useEffect, useState } from "react";
+import {
+  ContentActionsRow,
+  useContentActions,
+  type ContentActions,
+} from "@/components/content-actions";
 import { MarketingNav } from "@/components/marketing-nav";
 
 type Tab = "overview" | "bots" | "pages" | "recommendations";
@@ -240,6 +245,8 @@ export default function AISearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
+  // Shared Ideas + Create flow for the per-recommendation buttons.
+  const ca = useContentActions();
 
   const refreshHistory = async () => {
     try {
@@ -443,11 +450,12 @@ export default function AISearchPage() {
           {activeTab === "bots" && <BotsTab crawlData={crawlData} analysis={analysis} />}
           {activeTab === "pages" && <PagesTab crawlData={crawlData} />}
           {activeTab === "recommendations" && (
-            <RecommendationsTab analysis={analysis} hasCrawl={!!crawlData} />
+            <RecommendationsTab analysis={analysis} hasCrawl={!!crawlData} actions={ca} />
           )}
         </>
       )}
       </div>
+      {ca.modal}
     </>
   );
 }
@@ -827,9 +835,11 @@ function Tag({
 function RecommendationsTab({
   analysis,
   hasCrawl,
+  actions,
 }: {
   analysis: AnalysisResult | null;
   hasCrawl: boolean;
+  actions: ContentActions;
 }) {
   if (!analysis) {
     return (
@@ -918,17 +928,24 @@ function RecommendationsTab({
                 key={i}
                 className="rounded-md border border-black/10 dark:border-white/10 p-3"
               >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/5 dark:bg-white/10 capitalize">
-                    {rec.type?.replace(/_/g, " ")}
-                  </span>
-                  <PriorityBadge priority={rec.priority} />
-                  {rec.page && (
-                    <span className="text-[10px] font-mono opacity-70">{rec.page}</span>
-                  )}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/5 dark:bg-white/10 capitalize">
+                        {rec.type?.replace(/_/g, " ")}
+                      </span>
+                      <PriorityBadge priority={rec.priority} />
+                      {rec.page && (
+                        <span className="text-[10px] font-mono opacity-70">{rec.page}</span>
+                      )}
+                    </div>
+                    <p className="text-sm mt-2">{rec.description}</p>
+                    <p className="text-xs opacity-70 italic mt-1">{rec.aiImpact}</p>
+                  </div>
+                  <div className="shrink-0">
+                    <ContentActionsRow keyword={rec.description} actions={actions} />
+                  </div>
                 </div>
-                <p className="text-sm mt-2">{rec.description}</p>
-                <p className="text-xs opacity-70 italic mt-1">{rec.aiImpact}</p>
               </div>
             ))}
           </div>

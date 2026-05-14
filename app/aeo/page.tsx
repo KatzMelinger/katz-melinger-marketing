@@ -18,6 +18,11 @@
  */
 
 import { useEffect, useState } from "react";
+import {
+  ContentActionsRow,
+  useContentActions,
+  type ContentActions,
+} from "@/components/content-actions";
 import { MarketingNav } from "@/components/marketing-nav";
 
 type Tab = "overview" | "prompts" | "targets" | "sources" | "runs";
@@ -209,6 +214,8 @@ export default function AEOPage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  // Shared Ideas + Create flow — used by per-prompt rows on Overview tab.
+  const ca = useContentActions();
 
   const refreshAll = async () => {
     setLoading(true);
@@ -342,9 +349,9 @@ export default function AEOPage() {
         </Card>
       )}
 
-      {tab === "overview" && dashboard && <OverviewTab dashboard={dashboard} />}
+      {tab === "overview" && dashboard && <OverviewTab dashboard={dashboard} actions={ca} />}
       {tab === "prompts" && (
-        <PromptsTab prompts={prompts} onChange={refreshAll} />
+        <PromptsTab prompts={prompts} onChange={refreshAll} actions={ca} />
       )}
       {tab === "targets" && (
         <TargetsTab targets={targets} onChange={refreshAll} />
@@ -352,6 +359,7 @@ export default function AEOPage() {
       {tab === "sources" && dashboard && <SourcesTab dashboard={dashboard} />}
       {tab === "runs" && <RunsTab runs={runs} />}
       </div>
+      {ca.modal}
     </>
   );
 }
@@ -379,7 +387,7 @@ function ProviderChips({ providers }: { providers: ProviderStatus[] }) {
   );
 }
 
-function OverviewTab({ dashboard }: { dashboard: Dashboard }) {
+function OverviewTab({ dashboard, actions }: { dashboard: Dashboard; actions: ContentActions }) {
   if (!dashboard.runId) {
     return (
       <Card className="p-10 text-center space-y-2">
@@ -464,7 +472,7 @@ function OverviewTab({ dashboard }: { dashboard: Dashboard }) {
         </div>
         <div className="space-y-2">
           {dashboard.promptDetail.map((pd) => (
-            <PromptRow key={pd.promptId} pd={pd} />
+            <PromptRow key={pd.promptId} pd={pd} actions={actions} />
           ))}
         </div>
       </Card>
@@ -641,17 +649,23 @@ function NoShowRecommendations({ pd }: { pd: Dashboard["promptDetail"][number] }
   );
 }
 
-function PromptRow({ pd }: { pd: Dashboard["promptDetail"][number] }) {
+function PromptRow({
+  pd,
+  actions,
+}: {
+  pd: Dashboard["promptDetail"][number];
+  actions: ContentActions;
+}) {
   const [open, setOpen] = useState(false);
   const anyMention = pd.cells.some((c) => c.selfMentioned);
   return (
     <div className="border border-black/10 dark:border-white/10 rounded-md">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-start justify-between gap-3 p-3 text-left"
-      >
-        <div className="min-w-0 flex-1">
+      <div className="w-full flex items-start justify-between gap-3 p-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="min-w-0 flex-1 text-left"
+        >
           <div className="text-sm font-medium truncate">{pd.prompt}</div>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {pd.category && <Pill tone="violet">{pd.category}</Pill>}
@@ -661,9 +675,19 @@ function PromptRow({ pd }: { pd: Dashboard["promptDetail"][number] }) {
               {anyMention ? "✓ mentioned" : "✕ missing"}
             </Pill>
           </div>
+        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <ContentActionsRow keyword={pd.prompt} actions={actions} />
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="text-sm opacity-50 hover:opacity-100 px-2"
+            aria-label={open ? "Collapse" : "Expand"}
+          >
+            {open ? "▴" : "▾"}
+          </button>
         </div>
-        <span className="text-sm opacity-50">{open ? "▴" : "▾"}</span>
-      </button>
+      </div>
       {open && !anyMention && <NoShowRecommendations pd={pd} />}
       {open && (
         <div className="border-t border-black/10 dark:border-white/10 divide-y divide-black/5 dark:divide-white/5">
@@ -750,7 +774,15 @@ function SourcesTab({ dashboard }: { dashboard: Dashboard }) {
 
 // ---------- Prompts ---------------------------------------------------------
 
-function PromptsTab({ prompts, onChange }: { prompts: Prompt[]; onChange: () => void }) {
+function PromptsTab({
+  prompts,
+  onChange,
+  actions,
+}: {
+  prompts: Prompt[];
+  onChange: () => void;
+  actions: ContentActions;
+}) {
   const [draft, setDraft] = useState({ prompt: "", category: "", intent: "informational", geography: "" });
   const [saving, setSaving] = useState(false);
 
@@ -833,6 +865,7 @@ function PromptsTab({ prompts, onChange }: { prompts: Prompt[]; onChange: () => 
               <th className="px-4 py-2">Intent</th>
               <th className="px-4 py-2">Geo</th>
               <th className="px-4 py-2">Enabled</th>
+              <th className="px-4 py-2">Content</th>
               <th className="px-4 py-2"></th>
             </tr>
           </thead>
@@ -855,6 +888,9 @@ function PromptsTab({ prompts, onChange }: { prompts: Prompt[]; onChange: () => 
                     {p.enabled ? "On" : "Off"}
                   </button>
                 </td>
+                <td className="px-4 py-2">
+                  <ContentActionsRow keyword={p.prompt} actions={actions} />
+                </td>
                 <td className="px-4 py-2 text-right">
                   <Button variant="danger" onClick={() => deletePrompt(p)}>
                     Delete
@@ -864,7 +900,7 @@ function PromptsTab({ prompts, onChange }: { prompts: Prompt[]; onChange: () => 
             ))}
             {prompts.length === 0 && (
               <tr>
-                <td className="px-4 py-6 text-center opacity-60" colSpan={6}>
+                <td className="px-4 py-6 text-center opacity-60" colSpan={7}>
                   No prompts yet — add some above.
                 </td>
               </tr>

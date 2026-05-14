@@ -331,38 +331,46 @@ export async function getBacklinkOverview(domain = SEMRUSH_DOMAIN): Promise<{
   referringDomains: number;
   followRatio: number;
 }> {
+  // Semrush's backlinks_overview column is `follows_num` (dofollow count), not
+  // `follow`. The old name made every call fail with a 400 Validation Error and
+  // the whole route returned 500, which is what broke /seo/backlinks.
   const rows = await fetchSemrushRowsFromAnalytics({
     type: "backlinks_overview",
     target: safeDomain(domain),
     target_type: "root_domain",
-    export_columns: "ascore,total,domains_num,follow",
+    export_columns: "ascore,total,domains_num,follows_num,nofollows_num",
     export_decode: "1",
   });
   const first = rows[0] ?? {};
+  const total = parseIntSafe(first.total ?? first.Total ?? "");
+  const follows = parseIntSafe(first.follows_num ?? first.Follows_num ?? "");
   return {
     authorityScore: parseIntSafe(first.ascore ?? first.Ascore ?? ""),
-    totalBacklinks: parseIntSafe(first.total ?? first.Total ?? ""),
+    totalBacklinks: total,
     referringDomains: parseIntSafe(first.domains_num ?? first.Domains_num ?? ""),
-    followRatio: toPercent(asNumber(first.follow) || 62),
+    followRatio: total > 0 ? toPercent((follows / total) * 100) : 0,
   };
 }
 
 export async function getBacklinkDomains(domain = SEMRUSH_DOMAIN): Promise<BacklinkDomain[]> {
+  // backlinks_refdomains uses `domain_ascore` (not `ascore`) and does not
+  // expose a follow/nofollow split. Old code requested `ascore,follow_num`
+  // and the call 400'd, which made the whole backlinks page show zeros.
   const rows = await fetchSemrushRowsFromAnalytics({
     type: "backlinks_refdomains",
     target: safeDomain(domain),
     target_type: "root_domain",
     display_limit: "30",
-    export_columns: "domain,backlinks_num,ascore,follow_num",
+    export_columns: "domain,backlinks_num,domain_ascore",
     export_decode: "1",
   });
 
   return rows
     .map((row) => {
       const backlinks = parseIntSafe(row.backlinks_num ?? row.Backlinks_num ?? "");
-      const authorityScore = parseIntSafe(row.ascore ?? row.Ascore ?? "");
-      const followCount = parseIntSafe(row.follow_num ?? row.Follow_num ?? "");
-      const followRatio = backlinks > 0 ? toPercent((followCount / backlinks) * 100) : 0;
+      const authorityScore = parseIntSafe(
+        row.domain_ascore ?? row.Domain_ascore ?? row.ascore ?? "",
+      );
       const toxicityRisk: "low" | "medium" | "high" =
         authorityScore >= 40 ? "low" : authorityScore >= 20 ? "medium" : "high";
       return {
@@ -370,7 +378,7 @@ export async function getBacklinkDomains(domain = SEMRUSH_DOMAIN): Promise<Backl
         backlinks,
         authorityScore,
         toxicityRisk,
-        followRatio,
+        followRatio: 0,
       };
     })
     .filter((row) => row.domain)
