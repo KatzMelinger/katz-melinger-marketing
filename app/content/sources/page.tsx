@@ -161,7 +161,7 @@ export default function SourcesPage() {
             {mode === "file" && (
               <input
                 type="file"
-                accept=".pdf,.txt,.md"
+                accept=".pdf,.docx,.txt,.md,.rtf,.html,.htm"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 className="block text-sm"
               />
@@ -190,7 +190,7 @@ export default function SourcesPage() {
             <li>Inferred audience + core message</li>
             <li>Concrete edits to improve the original</li>
             <li>Repurpose ideas (per format)</li>
-            <li>One-click "send to multi-format generator"</li>
+            <li>One-click &ldquo;send to multi-format generator&rdquo;</li>
           </ul>
         </DashCard>
       </div>

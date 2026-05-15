@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 
 const VALID_STATUSES = ["idea", "brief", "draft", "review", "published"] as const;
 const VALID_BUCKETS = ["money_page", "bofu_education", "mofu_trust", "local_authority"] as const;
+const VALID_CONTENT_TYPES = ["website", "social", "email"] as const;
 
 export async function PATCH(
   req: NextRequest,
@@ -40,6 +41,16 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid bucket" }, { status: 400 });
     }
     patch.bucket = body.bucket;
+  }
+  if (typeof body?.contentType === "string") {
+    if (
+      !VALID_CONTENT_TYPES.includes(
+        body.contentType as (typeof VALID_CONTENT_TYPES)[number],
+      )
+    ) {
+      return NextResponse.json({ error: "Invalid content_type" }, { status: 400 });
+    }
+    patch.content_type = body.contentType;
   }
   for (const key of ["keywords", "location", "notes", "url"] as const) {
     if (key in (body ?? {})) {

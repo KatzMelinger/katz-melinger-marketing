@@ -85,6 +85,12 @@ export async function POST(req: NextRequest) {
       competitorGaps: body.competitorGaps,
       sourceId: body.sourceId ?? null,
       sourceText,
+      originSource:
+        typeof body?.origin_source === "string" ? body.origin_source : null,
+      originContext:
+        body?.origin_context && typeof body.origin_context === "object"
+          ? (body.origin_context as Record<string, unknown>)
+          : null,
     });
     return NextResponse.json(result);
   } catch (err) {

@@ -1,7 +1,12 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 
 import { ANTI_AI_VOICE_RULES } from "@/lib/anti-ai-voice";
+import {
+  cachedSystemPrompt,
+  CONTENT_LONG_FORM_MODEL,
+  CONTENT_SHORT_FORM_MODEL,
+  getAnthropic,
+} from "@/lib/anthropic";
 import {
   getBrandVoiceContext,
   getLatestBrandProfile,
@@ -29,8 +34,7 @@ const TEMPLATE_INSTRUCTIONS: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) {
+  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },
       { status: 503 },
@@ -61,6 +65,12 @@ export async function POST(req: Request) {
   const targetKeywords = Array.isArray(o.target_keywords)
     ? o.target_keywords.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)
     : [];
+  const originSource =
+    typeof o.origin_source === "string" ? o.origin_source.trim() : "";
+  const originContext =
+    o.origin_context && typeof o.origin_context === "object"
+      ? (o.origin_context as Record<string, unknown>)
+      : null;
   const seoBrief =
     o.seo_brief && typeof o.seo_brief === "object"
       ? (o.seo_brief as {
@@ -74,11 +84,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "topic required" }, { status: 400 });
   }
 
+  const platforms =
+    contentType === "social" && platform
+      ? [platform]
+      : contentType === "blog"
+        ? ["blog"]
+        : contentType === "email"
+          ? ["email"]
+          : [];
+
   const [brandVoice, profile, skillsContext] = useBrandVoice
     ? await Promise.all([
         getBrandVoiceContext(),
         getLatestBrandProfile(),
-        buildSkillsContext(),
+        buildSkillsContext({ platforms, practiceArea }),
       ])
     : ["", null, ""];
 
@@ -135,11 +154,15 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
   }
 
   try {
-    const client = new Anthropic({ apiKey });
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+    // Social posts (linkedin, twitter, facebook, instagram) are short-form —
+    // Haiku is plenty and ~4× cheaper than Sonnet on output. Blog and email
+    // stay on Sonnet for quality.
+    const model =
+      contentType === "social" ? CONTENT_SHORT_FORM_MODEL : CONTENT_LONG_FORM_MODEL;
+    const msg = await getAnthropic().messages.create({
+      model,
       max_tokens: contentType === "blog" && length === "long" ? 8192 : 4096,
-      system,
+      system: cachedSystemPrompt(system),
       messages: [{ role: "user", content: userPrompt }],
     });
 
@@ -167,6 +190,8 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
               ...(platform ? { platform } : {}),
               ...(campaignType ? { campaign_type: campaignType } : {}),
               used_brand_voice: useBrandVoice,
+              ...(originSource ? { origin_source: originSource } : {}),
+              ...(originContext ? { origin_context: originContext } : {}),
             },
             seo_brief:
               targetKeywords.length > 0 || seoBrief

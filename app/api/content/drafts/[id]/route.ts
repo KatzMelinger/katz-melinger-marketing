@@ -33,12 +33,33 @@ export async function GET(
   return NextResponse.json({ draft: data, latest_analysis: analyses?.[0] ?? null });
 }
 
+const VALID_DRAFT_STATUSES = [
+  "initial_review",
+  "idea",
+  "brief",
+  "draft",
+  "review",
+  "published",
+  "approved",
+  "archived",
+] as const;
+
+const PIPELINE_STATUSES = new Set(["idea", "brief", "draft", "review", "published"]);
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+
+  if (
+    "status" in (body ?? {}) &&
+    !VALID_DRAFT_STATUSES.includes(body.status as (typeof VALID_DRAFT_STATUSES)[number])
+  ) {
+    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const key of ["title", "body", "metadata", "status", "practice_area"]) {
     if (key in (body ?? {})) patch[key] = body[key];
@@ -51,6 +72,37 @@ export async function PATCH(
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (typeof body?.status === "string" && PIPELINE_STATUSES.has(body.status)) {
+    const { data: existing } = await supabase
+      .from("content_pipeline")
+      .select("id")
+      .eq("draft_id", id)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from("content_pipeline")
+        .update({ status: body.status })
+        .eq("id", (existing as { id: number }).id);
+    } else {
+      const draft = data as { title: string | null; topic: string; format: string };
+      const contentType =
+        draft.format === "blog"
+          ? "website"
+          : draft.format === "email"
+            ? "email"
+            : "social";
+      await supabase.from("content_pipeline").insert({
+        title: draft.title || draft.topic,
+        status: body.status,
+        bucket: "bofu_education",
+        content_type: contentType,
+        draft_id: id,
+      });
+    }
+  }
+
   return NextResponse.json(data);
 }
 

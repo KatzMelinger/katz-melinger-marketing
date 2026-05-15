@@ -15,6 +15,8 @@
     "@supabase/supabase-js": "^2.103.0",
     "docx": "^9.6.1",
     "google-auth-library": "^10.6.2",
+    "mammoth": "^1.12.0",
+    "marked": "^18.0.3",
     "next": "16.2.3",
     "pdf-parse": "^2.4.5",
     "react": "19.2.4",

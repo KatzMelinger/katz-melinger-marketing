@@ -197,6 +197,8 @@ export function useContentActions() {
     practiceArea?: string;
     headings?: string[];
     busyKey: string;
+    originSource?: string;
+    originContext?: Record<string, unknown>;
   }) => {
     const cfg = CONTENT_TYPES.find((c) => c.id === params.contentTypeId) ?? CONTENT_TYPES[0];
     setCreatingKey(params.busyKey);
@@ -217,6 +219,8 @@ export function useContentActions() {
           seo_brief: params.headings && params.headings.length > 0
             ? { headings: params.headings }
             : null,
+          origin_source: params.originSource ?? null,
+          origin_context: params.originContext ?? null,
         }),
       });
       const json = await res.json();
@@ -241,7 +245,7 @@ export function useContentActions() {
             <div>
               <p className="text-sm font-semibold text-emerald-700">Draft created</p>
               <p className="mt-1 text-xs text-slate-600">
-                Optimized for <span className="font-medium">"{createToast.keyword}"</span>.
+                Optimized for <span className="font-medium">&ldquo;{createToast.keyword}&rdquo;</span>.
               </p>
             </div>
             <button
@@ -300,6 +304,12 @@ export function useContentActions() {
               practiceArea: idea.practiceArea,
               headings: idea.suggestedHeadings,
               busyKey: `idea:${idea.headline}`,
+              originSource: "recommendations",
+              originContext: {
+                source_keyword: recsFor,
+                idea_summary: idea.summary,
+                content_type_hint: idea.contentType,
+              },
             })
           }
         />
@@ -319,6 +329,13 @@ export function useContentActions() {
               keyword: fanOutFor,
               contentTypeId,
               busyKey: `fanout:${p.prompt}`,
+              originSource: "fan_out",
+              originContext: {
+                source_keyword: fanOutFor,
+                long_tail_prompt: p.prompt,
+                funnel: p.funnel,
+                intent: p.intent,
+              },
             })
           }
         />
@@ -353,10 +370,14 @@ export function ContentActionsRow({
   keyword,
   actions,
   practiceArea,
+  originSource,
+  originContext,
 }: {
   keyword: string;
   actions: ContentActions;
   practiceArea?: string;
+  originSource?: string;
+  originContext?: Record<string, unknown>;
 }) {
   const isMenuOpen = actions.menuFor === keyword;
   const isCreating =
@@ -390,6 +411,8 @@ export function ContentActionsRow({
               keyword,
               practiceArea,
               busyKey: `quick:${keyword}`,
+              originSource,
+              originContext,
             })
           }
           disabled={isCreating}
@@ -431,6 +454,8 @@ export function ContentActionsRow({
                         contentTypeId: t.id,
                         practiceArea,
                         busyKey: `type:${keyword}:${t.id}`,
+                        originSource,
+                        originContext,
                       })
                     }
                     disabled={actions.creatingKey === `type:${keyword}:${t.id}`}

@@ -1,9 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { marked } from "marked";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import { ContentNav } from "@/components/content-nav";
+import { ContentTypeTabs } from "@/components/content-type-tabs";
+import { readContentType } from "@/lib/content-types";
 
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
@@ -70,7 +74,12 @@ type SeoBrief = {
 };
 
 export default function ContentPage() {
-  const [tab, setTab] = useState<"blog" | "social" | "email">("blog");
+  const searchParams = useSearchParams();
+  const contentType = readContentType(searchParams);
+  // Internal `tab` value used by the existing form logic — derived from the
+  // top-level type tab. "website" → blog form, "social" / "email" map 1:1.
+  const tab: "blog" | "social" | "email" =
+    contentType === "website" ? "blog" : contentType;
   const [topic, setTopic] = useState("");
   const [practiceArea, setPracticeArea] = useState("General");
   const [length, setLength] = useState<"short" | "medium" | "long">("medium");
@@ -263,22 +272,6 @@ export default function ContentPage() {
     }
   }
 
-  async function saveBlog() {
-    if (!preview.trim()) return;
-    setSavedMsg(null);
-    const res = await fetch("/api/content/social-posts", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        platform: "blog",
-        title: topic.slice(0, 200) || "Blog draft",
-        body: preview,
-      }),
-    });
-    if (res.ok) setSavedMsg("Saved to Supabase.");
-    else setSavedMsg("Save failed.");
-  }
-
   async function saveBrandVoice() {
     setBrandLoading(true);
     try {
@@ -316,31 +309,8 @@ export default function ContentPage() {
           <p className="mt-1 text-sm text-slate-500">AI drafts · Katz Melinger voice</p>
         </div>
 
+        <ContentTypeTabs />
         <ContentNav />
-
-        <div className="flex flex-wrap gap-2 border-b pb-2" style={{ borderColor: BORDER }}>
-          {(
-            [
-              ["blog", "Blog posts"],
-              ["social", "Social media"],
-              ["email", "Email campaigns"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                tab === id ? "text-slate-900" : "text-slate-500 hover:text-slate-900"
-              }`}
-              style={{
-                backgroundColor: tab === id ? ACCENT : "transparent",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
         <div className="grid gap-8 lg:grid-cols-2">
           <section className="space-y-4 rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
@@ -524,45 +494,15 @@ export default function ContentPage() {
             </button>
           </section>
 
-          <section className="space-y-3 rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
-            <h2 className="text-sm font-semibold text-slate-900">Preview</h2>
-            {tab === "email" && emailSubject ? (
-              <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-3 text-sm">
-                <span className="text-xs text-slate-500">Subject</span>
-                <p className="font-medium text-[#185FA5]">{emailSubject}</p>
-              </div>
-            ) : null}
-            {tab === "social" ? (
-              <p className="text-xs text-slate-500">{socialChars} characters</p>
-            ) : null}
-            <div className="max-h-[480px] overflow-y-auto whitespace-pre-wrap rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-700">
-              {preview || "Generated content appears here."}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-lg border border-[#e2e8f0] px-4 py-2 text-sm"
-                onClick={() => {
-                  if (preview) void navigator.clipboard.writeText(preview);
-                }}
-              >
-                Copy
-              </button>
-              {tab === "blog" ? (
-                <button
-                  type="button"
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-900"
-                  style={{ backgroundColor: "#166534" }}
-                  onClick={() => void saveBlog()}
-                >
-                  Save
-                </button>
-              ) : null}
-            </div>
-            {savedMsg ? (
-              <p className="text-sm text-emerald-300">{savedMsg}</p>
-            ) : null}
-          </section>
+          <PreviewPane
+            preview={preview}
+            tab={tab}
+            emailSubject={emailSubject}
+            socialChars={socialChars}
+          />
+          {savedMsg ? (
+            <p className="text-sm text-emerald-300 lg:col-span-2">{savedMsg}</p>
+          ) : null}
         </div>
 
         <section className="rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
@@ -615,14 +555,15 @@ export default function ContentPage() {
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-4">
-              <p className="font-medium text-slate-900">Firm brand documents (PDF)</p>
+              <p className="font-medium text-slate-900">Firm brand documents</p>
               <p className="mt-1 text-xs text-slate-500">
-                Upload brand voice guides, website copy decks, and legal content standards.
+                Upload brand voice guides, website copy decks, and legal content
+                standards. Accepts .pdf, .docx, .txt, .md, .rtf, .html.
               </p>
               <input
                 className="mt-3 block w-full text-sm text-slate-600"
                 type="file"
-                accept=".pdf,application/pdf"
+                accept=".pdf,.docx,.txt,.md,.rtf,.html,.htm"
                 multiple
                 onChange={(e) => setBrandFiles(e.target.files)}
               />
@@ -633,18 +574,19 @@ export default function ContentPage() {
                 className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 disabled:opacity-50"
                 style={{ backgroundColor: ACCENT }}
               >
-                {uploadingType === "brand" ? "Processing..." : "Train brand voice from PDFs"}
+                {uploadingType === "brand" ? "Processing..." : "Train brand voice from documents"}
               </button>
             </div>
             <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-4">
-              <p className="font-medium text-slate-900">Sample marketing content (PDF)</p>
+              <p className="font-medium text-slate-900">Sample marketing content</p>
               <p className="mt-1 text-xs text-slate-500">
-                Upload past newsletters, social exports, and campaign writeups for pattern analysis.
+                Upload past newsletters, social exports, and campaign writeups
+                for pattern analysis. Accepts .pdf, .docx, .txt, .md, .rtf, .html.
               </p>
               <input
                 className="mt-3 block w-full text-sm text-slate-600"
                 type="file"
-                accept=".pdf,application/pdf"
+                accept=".pdf,.docx,.txt,.md,.rtf,.html,.htm"
                 multiple
                 onChange={(e) => setSampleFiles(e.target.files)}
               />
@@ -655,7 +597,7 @@ export default function ContentPage() {
                 className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 disabled:opacity-50"
                 style={{ backgroundColor: "#1d9e75" }}
               >
-                {uploadingType === "sample" ? "Processing..." : "Analyze sample marketing PDFs"}
+                {uploadingType === "sample" ? "Processing..." : "Analyze sample marketing documents"}
               </button>
             </div>
           </div>
@@ -682,5 +624,134 @@ export default function ContentPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+/**
+ * Generated content preview pane.
+ *
+ * Renders markdown as HTML so headings / bold / bullets show formatted —
+ * not as `##`, `**`, `-`. The Copy button puts both rich-text (text/html)
+ * and plain-text on the clipboard so pasting into Word or Google Docs
+ * preserves formatting; pasting into a plain editor gets the markdown.
+ *
+ * The browser Clipboard API requires user activation (a click). Falls back
+ * to plain-text copy if the rich-text path fails.
+ */
+function PreviewPane({
+  preview,
+  tab,
+  emailSubject,
+  socialChars,
+}: {
+  preview: string;
+  tab: "blog" | "social" | "email";
+  emailSubject: string;
+  socialChars: number;
+}) {
+  const renderedHtml = useMemo(() => {
+    if (!preview.trim()) return "";
+    // marked.parse can be sync or async depending on configured extensions;
+    // we use no async ones, so the result is a string here.
+    return marked.parse(preview, { async: false }) as string;
+  }, [preview]);
+
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+
+  const copyFormatted = async () => {
+    if (!preview.trim()) return;
+    try {
+      if (
+        typeof window !== "undefined" &&
+        typeof window.ClipboardItem !== "undefined" &&
+        navigator.clipboard &&
+        "write" in navigator.clipboard
+      ) {
+        const html = renderedHtml || preview;
+        const item = new window.ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([preview], { type: "text/plain" }),
+        });
+        await navigator.clipboard.write([item]);
+      } else {
+        await navigator.clipboard.writeText(preview);
+      }
+      setCopyStatus("copied");
+    } catch {
+      try {
+        await navigator.clipboard.writeText(preview);
+        setCopyStatus("copied");
+      } catch {
+        setCopyStatus("failed");
+      }
+    }
+    setTimeout(() => setCopyStatus("idle"), 2000);
+  };
+
+  const copyMarkdown = async () => {
+    if (!preview.trim()) return;
+    try {
+      await navigator.clipboard.writeText(preview);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+    setTimeout(() => setCopyStatus("idle"), 2000);
+  };
+
+  return (
+    <section
+      className="space-y-3 rounded-xl border p-6"
+      style={{ backgroundColor: "#ffffff", borderColor: "#e2e8f0" }}
+    >
+      <h2 className="text-sm font-semibold text-slate-900">Preview</h2>
+      {tab === "email" && emailSubject ? (
+        <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-3 text-sm">
+          <span className="text-xs text-slate-500">Subject</span>
+          <p className="font-medium text-[#185FA5]">{emailSubject}</p>
+        </div>
+      ) : null}
+      {tab === "social" ? (
+        <p className="text-xs text-slate-500">{socialChars} characters</p>
+      ) : null}
+      {preview ? (
+        <div
+          className="max-h-[480px] overflow-y-auto rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-800 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-[#185FA5] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
+          dangerouslySetInnerHTML={{ __html: renderedHtml }}
+        />
+      ) : (
+        <div className="rounded border border-dashed border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-400">
+          Generated content appears here.
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={!preview.trim()}
+          className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+          onClick={() => void copyFormatted()}
+        >
+          Copy (Word-ready)
+        </button>
+        <button
+          type="button"
+          disabled={!preview.trim()}
+          className="rounded-lg border border-[#e2e8f0] px-4 py-2 text-sm text-slate-700 hover:border-slate-300 disabled:opacity-50"
+          onClick={() => void copyMarkdown()}
+          title="Copy raw markdown (use when pasting into a plain-text editor)"
+        >
+          Copy markdown
+        </button>
+        {copyStatus === "copied" && (
+          <span className="text-xs text-emerald-700">Copied!</span>
+        )}
+        {copyStatus === "failed" && (
+          <span className="text-xs text-red-700">Copy failed — your browser blocked clipboard access.</span>
+        )}
+        <span className="ml-auto text-xs text-slate-400">
+          Drafts autosave to the library below.
+        </span>
+      </div>
+    </section>
   );
 }

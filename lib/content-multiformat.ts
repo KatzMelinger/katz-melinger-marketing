@@ -1,20 +1,31 @@
 /**
- * Multi-format batch generation.
+ * Multi-format batch generation with model routing + prompt caching.
  *
- * Single Claude call → blog + LinkedIn + Twitter thread + Facebook + Instagram
- * caption + email newsletter + podcast intro/script (whatever the caller asks
- * for). Each format gets its own draft row in `content_drafts`, all linked by
- * a `content_batches` row so the UI can group them.
+ * Each keyword's batch is split by format length:
+ *   - Long-form (blog, email, podcast)         → Sonnet
+ *   - Short-form (linkedin, twitter, facebook, instagram) → Haiku
  *
- * Optionally consumes a source content_sources row when repurposing — e.g.
- * "take this blog and turn it into LinkedIn + Twitter."
+ * The two calls run in parallel. The system block is identical between
+ * them, so the second-and-onward keywords in a multi-batch run benefit
+ * from Anthropic's ephemeral prompt cache (5-min TTL, ~90% off on cached
+ * input tokens).
+ *
+ * Each format gets its own draft row in `content_drafts`, all linked by a
+ * `content_batches` row so the UI can group them. Optionally consumes a
+ * source content_sources row when repurposing.
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { ANTI_AI_VOICE_RULES } from "./anti-ai-voice";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import {
+  cachedSystemPrompt,
+  CONTENT_LONG_FORM_MODEL,
+  CONTENT_SHORT_FORM_MODEL,
+  extractJSON,
+  getAnthropic,
+} from "./anthropic";
 
 export type FormatKey =
   | "blog"
@@ -24,6 +35,8 @@ export type FormatKey =
   | "instagram"
   | "email"
   | "podcast";
+
+const LONG_FORM_FORMATS: FormatKey[] = ["blog", "email", "podcast"];
 
 const FORMAT_INSTRUCTIONS: Record<FormatKey, string> = {
   blog: "800-1200 word blog post with H2/H3 headings, lead paragraph, 3-5 sections, and a CTA. Use markdown formatting.",
@@ -53,23 +66,35 @@ type ClaudeMultiOutput = {
   >;
 };
 
-export async function generateMultiFormat(args: {
+function buildSystemPrompt(args: {
+  firm: string;
+  skillsContext: string;
+  tone: string | undefined;
+}): string {
+  return `You are a marketing copywriter for Katz Melinger PLLC.
+${args.firm}
+
+${ANTI_AI_VOICE_RULES}
+${args.skillsContext ? `\n${args.skillsContext}\n` : ""}
+Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.
+Avoid legalese. Never fabricate case results or guarantees. Stay compliant — recommend speaking with an attorney rather than asserting outcomes.
+
+For each requested format, return:
+- title (or subject for email)
+- preview_text (email only)
+- hashtags (instagram only, as array of strings)
+- body (the full content in the format's natural style)`;
+}
+
+function buildUserPrompt(args: {
   topic: string;
   practiceArea?: string;
   formats: FormatKey[];
-  tone?: string;
   targetKeywords?: string[];
   seoBriefHeadings?: string[];
   competitorGaps?: string[];
-  sourceId?: string | null;
   sourceText?: string | null;
-}): Promise<MultiFormatResult> {
-  const supabase = getSupabaseAdmin();
-  const [firm, skillsContext] = await Promise.all([
-    getFirmContext(),
-    buildSkillsContext(),
-  ]);
-
+}): string {
   const requestedSpec = args.formats
     .map((f) => `- ${f}: ${FORMAT_INSTRUCTIONS[f]}`)
     .join("\n");
@@ -89,21 +114,7 @@ ${args.seoBriefHeadings?.length ? `- Suggested headings: ${args.seoBriefHeadings
 ${args.competitorGaps?.length ? `- Competitor gaps to address: ${args.competitorGaps.join(" | ")}` : ""}`
       : "";
 
-  const system = `You are a marketing copywriter for Katz Melinger PLLC.
-${firm}
-
-${ANTI_AI_VOICE_RULES}
-${skillsContext ? `\n${skillsContext}\n` : ""}
-Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.
-Avoid legalese. Never fabricate case results or guarantees. Stay compliant — recommend speaking with an attorney rather than asserting outcomes.
-
-For each requested format, return:
-- title (or subject for email)
-- preview_text (email only)
-- hashtags (instagram only, as array of strings)
-- body (the full content in the format's natural style)`;
-
-  const user = `Topic: ${args.topic}
+  return `Topic: ${args.topic}
 Practice area: ${args.practiceArea ?? "General"}
 
 Generate the following formats:
@@ -115,15 +126,85 @@ Return JSON only:
     ${args.formats.map((f) => `"${f}": { "title": "...", "body": "..." }`).join(",\n    ")}
   }
 }`;
+}
 
+async function callClaudeForFormats(args: {
+  model: string;
+  system: string;
+  user: string;
+}): Promise<ClaudeMultiOutput> {
   const resp = await getAnthropic().messages.create({
-    model: KEYWORD_RESEARCH_MODEL,
+    model: args.model,
     max_tokens: 8192,
-    system,
-    messages: [{ role: "user", content: user }],
+    system: cachedSystemPrompt(args.system),
+    messages: [{ role: "user", content: args.user }],
   });
   const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
-  const parsed = extractJSON<ClaudeMultiOutput>(text);
+  try {
+    return extractJSON<ClaudeMultiOutput>(text);
+  } catch {
+    return { formats: {} };
+  }
+}
+
+export async function generateMultiFormat(args: {
+  topic: string;
+  practiceArea?: string;
+  formats: FormatKey[];
+  tone?: string;
+  targetKeywords?: string[];
+  seoBriefHeadings?: string[];
+  competitorGaps?: string[];
+  sourceId?: string | null;
+  sourceText?: string | null;
+  originSource?: string | null;
+  originContext?: Record<string, unknown> | null;
+}): Promise<MultiFormatResult> {
+  const supabase = getSupabaseAdmin();
+  const [firm, skillsContext] = await Promise.all([
+    getFirmContext(),
+    buildSkillsContext({
+      platforms: args.formats,
+      practiceArea: args.practiceArea,
+    }),
+  ]);
+
+  const system = buildSystemPrompt({ firm, skillsContext, tone: args.tone });
+
+  const longForm = args.formats.filter((f) => LONG_FORM_FORMATS.includes(f));
+  const shortForm = args.formats.filter((f) => !LONG_FORM_FORMATS.includes(f));
+
+  const buildUserFor = (formats: FormatKey[]) =>
+    buildUserPrompt({
+      topic: args.topic,
+      practiceArea: args.practiceArea,
+      formats,
+      targetKeywords: args.targetKeywords,
+      seoBriefHeadings: args.seoBriefHeadings,
+      competitorGaps: args.competitorGaps,
+      sourceText: args.sourceText,
+    });
+
+  const [longResult, shortResult] = await Promise.all([
+    longForm.length > 0
+      ? callClaudeForFormats({
+          model: CONTENT_LONG_FORM_MODEL,
+          system,
+          user: buildUserFor(longForm),
+        })
+      : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
+    shortForm.length > 0
+      ? callClaudeForFormats({
+          model: CONTENT_SHORT_FORM_MODEL,
+          system,
+          user: buildUserFor(shortForm),
+        })
+      : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
+  ]);
+
+  const merged: ClaudeMultiOutput = {
+    formats: { ...longResult.formats, ...shortResult.formats },
+  };
 
   const { data: batchRow, error: batchErr } = await supabase
     .from("content_batches")
@@ -140,12 +221,17 @@ Return JSON only:
   const draftRows: { id: string; format: FormatKey; title: string | null; body: string; metadata: Record<string, unknown> }[] = [];
 
   for (const format of args.formats) {
-    const data = parsed.formats?.[format];
+    const data = merged.formats?.[format];
     if (!data?.body) continue;
     const metadata: Record<string, unknown> = {};
     if (data.subject) metadata.subject = data.subject;
     if (data.preview_text) metadata.preview_text = data.preview_text;
     if (data.hashtags) metadata.hashtags = data.hashtags;
+    if (args.originSource) metadata.origin_source = args.originSource;
+    if (args.originContext) metadata.origin_context = args.originContext;
+    metadata.generation_model = LONG_FORM_FORMATS.includes(format)
+      ? CONTENT_LONG_FORM_MODEL
+      : CONTENT_SHORT_FORM_MODEL;
 
     const { data: draft, error: dErr } = await supabase
       .from("content_drafts")

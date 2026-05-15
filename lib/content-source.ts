@@ -4,7 +4,7 @@
  * Accepts:
  *   - raw text (paste a draft, an email, etc.)
  *   - URL (fetch + strip HTML to plain text)
- *   - file (PDF or .txt; .docx left for a future pass)
+ *   - file (.pdf, .docx, .txt, .md, .rtf, .html — see lib/document-extract.ts)
  *
  * Produces a `content_sources` row with:
  *   - the extracted plain text
@@ -15,6 +15,7 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { extractText } from "./document-extract";
 
 const USER_AGENT = "KMDashboard-ContentImporter/1.0";
 
@@ -121,16 +122,11 @@ export async function ingestSource(args: {
   } else if (args.source_type === "file") {
     if (!args.fileBuffer) throw new Error("file buffer required");
     filename = args.filename ?? "uploaded";
-    if (filename.toLowerCase().endsWith(".pdf")) {
-      // pdf-parse v2 exports a PDFParse class instead of a default function.
-      const { PDFParse } = await import("pdf-parse");
-      const parser = new PDFParse({ data: args.fileBuffer });
-      const result = await parser.getText();
-      content = result.pages.map((p) => p.text).join("\n");
-      await parser.destroy();
-    } else {
-      content = args.fileBuffer.toString("utf-8");
-    }
+    const extracted = await extractText({
+      filename,
+      buffer: args.fileBuffer,
+    });
+    content = extracted.text;
   }
 
   content = content.replace(/\s+/g, " ").trim();
