@@ -59,12 +59,15 @@ export async function listCompetitors(): Promise<string[]> {
     const now = new Date().toISOString();
     const initial = Array.from(new Set([...FALLBACK_COMPETITORS, ...envCompetitors()]));
     const rows = [
-      { domain: SEED_MARKER, source: "system", added_at: now },
-      ...initial.map((d) => ({ domain: d, source: "system", added_at: now })),
+      { domain: SEED_MARKER, source: "env_seed", added_at: now },
+      ...initial.map((d) => ({ domain: d, source: "env_seed", added_at: now })),
     ];
-    await admin
+    const { error: seedError } = await admin
       .from("seo_tracked_competitors")
       .upsert(rows, { onConflict: "domain" });
+    if (seedError) {
+      console.error("[seo-competitors] seed upsert failed:", seedError.message);
+    }
     return initial.sort();
   }
 
