@@ -11,8 +11,11 @@
  * generations). The pipeline is a planning tool; drafts are the artifacts.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+
 import { ContentNav } from "@/components/content-nav";
+import { ContentTypeTabs } from "@/components/content-type-tabs";
 import {
   DashCard,
   DashButton,
@@ -21,6 +24,7 @@ import {
   DashSpinner,
   DashPill,
 } from "@/components/dashboard-ui";
+import { CONTENT_TYPE_LABEL, readContentType } from "@/lib/content-types";
 
 type Status = "idea" | "brief" | "draft" | "review" | "published";
 type Bucket = "money_page" | "bofu_education" | "mofu_trust" | "local_authority";
@@ -72,6 +76,9 @@ const STATUSES: Status[] = ["idea", "brief", "draft", "review", "published"];
 const BUCKETS: Bucket[] = ["money_page", "bofu_education", "mofu_trust", "local_authority"];
 
 export default function PipelinePage() {
+  const searchParams = useSearchParams();
+  const contentType = readContentType(searchParams);
+
   const [items, setItems] = useState<Item[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -80,11 +87,12 @@ export default function PipelinePage() {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (statusFilter !== "all") params.set("status", statusFilter);
     if (bucketFilter !== "all") params.set("bucket", bucketFilter);
+    params.set("content_type", contentType);
     try {
       const res = await fetch(`/api/content/pipeline?${params.toString()}`);
       const data = await res.json();
@@ -93,11 +101,11 @@ export default function PipelinePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, bucketFilter, contentType]);
 
   useEffect(() => {
     refresh();
-  }, [statusFilter, bucketFilter]);
+  }, [refresh]);
 
   const setStatus = async (id: number, status: Status) => {
     await fetch(`/api/content/pipeline/${id}`, {
@@ -120,7 +128,8 @@ export default function PipelinePage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Content studio</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Editorial pipeline from idea to published.
+            Editorial pipeline from idea to published —{" "}
+            <span className="font-medium">{CONTENT_TYPE_LABEL[contentType]}</span>.
           </p>
         </div>
         <DashButton
@@ -132,6 +141,7 @@ export default function PipelinePage() {
           + New content
         </DashButton>
       </div>
+      <ContentTypeTabs />
       <ContentNav />
 
       <div className="flex items-center gap-3 flex-wrap mb-4">
@@ -264,6 +274,7 @@ export default function PipelinePage() {
       {showModal && (
         <ContentModal
           item={editingItem}
+          contentType={contentType}
           onClose={() => {
             setShowModal(false);
             setEditingItem(null);
@@ -325,10 +336,12 @@ function StatusDropdown({
 
 function ContentModal({
   item,
+  contentType,
   onClose,
   onSaved,
 }: {
   item: Item | null;
+  contentType: "website" | "social" | "email";
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -359,6 +372,8 @@ function ContentModal({
         bucket,
         url,
         notes,
+        // New items inherit the active top-tab; edits preserve existing type.
+        ...(isEdit ? {} : { contentType }),
       };
       const url2 = isEdit ? `/api/content/pipeline/${item!.id}` : "/api/content/pipeline";
       const method = isEdit ? "PATCH" : "POST";

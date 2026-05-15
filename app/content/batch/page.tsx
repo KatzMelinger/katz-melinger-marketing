@@ -12,9 +12,12 @@
  * into the requested formats.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+
 import { ContentNav } from "@/components/content-nav";
+import { ContentTypeTabs } from "@/components/content-type-tabs";
 import {
   DashCard,
   DashButton,
@@ -23,6 +26,11 @@ import {
   DashSpinner,
   DashPill,
 } from "@/components/dashboard-ui";
+import {
+  CONTENT_TYPE_FORMATS,
+  CONTENT_TYPE_LABEL,
+  readContentType,
+} from "@/lib/content-types";
 
 type FormatKey = "blog" | "linkedin" | "twitter" | "facebook" | "instagram" | "email" | "podcast";
 
@@ -62,12 +70,27 @@ type GeneratedDraft = {
 };
 
 export default function BatchPage() {
+  const searchParams = useSearchParams();
+  const contentType = readContentType(searchParams);
+
+  // Format chips visible on this page are scoped to the current content type
+  // tab. Switching the top tab re-seeds the selection with that type's full
+  // format set so each type batch defaults to "all formats for this type".
+  const visibleFormats = useMemo(
+    () => CONTENT_TYPE_FORMATS[contentType] as readonly FormatKey[],
+    [contentType],
+  );
+
   const [topic, setTopic] = useState("");
   const [practiceArea, setPracticeArea] = useState("General");
   const [tone, setTone] = useState("Professional, plain-spoken, accessible");
   const [selected, setSelected] = useState<Set<FormatKey>>(
-    new Set(["blog", "linkedin", "twitter"]),
+    () => new Set(visibleFormats as readonly FormatKey[]),
   );
+
+  useEffect(() => {
+    setSelected(new Set(visibleFormats as readonly FormatKey[]));
+  }, [visibleFormats]);
   const [targetKeywords, setTargetKeywords] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceId, setSourceId] = useState<string>("");
@@ -130,12 +153,16 @@ export default function BatchPage() {
           Type one topic, get every format at once.
         </p>
       </div>
+      <ContentTypeTabs />
       <ContentNav />
 
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
           <DashCard>
             <div className="space-y-3">
+              <div className="text-xs uppercase tracking-wider text-slate-500">
+                Generating: {CONTENT_TYPE_LABEL[contentType]}
+              </div>
               <div>
                 <label className="text-xs font-medium text-slate-700">Topic</label>
                 <DashInput
@@ -206,7 +233,7 @@ export default function BatchPage() {
           <DashCard>
             <div className="text-xs font-medium text-slate-700 mb-3">Formats to generate</div>
             <div className="grid sm:grid-cols-2 gap-2">
-              {FORMATS.map((f) => {
+              {FORMATS.filter((f) => visibleFormats.includes(f.id)).map((f) => {
                 const on = selected.has(f.id);
                 return (
                   <button

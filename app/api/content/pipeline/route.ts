@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 
 const VALID_STATUSES = ["idea", "brief", "draft", "review", "published"] as const;
 const VALID_BUCKETS = ["money_page", "bofu_education", "mofu_trust", "local_authority"] as const;
+const VALID_CONTENT_TYPES = ["website", "social", "email"] as const;
 
 type PipelineRow = {
   id: number;
@@ -21,6 +22,7 @@ type PipelineRow = {
   location: string | null;
   status: string;
   bucket: string;
+  content_type: string;
   notes: string | null;
   url: string | null;
   draft_id: string | null;
@@ -32,12 +34,19 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const status = searchParams.get("status");
   const bucket = searchParams.get("bucket");
+  const contentType = searchParams.get("content_type");
 
   if (status && !VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])) {
     return NextResponse.json({ error: "Invalid status filter" }, { status: 400 });
   }
   if (bucket && !VALID_BUCKETS.includes(bucket as (typeof VALID_BUCKETS)[number])) {
     return NextResponse.json({ error: "Invalid bucket filter" }, { status: 400 });
+  }
+  if (
+    contentType &&
+    !VALID_CONTENT_TYPES.includes(contentType as (typeof VALID_CONTENT_TYPES)[number])
+  ) {
+    return NextResponse.json({ error: "Invalid content_type filter" }, { status: 400 });
   }
 
   const supabase = getSupabaseAdmin();
@@ -52,6 +61,7 @@ export async function GET(req: NextRequest) {
   let filtered = all;
   if (status) filtered = filtered.filter((i) => i.status === status);
   if (bucket) filtered = filtered.filter((i) => i.bucket === bucket);
+  if (contentType) filtered = filtered.filter((i) => i.content_type === contentType);
 
   const stats = {
     total: all.length,
@@ -77,6 +87,11 @@ export async function POST(req: NextRequest) {
   const bucket = VALID_BUCKETS.includes(body?.bucket as (typeof VALID_BUCKETS)[number])
     ? body.bucket
     : "bofu_education";
+  const contentType = VALID_CONTENT_TYPES.includes(
+    body?.contentType as (typeof VALID_CONTENT_TYPES)[number],
+  )
+    ? body.contentType
+    : "website";
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -87,6 +102,7 @@ export async function POST(req: NextRequest) {
       location: body?.location?.trim() || null,
       status,
       bucket,
+      content_type: contentType,
       notes: body?.notes?.trim() || null,
       url: body?.url?.trim() || null,
       draft_id: body?.draftId ?? null,

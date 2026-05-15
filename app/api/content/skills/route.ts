@@ -19,8 +19,19 @@ const VALID_TYPES: SkillType[] = [
   "example_phrasing",
   "practice_fact",
   "compliance",
+  "prompt",
+  "direction",
   "other",
 ];
+
+function readStringArray(input: unknown): string[] | null {
+  if (!Array.isArray(input)) return null;
+  const cleaned = input
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  return cleaned.length > 0 ? cleaned : null;
+}
 
 export async function GET() {
   try {
@@ -49,6 +60,12 @@ export async function POST(req: NextRequest) {
     if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
     if (!content) return NextResponse.json({ error: "content required" }, { status: 400 });
 
+    const platforms = readStringArray((body as Record<string, unknown>)?.platforms);
+    const audiences = readStringArray((body as Record<string, unknown>)?.audiences);
+    const practiceAreas = readStringArray(
+      (body as Record<string, unknown>)?.practiceAreas,
+    );
+
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("content_skills")
@@ -58,6 +75,9 @@ export async function POST(req: NextRequest) {
         skill_type: skillType,
         enabled,
         sort_order: sortOrder,
+        platforms,
+        audiences,
+        practice_areas: practiceAreas,
       })
       .select()
       .single();

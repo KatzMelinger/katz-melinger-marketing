@@ -481,8 +481,8 @@ export default function IntelligencePage() {
               Hashtag packs, video hooks, captions, posting times, and visual
               ideas for any platform — generated against your firm voice.{" "}
               <span className="italic">
-                Heads up: this uses Claude's general platform knowledge, not
-                live trending data. For "what sound is hot today" use the
+                Heads up: this uses Claude&apos;s general platform knowledge, not
+                live trending data. For &ldquo;what sound is hot today&rdquo; use the
                 TikTok / Discover launcher on /community.
               </span>
             </p>

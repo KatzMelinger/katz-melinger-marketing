@@ -13,6 +13,35 @@ import Anthropic from "@anthropic-ai/sdk";
 // feature.
 export const KEYWORD_RESEARCH_MODEL = "claude-sonnet-4-5-20250929";
 
+// Long-form content (blog posts, email newsletters, podcast scripts) and
+// anything where the output style or factual accuracy materially matters.
+// Same Sonnet snapshot as keyword research today.
+export const CONTENT_LONG_FORM_MODEL = "claude-sonnet-4-5-20250929";
+
+// Short-form content (LinkedIn, Twitter/X, Facebook, Instagram captions).
+// Haiku is ~4× cheaper than Sonnet on output and is plenty for short social
+// formats. Used in lib/content-multiformat.ts when the batch includes a mix
+// of long-form and short-form formats — the batch is split into two parallel
+// Claude calls, one per model.
+export const CONTENT_SHORT_FORM_MODEL = "claude-haiku-4-5-20251001";
+
+/**
+ * Wraps a system prompt string in the array-of-content-blocks form the
+ * Messages API uses for prompt caching, and tags it as ephemeral (5-min TTL).
+ *
+ * Below Anthropic's per-model token minimum the directive is silently
+ * ignored — so we can always wrap and let the API decide whether to cache.
+ */
+export function cachedSystemPrompt(text: string) {
+  return [
+    {
+      type: "text" as const,
+      text,
+      cache_control: { type: "ephemeral" as const },
+    },
+  ];
+}
+
 let cached: Anthropic | null = null;
 
 export function getAnthropic(): Anthropic {
