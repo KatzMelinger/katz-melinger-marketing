@@ -7,6 +7,11 @@
  *
  * If the tables are empty or unreachable, we fall back to a hardcoded baseline
  * so the AI routes still produce useful results out of the box.
+ *
+ * Contact fields (address, phone, email, website) are injected verbatim and
+ * the system prompt explicitly tells the model NOT to fabricate any of them
+ * — that's how we got a wrong NYC address and a generic contact@ email in
+ * the very first generated email draft. Edit the values on /brand-voice.
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
@@ -31,10 +36,30 @@ export const VALID_INTENTS = [
   "navigational",
 ] as const;
 
+/**
+ * Canonical Katz Melinger contact info — used as the default if the
+ * corresponding brand_voice_settings rows are blank. Editing the values
+ * on /brand-voice overrides these. Keep these in sync with the firm's
+ * actual public-facing info; the AI is instructed not to invent
+ * alternatives.
+ */
+const DEFAULT_CONTACT = {
+  firmName: "Katz Melinger PLLC",
+  firmAddress: "370 Lexington Avenue, Suite 1512, New York, NY 10017",
+  firmPhone: "(212) 460-0047",
+  firmEmail: "info@katzmelinger.com",
+  firmWebsite: "www.KatzMelinger.com",
+} as const;
+
 const FALLBACK_CONTEXT =
-  `Katz Melinger PLLC is a plaintiff-side employment law firm based in ` +
+  `${DEFAULT_CONTACT.firmName} is a plaintiff-side employment law firm based in ` +
   `New York City, serving clients in NY and NJ. Practice areas: ` +
-  `${PRACTICE_AREAS.filter((p) => p !== "All").join(", ")}.`;
+  `${PRACTICE_AREAS.filter((p) => p !== "All").join(", ")}.\n\n` +
+  `CONTACT INFO (use these verbatim — never fabricate):\n` +
+  `- Address: ${DEFAULT_CONTACT.firmAddress}\n` +
+  `- Phone: ${DEFAULT_CONTACT.firmPhone}\n` +
+  `- Email: ${DEFAULT_CONTACT.firmEmail}\n` +
+  `- Website: ${DEFAULT_CONTACT.firmWebsite}\n`;
 
 export async function getFirmContext(): Promise<string> {
   try {
@@ -52,12 +77,24 @@ export async function getFirmContext(): Promise<string> {
       }
     }
 
-    const firmName = settings.firmName ?? "Katz Melinger PLLC";
-    const geography = settings.targetGeography ?? "New York and New Jersey";
+    const firmName = settings.firmName || DEFAULT_CONTACT.firmName;
+    const geography = settings.targetGeography || "New York and New Jersey";
+    const firmAddress = settings.firmAddress || DEFAULT_CONTACT.firmAddress;
+    const firmPhone = settings.firmPhone || DEFAULT_CONTACT.firmPhone;
+    const firmEmail = settings.firmEmail || DEFAULT_CONTACT.firmEmail;
+    const firmWebsite = settings.firmWebsite || DEFAULT_CONTACT.firmWebsite;
 
     let context =
       `${firmName} is an employment law firm in ${geography}. ` +
       `Practice areas: ${PRACTICE_AREAS.filter((p) => p !== "All").join(", ")}.\n`;
+
+    context +=
+      `\nCONTACT INFO (use these verbatim in any CTA, signature, or contact ` +
+      `section — never fabricate an address, phone number, email, or website):\n` +
+      `- Address: ${firmAddress}\n` +
+      `- Phone: ${firmPhone}\n` +
+      `- Email: ${firmEmail}\n` +
+      `- Website: ${firmWebsite}\n`;
 
     if (avatarRows && avatarRows.length > 0) {
       const audiences = avatarRows
@@ -66,7 +103,7 @@ export async function getFirmContext(): Promise<string> {
           return `${a.name}${role}`;
         })
         .join(", ");
-      context += `Target audiences: ${audiences}.\n`;
+      context += `\nTarget audiences: ${audiences}.\n`;
     }
 
     if (settings.keyMessages) {
