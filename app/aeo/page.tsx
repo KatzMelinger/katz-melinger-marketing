@@ -23,6 +23,7 @@ import {
   useContentActions,
   type ContentActions,
 } from "@/components/content-actions";
+import { HubSubNav } from "@/components/hub-subnav";
 import { MarketingNav } from "@/components/marketing-nav";
 
 type Tab = "overview" | "prompts" | "targets" | "sources" | "runs";
@@ -286,6 +287,7 @@ export default function AEOPage() {
   return (
     <>
       <MarketingNav />
+      <HubSubNav />
       <div className="p-6 space-y-6 mx-auto max-w-7xl">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
