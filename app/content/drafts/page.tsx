@@ -268,17 +268,50 @@ export default function DraftsPage() {
     refresh();
   };
 
+  const [importOpen, setImportOpen] = useState(false);
+
+  const handleImported = (draftId: string) => {
+    setImportOpen(false);
+    setSelectedId(draftId);
+    refresh();
+    // Auto-run the full analysis pipeline so the imported draft has scores
+    // ready by the time the detail panel loads on the right.
+    fetch(`/api/content/drafts/${draftId}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setAnalysis(data);
+      })
+      .catch(() => {});
+  };
+
   return (
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Content studio</h1>
-        <p className="text-sm text-slate-600 mt-1">
-          Every generation autosaves here. Edit, analyze, export. Showing{" "}
-          <span className="font-medium">{CONTENT_TYPE_LABEL[contentType]}</span> drafts.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Content studio</h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Every generation autosaves here. Edit, analyze, export. Showing{" "}
+            <span className="font-medium">{CONTENT_TYPE_LABEL[contentType]}</span> drafts.
+          </p>
+        </div>
+        <DashButton onClick={() => setImportOpen(true)}>
+          + Import existing draft
+        </DashButton>
       </div>
       <ContentTypeTabs />
       <ContentNav />
+
+      {importOpen && (
+        <ImportDraftModal
+          defaultContentType={contentType}
+          onClose={() => setImportOpen(false)}
+          onImported={handleImported}
+        />
+      )}
 
       <div className="grid lg:grid-cols-[320px_1fr] gap-4">
         <div className="space-y-3">
@@ -657,6 +690,282 @@ function CashPillar({
         <span className="text-base font-semibold tabular-nums">{value}</span>
       </div>
       <div className="text-[10px] opacity-80">{label}</div>
+    </div>
+  );
+}
+
+const IMPORT_FORMAT_OPTIONS: { value: string; label: string; contentType: "website" | "social" | "email" }[] = [
+  { value: "blog", label: "Blog post / website page", contentType: "website" },
+  { value: "linkedin", label: "LinkedIn post", contentType: "social" },
+  { value: "twitter", label: "Twitter / X thread", contentType: "social" },
+  { value: "facebook", label: "Facebook post", contentType: "social" },
+  { value: "instagram", label: "Instagram caption", contentType: "social" },
+  { value: "podcast", label: "Podcast script", contentType: "social" },
+  { value: "email", label: "Email", contentType: "email" },
+];
+
+const IMPORT_PRACTICE_AREAS = [
+  "General",
+  "Wage & Hour",
+  "Discrimination",
+  "Class Action",
+  "Judgment Enforcement",
+  "Severance",
+];
+
+function ImportDraftModal({
+  defaultContentType,
+  onClose,
+  onImported,
+}: {
+  defaultContentType: "website" | "social" | "email";
+  onClose: () => void;
+  onImported: (draftId: string) => void;
+}) {
+  const [mode, setMode] = useState<"paste" | "file">("paste");
+  const [format, setFormat] = useState<string>(
+    IMPORT_FORMAT_OPTIONS.find((f) => f.contentType === defaultContentType)?.value ?? "blog",
+  );
+  const [topic, setTopic] = useState("");
+  const [title, setTitle] = useState("");
+  const [practiceArea, setPracticeArea] = useState("General");
+  const [body, setBody] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [targetKeywords, setTargetKeywords] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit =
+    !submitting &&
+    topic.trim().length > 0 &&
+    (mode === "paste" ? body.trim().length > 0 : file !== null);
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      let res: Response;
+      if (mode === "file") {
+        if (!file) {
+          setError("Pick a file to upload.");
+          setSubmitting(false);
+          return;
+        }
+        const form = new FormData();
+        form.append("file", file);
+        form.append("format", format);
+        form.append("topic", topic.trim());
+        if (title.trim()) form.append("title", title.trim());
+        if (practiceArea) form.append("practiceArea", practiceArea);
+        if (targetKeywords.trim()) form.append("targetKeywords", targetKeywords.trim());
+        res = await fetch("/api/content/drafts/import", {
+          method: "POST",
+          body: form,
+        });
+      } else {
+        res = await fetch("/api/content/drafts/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            format,
+            topic: topic.trim(),
+            title: title.trim() || undefined,
+            body,
+            practiceArea,
+            targetKeywords: targetKeywords
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+          }),
+        });
+      }
+      const data = await res.json();
+      if (!res.ok || !data?.draft_id) {
+        setError(data?.error ?? "Import failed.");
+        setSubmitting(false);
+        return;
+      }
+      onImported(data.draft_id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed.");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
+          <div>
+            <h3 className="text-lg font-semibold">Import existing draft</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Bring in content drafted outside the system so it can be analyzed
+              (Readability / AEO / Brand voice / CASH) and tracked alongside
+              AI-generated drafts.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="inline-flex rounded-lg border border-slate-200 p-1">
+            <button
+              type="button"
+              onClick={() => setMode("paste")}
+              className={`text-xs px-3 py-1.5 rounded ${
+                mode === "paste"
+                  ? "bg-[#185FA5] text-white"
+                  : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              Paste text
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("file")}
+              className={`text-xs px-3 py-1.5 rounded ${
+                mode === "file"
+                  ? "bg-[#185FA5] text-white"
+                  : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              Upload file
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-700">Topic</label>
+              <DashInput
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g. NYC wrongful termination FAQ"
+                className="w-full mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700">
+                Title (optional)
+              </label>
+              <DashInput
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="If different from topic"
+                className="w-full mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-700">Format</label>
+              <select
+                value={format}
+                onChange={(e) => setFormat(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+              >
+                {IMPORT_FORMAT_OPTIONS.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700">
+                Practice area
+              </label>
+              <select
+                value={practiceArea}
+                onChange={(e) => setPracticeArea(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+              >
+                {IMPORT_PRACTICE_AREAS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-700">
+              Target keywords (comma separated, optional)
+            </label>
+            <DashInput
+              value={targetKeywords}
+              onChange={(e) => setTargetKeywords(e.target.value)}
+              placeholder="wrongful termination nyc, retaliation lawyer"
+              className="w-full mt-1"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Used by the AEO + target-keyword-hits scoring.
+            </p>
+          </div>
+
+          {mode === "paste" ? (
+            <div>
+              <label className="text-xs font-medium text-slate-700">
+                Paste the full draft
+              </label>
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={12}
+                placeholder="Paste plain text or markdown…"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Markdown formatting is preserved.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs font-medium text-slate-700">
+                Upload a document
+              </label>
+              <input
+                type="file"
+                accept=".pdf,.docx,.txt,.md,.rtf,.html,.htm"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="block w-full mt-1 text-sm text-slate-600"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Accepts .pdf, .docx, .txt, .md, .rtf, .html. The server
+                extracts the text and stores it as the draft body.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+            <DashButton variant="outline" onClick={onClose}>
+              Cancel
+            </DashButton>
+            <DashButton onClick={submit} disabled={!canSubmit}>
+              {submitting ? <DashSpinner /> : "Import + analyze"}
+            </DashButton>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

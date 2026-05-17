@@ -68,6 +68,26 @@ const SETTING_FIELDS: {
     placeholder: "New York City and New Jersey",
   },
   {
+    key: "firmAddress",
+    label: "Firm address (used verbatim in CTAs and signatures)",
+    placeholder: "370 Lexington Avenue, Suite 1512, New York, NY 10017",
+  },
+  {
+    key: "firmPhone",
+    label: "Firm phone",
+    placeholder: "(212) 460-0047",
+  },
+  {
+    key: "firmEmail",
+    label: "Firm email",
+    placeholder: "info@katzmelinger.com",
+  },
+  {
+    key: "firmWebsite",
+    label: "Firm website",
+    placeholder: "www.KatzMelinger.com",
+  },
+  {
     key: "keyMessages",
     label: "Key messages",
     placeholder:

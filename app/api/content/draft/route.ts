@@ -5,6 +5,7 @@ import {
   cachedSystemPrompt,
   CONTENT_LONG_FORM_MODEL,
   CONTENT_SHORT_FORM_MODEL,
+  extractJSON,
   getAnthropic,
 } from "@/lib/anthropic";
 import {
@@ -12,6 +13,7 @@ import {
   getLatestBrandProfile,
 } from "@/lib/content-brand-voice";
 import { buildSkillsContext } from "@/lib/content-skills";
+import { getFirmContext } from "@/lib/firm-context";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -93,13 +95,14 @@ export async function POST(req: Request) {
           ? ["email"]
           : [];
 
-  const [brandVoice, profile, skillsContext] = useBrandVoice
+  const [brandVoice, profile, skillsContext, firmContext] = useBrandVoice
     ? await Promise.all([
         getBrandVoiceContext(),
         getLatestBrandProfile(),
         buildSkillsContext({ platforms, practiceArea }),
+        getFirmContext(),
       ])
-    : ["", null, ""];
+    : ["", null, "", ""];
 
   const lengthGuide =
     length === "short"
@@ -110,6 +113,7 @@ export async function POST(req: Request) {
 
   const system = `You are a marketing copywriter for Katz Melinger PLLC, a plaintiff-side employment law firm in New York City. The firm represents workers in wage & hour, discrimination, class actions, judgment enforcement, severance, and related matters. Voice: professional but approachable, focused on helping workers understand their rights—never corporate or cold.
 
+${firmContext}
 ${ANTI_AI_VOICE_RULES}
 
 ${skillsContext ? `${skillsContext}\n` : ""}
@@ -210,11 +214,14 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       let subject = "";
       let bodyText = text;
       try {
-        const parsed = JSON.parse(text) as { subject?: string; body?: string };
-        subject = parsed.subject ?? "";
-        bodyText = parsed.body ?? text;
+        // extractJSON handles ```json fences + extra prose around the object,
+        // which plain JSON.parse can't. Falls through to the raw text on
+        // failure, which still saves something usable.
+        const parsed = extractJSON<{ subject?: string; body?: string }>(text);
+        if (typeof parsed?.subject === "string") subject = parsed.subject;
+        if (typeof parsed?.body === "string") bodyText = parsed.body;
       } catch {
-        /* fall through */
+        /* fall through — keep the raw text so nothing is lost */
       }
       const draftId = await autosave("email", bodyText, { subject });
       return NextResponse.json({
