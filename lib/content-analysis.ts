@@ -38,6 +38,20 @@ export type CashBreakdown = {
   humanAttribution: number;
 };
 
+export type SeoBreakdown = {
+  titleQuality: number;
+  headingStructure: number;
+  keywordPlacement: number;
+  authorityLinks: number;
+  contentDepth: number;
+  schemaReadiness: number;
+};
+
+export type OutreachAngle = {
+  audience: string;
+  pitch: string;
+};
+
 export type ContentAnalysis = {
   readability_score: number;
   reading_grade_level: number;
@@ -52,6 +66,12 @@ export type ContentAnalysis = {
   cash_score: number;
   cash_breakdown: CashBreakdown;
   cash_findings: string[];
+  seo_score: number;
+  seo_breakdown: SeoBreakdown;
+  seo_findings: string[];
+  linkability_score: number;
+  linkability_findings: string[];
+  outreach_angles: OutreachAngle[];
   summary: string;
 };
 
@@ -257,6 +277,280 @@ Each finding must start with [C], [A], [S], or [H] to tag which pillar it applie
   }
 }
 
+/**
+ * Heuristic on-page SEO scoring. Pure string analysis — no external calls.
+ * Scores six dimensions and produces actionable findings the user can fix
+ * without thinking. Designed for content drafts (markdown), not rendered
+ * HTML, so it looks for markdown structure (# headings, [text](url) links)
+ * rather than <h1>/<a>.
+ */
+function heuristicSEO(args: {
+  body: string;
+  title: string | null;
+  format: string | null;
+  template: string | null;
+  targetKeywords: string[];
+}): { score: number; breakdown: SeoBreakdown; findings: string[] } {
+  const findings: string[] = [];
+  const body = args.body ?? "";
+  const lowerBody = body.toLowerCase();
+  const lowerTitle = (args.title ?? "").toLowerCase();
+
+  // --- 1. Title quality ----------------------------------------------------
+  let titleQuality = 0;
+  if (!args.title || args.title.trim().length === 0) {
+    findings.push("No title set on the draft. Add a Title field so the page has a clear <title> and H1.");
+  } else {
+    const len = args.title.trim().length;
+    if (len < 30) {
+      titleQuality = 50;
+      findings.push(`Title is ${len} chars — too short. Aim for 50–60 chars to fill the SERP without truncation.`);
+    } else if (len > 65) {
+      titleQuality = 60;
+      findings.push(`Title is ${len} chars — Google truncates after ~60. Trim it down.`);
+    } else if (len >= 50 && len <= 60) {
+      titleQuality = 100;
+    } else {
+      titleQuality = 80;
+    }
+    // Keyword in title?
+    const firstKw = args.targetKeywords[0]?.toLowerCase();
+    if (firstKw && !lowerTitle.includes(firstKw)) {
+      titleQuality = Math.min(titleQuality, 60);
+      findings.push(`Primary target keyword "${args.targetKeywords[0]}" not found in the title.`);
+    }
+  }
+
+  // --- 2. Heading structure -------------------------------------------------
+  const h1Matches = body.match(/^#\s+/gm) ?? [];
+  const h2Matches = body.match(/^##\s+/gm) ?? [];
+  const h3Matches = body.match(/^###\s+/gm) ?? [];
+  let headingStructure = 50;
+  if (h1Matches.length === 0) {
+    headingStructure -= 20;
+    findings.push("No H1 in body (# Heading). The title alone isn't enough — the body should open with a markdown H1.");
+  } else if (h1Matches.length > 1) {
+    headingStructure -= 10;
+    findings.push(`Found ${h1Matches.length} H1 headings. Use exactly one H1 per page.`);
+  } else {
+    headingStructure += 20;
+  }
+  if (h2Matches.length >= 3) {
+    headingStructure += 25;
+  } else if (h2Matches.length > 0) {
+    headingStructure += 10;
+    findings.push(`Only ${h2Matches.length} H2 sections — pages with 3+ subheads index more sections.`);
+  } else {
+    findings.push("No H2 subheadings. Break the body into 3–6 H2 sections.");
+  }
+  if (h3Matches.length > 0) headingStructure += 5;
+  headingStructure = Math.max(0, Math.min(100, headingStructure));
+
+  // --- 3. Keyword placement -------------------------------------------------
+  let keywordPlacement = 0;
+  if (args.targetKeywords.length === 0) {
+    keywordPlacement = 50;
+    findings.push("No target keywords set on the draft. Add them so this scoring can grade keyword placement.");
+  } else {
+    const kw = args.targetKeywords[0].toLowerCase();
+    const firstParagraph = body.split(/\n\s*\n/)[0]?.toLowerCase() ?? "";
+    const firstH1 = h1Matches[0]
+      ? (body.match(/^#\s+(.+)$/m)?.[1] ?? "").toLowerCase()
+      : "";
+    let hits = 0;
+    if (lowerTitle.includes(kw)) hits += 1;
+    if (firstH1.includes(kw)) hits += 1;
+    if (firstParagraph.includes(kw)) hits += 1;
+    if (lowerBody.split(kw).length - 1 >= 2) hits += 1;
+    keywordPlacement = Math.min(100, hits * 25);
+    if (!lowerTitle.includes(kw)) {
+      findings.push(`Keyword "${args.targetKeywords[0]}" missing from title.`);
+    }
+    if (!firstH1.includes(kw) && firstH1) {
+      findings.push(`Keyword "${args.targetKeywords[0]}" missing from H1.`);
+    }
+    if (!firstParagraph.includes(kw)) {
+      findings.push(`Keyword "${args.targetKeywords[0]}" missing from the first paragraph.`);
+    }
+  }
+
+  // --- 4. Authority / outbound links ---------------------------------------
+  let authorityLinks = 30;
+  const govLinks = (body.match(/\b(?:https?:\/\/)?[^\s)]*\.gov\b/gi) ?? []).length;
+  const eduLinks = (body.match(/\b(?:https?:\/\/)?[^\s)]*\.edu\b/gi) ?? []).length;
+  const statuteCitations = (body.match(/\b(?:FLSA|NYLL|NJLAD|FMLA|ADA|ADEA|Title VII|29 U\.?S\.?C\.?|42 U\.?S\.?C\.?|§\s*\d+|Section\s+\d+)\b/g) ?? []).length;
+  const agencyCitations = (body.match(/\b(?:EEOC|DOL|NLRB|SDHR|NYC ?CHR|NJDOL|NY State Division of Human Rights)\b/g) ?? []).length;
+  if (govLinks > 0) authorityLinks += 25;
+  if (eduLinks > 0) authorityLinks += 10;
+  if (statuteCitations >= 2) authorityLinks += 25;
+  else if (statuteCitations === 1) authorityLinks += 12;
+  if (agencyCitations >= 1) authorityLinks += 10;
+  authorityLinks = Math.max(0, Math.min(100, authorityLinks));
+  if (govLinks === 0) {
+    findings.push("No .gov links. Linking to dol.gov / eeoc.gov / nyc.gov adds authority + helps reviewers verify claims.");
+  }
+  if (statuteCitations === 0 && agencyCitations === 0) {
+    findings.push("No statute or agency citations (FLSA, NYLL, EEOC, etc.). Legal content without these reads as generic.");
+  }
+
+  // --- 5. Content depth ----------------------------------------------------
+  const wordCount = body.split(/\s+/).filter(Boolean).length;
+  let contentDepth = 50;
+  const fmt = args.format ?? "";
+  const tpl = args.template ?? "";
+  let expectedMin = 500;
+  let expectedTarget = 1000;
+  if (fmt === "blog") {
+    if (tpl === "guide") {
+      expectedMin = 1500;
+      expectedTarget = 2000;
+    } else if (tpl === "webpage") {
+      expectedMin = 1000;
+      expectedTarget = 1500;
+    } else if (tpl === "faq") {
+      expectedMin = 800;
+      expectedTarget = 1500;
+    } else if (tpl === "case_study") {
+      expectedMin = 600;
+      expectedTarget = 1000;
+    } else {
+      expectedMin = 800;
+      expectedTarget = 1200;
+    }
+  } else if (fmt === "email") {
+    expectedMin = 200;
+    expectedTarget = 400;
+  } else if (fmt === "podcast") {
+    expectedMin = 800;
+    expectedTarget = 1500;
+  } else if (["linkedin", "twitter", "facebook", "instagram"].includes(fmt)) {
+    expectedMin = 100;
+    expectedTarget = 300;
+  }
+  if (wordCount < expectedMin) {
+    contentDepth = Math.max(20, Math.round((wordCount / expectedMin) * 60));
+    findings.push(
+      `${wordCount} words — below the ${expectedMin}+ target for this content type. Search engines reward depth on competitive queries.`,
+    );
+  } else if (wordCount >= expectedTarget) {
+    contentDepth = 100;
+  } else {
+    contentDepth = 75;
+  }
+
+  // --- 6. Schema readiness -------------------------------------------------
+  let schemaReadiness = 60;
+  let schemaSuggestion = "Article schema";
+  if (tpl === "faq" || /\bq:\s|\bquestion:|^##\s+.*\?$/im.test(body)) {
+    schemaSuggestion = "FAQPage schema (Q&A pairs map cleanly to FAQPage entries)";
+    if (h2Matches.length >= 3) schemaReadiness = 90;
+  } else if (tpl === "case_study") {
+    schemaSuggestion = "Article + Review schema (case study with outcome qualifies for Review)";
+    schemaReadiness = 75;
+  } else if (tpl === "webpage") {
+    schemaSuggestion = "LegalService + Service schema (service / practice page)";
+    schemaReadiness = 70;
+  } else if (tpl === "guide") {
+    schemaSuggestion = "Article + HowTo schema (long-form guide with steps)";
+    schemaReadiness = 80;
+  } else if (fmt === "blog") {
+    schemaSuggestion = "Article schema (BlogPosting / NewsArticle)";
+  }
+  findings.push(`Recommended structured data: ${schemaSuggestion}.`);
+
+  const overall = Math.round(
+    titleQuality * 0.18 +
+      headingStructure * 0.15 +
+      keywordPlacement * 0.22 +
+      authorityLinks * 0.18 +
+      contentDepth * 0.17 +
+      schemaReadiness * 0.1,
+  );
+
+  return {
+    score: Math.max(0, Math.min(100, overall)),
+    breakdown: {
+      titleQuality: Math.round(titleQuality),
+      headingStructure: Math.round(headingStructure),
+      keywordPlacement: Math.round(keywordPlacement),
+      authorityLinks: Math.round(authorityLinks),
+      contentDepth: Math.round(contentDepth),
+      schemaReadiness: Math.round(schemaReadiness),
+    },
+    findings,
+  };
+}
+
+/**
+ * Linkability scoring via Claude. How link-worthy is this piece, and what
+ * are the concrete outreach angles? Returns 3–5 specific pitch ideas the
+ * marketing team can act on (who would link to this and why).
+ */
+async function linkabilityScore(args: {
+  body: string;
+  topic: string;
+  title: string | null;
+}): Promise<{ score: number; findings: string[]; angles: OutreachAngle[] }> {
+  const truncated = args.body.slice(0, 6000);
+  const titleLine = args.title ? `Title: ${args.title}\n` : "";
+
+  const system = `You are a digital PR + link-building strategist for a plaintiff-side employment law firm. You evaluate a piece of content on how earnable links to it are — both the inherent linkability of the asset and the concrete outreach angles. Be strict. Most marketing content scores 30-55; a 70+ piece has a clear hook a journalist or peer site would actually cite.`;
+
+  const user = `${titleLine}Topic: ${args.topic}
+
+Draft body:
+"""
+${truncated}
+"""
+
+Score the linkability and produce concrete outreach angles. Return JSON only:
+{
+  "linkability_score": <0-100>,
+  "findings": [
+    "3-5 specific observations about what makes this linkable or not. Mention what kind of evidence / data / unique angle is present or missing."
+  ],
+  "outreach_angles": [
+    {
+      "audience": "Specific outlet type or person — e.g. 'NYC labor reporters', 'HR blogs', 'restaurant industry trade pubs', 'university career services'",
+      "pitch": "One-sentence pitch the team could actually send. Lead with the angle, not the content. Must be specific to this piece."
+    }
+  ]
+}
+
+3-5 outreach angles. Each must be specific and actionable — no generic "share on social media" suggestions.`;
+
+  try {
+    const resp = await getAnthropic().messages.create({
+      model: KEYWORD_RESEARCH_MODEL,
+      max_tokens: 1200,
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const parsed = extractJSON<{
+      linkability_score: number;
+      findings: string[];
+      outreach_angles: OutreachAngle[];
+    }>(text);
+    return {
+      score: Math.max(0, Math.min(100, parsed.linkability_score ?? 0)),
+      findings: Array.isArray(parsed.findings) ? parsed.findings : [],
+      angles: Array.isArray(parsed.outreach_angles)
+        ? parsed.outreach_angles.filter(
+            (a): a is OutreachAngle =>
+              typeof a?.audience === "string" && typeof a?.pitch === "string",
+          )
+        : [],
+    };
+  } catch {
+    return {
+      score: 0,
+      findings: ["Linkability scoring failed; check Anthropic API key."],
+      angles: [],
+    };
+  }
+}
+
 async function brandVoiceMatch(body: string): Promise<{ score: number; findings: string[]; summary: string }> {
   const firm = await getFirmContext();
   const truncated = body.slice(0, 6000); // keep prompt small
@@ -304,8 +598,20 @@ export async function analyzeDraft(args: {
   draftId: string;
   body: string;
   targetKeywords?: string[];
+  title?: string | null;
+  topic?: string | null;
+  format?: string | null;
+  template?: string | null;
 }): Promise<ContentAnalysis> {
-  const { draftId, body, targetKeywords = [] } = args;
+  const {
+    draftId,
+    body,
+    targetKeywords = [],
+    title = null,
+    topic = null,
+    format = null,
+    template = null,
+  } = args;
   const supabase = getSupabaseAdmin();
 
   const { words, sentences, syllables } = basicMetrics(body);
@@ -313,9 +619,14 @@ export async function analyzeDraft(args: {
   const grade = fleschKincaidGrade(words.length, sentences, syllables);
 
   const aeo = heuristicAEO(body);
-  // Run brand voice + CASH in parallel — both are Claude calls and
-  // independent of each other.
-  const [brand, cash] = await Promise.all([brandVoiceMatch(body), cashScore(body)]);
+  const seo = heuristicSEO({ body, title, format, template, targetKeywords });
+  // Run brand voice + CASH + linkability in parallel — all are Claude
+  // calls and independent of each other.
+  const [brand, cash, linkability] = await Promise.all([
+    brandVoiceMatch(body),
+    cashScore(body),
+    linkabilityScore({ body, topic: topic ?? title ?? "", title }),
+  ]);
 
   const analysis: ContentAnalysis = {
     readability_score: normalizeReadability(flesch),
@@ -331,16 +642,45 @@ export async function analyzeDraft(args: {
     cash_score: cash.score,
     cash_breakdown: cash.breakdown,
     cash_findings: cash.findings,
+    seo_score: seo.score,
+    seo_breakdown: seo.breakdown,
+    seo_findings: seo.findings,
+    linkability_score: linkability.score,
+    linkability_findings: linkability.findings,
+    outreach_angles: linkability.angles,
     summary: brand.summary,
   };
 
-  // If the CASH migration hasn't been run yet, this insert will fail because
-  // cash_* columns don't exist. Catch + retry without CASH fields so the
-  // rest of the analysis still persists.
-  const { error } = await supabase.from("content_analyses").insert({
+  // Graceful column-degradation. If new columns aren't migrated yet, drop
+  // the offending fields and retry. Newest columns (seo_*, linkability_*,
+  // outreach_angles) drop first; CASH-era columns drop on a second retry.
+  let { error } = await supabase.from("content_analyses").insert({
     draft_id: draftId,
     ...analysis,
   });
+  if (error && /(seo_|linkability_|outreach_angles)/.test(error.message)) {
+    const withoutNew = {
+      readability_score: analysis.readability_score,
+      reading_grade_level: analysis.reading_grade_level,
+      word_count: analysis.word_count,
+      sentence_count: analysis.sentence_count,
+      keyword_density: analysis.keyword_density,
+      target_keyword_hits: analysis.target_keyword_hits,
+      aeo_score: analysis.aeo_score,
+      aeo_findings: analysis.aeo_findings,
+      brand_voice_score: analysis.brand_voice_score,
+      brand_voice_findings: analysis.brand_voice_findings,
+      cash_score: analysis.cash_score,
+      cash_breakdown: analysis.cash_breakdown,
+      cash_findings: analysis.cash_findings,
+      summary: analysis.summary,
+    };
+    const retry = await supabase.from("content_analyses").insert({
+      draft_id: draftId,
+      ...withoutNew,
+    });
+    error = retry.error;
+  }
   if (error && /cash_/.test(error.message)) {
     await supabase.from("content_analyses").insert({
       draft_id: draftId,

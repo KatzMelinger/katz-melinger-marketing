@@ -131,6 +131,19 @@ type Analysis = {
     humanAttribution: number;
   };
   cash_findings?: string[];
+  seo_score?: number;
+  seo_breakdown?: {
+    titleQuality: number;
+    headingStructure: number;
+    keywordPlacement: number;
+    authorityLinks: number;
+    contentDepth: number;
+    schemaReadiness: number;
+  };
+  seo_findings?: string[];
+  linkability_score?: number;
+  linkability_findings?: string[];
+  outreach_angles?: { audience: string; pitch: string }[];
   summary: string;
 };
 
@@ -601,35 +614,82 @@ function DraftStatusDropdown({
 
 function AnalysisCard({ analysis }: { analysis: Analysis }) {
   const cash = analysis.cash_breakdown;
+  const seoBreakdown = analysis.seo_breakdown;
   return (
     <DashCard>
       <div className="text-sm font-medium mb-3">Analysis</div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <ScoreTile label="Readability" value={analysis.readability_score} />
+        <ScoreTile
+          label="SEO"
+          value={analysis.seo_score ?? 0}
+          hint="Title / headings / keyword placement / authority links / depth / schema"
+        />
         <ScoreTile label="AEO" value={analysis.aeo_score} />
-        <ScoreTile label="Brand voice" value={analysis.brand_voice_score} />
         <ScoreTile
           label="CASH (AI cite)"
           value={analysis.cash_score ?? 0}
           hint="Conversational Authority / Answer / Source / Human"
         />
+        <ScoreTile label="Brand voice" value={analysis.brand_voice_score} />
+        <ScoreTile
+          label="Linkability"
+          value={analysis.linkability_score ?? 0}
+          hint="How earnable backlinks to this piece are"
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
         <Tile label="Words" value={analysis.word_count} />
       </div>
+      {seoBreakdown && (
+        <div className="mt-4">
+          <div className="text-xs font-medium text-slate-700 mb-2">SEO breakdown</div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <SeoPillar label="Title" value={seoBreakdown.titleQuality} />
+            <SeoPillar label="Headings" value={seoBreakdown.headingStructure} />
+            <SeoPillar label="Keyword placement" value={seoBreakdown.keywordPlacement} />
+            <SeoPillar label="Authority links" value={seoBreakdown.authorityLinks} />
+            <SeoPillar label="Content depth" value={seoBreakdown.contentDepth} />
+            <SeoPillar label="Schema readiness" value={seoBreakdown.schemaReadiness} />
+          </div>
+        </div>
+      )}
       {cash && (
-        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-          <CashPillar label="Conversational" letter="C" value={cash.conversationalAuthority} />
-          <CashPillar label="Answer" letter="A" value={cash.answerCompleteness} />
-          <CashPillar label="Source" letter="S" value={cash.sourceExpertise} />
-          <CashPillar label="Human" letter="H" value={cash.humanAttribution} />
+        <div className="mt-4">
+          <div className="text-xs font-medium text-slate-700 mb-2">
+            CASH breakdown (AI citation-worthiness)
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <CashPillar label="Conversational" letter="C" value={cash.conversationalAuthority} />
+            <CashPillar label="Answer" letter="A" value={cash.answerCompleteness} />
+            <CashPillar label="Source" letter="S" value={cash.sourceExpertise} />
+            <CashPillar label="Human" letter="H" value={cash.humanAttribution} />
+          </div>
         </div>
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
+        {analysis.seo_findings && analysis.seo_findings.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-700 mb-1">SEO findings</div>
+            <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
+              {analysis.seo_findings.map((f, i) => <li key={i}>{f}</li>)}
+            </ul>
+          </div>
+        )}
         <div>
           <div className="text-xs font-medium text-slate-700 mb-1">AEO findings</div>
           <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
             {analysis.aeo_findings.map((f, i) => <li key={i}>{f}</li>)}
           </ul>
         </div>
+        {analysis.cash_findings && analysis.cash_findings.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-700 mb-1">CASH findings</div>
+            <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
+              {analysis.cash_findings.map((f, i) => <li key={i}>{f}</li>)}
+            </ul>
+          </div>
+        )}
         <div>
           <div className="text-xs font-medium text-slate-700 mb-1">Brand voice findings</div>
           <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
@@ -637,14 +697,32 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
           </ul>
         </div>
       </div>
-      {analysis.cash_findings && analysis.cash_findings.length > 0 && (
+      {analysis.linkability_findings && analysis.linkability_findings.length > 0 && (
         <div className="mt-4">
-          <div className="text-xs font-medium text-slate-700 mb-1">
-            CASH findings (AI citation-worthiness)
-          </div>
+          <div className="text-xs font-medium text-slate-700 mb-1">Linkability findings</div>
           <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
-            {analysis.cash_findings.map((f, i) => (
+            {analysis.linkability_findings.map((f, i) => (
               <li key={i}>{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {analysis.outreach_angles && analysis.outreach_angles.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-medium text-slate-700 mb-2">
+            Outreach angles (who to pitch + what to say)
+          </div>
+          <ul className="space-y-2">
+            {analysis.outreach_angles.map((angle, i) => (
+              <li
+                key={i}
+                className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+              >
+                <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                  {angle.audience}
+                </div>
+                <div className="text-xs text-slate-700 mt-0.5">{angle.pitch}</div>
+              </li>
             ))}
           </ul>
         </div>
@@ -671,6 +749,23 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
         </div>
       )}
     </DashCard>
+  );
+}
+
+function SeoPillar({ label, value }: { label: string; value: number }) {
+  const tone =
+    value >= 70
+      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+      : value >= 40
+        ? "border-amber-300 bg-amber-50 text-amber-700"
+        : "border-red-300 bg-red-50 text-red-700";
+  return (
+    <div className={`rounded-md border px-2 py-1.5 ${tone}`}>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-base font-semibold tabular-nums">{value}</span>
+      </div>
+      <div className="text-[10px] opacity-80">{label}</div>
+    </div>
   );
 }
 
