@@ -144,6 +144,8 @@ type Analysis = {
   linkability_score?: number;
   linkability_findings?: string[];
   outreach_angles?: { audience: string; pitch: string }[];
+  suggested_titles?: string[];
+  suggested_images?: { type: string; description: string; altText: string }[];
   summary: string;
 };
 
@@ -722,6 +724,61 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
                   {angle.audience}
                 </div>
                 <div className="text-xs text-slate-700 mt-0.5">{angle.pitch}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {analysis.suggested_titles && analysis.suggested_titles.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-medium text-slate-700 mb-2">
+            Suggested titles
+            <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
+              No title set — pick one or use as inspiration
+            </span>
+          </div>
+          <ul className="space-y-1.5">
+            {analysis.suggested_titles.map((t, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+              >
+                <span className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+                  {i + 1}.
+                </span>
+                <span className="text-xs text-slate-800 flex-1">{t}</span>
+                <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
+                  {t.length} chars
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {analysis.suggested_images && analysis.suggested_images.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-medium text-slate-700 mb-2">
+            Suggested images
+            <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
+              Hand to design or feed into Midjourney / DALL-E
+            </span>
+          </div>
+          <ul className="space-y-2">
+            {analysis.suggested_images.map((img, i) => (
+              <li
+                key={i}
+                className="rounded-md border border-slate-200 bg-white px-3 py-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] uppercase tracking-wider text-violet-700">
+                    {img.type}
+                  </span>
+                </div>
+                <div className="mt-1.5 text-xs text-slate-800">{img.description}</div>
+                <div className="mt-1 text-[11px] italic text-slate-500">
+                  <span className="font-semibold not-italic">Alt text:</span>{" "}
+                  {img.altText}
+                </div>
               </li>
             ))}
           </ul>
