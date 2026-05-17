@@ -60,6 +60,8 @@ function readTargetKeywords(raw: unknown): string[] {
 
 async function insertDraft(args: {
   format: ValidFormat;
+  template: string | null;
+  formatOptionLabel: string | null;
   topic: string;
   title: string | null;
   body: string;
@@ -76,6 +78,7 @@ async function insertDraft(args: {
   const metadata: Record<string, unknown> = {
     origin_source: "imported",
     origin_context: {
+      ...(args.formatOptionLabel ? { page_type: args.formatOptionLabel } : {}),
       ...(args.importedFilename ? { filename: args.importedFilename } : {}),
       ...(args.importedFormat ? { extracted_from: args.importedFormat } : {}),
       imported_at: new Date().toISOString(),
@@ -87,7 +90,7 @@ async function insertDraft(args: {
     .from("content_drafts")
     .insert({
       format: args.format,
-      template: null,
+      template: args.template,
       topic: args.topic,
       title: args.title,
       body: trimmedBody,
@@ -129,6 +132,14 @@ export async function POST(req: NextRequest) {
 
       const result = await insertDraft({
         format,
+        template:
+          typeof body?.template === "string" && body.template.trim()
+            ? body.template.trim()
+            : null,
+        formatOptionLabel:
+          typeof body?.formatOptionLabel === "string" && body.formatOptionLabel.trim()
+            ? body.formatOptionLabel.trim()
+            : null,
         topic,
         title: typeof body?.title === "string" && body.title.trim() ? body.title.trim() : null,
         body: text,
@@ -189,8 +200,17 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const templateRaw = form.get("template");
+      const template =
+        typeof templateRaw === "string" && templateRaw.trim() ? templateRaw.trim() : null;
+      const labelRaw = form.get("formatOptionLabel");
+      const formatOptionLabel =
+        typeof labelRaw === "string" && labelRaw.trim() ? labelRaw.trim() : null;
+
       const result = await insertDraft({
         format,
+        template,
+        formatOptionLabel,
         topic,
         title,
         body: text,
