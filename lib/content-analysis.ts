@@ -52,6 +52,12 @@ export type OutreachAngle = {
   pitch: string;
 };
 
+export type SuggestedImage = {
+  type: string;
+  description: string;
+  altText: string;
+};
+
 export type ContentAnalysis = {
   readability_score: number;
   reading_grade_level: number;
@@ -72,6 +78,8 @@ export type ContentAnalysis = {
   linkability_score: number;
   linkability_findings: string[];
   outreach_angles: OutreachAngle[];
+  suggested_titles: string[];
+  suggested_images: SuggestedImage[];
   summary: string;
 };
 
@@ -551,6 +559,103 @@ Score the linkability and produce concrete outreach angles. Return JSON only:
   }
 }
 
+/**
+ * Generates SEO-optimized title alternatives (only when no title is set
+ * on the draft) and a fresh set of image suggestions (always) the user
+ * can hand to a designer or generate via Midjourney/DALL-E.
+ *
+ * Image suggestions include the type ("hero", "infographic", "supporting
+ * photo", "diagram"), a concrete visual description, and ready-to-use
+ * alt text for accessibility.
+ */
+async function contentEnhancements(args: {
+  body: string;
+  topic: string;
+  title: string | null;
+  format: string | null;
+  template: string | null;
+  targetKeywords: string[];
+}): Promise<{ titles: string[]; images: SuggestedImage[] }> {
+  const truncated = args.body.slice(0, 5000);
+  const hasTitle = !!(args.title && args.title.trim().length > 0);
+
+  const formatHint = args.format
+    ? `Format: ${args.format}${args.template ? ` (template: ${args.template})` : ""}`
+    : "";
+  const kwHint = args.targetKeywords.length
+    ? `Target keywords: ${args.targetKeywords.join(", ")}`
+    : "";
+
+  const titleSection = hasTitle
+    ? `"titles": [],  // skip — the draft already has a title ("${args.title}")`
+    : `"titles": [
+    "5 SEO-optimized title options for this piece. Each 50-60 chars, includes the primary target keyword naturally, written for click-through. Vary the angle (how-to / what-to-know / direct-question / authority-claim / scenario-led)."
+  ]`;
+
+  const system = `You are a content strategist for a plaintiff-side employment law firm. You generate title alternatives and concrete image suggestions for marketing content. Be specific — never generic stock-photo descriptions like "diverse group of professionals." Tie visuals to the legal subject matter, the audience, and what would actually help a worker understand or trust the firm.`;
+
+  const user = `Topic: ${args.topic}
+${formatHint}
+${kwHint}
+
+Draft body:
+"""
+${truncated}
+"""
+
+Return JSON only:
+{
+  ${titleSection},
+  "images": [
+    {
+      "type": "hero | supporting photo | infographic | diagram | data viz | quote card | screenshot mockup",
+      "description": "Concrete visual description. What's in the frame, what's the composition. Should be specific enough that a designer or Midjourney prompt could produce it directly.",
+      "altText": "Plain-language alt text for the image, focused on what it shows, not decoration."
+    }
+  ]
+}
+
+Produce 4-6 image suggestions covering:
+- 1 hero image (top of article)
+- 1-2 supporting photos or quote cards (mid-article)
+- 1 infographic OR diagram OR data viz (if the content has process steps, deadlines, statistics, or comparisons)
+- 0-1 screenshot mockup (if the content references a form, agency website, or document)`;
+
+  try {
+    const resp = await getAnthropic().messages.create({
+      model: KEYWORD_RESEARCH_MODEL,
+      max_tokens: 1500,
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const parsed = extractJSON<{
+      titles?: string[];
+      images?: Array<Partial<SuggestedImage>>;
+    }>(text);
+    const titles = Array.isArray(parsed.titles)
+      ? parsed.titles.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+      : [];
+    const images: SuggestedImage[] = Array.isArray(parsed.images)
+      ? parsed.images
+          .filter(
+            (i): i is SuggestedImage =>
+              typeof i?.type === "string" &&
+              typeof i?.description === "string" &&
+              typeof i?.altText === "string",
+          )
+          .map((i) => ({
+            type: i.type,
+            description: i.description,
+            altText: i.altText,
+          }))
+      : [];
+    return { titles, images };
+  } catch {
+    return { titles: [], images: [] };
+  }
+}
+
 async function brandVoiceMatch(body: string): Promise<{ score: number; findings: string[]; summary: string }> {
   const firm = await getFirmContext();
   const truncated = body.slice(0, 6000); // keep prompt small
@@ -620,12 +725,20 @@ export async function analyzeDraft(args: {
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
-  // Run brand voice + CASH + linkability in parallel — all are Claude
-  // calls and independent of each other.
-  const [brand, cash, linkability] = await Promise.all([
+  // Run brand voice + CASH + linkability + contentEnhancements in parallel
+  // — all are Claude calls and independent of each other.
+  const [brand, cash, linkability, enhancements] = await Promise.all([
     brandVoiceMatch(body),
     cashScore(body),
     linkabilityScore({ body, topic: topic ?? title ?? "", title }),
+    contentEnhancements({
+      body,
+      topic: topic ?? title ?? "",
+      title,
+      format,
+      template,
+      targetKeywords,
+    }),
   ]);
 
   const analysis: ContentAnalysis = {
@@ -648,16 +761,29 @@ export async function analyzeDraft(args: {
     linkability_score: linkability.score,
     linkability_findings: linkability.findings,
     outreach_angles: linkability.angles,
+    suggested_titles: enhancements.titles,
+    suggested_images: enhancements.images,
     summary: brand.summary,
   };
 
   // Graceful column-degradation. If new columns aren't migrated yet, drop
-  // the offending fields and retry. Newest columns (seo_*, linkability_*,
-  // outreach_angles) drop first; CASH-era columns drop on a second retry.
+  // the offending fields and retry. Newest columns (suggested_titles /
+  // suggested_images) drop first, then seo_/linkability_/outreach_angles,
+  // then CASH-era columns. Each retry strips one generation of columns.
   let { error } = await supabase.from("content_analyses").insert({
     draft_id: draftId,
     ...analysis,
   });
+  if (error && /(suggested_titles|suggested_images)/.test(error.message)) {
+    const withoutEnhancements = { ...analysis };
+    delete (withoutEnhancements as Partial<ContentAnalysis>).suggested_titles;
+    delete (withoutEnhancements as Partial<ContentAnalysis>).suggested_images;
+    const retry = await supabase.from("content_analyses").insert({
+      draft_id: draftId,
+      ...withoutEnhancements,
+    });
+    error = retry.error;
+  }
   if (error && /(seo_|linkability_|outreach_angles)/.test(error.message)) {
     const withoutNew = {
       readability_score: analysis.readability_score,
