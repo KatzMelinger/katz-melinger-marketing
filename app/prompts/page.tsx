@@ -12,6 +12,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+
+import { HubSubNav } from "@/components/hub-subnav";
 import {
   DashCard,
   DashButton,
@@ -122,6 +124,8 @@ export default function PromptsPage() {
   }, [prompts, search, filterProject]);
 
   return (
+    <>
+    <HubSubNav />
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
         <div>
@@ -284,6 +288,7 @@ export default function PromptsPage() {
         />
       )}
     </div>
+    </>
   );
 }
 

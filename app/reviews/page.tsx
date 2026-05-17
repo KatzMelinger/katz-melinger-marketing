@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 
+import { HubSubNav } from "@/components/hub-subnav";
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
 
@@ -92,6 +93,7 @@ export default async function MarketingReviewsPage() {
       }}
     >
       <MarketingNav />
+      <HubSubNav />
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>

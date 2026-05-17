@@ -25,6 +25,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { HubSubNav } from "@/components/hub-subnav";
 import { MarketingNav } from "@/components/marketing-nav";
 
 const CARD = "#ffffff";
@@ -147,6 +148,7 @@ export default function SocialAnalyticsPage() {
       style={{ backgroundColor: "#ffffff", fontFamily: "Arial, sans-serif" }}
     >
       <MarketingNav />
+      <HubSubNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-[#185FA5]">
