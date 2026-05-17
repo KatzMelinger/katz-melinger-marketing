@@ -138,8 +138,17 @@ export async function getLatestConstantContactTokens():
   };
 }
 
+/**
+ * Persists CC OAuth tokens with bounded retries. CC rotates the refresh
+ * token on every refresh and immediately invalidates the old one, so any
+ * transient Supabase failure here would otherwise leave us with the new
+ * tokens in memory but the OLD (now-invalid) refresh token in the DB —
+ * a guaranteed forced-reconnect next time. Three attempts with backoff
+ * cover the common transient-error window.
+ */
 export async function persistConstantContactTokens(
   tokens: OAuthTokenResponse,
+  attempt = 0,
 ): Promise<void> {
   if (!tokens.access_token) {
     throw new Error("Missing access_token in OAuth token response");
@@ -162,6 +171,14 @@ export async function persistConstantContactTokens(
         ? null
         : current.refreshToken;
 
+  const retryable = async (writeError: string): Promise<void> => {
+    if (attempt < 2) {
+      await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+      return persistConstantContactTokens(tokens, attempt + 1);
+    }
+    throw new Error(writeError);
+  };
+
   const { data: existing, error: existingError } = await sb
     .from("oauth_tokens")
     .select("id")
@@ -171,7 +188,7 @@ export async function persistConstantContactTokens(
     .limit(1)
     .maybeSingle();
   if (existingError) {
-    throw new Error(`Failed to load existing OAuth token row: ${existingError.message}`);
+    return retryable(`Failed to load existing OAuth token row: ${existingError.message}`);
   }
 
   if (existing?.id) {
@@ -185,7 +202,7 @@ export async function persistConstantContactTokens(
       })
       .eq("id", existing.id);
     if (error) {
-      throw new Error(`Failed to update OAuth tokens: ${error.message}`);
+      return retryable(`Failed to update OAuth tokens: ${error.message}`);
     }
     return;
   }
@@ -197,7 +214,7 @@ export async function persistConstantContactTokens(
     expires_at: expiresAt,
   });
   if (error) {
-    throw new Error(`Failed to insert OAuth tokens: ${error.message}`);
+    return retryable(`Failed to insert OAuth tokens: ${error.message}`);
   }
 }
 
@@ -260,8 +277,26 @@ export async function exchangeAuthorizationCode(
   );
 }
 
-export async function refreshAccessTokenIfPossible():
-  Promise<{ ok: true; accessToken: string } | { ok: false; error: string }> {
+type RefreshResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; error: string };
+
+/**
+ * Single-flight lock so a flurry of parallel CC API calls don't each try
+ * to refresh the access token. Constant Contact rotates the refresh
+ * token on every refresh and immediately invalidates the previous one —
+ * so a concurrent second refresh with the now-invalid token kicks the
+ * user back to the reconnect screen even though the first refresh
+ * succeeded. With this lock, the second and later callers await the
+ * first refresh's result and reuse its access token.
+ *
+ * Lock is per process (module-level), so it protects against same-instance
+ * parallelism. Cross-instance races are handled by the invalid_grant
+ * recovery inside doRefresh().
+ */
+let inFlightRefresh: Promise<RefreshResult> | null = null;
+
+async function doRefresh(): Promise<RefreshResult> {
   const current = await getLatestConstantContactTokens();
   if ("error" in current) {
     return { ok: false, error: current.error };
@@ -280,18 +315,81 @@ export async function refreshAccessTokenIfPossible():
     await persistConstantContactTokens(tokens);
     return { ok: true, accessToken: tokens.access_token };
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    // Cross-instance race recovery: if CC returned invalid_grant or
+    // invalid_token, another instance may have just refreshed and rotated
+    // the token. Re-read the DB — if the access_token is now different
+    // from what we started with, use the new one instead of forcing a
+    // reconnect.
+    if (/invalid_grant|invalid_token/i.test(errorMsg)) {
+      const fresh = await getLatestConstantContactTokens();
+      if (
+        !("error" in fresh) &&
+        fresh.accessToken &&
+        fresh.accessToken !== current.accessToken
+      ) {
+        console.warn(
+          "[constant-contact] refresh recovered from cross-instance race — using freshly stored token",
+        );
+        return { ok: true, accessToken: fresh.accessToken };
+      }
+    }
+    console.error("[constant-contact] refresh failed:", errorMsg);
+    return { ok: false, error: errorMsg };
   }
+}
+
+export async function refreshAccessTokenIfPossible(): Promise<RefreshResult> {
+  if (inFlightRefresh) {
+    return inFlightRefresh;
+  }
+  inFlightRefresh = doRefresh().finally(() => {
+    inFlightRefresh = null;
+  });
+  return inFlightRefresh;
+}
+
+/**
+ * Pre-flight token check: if the stored access token expires within
+ * REFRESH_AHEAD_MS, refresh before making the API call instead of
+ * waiting for a 401 and then scrambling. Avoids the case where a
+ * page that fires several parallel CC requests all hit 401 at once
+ * and race on the refresh (caught by the single-flight lock, but
+ * a wasted round-trip per request even with the lock).
+ */
+const REFRESH_AHEAD_MS = 5 * 60 * 1000; // 5 minutes
+
+async function getAccessTokenForRequest(): Promise<
+  { accessToken: string } | { error: string }
+> {
+  const tokens = await getLatestConstantContactTokens();
+  if ("error" in tokens) return { error: tokens.error };
+
+  if (tokens.expiresAt) {
+    const expiresInMs = new Date(tokens.expiresAt).getTime() - Date.now();
+    if (expiresInMs <= REFRESH_AHEAD_MS) {
+      const refreshed = await refreshAccessTokenIfPossible();
+      if (refreshed.ok) {
+        return { accessToken: refreshed.accessToken };
+      }
+      // If refresh failed but the existing token isn't actually expired
+      // yet, try the request with what we have — it might still work and
+      // the reactive 401 retry path will kick in if it doesn't.
+      if (expiresInMs > 0) {
+        return { accessToken: tokens.accessToken };
+      }
+      return { error: refreshed.error };
+    }
+  }
+
+  return { accessToken: tokens.accessToken };
 }
 
 export async function ccAuthedFetch(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const cfg = await getAuthConfig();
+  const cfg = await getAccessTokenForRequest();
   if ("error" in cfg) {
     throw new Error(cfg.error);
   }
@@ -306,6 +404,8 @@ export async function ccAuthedFetch(
   });
   if (first.status !== 401) return first;
 
+  // Reactive refresh — the proactive path missed (token expired between
+  // expires_at check and actual API call, or expires_at was missing).
   const refreshed = await refreshAccessTokenIfPossible();
   if (!refreshed.ok) {
     return first;
