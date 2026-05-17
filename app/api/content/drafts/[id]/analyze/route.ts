@@ -26,7 +26,7 @@ export async function POST(
   const supabase = getSupabaseAdmin();
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("body, seo_brief")
+    .select("body, seo_brief, title, topic, format, template")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -41,6 +41,10 @@ export async function POST(
       draftId: id,
       body: draft.body as string,
       targetKeywords: merged,
+      title: (draft.title as string | null) ?? null,
+      topic: (draft.topic as string | null) ?? null,
+      format: (draft.format as string | null) ?? null,
+      template: (draft.template as string | null) ?? null,
     });
     return NextResponse.json(analysis);
   } catch (err) {
