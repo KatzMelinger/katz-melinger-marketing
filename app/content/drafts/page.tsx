@@ -77,6 +77,41 @@ function readTargetKeywords(d: Draft): string[] {
   return brief.targetKeywords.filter((k): k is string => typeof k === "string" && k.length > 0);
 }
 
+/**
+ * Friendlier labels for the `template` column on content_drafts. Falls
+ * through to a humanized version of the raw key if we don't have a label.
+ */
+const TEMPLATE_LABEL: Record<string, string> = {
+  webpage: "Service / web page",
+  faq: "FAQ article",
+  guide: "Long-form guide",
+  case_study: "Case study",
+  blog_general: "Blog post",
+  newsletter: "Newsletter",
+  social_post: "Social post",
+};
+
+/**
+ * Display label for a draft's "what kind of content is this" pill. Prefers:
+ *   1. metadata.origin_context.page_type — set by the import flow with the
+ *      precise option label the user picked.
+ *   2. TEMPLATE_LABEL[d.template] — for system-generated drafts that have a
+ *      template.
+ *   3. d.format — the bare format column (blog / linkedin / etc).
+ */
+function draftTypeLabel(d: Draft): string {
+  const meta = (d.metadata ?? {}) as Record<string, unknown>;
+  const ctx =
+    meta.origin_context && typeof meta.origin_context === "object"
+      ? (meta.origin_context as Record<string, unknown>)
+      : null;
+  const pageType = ctx && typeof ctx.page_type === "string" ? ctx.page_type : null;
+  if (pageType) return pageType;
+  if (d.template && TEMPLATE_LABEL[d.template]) return TEMPLATE_LABEL[d.template];
+  if (d.template) return d.template;
+  return d.format;
+}
+
 type Analysis = {
   readability_score: number;
   reading_grade_level: number;
@@ -357,7 +392,7 @@ export default function DraftsPage() {
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <DashPill tone="blue">{d.format}</DashPill>
+                  <DashPill tone="blue">{draftTypeLabel(d)}</DashPill>
                   {DRAFT_STATUSES.includes(d.status as DraftStatus) ? (
                     <DashPill tone={DRAFT_STATUS_TONE[d.status as DraftStatus]}>
                       {DRAFT_STATUS_LABEL[d.status as DraftStatus]}
@@ -393,7 +428,7 @@ export default function DraftsPage() {
             <>
               <DashCard>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <DashPill tone="blue">{selectedDraft.format}</DashPill>
+                  <DashPill tone="blue">{draftTypeLabel(selectedDraft)}</DashPill>
                   <DashPill tone="neutral">{selectedDraft.practice_area ?? "—"}</DashPill>
                   <span className="text-xs text-slate-500">
                     {new Date(selectedDraft.created_at).toLocaleString()}
@@ -694,14 +729,36 @@ function CashPillar({
   );
 }
 
-const IMPORT_FORMAT_OPTIONS: { value: string; label: string; contentType: "website" | "social" | "email" }[] = [
-  { value: "blog", label: "Blog post / website page", contentType: "website" },
-  { value: "linkedin", label: "LinkedIn post", contentType: "social" },
-  { value: "twitter", label: "Twitter / X thread", contentType: "social" },
-  { value: "facebook", label: "Facebook post", contentType: "social" },
-  { value: "instagram", label: "Instagram caption", contentType: "social" },
-  { value: "podcast", label: "Podcast script", contentType: "social" },
-  { value: "email", label: "Email", contentType: "email" },
+/**
+ * Each option maps a user-facing page type to a `format` (the column on
+ * content_drafts that decides Website / Social / Email grouping) and an
+ * optional `template` (the structural variant within that format — service
+ * page vs FAQ vs blog post). The analysis pipeline uses both as context.
+ */
+const IMPORT_FORMAT_OPTIONS: {
+  value: string;
+  label: string;
+  contentType: "website" | "social" | "email";
+  format: string;
+  template: string | null;
+}[] = [
+  // Website
+  { value: "service_page", label: "Service / practice area page", contentType: "website", format: "blog", template: "webpage" },
+  { value: "webpage", label: "Web page (general)", contentType: "website", format: "blog", template: "webpage" },
+  { value: "location_page", label: "Location page (borough / city)", contentType: "website", format: "blog", template: "webpage" },
+  { value: "faq", label: "FAQ article", contentType: "website", format: "blog", template: "faq" },
+  { value: "guide", label: "Long-form guide / pillar", contentType: "website", format: "blog", template: "guide" },
+  { value: "case_study", label: "Case study", contentType: "website", format: "blog", template: "case_study" },
+  { value: "blog_post", label: "Blog post", contentType: "website", format: "blog", template: "blog_general" },
+  // Social
+  { value: "linkedin", label: "LinkedIn post", contentType: "social", format: "linkedin", template: "social_post" },
+  { value: "twitter", label: "Twitter / X thread", contentType: "social", format: "twitter", template: null },
+  { value: "facebook", label: "Facebook post", contentType: "social", format: "facebook", template: null },
+  { value: "instagram", label: "Instagram caption", contentType: "social", format: "instagram", template: null },
+  { value: "podcast", label: "Podcast script", contentType: "social", format: "podcast", template: null },
+  // Email
+  { value: "email_newsletter", label: "Email — newsletter", contentType: "email", format: "email", template: "newsletter" },
+  { value: "email_case_update", label: "Email — case update", contentType: "email", format: "email", template: "case_study" },
 ];
 
 const IMPORT_PRACTICE_AREAS = [
@@ -723,9 +780,14 @@ function ImportDraftModal({
   onImported: (draftId: string) => void;
 }) {
   const [mode, setMode] = useState<"paste" | "file">("paste");
-  const [format, setFormat] = useState<string>(
-    IMPORT_FORMAT_OPTIONS.find((f) => f.contentType === defaultContentType)?.value ?? "blog",
+  // `formatOption` is the option `value` (e.g. "service_page"). The real
+  // `format` + `template` sent to the API are looked up from the option.
+  const [formatOption, setFormatOption] = useState<string>(
+    IMPORT_FORMAT_OPTIONS.find((f) => f.contentType === defaultContentType)?.value ??
+      "blog_post",
   );
+  const selectedOption =
+    IMPORT_FORMAT_OPTIONS.find((f) => f.value === formatOption) ?? IMPORT_FORMAT_OPTIONS[0];
   const [topic, setTopic] = useState("");
   const [title, setTitle] = useState("");
   const [practiceArea, setPracticeArea] = useState("General");
@@ -753,7 +815,9 @@ function ImportDraftModal({
         }
         const form = new FormData();
         form.append("file", file);
-        form.append("format", format);
+        form.append("format", selectedOption.format);
+        if (selectedOption.template) form.append("template", selectedOption.template);
+        form.append("formatOptionLabel", selectedOption.label);
         form.append("topic", topic.trim());
         if (title.trim()) form.append("title", title.trim());
         if (practiceArea) form.append("practiceArea", practiceArea);
@@ -767,7 +831,9 @@ function ImportDraftModal({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            format,
+            format: selectedOption.format,
+            template: selectedOption.template,
+            formatOptionLabel: selectedOption.label,
             topic: topic.trim(),
             title: title.trim() || undefined,
             body,
@@ -870,17 +936,33 @@ function ImportDraftModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-slate-700">Format</label>
+              <label className="text-xs font-medium text-slate-700">Type</label>
               <select
-                value={format}
-                onChange={(e) => setFormat(e.target.value)}
+                value={formatOption}
+                onChange={(e) => setFormatOption(e.target.value)}
                 className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
               >
-                {IMPORT_FORMAT_OPTIONS.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
+                <optgroup label="Website">
+                  {IMPORT_FORMAT_OPTIONS.filter((f) => f.contentType === "website").map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Social media">
+                  {IMPORT_FORMAT_OPTIONS.filter((f) => f.contentType === "social").map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Email">
+                  {IMPORT_FORMAT_OPTIONS.filter((f) => f.contentType === "email").map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
             <div>
