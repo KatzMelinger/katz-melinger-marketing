@@ -15,7 +15,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
-const MAX_VALUE_LENGTH = 5000;
+const MAX_VALUE_LENGTH = 40000;
 
 export async function GET() {
   try {

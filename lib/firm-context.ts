@@ -65,9 +65,15 @@ export async function getFirmContext(): Promise<string> {
   try {
     const supabase = getSupabaseAdmin();
 
-    const [{ data: settingsRows }, { data: avatarRows }] = await Promise.all([
+    const [{ data: settingsRows }, { data: avatarRows }, sampleRes] = await Promise.all([
       supabase.from("brand_voice_settings").select("key, value"),
-      supabase.from("brand_voice_avatars").select("name, role, description"),
+      supabase.from("brand_voice_avatars").select("*"),
+      // brand_voice_samples may not exist on instances that haven't run the
+      // v2 migration. Tolerate the failure.
+      supabase
+        .from("brand_voice_samples")
+        .select("title, content, content_type, notes")
+        .order("created_at", { ascending: false }),
     ]);
 
     const settings: Record<string, string> = {};
@@ -97,20 +103,73 @@ export async function getFirmContext(): Promise<string> {
       `- Website: ${firmWebsite}\n`;
 
     if (avatarRows && avatarRows.length > 0) {
-      const audiences = avatarRows
-        .map((a) => {
-          const role = a.role ? ` (${a.role})` : "";
-          return `${a.name}${role}`;
-        })
+      type AvatarRow = {
+        name?: string | null;
+        role?: string | null;
+        description?: string | null;
+        demographics?: string | null;
+        pain_points?: string | null;
+        goals?: string | null;
+        channels?: string | null;
+      };
+      const list = avatarRows as AvatarRow[];
+      const audiences = list
+        .map((a) => `${a.name}${a.role ? ` (${a.role})` : ""}`)
         .join(", ");
       context += `\nTarget audiences: ${audiences}.\n`;
+
+      const detailed = list.filter(
+        (a) =>
+          a.description || a.demographics || a.pain_points || a.goals || a.channels,
+      );
+      if (detailed.length > 0) {
+        context += `\nAudience details:\n`;
+        for (const a of detailed) {
+          context += `- ${a.name}${a.role ? ` (${a.role})` : ""}:\n`;
+          if (a.description) context += `    Description: ${a.description}\n`;
+          if (a.demographics) context += `    Demographics: ${a.demographics}\n`;
+          if (a.pain_points) context += `    Pain points: ${a.pain_points}\n`;
+          if (a.goals) context += `    Goals: ${a.goals}\n`;
+          if (a.channels) context += `    Channels: ${a.channels}\n`;
+        }
+      }
     }
 
+    if (settings.brandVoice) {
+      context += `\nBrand voice guide:\n${settings.brandVoice}\n`;
+    }
     if (settings.keyMessages) {
       context += `Key messages: ${settings.keyMessages}\n`;
     }
     if (settings.toneOfVoice) {
       context += `Tone of voice: ${settings.toneOfVoice}\n`;
+    }
+
+    // Writing samples — surface one excerpt per content type for tone reference.
+    const SAMPLE_EXCERPT_CHARS = 1500;
+    type SampleRow = {
+      title?: string | null;
+      content?: string | null;
+      content_type?: string | null;
+    };
+    const samples = (sampleRes?.data ?? []) as SampleRow[];
+    if (samples.length > 0) {
+      const byType = new Map<string, SampleRow>();
+      for (const s of samples) {
+        if (!s.content_type || !s.content) continue;
+        if (!byType.has(s.content_type)) byType.set(s.content_type, s);
+      }
+      if (byType.size > 0) {
+        context += `\nWriting samples (tone reference per format):\n`;
+        for (const [type, s] of byType) {
+          const c = s.content ?? "";
+          const excerpt =
+            c.length > SAMPLE_EXCERPT_CHARS
+              ? c.slice(0, SAMPLE_EXCERPT_CHARS) + "…"
+              : c;
+          context += `\n[${type}] ${s.title ?? ""}\n${excerpt}\n`;
+        }
+      }
     }
 
     return context;
