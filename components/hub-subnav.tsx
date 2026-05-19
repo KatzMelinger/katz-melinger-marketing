@@ -29,6 +29,7 @@ const SEO_ROUTES: Route[] = [
   { href: "/seo/link-strategy", label: "Link strategy" },
   { href: "/seo/technical", label: "Technical" },
   { href: "/seo/cannibalization", label: "Cannibalization" },
+  { href: "/seo/generator", label: "Content generator" },
   { href: "/seo/pr-pitches", label: "PR pitches" },
   { href: "/keyword-research", label: "Keyword research" },
   { href: "/search-console", label: "Search Console" },
