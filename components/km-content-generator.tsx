@@ -9,8 +9,9 @@
  * Mounted on both /content/km and /seo/generator.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import {
   KMPerPageBriefForm,
@@ -24,12 +25,41 @@ import {
 } from "@/lib/km-content-system";
 
 export function KMContentGenerator() {
+  const searchParams = useSearchParams();
+  const suggestionId = searchParams?.get("suggestion") ?? null;
   const [brief, setBrief] = useState<KMBriefFormValue>(emptyBrief());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serverErrors, setServerErrors] = useState<string[]>([]);
   const [output, setOutput] = useState<string>("");
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
+
+  // Pre-fill from an approved (or pending) suggestion when ?suggestion=... is set.
+  useEffect(() => {
+    if (!suggestionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/seo/suggestions/${suggestionId}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const seeded = data?.suggested_brief as Partial<KMPerPageBrief> | undefined;
+        if (seeded && typeof seeded === "object") {
+          setBrief({ ...emptyBrief(), ...seeded });
+          setPrefillNotice(
+            `Brief pre-filled from suggestion "${data.cluster_name ?? data.primary_keyword ?? ""}". You can still edit any field before generating.`,
+          );
+        }
+      } catch {
+        // ignore — manual entry still works
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [suggestionId]);
 
   const errors = validateBrief(brief);
   const ready = errors.length === 0;
@@ -53,7 +83,20 @@ export function KMContentGenerator() {
         throw new Error(data?.error || `Generation failed (${res.status})`);
       }
       setOutput(typeof data.content === "string" ? data.content : "");
-      setDraftId(typeof data.draft_id === "string" ? data.draft_id : null);
+      const newDraftId = typeof data.draft_id === "string" ? data.draft_id : null;
+      setDraftId(newDraftId);
+
+      // If this came from a suggestion, mark it approved + link the draft so
+      // the suggestions queue stops showing it as pending.
+      if (suggestionId && newDraftId) {
+        fetch(`/api/seo/suggestions/${suggestionId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "approved", approvedDraftId: newDraftId }),
+        }).catch(() => {
+          /* non-blocking — content is already saved */
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -80,6 +123,12 @@ export function KMContentGenerator() {
             and AEO rules are enforced server-side.
           </p>
         </div>
+
+        {prefillNotice && (
+          <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md p-3">
+            {prefillNotice}
+          </div>
+        )}
 
         <KMPerPageBriefForm value={brief} onChange={setBrief} />
 
