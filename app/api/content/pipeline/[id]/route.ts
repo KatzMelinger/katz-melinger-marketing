@@ -61,6 +61,16 @@ export async function PATCH(
   if ("draftId" in (body ?? {})) {
     patch.draft_id = body.draftId ?? null;
   }
+  // ownerUserId: explicit null clears, a valid string assigns, anything else
+  // (undefined / wrong shape) leaves the column alone.
+  if ("ownerUserId" in (body ?? {})) {
+    const v = body.ownerUserId;
+    if (v === null || v === "") {
+      patch.owner_user_id = null;
+    } else if (typeof v === "string" && v.trim()) {
+      patch.owner_user_id = v.trim();
+    }
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });

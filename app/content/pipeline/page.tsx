@@ -39,9 +39,33 @@ type Item = {
   notes: string | null;
   url: string | null;
   draft_id: string | null;
+  owner_user_id: string | null;
+  owner_email: string | null;
+  status_updated_at: string;
   created_at: string;
   updated_at: string;
 };
+
+type AppUser = { id: string; email: string };
+
+/**
+ * Renders the status-update date as a short, friendly string. < 24h shows
+ * "today" / "Nh ago" so reviewers can spot stale items; older items show the
+ * date so dates don't drift into useless "47d ago".
+ */
+function formatStatusDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = Date.now();
+  const ms = now - d.getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return mins <= 1 ? "just now" : `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 type Stats = {
   total: number;
@@ -86,6 +110,26 @@ export default function PipelinePage() {
   const [bucketFilter, setBucketFilter] = useState<string>("all");
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [users, setUsers] = useState<AppUser[]>([]);
+
+  // Fetch the team list once — used by the owner picker in each row + the
+  // ContentModal. Failing silently is fine: the picker just shows "Unassigned".
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setUsers(data.users ?? []);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -114,6 +158,29 @@ export default function PipelinePage() {
       body: JSON.stringify({ status }),
     });
     refresh();
+  };
+
+  const setOwner = async (id: number, ownerUserId: string | null) => {
+    // Optimistic — patch the list locally so the dropdown closes against
+    // the new value immediately. refresh() reconciles with the server.
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === id
+          ? {
+              ...it,
+              owner_user_id: ownerUserId,
+              owner_email: ownerUserId
+                ? (users.find((u) => u.id === ownerUserId)?.email ?? null)
+                : null,
+            }
+          : it,
+      ),
+    );
+    await fetch(`/api/content/pipeline/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ownerUserId }),
+    });
   };
 
   const remove = async (id: number) => {
@@ -209,8 +276,9 @@ export default function PipelinePage() {
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Title & details</th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 w-[140px]">Status</th>
-                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 w-[160px]">Bucket</th>
+                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 w-[180px]">Status</th>
+                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 w-[180px]">Owner</th>
+                <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 w-[140px]">Bucket</th>
                 <th className="text-right px-4 py-2 text-xs font-medium text-slate-500 w-[120px]">Actions</th>
               </tr>
             </thead>
@@ -245,6 +313,20 @@ export default function PipelinePage() {
                       current={item.status}
                       onChange={(s) => setStatus(item.id, s)}
                     />
+                    <div
+                      className="text-[10px] text-slate-500 mt-1"
+                      title={new Date(item.status_updated_at).toLocaleString()}
+                    >
+                      {formatStatusDate(item.status_updated_at)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <OwnerPicker
+                      currentId={item.owner_user_id}
+                      currentEmail={item.owner_email}
+                      users={users}
+                      onChange={(id) => setOwner(item.id, id)}
+                    />
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-700">{BUCKET_LABEL[item.bucket]}</td>
                   <td className="px-4 py-3 text-right space-x-1">
@@ -275,6 +357,7 @@ export default function PipelinePage() {
         <ContentModal
           item={editingItem}
           contentType={contentType}
+          users={users}
           onClose={() => {
             setShowModal(false);
             setEditingItem(null);
@@ -285,6 +368,91 @@ export default function PipelinePage() {
             refresh();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function OwnerPicker({
+  currentId,
+  currentEmail,
+  users,
+  onChange,
+}: {
+  currentId: string | null;
+  currentEmail: string | null;
+  users: AppUser[];
+  onChange: (id: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Show a name-ish label (local part of the email) when assigned, "Unassigned"
+  // otherwise. Hover reveals the full email via title attribute.
+  const label = currentEmail
+    ? currentEmail.split("@")[0]
+    : "Unassigned";
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title={currentEmail ?? "No owner assigned"}
+        className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded border ${
+          currentId
+            ? "border-slate-300 text-slate-700 hover:border-[#185FA5]"
+            : "border-dashed border-slate-300 text-slate-500 hover:border-[#185FA5] hover:text-[#185FA5]"
+        }`}
+      >
+        {currentId && (
+          <span
+            className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#185FA5] text-white text-[9px] font-semibold"
+            aria-hidden
+          >
+            {label.charAt(0).toUpperCase()}
+          </span>
+        )}
+        <span className="truncate max-w-[120px]">{label}</span>
+        <span aria-hidden>▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 z-40 bg-white border border-slate-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-[280px] overflow-auto">
+            <button
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 ${
+                !currentId ? "font-semibold text-[#185FA5]" : "text-slate-700"
+              }`}
+            >
+              Unassigned{!currentId ? " ✓" : ""}
+            </button>
+            {users.length === 0 ? (
+              <p className="px-3 py-1.5 text-xs text-slate-500 italic">
+                No teammates found.
+              </p>
+            ) : (
+              users.map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => {
+                    onChange(u.id);
+                    setOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 ${
+                    u.id === currentId ? "font-semibold text-[#185FA5]" : "text-slate-700"
+                  }`}
+                  title={u.email}
+                >
+                  {u.email}
+                  {u.id === currentId ? " ✓" : ""}
+                </button>
+              ))
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -337,11 +505,13 @@ function StatusDropdown({
 function ContentModal({
   item,
   contentType,
+  users,
   onClose,
   onSaved,
 }: {
   item: Item | null;
   contentType: "website" | "social" | "email";
+  users: AppUser[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -351,6 +521,9 @@ function ContentModal({
   const [location, setLocation] = useState(item?.location ?? "");
   const [status, setStatus] = useState<Status>((item?.status as Status) ?? "idea");
   const [bucket, setBucket] = useState<Bucket>((item?.bucket as Bucket) ?? "bofu_education");
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(
+    item?.owner_user_id ?? null,
+  );
   const [url, setUrl] = useState(item?.url ?? "");
   const [notes, setNotes] = useState(item?.notes ?? "");
   const [saving, setSaving] = useState(false);
@@ -372,6 +545,7 @@ function ContentModal({
         bucket,
         url,
         notes,
+        ownerUserId,
         // New items inherit the active top-tab; edits preserve existing type.
         ...(isEdit ? {} : { contentType }),
       };
@@ -466,6 +640,24 @@ function ContentModal({
               ))}
             </DashSelect>
           </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-700">Owner (optional)</label>
+          <DashSelect
+            value={ownerUserId ?? ""}
+            onChange={(e) =>
+              setOwnerUserId(e.target.value === "" ? null : e.target.value)
+            }
+            className="w-full mt-1"
+          >
+            <option value="">Unassigned</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.email}
+              </option>
+            ))}
+          </DashSelect>
         </div>
 
         <div>

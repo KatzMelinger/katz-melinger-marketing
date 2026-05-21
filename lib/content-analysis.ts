@@ -14,6 +14,10 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import { getFirmContext } from "./firm-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import {
+  filterTitlesByCannibalization,
+  type FilteredTitle,
+} from "./title-cannibalization";
 
 const STOP_WORDS = new Set([
   "the","and","that","with","from","this","your","have","will","about","into",
@@ -67,18 +71,28 @@ export type ContentAnalysis = {
   target_keyword_hits: Record<string, number>;
   aeo_score: number;
   aeo_findings: string[];
-  brand_voice_score: number;
+  // Scores from Claude-backed calls are nullable so we can distinguish "0
+  // because the content scored zero" from "couldn't compute — re-run." The UI
+  // renders null as "n/a" with a re-run hint instead of a red 0.
+  brand_voice_score: number | null;
   brand_voice_findings: string[];
-  cash_score: number;
+  cash_score: number | null;
   cash_breakdown: CashBreakdown;
   cash_findings: string[];
   seo_score: number;
   seo_breakdown: SeoBreakdown;
   seo_findings: string[];
-  linkability_score: number;
+  linkability_score: number | null;
   linkability_findings: string[];
   outreach_angles: OutreachAngle[];
   suggested_titles: string[];
+  /** Per-title conflict detail (only present in the live response — not
+   *  persisted). Lets the UI render a warning badge on titles that overlap
+   *  existing site content, even when they survived the filter. */
+  suggested_titles_dropped?: FilteredTitle[];
+  /** Count of titles excluded because they conflict with existing content.
+   *  Surfaced as "N conflicts avoided" in the UI. */
+  suggested_titles_conflicts_avoided?: number;
   suggested_images: SuggestedImage[];
   summary: string;
 };
@@ -204,7 +218,7 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
  * and source credibility from the model's perspective as a reader.
  */
 async function cashScore(body: string): Promise<{
-  score: number;
+  score: number | null;
   breakdown: CashBreakdown;
   findings: string[];
 }> {
@@ -273,14 +287,16 @@ Each finding must start with [C], [A], [S], or [H] to tag which pillar it applie
     };
   } catch {
     return {
-      score: 0,
+      score: null,
       breakdown: {
         conversationalAuthority: 0,
         answerCompleteness: 0,
         sourceExpertise: 0,
         humanAttribution: 0,
       },
-      findings: ["CASH scoring failed; check Anthropic API key."],
+      findings: [
+        "CASH scoring couldn't run (Claude call failed). Click Re-run analysis to retry.",
+      ],
     };
   }
 }
@@ -498,7 +514,7 @@ async function linkabilityScore(args: {
   body: string;
   topic: string;
   title: string | null;
-}): Promise<{ score: number; findings: string[]; angles: OutreachAngle[] }> {
+}): Promise<{ score: number | null; findings: string[]; angles: OutreachAngle[] }> {
   const truncated = args.body.slice(0, 6000);
   const titleLine = args.title ? `Title: ${args.title}\n` : "";
 
@@ -552,8 +568,10 @@ Score the linkability and produce concrete outreach angles. Return JSON only:
     };
   } catch {
     return {
-      score: 0,
-      findings: ["Linkability scoring failed; check Anthropic API key."],
+      score: null,
+      findings: [
+        "Linkability scoring couldn't run (Claude call failed). Click Re-run analysis to retry.",
+      ],
       angles: [],
     };
   }
@@ -586,10 +604,15 @@ async function contentEnhancements(args: {
     ? `Target keywords: ${args.targetKeywords.join(", ")}`
     : "";
 
-  const titleSection = hasTitle
-    ? `"titles": [],  // skip — the draft already has a title ("${args.title}")`
-    : `"titles": [
-    "5 SEO-optimized title options for this piece. Each 50-60 chars, includes the primary target keyword naturally, written for click-through. Vary the angle (how-to / what-to-know / direct-question / authority-claim / scenario-led)."
+  // Always produce title alternatives. If a title is already set we still
+  // want to surface SEO-optimized options — the user picks the one to apply
+  // (or sticks with what they have). Pre-existing title is included in the
+  // prompt so the model varies the angle rather than parroting it back.
+  const existingTitleHint = hasTitle
+    ? `Current title (vary angle, do not repeat verbatim): "${args.title}"\n`
+    : "";
+  const titleSection = `"titles": [
+    "5 SEO-optimized title options for this piece. Each 50-60 chars, includes the primary target keyword naturally, written for click-through. Vary the angle (how-to / what-to-know / direct-question / authority-claim / scenario-led). Avoid wording that duplicates the firm's existing titles."
   ]`;
 
   const system = `You are a content strategist for a plaintiff-side employment law firm. You generate title alternatives and concrete image suggestions for marketing content. Be specific — never generic stock-photo descriptions like "diverse group of professionals." Tie visuals to the legal subject matter, the audience, and what would actually help a worker understand or trust the firm.`;
@@ -597,7 +620,7 @@ async function contentEnhancements(args: {
   const user = `Topic: ${args.topic}
 ${formatHint}
 ${kwHint}
-
+${existingTitleHint}
 Draft body:
 """
 ${truncated}
@@ -656,7 +679,7 @@ Produce 4-6 image suggestions covering:
   }
 }
 
-async function brandVoiceMatch(body: string): Promise<{ score: number; findings: string[]; summary: string }> {
+async function brandVoiceMatch(body: string): Promise<{ score: number | null; findings: string[]; summary: string }> {
   const firm = await getFirmContext();
   const truncated = body.slice(0, 6000); // keep prompt small
 
@@ -695,7 +718,13 @@ Return JSON only:
       summary: parsed.summary ?? "",
     };
   } catch {
-    return { score: 0, findings: ["Brand voice scoring failed; check Anthropic API key."], summary: "" };
+    return {
+      score: null,
+      findings: [
+        "Brand voice scoring couldn't run (Claude call failed). Click Re-run analysis to retry.",
+      ],
+      summary: "",
+    };
   }
 }
 
@@ -741,6 +770,15 @@ export async function analyzeDraft(args: {
     }),
   ]);
 
+  // Cross-check proposed titles against the firm's existing content so the
+  // user doesn't accidentally write a piece that competes with an existing
+  // page. Drops high-similarity matches; surfaces the count + dropped detail.
+  const filtered = await filterTitlesByCannibalization(
+    enhancements.titles,
+    draftId,
+  );
+  const keptTitles = filtered.kept.map((k) => k.title);
+
   const analysis: ContentAnalysis = {
     readability_score: normalizeReadability(flesch),
     reading_grade_level: Math.round(grade * 10) / 10,
@@ -761,10 +799,18 @@ export async function analyzeDraft(args: {
     linkability_score: linkability.score,
     linkability_findings: linkability.findings,
     outreach_angles: linkability.angles,
-    suggested_titles: enhancements.titles,
+    suggested_titles: keptTitles,
+    suggested_titles_dropped: filtered.dropped,
+    suggested_titles_conflicts_avoided: filtered.dropped.length,
     suggested_images: enhancements.images,
     summary: brand.summary,
   };
+
+  // Strip live-only fields (cannibalization detail) before persisting —
+  // they're metadata for the current response, not stored columns.
+  const persistable = { ...analysis };
+  delete (persistable as Partial<ContentAnalysis>).suggested_titles_dropped;
+  delete (persistable as Partial<ContentAnalysis>).suggested_titles_conflicts_avoided;
 
   // Graceful column-degradation. If new columns aren't migrated yet, drop
   // the offending fields and retry. Newest columns (suggested_titles /
@@ -772,10 +818,10 @@ export async function analyzeDraft(args: {
   // then CASH-era columns. Each retry strips one generation of columns.
   let { error } = await supabase.from("content_analyses").insert({
     draft_id: draftId,
-    ...analysis,
+    ...persistable,
   });
   if (error && /(suggested_titles|suggested_images)/.test(error.message)) {
-    const withoutEnhancements = { ...analysis };
+    const withoutEnhancements = { ...persistable };
     delete (withoutEnhancements as Partial<ContentAnalysis>).suggested_titles;
     delete (withoutEnhancements as Partial<ContentAnalysis>).suggested_images;
     const retry = await supabase.from("content_analyses").insert({

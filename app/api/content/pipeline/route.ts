@@ -1,9 +1,14 @@
 /**
- * GET  /api/content/pipeline?status=idea&bucket=money_page
+ * GET  /api/content/pipeline?status=idea&bucket=money_page&content_type=website
  *   → { items: [...], stats: { total, byStatus, byBucket } }
  *
  * POST /api/content/pipeline
- *   body: { title, keywords?, location?, status?, bucket?, notes?, url?, draftId? }
+ *   body: { title, keywords?, location?, status?, bucket?, notes?, url?, draftId?,
+ *           ownerUserId? }
+ *
+ * Items include owner info (joined from app_users) and status_updated_at so the
+ * UI can show "in Review since 5/12" without conflating that with the
+ * touch-every-edit updated_at column.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -26,9 +31,30 @@ type PipelineRow = {
   notes: string | null;
   url: string | null;
   draft_id: string | null;
+  owner_user_id: string | null;
+  status_updated_at: string;
   created_at: string;
   updated_at: string;
 };
+
+type OwnerRow = { user_id: string; email: string };
+
+/**
+ * Merge owner email onto each pipeline row so the UI can render the name
+ * without a second round-trip. We do this in app code instead of a Postgres
+ * join because app_users lives behind a separate FK and supabase-js's join
+ * syntax is verbose for this case.
+ */
+function attachOwners(
+  rows: PipelineRow[],
+  owners: OwnerRow[],
+): Array<PipelineRow & { owner_email: string | null }> {
+  const map = new Map(owners.map((o) => [o.user_id, o.email]));
+  return rows.map((r) => ({
+    ...r,
+    owner_email: r.owner_user_id ? (map.get(r.owner_user_id) ?? null) : null,
+  }));
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -50,13 +76,17 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("content_pipeline")
-    .select("*")
-    .order("updated_at", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const [{ data: pipeData, error: pipeErr }, { data: ownersData }] = await Promise.all([
+    supabase
+      .from("content_pipeline")
+      .select("*")
+      .order("updated_at", { ascending: false }),
+    supabase.from("app_users").select("user_id, email"),
+  ]);
+  if (pipeErr) return NextResponse.json({ error: pipeErr.message }, { status: 500 });
 
-  const all = (data ?? []) as PipelineRow[];
+  const all = (pipeData ?? []) as PipelineRow[];
+  const owners = (ownersData ?? []) as OwnerRow[];
 
   let filtered = all;
   if (status) filtered = filtered.filter((i) => i.status === status);
@@ -73,7 +103,7 @@ export async function GET(req: NextRequest) {
     ) as Record<string, number>,
   };
 
-  return NextResponse.json({ items: filtered, stats });
+  return NextResponse.json({ items: attachOwners(filtered, owners), stats });
 }
 
 export async function POST(req: NextRequest) {
@@ -93,6 +123,11 @@ export async function POST(req: NextRequest) {
     ? body.contentType
     : "website";
 
+  const ownerUserId =
+    typeof body?.ownerUserId === "string" && body.ownerUserId.trim()
+      ? body.ownerUserId.trim()
+      : null;
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("content_pipeline")
@@ -106,6 +141,7 @@ export async function POST(req: NextRequest) {
       notes: body?.notes?.trim() || null,
       url: body?.url?.trim() || null,
       draft_id: body?.draftId ?? null,
+      owner_user_id: ownerUserId,
     })
     .select()
     .single();

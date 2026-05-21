@@ -48,6 +48,7 @@ type SkillType =
   | "compliance"
   | "prompt"
   | "direction"
+  | "structure"
   | "other";
 
 type ContentSkill = {
@@ -58,8 +59,12 @@ type ContentSkill = {
   enabled: boolean;
   sortOrder: number;
   platforms: string[];
+  contentTypes: string[];
   audiences: string[];
   practiceAreas: string[];
+  maxWords: number | null;
+  sections: string[];
+  requiredElements: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -137,6 +142,20 @@ const PLATFORMS: { id: string; label: string }[] = [
   { id: "podcast", label: "Podcast" },
 ];
 
+const CONTENT_TYPES: string[] = [
+  "Blog Post",
+  "FAQ",
+  "Practice Page",
+  "Case Study",
+  "Landing Page",
+  "Press Release",
+  "Email Newsletter",
+  "Social Media Post",
+  "Video Script",
+  "Website Copy",
+  "Other",
+];
+
 const SKILL_TYPE_OPTIONS: {
   value: SkillType;
   label: string;
@@ -147,6 +166,12 @@ const SKILL_TYPE_OPTIONS: {
     label: "Direction",
     placeholder:
       "General content direction. e.g. 'When writing about wage theft, always frame the worker as someone who has been taken advantage of — never as a complainer.'",
+  },
+  {
+    value: "structure",
+    label: "Structure",
+    placeholder:
+      "Free-text notes about the structure (optional — the structured fields below carry the actual rules). e.g. 'Keep paragraphs to 2–3 sentences.'",
   },
   {
     value: "prompt",
@@ -804,18 +829,43 @@ function DetailLine({ label, value }: { label: string; value: string | null }) {
 
 // ---------- Content directions --------------------------------------------
 
+type DirectionDraft = {
+  title: string;
+  skillType: SkillType;
+  content: string;
+  platforms: Set<string>;
+  contentTypes: Set<string>;
+  audiences: Set<string>;
+  practiceAreas: Set<string>;
+  maxWords: string; // string so the input can be empty
+  sections: string[];
+  requiredElements: string[];
+};
+
+const EMPTY_DIRECTION: DirectionDraft = {
+  title: "",
+  skillType: "direction",
+  content: "",
+  platforms: new Set(),
+  contentTypes: new Set(),
+  audiences: new Set(),
+  practiceAreas: new Set(),
+  maxWords: "",
+  sections: [],
+  requiredElements: [],
+};
+
 function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
   const [directions, setDirections] = useState<ContentSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [title, setTitle] = useState("");
-  const [skillType, setSkillType] = useState<SkillType>("direction");
-  const [content, setContent] = useState("");
-  const [platforms, setPlatforms] = useState<Set<string>>(new Set());
-  const [scopeAudiences, setScopeAudiences] = useState<Set<string>>(new Set());
-  const [scopePracticeAreas, setScopePracticeAreas] = useState<Set<string>>(new Set());
-  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState<DirectionDraft>(EMPTY_DIRECTION);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // Callback-ref via useState so we can scroll the form into view on edit
+  // without pulling useRef into this otherwise hook-light component.
+  const [formEl, setFormEl] = useState<HTMLDivElement | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -837,51 +887,85 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
     refresh();
   }, []);
 
-  const toggleInSet = (
-    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+  const toggleInDraftSet = (
+    key: "platforms" | "contentTypes" | "audiences" | "practiceAreas",
     value: string,
   ) => {
-    setter((prev) => {
-      const next = new Set(prev);
+    setDraft((prev) => {
+      const next = new Set(prev[key]);
       if (next.has(value)) next.delete(value);
       else next.add(value);
-      return next;
+      return { ...prev, [key]: next };
     });
   };
 
-  const handleCreate = async () => {
-    if (!title.trim() || !content.trim()) {
-      setError("Title and content are required");
+  const resetDraft = () => {
+    setDraft(EMPTY_DIRECTION);
+    setEditingId(null);
+  };
+
+  const startEdit = (d: ContentSkill) => {
+    setDraft({
+      title: d.title,
+      skillType: d.skillType,
+      content: d.content,
+      platforms: new Set(d.platforms),
+      contentTypes: new Set(d.contentTypes),
+      audiences: new Set(d.audiences),
+      practiceAreas: new Set(d.practiceAreas),
+      maxWords: d.maxWords != null ? String(d.maxWords) : "",
+      sections: [...d.sections],
+      requiredElements: [...d.requiredElements],
+    });
+    setEditingId(d.id);
+    setError(null);
+    // Scroll the form into view so the user knows where editing is happening.
+    setTimeout(() => formEl?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
+
+  const handleSubmit = async () => {
+    if (!draft.title.trim()) {
+      setError("Title is required");
       return;
     }
-    setCreating(true);
+    if (draft.skillType !== "structure" && !draft.content.trim()) {
+      setError("Content is required");
+      return;
+    }
+    setSubmitting(true);
     setError(null);
+    const payload = {
+      title: draft.title.trim(),
+      content: draft.content.trim(),
+      skillType: draft.skillType,
+      platforms: Array.from(draft.platforms),
+      contentTypes: Array.from(draft.contentTypes),
+      audiences: Array.from(draft.audiences),
+      practiceAreas: Array.from(draft.practiceAreas),
+      maxWords: draft.maxWords.trim() ? Number(draft.maxWords) : null,
+      sections: draft.sections.map((s) => s.trim()).filter(Boolean),
+      requiredElements: draft.requiredElements.map((s) => s.trim()).filter(Boolean),
+    };
     try {
-      const res = await fetch("/api/content/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          content: content.trim(),
-          skillType,
-          platforms: Array.from(platforms),
-          audiences: Array.from(scopeAudiences),
-          practiceAreas: Array.from(scopePracticeAreas),
-        }),
-      });
+      const res = editingId
+        ? await fetch(`/api/content/skills/${editingId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        : await fetch("/api/content/skills", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed");
-      setTitle("");
-      setContent("");
-      setSkillType("direction");
-      setPlatforms(new Set());
-      setScopeAudiences(new Set());
-      setScopePracticeAreas(new Set());
+      resetDraft();
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
-      setCreating(false);
+      setSubmitting(false);
     }
   };
 
@@ -905,13 +989,39 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
     try {
       await fetch(`/api/content/skills/${id}`, { method: "DELETE" });
       setDirections((prev) => prev.filter((s) => s.id !== id));
+      // If we were editing the one being deleted, reset.
+      if (editingId === id) resetDraft();
     } catch {
       refresh();
     }
   };
 
-  const activeType = SKILL_TYPE_OPTIONS.find((o) => o.value === skillType);
+  const activeType = SKILL_TYPE_OPTIONS.find((o) => o.value === draft.skillType);
   const enabledCount = directions.filter((d) => d.enabled).length;
+  const isStructure = draft.skillType === "structure";
+
+  // helpers for sections / required elements list editors -------------------
+  const updateList = (
+    key: "sections" | "requiredElements",
+    idx: number,
+    value: string,
+  ) => {
+    setDraft((prev) => {
+      const next = [...prev[key]];
+      next[idx] = value;
+      return { ...prev, [key]: next };
+    });
+  };
+  const addListItem = (key: "sections" | "requiredElements") => {
+    setDraft((prev) => ({ ...prev, [key]: [...prev[key], ""] }));
+  };
+  const removeListItem = (key: "sections" | "requiredElements", idx: number) => {
+    setDraft((prev) => {
+      const next = [...prev[key]];
+      next.splice(idx, 1);
+      return { ...prev, [key]: next };
+    });
+  };
 
   return (
     <Card className="p-5 space-y-5">
@@ -920,10 +1030,10 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
         <h2 className="font-medium">Content directions</h2>
       </div>
       <p className="text-xs opacity-70 -mt-3">
-        Skills, prompts, and general direction injected into every content
-        generation. Scope a direction to specific platforms, audiences, or
-        practice areas to keep it from firing on content where it doesn&apos;t
-        belong. Empty scope = applies everywhere.
+        Skills, prompts, structure rules, and general direction injected into
+        every content generation. Scope a direction to specific platforms,
+        content types, audiences, or practice areas to keep it from firing on
+        content where it doesn&apos;t belong. Empty scope = applies everywhere.
       </p>
 
       {error && (
@@ -932,8 +1042,8 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
         </div>
       )}
 
-      {/* Existing directions */}
-      <div className="space-y-3">
+      {/* Existing directions — collapsible */}
+      <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">Active directions</h3>
           <span className="text-xs opacity-60">
@@ -949,66 +1059,51 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
             matching generation.
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2">
             {directions.map((d) => (
-              <li
+              <DirectionRow
                 key={d.id}
-                className={`rounded-lg border p-3 ${
-                  d.enabled
-                    ? "border-black/10 dark:border-white/10"
-                    : "border-black/10 dark:border-white/10 opacity-60"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-sm font-semibold">{d.title}</h4>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full border border-black/15 dark:border-white/15">
-                        {labelForType(d.skillType)}
-                      </span>
-                    </div>
-                    <ScopeChips skill={d} />
-                    <pre className="mt-2 text-xs opacity-80 whitespace-pre-wrap font-mono">
-                      {d.content}
-                    </pre>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={d.enabled}
-                        onChange={(e) => toggleEnabled(d, e.target.checked)}
-                      />
-                      Active
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => remove(d.id)}
-                      className="text-xs opacity-50 hover:opacity-100 hover:text-red-600"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </li>
+                d={d}
+                editing={editingId === d.id}
+                onEdit={() => startEdit(d)}
+                onToggle={(en) => toggleEnabled(d, en)}
+                onDelete={() => remove(d.id)}
+              />
             ))}
           </ul>
         )}
       </div>
 
-      {/* Add form */}
-      <div className="border-t border-black/10 dark:border-white/10 pt-5 space-y-3">
-        <h3 className="text-sm font-medium">Add a direction</h3>
+      {/* Add / edit form */}
+      <div
+        ref={(el) => setFormEl(el)}
+        className="border-t border-black/10 dark:border-white/10 pt-5 space-y-3"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">
+            {editingId ? "Edit direction" : "Add a direction"}
+          </h3>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetDraft}
+              className="text-xs opacity-60 hover:opacity-100 underline"
+            >
+              Cancel edit
+            </button>
+          )}
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-3">
           <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Short name (e.g. 'LinkedIn hook style')"
+            value={draft.title}
+            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+            placeholder="Short name (e.g. 'Blog structure', 'LinkedIn hook style')"
             className="sm:col-span-2 bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           />
           <select
-            value={skillType}
-            onChange={(e) => setSkillType(e.target.value as SkillType)}
+            value={draft.skillType}
+            onChange={(e) => setDraft({ ...draft, skillType: e.target.value as SkillType })}
             className="bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm"
           >
             {SKILL_TYPE_OPTIONS.map((o) => (
@@ -1018,13 +1113,54 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
             ))}
           </select>
         </div>
+
         <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
+          value={draft.content}
+          onChange={(e) => setDraft({ ...draft, content: e.target.value })}
           placeholder={activeType?.placeholder ?? ""}
-          rows={5}
+          rows={isStructure ? 3 : 5}
           className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-mono"
         />
+
+        {isStructure && (
+          <div className="space-y-3 bg-blue-500/5 border border-blue-500/20 rounded-md p-3">
+            <p className="text-xs font-medium opacity-80">
+              Structure rules — enforced in the system prompt
+            </p>
+
+            <div className="space-y-1">
+              <label className="text-[11px] opacity-70">
+                Max word count (optional)
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={draft.maxWords}
+                onChange={(e) => setDraft({ ...draft, maxWords: e.target.value })}
+                placeholder="e.g. 500"
+                className="w-32 bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </div>
+
+            <ListEditor
+              label="Required sections (in order)"
+              placeholder='e.g. "Hook (1–2 sentences)", "Rights overview", "CTA with firm contact info"'
+              items={draft.sections}
+              onChange={(idx, v) => updateList("sections", idx, v)}
+              onAdd={() => addListItem("sections")}
+              onRemove={(idx) => removeListItem("sections", idx)}
+            />
+
+            <ListEditor
+              label="Required elements"
+              placeholder='e.g. "Disclaimer line", "Phone number", "Free consultation CTA"'
+              items={draft.requiredElements}
+              onChange={(idx, v) => updateList("requiredElements", idx, v)}
+              onAdd={() => addListItem("requiredElements")}
+              onRemove={(idx) => removeListItem("requiredElements", idx)}
+            />
+          </div>
+        )}
 
         <div className="space-y-2">
           <p className="text-xs font-medium opacity-70">
@@ -1032,11 +1168,26 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
           </p>
 
           <div>
-            <p className="text-[11px] opacity-60 mb-1">Platforms</p>
+            <p className="text-[11px] opacity-60 mb-1">Content types</p>
+            <div className="flex flex-wrap gap-1.5">
+              {CONTENT_TYPES.map((ct) => (
+                <Chip
+                  key={ct}
+                  on={draft.contentTypes.has(ct)}
+                  onClick={() => toggleInDraftSet("contentTypes", ct)}
+                >
+                  {ct}
+                </Chip>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[11px] opacity-60 mb-1">Platforms (channels)</p>
             <div className="flex flex-wrap gap-1.5 mb-1.5">
               <button
                 type="button"
-                onClick={() => setPlatforms(new Set(["blog"]))}
+                onClick={() => setDraft({ ...draft, platforms: new Set(["blog"]) })}
                 className="text-[10px] px-2 py-0.5 rounded border border-blue-500/40 bg-blue-500/5 text-blue-600 dark:text-blue-300 hover:bg-blue-500/10 font-medium"
               >
                 Website
@@ -1044,15 +1195,16 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
               <button
                 type="button"
                 onClick={() =>
-                  setPlatforms(
-                    new Set([
+                  setDraft({
+                    ...draft,
+                    platforms: new Set([
                       "linkedin",
                       "twitter",
                       "facebook",
                       "instagram",
                       "podcast",
                     ]),
-                  )
+                  })
                 }
                 className="text-[10px] px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/5 text-violet-600 dark:text-violet-300 hover:bg-violet-500/10 font-medium"
               >
@@ -1060,15 +1212,15 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
               </button>
               <button
                 type="button"
-                onClick={() => setPlatforms(new Set(["email"]))}
+                onClick={() => setDraft({ ...draft, platforms: new Set(["email"]) })}
                 className="text-[10px] px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/5 text-amber-600 dark:text-amber-300 hover:bg-amber-500/10 font-medium"
               >
                 Email
               </button>
-              {platforms.size > 0 && (
+              {draft.platforms.size > 0 && (
                 <button
                   type="button"
-                  onClick={() => setPlatforms(new Set())}
+                  onClick={() => setDraft({ ...draft, platforms: new Set() })}
                   className="text-[10px] px-2 py-0.5 rounded border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/10"
                 >
                   Clear
@@ -1079,8 +1231,8 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
               {PLATFORMS.map((p) => (
                 <Chip
                   key={p.id}
-                  on={platforms.has(p.id)}
-                  onClick={() => toggleInSet(setPlatforms, p.id)}
+                  on={draft.platforms.has(p.id)}
+                  onClick={() => toggleInDraftSet("platforms", p.id)}
                 >
                   {p.label}
                 </Chip>
@@ -1099,8 +1251,8 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
                 avatars.map((a) => (
                   <Chip
                     key={a.id}
-                    on={scopeAudiences.has(a.name)}
-                    onClick={() => toggleInSet(setScopeAudiences, a.name)}
+                    on={draft.audiences.has(a.name)}
+                    onClick={() => toggleInDraftSet("audiences", a.name)}
                   >
                     {a.name}
                   </Chip>
@@ -1115,8 +1267,8 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
               {PRACTICE_AREAS.filter((p) => p !== "General").map((p) => (
                 <Chip
                   key={p}
-                  on={scopePracticeAreas.has(p)}
-                  onClick={() => toggleInSet(setScopePracticeAreas, p)}
+                  on={draft.practiceAreas.has(p)}
+                  onClick={() => toggleInDraftSet("practiceAreas", p)}
                 >
                   {p}
                 </Chip>
@@ -1125,10 +1277,19 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3">
-          <Button onClick={handleCreate} disabled={creating}>
-            {creating ? <Spinner /> : <span aria-hidden>+</span>}
-            Add direction
+        <div className="flex items-center justify-end gap-2">
+          {editingId && (
+            <Button variant="outline" onClick={resetDraft}>
+              Cancel
+            </Button>
+          )}
+          <Button onClick={handleSubmit} disabled={submitting}>
+            {submitting ? (
+              <Spinner />
+            ) : (
+              <span aria-hidden>{editingId ? "💾" : "+"}</span>
+            )}
+            {editingId ? "Save changes" : "Add direction"}
           </Button>
         </div>
       </div>
@@ -1136,14 +1297,233 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
   );
 }
 
-function ScopeChips({ skill }: { skill: ContentSkill }) {
+function ListEditor({
+  label,
+  placeholder,
+  items,
+  onChange,
+  onAdd,
+  onRemove,
+}: {
+  label: string;
+  placeholder: string;
+  items: string[];
+  onChange: (idx: number, value: string) => void;
+  onAdd: () => void;
+  onRemove: (idx: number) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] opacity-70">{label}</label>
+      <div className="space-y-1.5">
+        {items.map((item, idx) => (
+          <div key={idx} className="flex items-center gap-1.5">
+            <span className="text-[10px] opacity-50 w-4 text-right">{idx + 1}.</span>
+            <input
+              value={item}
+              onChange={(e) => onChange(idx, e.target.value)}
+              placeholder={placeholder}
+              className="flex-1 bg-transparent border border-black/15 dark:border-white/15 rounded-md p-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            />
+            <button
+              type="button"
+              onClick={() => onRemove(idx)}
+              className="opacity-50 hover:opacity-100 hover:text-red-600 text-base px-1"
+              title="Remove"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={onAdd}
+          className="text-[11px] opacity-70 hover:opacity-100 underline"
+        >
+          + add {items.length === 0 ? "one" : "another"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DirectionRow({
+  d,
+  editing,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  d: ContentSkill;
+  editing: boolean;
+  onEdit: () => void;
+  onToggle: (enabled: boolean) => void;
+  onDelete: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasStructureDetail =
+    d.skillType === "structure" &&
+    (d.maxWords != null ||
+      d.sections.length > 0 ||
+      d.requiredElements.length > 0);
+
+  return (
+    <li
+      className={`rounded-lg border transition-colors ${
+        editing
+          ? "border-blue-500/60 bg-blue-500/5"
+          : d.enabled
+            ? "border-black/10 dark:border-white/10"
+            : "border-black/10 dark:border-white/10 opacity-60"
+      }`}
+    >
+      {/* Collapsed header row — always visible */}
+      <div className="flex items-center justify-between gap-2 p-2.5">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex-1 min-w-0 text-left flex items-center gap-2"
+          aria-expanded={expanded}
+        >
+          <span
+            className="text-[10px] opacity-50 w-3 inline-block transition-transform"
+            style={{ transform: expanded ? "rotate(90deg)" : "rotate(0)" }}
+            aria-hidden
+          >
+            ▶
+          </span>
+          <span className="font-medium text-sm truncate">{d.title}</span>
+          <span className="text-[11px] px-2 py-0.5 rounded-full border border-black/15 dark:border-white/15 shrink-0">
+            {labelForType(d.skillType)}
+          </span>
+          {d.skillType === "structure" && d.maxWords != null && (
+            <span className="text-[10px] opacity-60 shrink-0">
+              ≤ {d.maxWords} words
+            </span>
+          )}
+        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <ScopeChips skill={d} compact />
+          <label className="flex items-center gap-1 text-xs opacity-80 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={d.enabled}
+              onChange={(e) => onToggle(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+            />
+            Active
+          </label>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="text-xs opacity-60 hover:opacity-100 underline"
+            title="Edit"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="text-xs opacity-50 hover:opacity-100 hover:text-red-600"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded body */}
+      {expanded && (
+        <div className="border-t border-black/10 dark:border-white/10 p-3 space-y-2">
+          <ScopeChips skill={d} />
+          {d.content && (
+            <pre className="text-xs opacity-80 whitespace-pre-wrap font-mono">
+              {d.content}
+            </pre>
+          )}
+          {hasStructureDetail && (
+            <div className="text-xs space-y-1.5 bg-blue-500/5 border border-blue-500/20 rounded-md p-2.5">
+              {d.maxWords != null && (
+                <div>
+                  <span className="opacity-60">Max words:</span>{" "}
+                  <span className="font-medium">{d.maxWords}</span>
+                </div>
+              )}
+              {d.sections.length > 0 && (
+                <div>
+                  <p className="opacity-60 mb-0.5">Required sections:</p>
+                  <ol className="list-decimal ml-5 space-y-0.5">
+                    {d.sections.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+              {d.requiredElements.length > 0 && (
+                <div>
+                  <p className="opacity-60 mb-0.5">Required elements:</p>
+                  <ul className="list-disc ml-5 space-y-0.5">
+                    {d.requiredElements.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function ScopeChips({
+  skill,
+  compact = false,
+}: {
+  skill: ContentSkill;
+  compact?: boolean;
+}) {
   const hasScope =
     skill.platforms.length > 0 ||
+    skill.contentTypes.length > 0 ||
     skill.audiences.length > 0 ||
     skill.practiceAreas.length > 0;
   if (!hasScope) return null;
+
+  // Compact mode: just count badges (no labels) to fit in the header row.
+  if (compact) {
+    const total =
+      skill.platforms.length +
+      skill.contentTypes.length +
+      skill.audiences.length +
+      skill.practiceAreas.length;
+    return (
+      <span
+        className="text-[10px] opacity-60 px-1.5 py-0.5 rounded-full border border-black/15 dark:border-white/15"
+        title={[
+          skill.contentTypes.length > 0 && `Content: ${skill.contentTypes.join(", ")}`,
+          skill.platforms.length > 0 && `Platforms: ${skill.platforms.join(", ")}`,
+          skill.audiences.length > 0 && `Audiences: ${skill.audiences.join(", ")}`,
+          skill.practiceAreas.length > 0 && `Practice: ${skill.practiceAreas.join(", ")}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      >
+        {total} scope{total === 1 ? "" : "s"}
+      </span>
+    );
+  }
+
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1 text-[10px]">
+    <div className="flex flex-wrap gap-1 text-[10px]">
+      {skill.contentTypes.map((ct) => (
+        <span
+          key={`ct-${ct}`}
+          className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-700 dark:text-cyan-300"
+        >
+          📄 {ct}
+        </span>
+      ))}
       {skill.platforms.map((p) => (
         <span
           key={`p-${p}`}

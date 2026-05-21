@@ -1,5 +1,5 @@
 /**
- * PATCH  /api/content/skills/[id]  — update title/content/type/enabled/order
+ * PATCH  /api/content/skills/[id]  — update title/content/type/enabled/order/scope/structure
  * DELETE /api/content/skills/[id]  — remove
  */
 
@@ -19,6 +19,7 @@ const VALID_TYPES: SkillType[] = [
   "compliance",
   "prompt",
   "direction",
+  "structure",
   "other",
 ];
 
@@ -31,6 +32,14 @@ function readScopeArray(input: unknown): string[] | null | undefined {
     .map((v) => v.trim())
     .filter(Boolean);
   return cleaned.length > 0 ? cleaned : null;
+}
+
+function readPositiveIntOrClear(input: unknown): number | null | undefined {
+  if (input === undefined) return undefined;
+  if (input === null || input === "") return null;
+  const n = Number(input);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
 }
 
 export async function PATCH(
@@ -55,12 +64,22 @@ export async function PATCH(
     if (typeof body?.enabled === "boolean") patch.enabled = body.enabled;
     if (Number.isFinite(body?.sortOrder)) patch.sort_order = Number(body.sortOrder);
 
-    const platforms = readScopeArray((body as Record<string, unknown>)?.platforms);
+    const b = body as Record<string, unknown>;
+    const platforms = readScopeArray(b?.platforms);
     if (platforms !== undefined) patch.platforms = platforms;
-    const audiences = readScopeArray((body as Record<string, unknown>)?.audiences);
+    const contentTypes = readScopeArray(b?.contentTypes);
+    if (contentTypes !== undefined) patch.content_types = contentTypes;
+    const audiences = readScopeArray(b?.audiences);
     if (audiences !== undefined) patch.audiences = audiences;
-    const practiceAreas = readScopeArray((body as Record<string, unknown>)?.practiceAreas);
+    const practiceAreas = readScopeArray(b?.practiceAreas);
     if (practiceAreas !== undefined) patch.practice_areas = practiceAreas;
+
+    const maxWords = readPositiveIntOrClear(b?.maxWords);
+    if (maxWords !== undefined) patch.max_words = maxWords;
+    const sections = readScopeArray(b?.sections);
+    if (sections !== undefined) patch.sections = sections;
+    const requiredElements = readScopeArray(b?.requiredElements);
+    if (requiredElements !== undefined) patch.required_elements = requiredElements;
 
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase

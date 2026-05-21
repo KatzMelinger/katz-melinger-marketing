@@ -13,6 +13,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { diffWords, type Change } from "diff";
 
 import { ContentNav } from "@/components/content-nav";
 import { ContentTypeTabs } from "@/components/content-type-tabs";
@@ -121,9 +122,11 @@ type Analysis = {
   target_keyword_hits: Record<string, number>;
   aeo_score: number;
   aeo_findings: string[];
-  brand_voice_score: number;
+  // Claude-backed scores are nullable: null means "couldn't compute, re-run".
+  // Distinguishing this from a real 0 score keeps the UI from misleading users.
+  brand_voice_score: number | null;
   brand_voice_findings: string[];
-  cash_score?: number;
+  cash_score: number | null;
   cash_breakdown?: {
     conversationalAuthority: number;
     answerCompleteness: number;
@@ -141,10 +144,22 @@ type Analysis = {
     schemaReadiness: number;
   };
   seo_findings?: string[];
-  linkability_score?: number;
+  linkability_score: number | null;
   linkability_findings?: string[];
   outreach_angles?: { audience: string; pitch: string }[];
   suggested_titles?: string[];
+  // Live-only fields (stripped before persistence). Optional so older
+  // analyses loaded from DB don't fail the type check.
+  suggested_titles_conflicts_avoided?: number;
+  suggested_titles_dropped?: {
+    title: string;
+    conflicts: {
+      source: "pipeline" | "draft" | "ranked_keyword";
+      text: string;
+      url?: string | null;
+      similarity: number;
+    }[];
+  }[];
   suggested_images?: { type: string; description: string; altText: string }[];
   summary: string;
 };
@@ -198,6 +213,12 @@ export default function DraftsPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [saving, setSaving] = useState(false);
+  // Findings currently being processed by the Apply Suggestion modal. An
+  // array of one or more — single-row Apply passes one, "Apply N selected"
+  // passes the whole batch. Empty/null = modal closed.
+  const [applyingFindings, setApplyingFindings] = useState<string[] | null>(
+    null,
+  );
 
   // Format filter buttons are restricted to the active type's formats.
   // "all" means all formats for the current type, not literally every draft.
@@ -316,6 +337,39 @@ export default function DraftsPage() {
     await fetch(`/api/content/drafts/${selectedDraft.id}`, { method: "DELETE" });
     setSelectedId(null);
     refresh();
+  };
+
+  /** Persist a new body after the user accepts an AI-proposed edit. */
+  const acceptApply = async (newBody: string) => {
+    if (!selectedDraft) return;
+    const res = await fetch(`/api/content/drafts/${selectedDraft.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: newBody }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      // Reflect the change in the editor + selectedDraft so the user sees
+      // their accepted edit immediately.
+      setSelectedDraft(data.draft ?? data);
+      setEditBody(newBody);
+    }
+    setApplyingFindings(null);
+  };
+
+  /** Apply a suggested title — quick PATCH, no AI step needed. */
+  const applyTitle = async (newTitle: string) => {
+    if (!selectedDraft) return;
+    const res = await fetch(`/api/content/drafts/${selectedDraft.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newTitle }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setSelectedDraft(data.draft ?? data);
+      setEditTitle(newTitle);
+    }
   };
 
   const [importOpen, setImportOpen] = useState(false);
@@ -495,7 +549,25 @@ export default function DraftsPage() {
                 </div>
               </DashCard>
 
-              {analysis && <AnalysisCard analysis={analysis} />}
+              {analysis && (
+                <AnalysisCard
+                  analysis={analysis}
+                  onRerun={analyze}
+                  rerunning={analyzing}
+                  onApplyFindings={(fs) => setApplyingFindings(fs)}
+                  onApplyTitle={applyTitle}
+                  currentTitle={selectedDraft.title}
+                />
+              )}
+
+              {applyingFindings && selectedDraft && (
+                <ApplySuggestionModal
+                  draftId={selectedDraft.id}
+                  findings={applyingFindings}
+                  onAccept={acceptApply}
+                  onClose={() => setApplyingFindings(null)}
+                />
+              )}
             </>
           )}
         </div>
@@ -614,12 +686,107 @@ function DraftStatusDropdown({
   );
 }
 
-function AnalysisCard({ analysis }: { analysis: Analysis }) {
+function AnalysisCard({
+  analysis,
+  onRerun,
+  rerunning,
+  onApplyFindings,
+  onApplyTitle,
+  currentTitle,
+}: {
+  analysis: Analysis;
+  onRerun?: () => void;
+  rerunning?: boolean;
+  /** Called when the user invokes Apply — either via a single row's button
+   *  or via "Apply N selected". The list contains one or more finding
+   *  strings; the modal handles both shapes. */
+  onApplyFindings?: (findings: string[]) => void;
+  /** When provided, suggested titles get an inline Apply button that PATCHes
+   *  the draft title to the picked option. */
+  onApplyTitle?: (title: string) => void;
+  /** Current draft title — used to mark the active title in the picker. */
+  currentTitle?: string | null;
+}) {
+  // Set of finding strings the user has checked for batch-apply. Spans all
+  // categories (SEO + AEO + CASH + brand voice + linkability) so the user
+  // can mix and match before sending one Claude call.
+  const [selectedFindings, setSelectedFindings] = useState<Set<string>>(
+    new Set(),
+  );
+  const toggleFinding = (f: string) => {
+    setSelectedFindings((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f);
+      else next.add(f);
+      return next;
+    });
+  };
+  const clearFindingSelection = () => setSelectedFindings(new Set());
+  const handleApplySelected = () => {
+    if (selectedFindings.size === 0 || !onApplyFindings) return;
+    onApplyFindings(Array.from(selectedFindings));
+    // Don't clear yet — wait until the modal closes (the user might Discard
+    // and want to re-try). Cleared in onAccept via parent state reset.
+  };
   const cash = analysis.cash_breakdown;
   const seoBreakdown = analysis.seo_breakdown;
+  const hasMissingScores =
+    analysis.brand_voice_score === null ||
+    analysis.cash_score === null ||
+    analysis.linkability_score === null;
+  const selectedCount = selectedFindings.size;
+
   return (
     <DashCard>
-      <div className="text-sm font-medium mb-3">Analysis</div>
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <div className="text-sm font-medium">Analysis</div>
+        <div className="flex items-center gap-2">
+          {onApplyFindings && selectedCount > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={clearFindingSelection}
+                className="text-xs text-slate-500 hover:text-slate-700 underline"
+              >
+                clear
+              </button>
+              <button
+                type="button"
+                onClick={handleApplySelected}
+                className="text-xs px-2.5 py-1 rounded border border-emerald-400 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 inline-flex items-center gap-1.5 font-medium"
+                title={`Send all ${selectedCount} selected findings to Claude in one shot — faster than applying one at a time.`}
+              >
+                <span aria-hidden>✨</span>
+                Apply {selectedCount} selected
+              </button>
+            </>
+          )}
+          {onRerun && (
+            <button
+              type="button"
+              onClick={onRerun}
+              disabled={rerunning}
+              className={`text-xs px-2.5 py-1 rounded border ${
+                hasMissingScores
+                  ? "border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100"
+                  : "border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+              } disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-1.5`}
+              title={
+                hasMissingScores
+                  ? "Some scores couldn't compute — try re-running."
+                  : "Recompute all scores from scratch."
+              }
+            >
+              {rerunning ? (
+                <DashSpinner />
+              ) : (
+                <span aria-hidden>{hasMissingScores ? "⚠" : "↻"}</span>
+              )}
+              {rerunning ? "Re-running…" : "Re-run analysis"}
+            </button>
+          )}
+        </div>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <ScoreTile label="Readability" value={analysis.readability_score} />
         <ScoreTile
@@ -630,13 +797,13 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
         <ScoreTile label="AEO" value={analysis.aeo_score} />
         <ScoreTile
           label="CASH (AI cite)"
-          value={analysis.cash_score ?? 0}
+          value={analysis.cash_score}
           hint="Conversational Authority / Answer / Source / Human"
         />
         <ScoreTile label="Brand voice" value={analysis.brand_voice_score} />
         <ScoreTile
           label="Linkability"
-          value={analysis.linkability_score ?? 0}
+          value={analysis.linkability_score}
           hint="How earnable backlinks to this piece are"
         />
       </div>
@@ -671,42 +838,47 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
         {analysis.seo_findings && analysis.seo_findings.length > 0 && (
-          <div>
-            <div className="text-xs font-medium text-slate-700 mb-1">SEO findings</div>
-            <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
-              {analysis.seo_findings.map((f, i) => <li key={i}>{f}</li>)}
-            </ul>
-          </div>
+          <FindingsList
+            label="SEO findings"
+            findings={analysis.seo_findings}
+            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            selected={selectedFindings}
+            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          />
         )}
-        <div>
-          <div className="text-xs font-medium text-slate-700 mb-1">AEO findings</div>
-          <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
-            {analysis.aeo_findings.map((f, i) => <li key={i}>{f}</li>)}
-          </ul>
-        </div>
+        <FindingsList
+          label="AEO findings"
+          findings={analysis.aeo_findings}
+          onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+          selected={selectedFindings}
+          onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+        />
         {analysis.cash_findings && analysis.cash_findings.length > 0 && (
-          <div>
-            <div className="text-xs font-medium text-slate-700 mb-1">CASH findings</div>
-            <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
-              {analysis.cash_findings.map((f, i) => <li key={i}>{f}</li>)}
-            </ul>
-          </div>
+          <FindingsList
+            label="CASH findings"
+            findings={analysis.cash_findings}
+            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            selected={selectedFindings}
+            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          />
         )}
-        <div>
-          <div className="text-xs font-medium text-slate-700 mb-1">Brand voice findings</div>
-          <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
-            {analysis.brand_voice_findings.map((f, i) => <li key={i}>{f}</li>)}
-          </ul>
-        </div>
+        <FindingsList
+          label="Brand voice findings"
+          findings={analysis.brand_voice_findings}
+          onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+          selected={selectedFindings}
+          onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+        />
       </div>
       {analysis.linkability_findings && analysis.linkability_findings.length > 0 && (
         <div className="mt-4">
-          <div className="text-xs font-medium text-slate-700 mb-1">Linkability findings</div>
-          <ul className="text-xs space-y-1 list-disc pl-4 text-slate-600">
-            {analysis.linkability_findings.map((f, i) => (
-              <li key={i}>{f}</li>
-            ))}
-          </ul>
+          <FindingsList
+            label="Linkability findings"
+            findings={analysis.linkability_findings}
+            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            selected={selectedFindings}
+            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          />
         </div>
       )}
       {analysis.outreach_angles && analysis.outreach_angles.length > 0 && (
@@ -731,27 +903,65 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
       )}
       {analysis.suggested_titles && analysis.suggested_titles.length > 0 && (
         <div className="mt-4">
-          <div className="text-xs font-medium text-slate-700 mb-2">
-            Suggested titles
-            <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
-              No title set — pick one or use as inspiration
-            </span>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <div className="text-xs font-medium text-slate-700">
+              Suggested titles
+            </div>
+            {(analysis.suggested_titles_conflicts_avoided ?? 0) > 0 && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-800"
+                title={
+                  analysis.suggested_titles_dropped
+                    ?.map(
+                      (d) =>
+                        `"${d.title}" conflicts with ${d.conflicts[0]?.source}: "${d.conflicts[0]?.text}"`,
+                    )
+                    .join("\n") ?? ""
+                }
+              >
+                {analysis.suggested_titles_conflicts_avoided} conflict
+                {analysis.suggested_titles_conflicts_avoided === 1 ? "" : "s"}{" "}
+                avoided
+              </span>
+            )}
           </div>
           <ul className="space-y-1.5">
-            {analysis.suggested_titles.map((t, i) => (
-              <li
-                key={i}
-                className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
-              >
-                <span className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
-                  {i + 1}.
-                </span>
-                <span className="text-xs text-slate-800 flex-1">{t}</span>
-                <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
-                  {t.length} chars
-                </span>
-              </li>
-            ))}
+            {analysis.suggested_titles.map((t, i) => {
+              const isCurrent = currentTitle && currentTitle.trim() === t.trim();
+              return (
+                <li
+                  key={i}
+                  className={`flex items-start gap-2 rounded-md border px-3 py-2 ${
+                    isCurrent
+                      ? "border-emerald-300 bg-emerald-50/60"
+                      : "border-slate-200 bg-slate-50"
+                  }`}
+                >
+                  <span className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+                    {i + 1}.
+                  </span>
+                  <span className="text-xs text-slate-800 flex-1">{t}</span>
+                  <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
+                    {t.length} chars
+                  </span>
+                  {onApplyTitle && !isCurrent && (
+                    <button
+                      type="button"
+                      onClick={() => onApplyTitle(t)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5] shrink-0"
+                      title="Use this as the draft title"
+                    >
+                      Use
+                    </button>
+                  )}
+                  {isCurrent && (
+                    <span className="text-[10px] text-emerald-700 shrink-0">
+                      Current
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -809,6 +1019,368 @@ function AnalysisCard({ analysis }: { analysis: Analysis }) {
   );
 }
 
+/**
+ * Findings list with a per-row "Apply" button. When onApply isn't provided
+ * (e.g. for findings about meta-issues that don't have a clear in-body fix),
+ * the component falls back to the original bulleted display.
+ */
+function FindingsList({
+  label,
+  findings,
+  onApply,
+  selected,
+  onToggleSelected,
+}: {
+  label: string;
+  findings: string[];
+  /** Single-row Apply (the inline button). Receives one finding string. */
+  onApply?: (finding: string) => void;
+  /** Set of finding strings checked for batch-apply. */
+  selected?: Set<string>;
+  /** Called when the user toggles a row's checkbox. */
+  onToggleSelected?: (finding: string) => void;
+}) {
+  // Some findings describe meta-issues (missing keywords on the draft,
+  // analysis failures, scoring re-run prompts) that an in-body edit can't
+  // fix. Filter Apply out of those so users don't waste a Claude call.
+  const isApplicable = (f: string) => {
+    const lc = f.toLowerCase();
+    return !(
+      lc.includes("scoring couldn't run") ||
+      lc.includes("scoring failed") ||
+      lc.includes("re-run analysis") ||
+      lc.includes("no target keywords set") ||
+      lc.includes("recommended structured data")
+    );
+  };
+
+  // Select-all-in-this-list helper. Only operates on applicable findings.
+  const applicableCount = findings.filter(isApplicable).length;
+  const selectedHereCount = onToggleSelected
+    ? findings.filter((f) => isApplicable(f) && selected?.has(f)).length
+    : 0;
+  const allSelectedHere =
+    applicableCount > 0 && selectedHereCount === applicableCount;
+  const toggleAllInList = () => {
+    if (!onToggleSelected) return;
+    if (allSelectedHere) {
+      // Untoggle each applicable finding
+      for (const f of findings) {
+        if (isApplicable(f) && selected?.has(f)) onToggleSelected(f);
+      }
+    } else {
+      for (const f of findings) {
+        if (isApplicable(f) && !selected?.has(f)) onToggleSelected(f);
+      }
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-medium text-slate-700">{label}</div>
+        {onToggleSelected && applicableCount > 1 && (
+          <button
+            type="button"
+            onClick={toggleAllInList}
+            className="text-[10px] text-slate-500 hover:text-[#185FA5] underline"
+          >
+            {allSelectedHere ? "deselect all" : "select all"}
+          </button>
+        )}
+      </div>
+      <ul className="text-xs space-y-1.5">
+        {findings.map((f, i) => {
+          const applicable = isApplicable(f);
+          const isSelected = !!selected?.has(f);
+          return (
+            <li
+              key={i}
+              className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 ${
+                isSelected
+                  ? "border-emerald-300 bg-emerald-50/60"
+                  : "border-slate-200 bg-white/60"
+              }`}
+            >
+              {onToggleSelected && applicable ? (
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleSelected(f)}
+                  className="mt-0.5 accent-emerald-600 cursor-pointer"
+                  title="Include in batch Apply"
+                />
+              ) : (
+                <span aria-hidden className="text-slate-400 mt-0.5">
+                  ·
+                </span>
+              )}
+              <span className="flex-1 text-slate-700">{f}</span>
+              {onApply && applicable && (
+                <button
+                  type="button"
+                  onClick={() => onApply(f)}
+                  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5] shrink-0"
+                  title="Apply just this one"
+                >
+                  Apply
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Diff modal for the Apply Suggestion flow. Loads a proposed edit from the
+ * AI, shows before/after, lets the user accept or discard. The accept
+ * callback is responsible for PATCHing the draft — this component only
+ * surfaces the candidate edit.
+ */
+function ApplySuggestionModal({
+  draftId,
+  findings,
+  onAccept,
+  onClose,
+}: {
+  draftId: string;
+  /** One or more findings to apply. Multi-mode triggers a richer header
+   *  listing each finding so the user can verify the batch before accepting. */
+  findings: string[];
+  onAccept: (newBody: string) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const isMulti = findings.length > 1;
+  const [loading, setLoading] = useState(true);
+  const [accepting, setAccepting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [originalBody, setOriginalBody] = useState<string>("");
+  const [updatedBody, setUpdatedBody] = useState<string>("");
+  const [summary, setSummary] = useState<string>("");
+  const [noChange, setNoChange] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/content/drafts/${draftId}/apply-suggestion`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // Always send as an array — backend handles both keys.
+            body: JSON.stringify({ findings }),
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? "Apply failed");
+        if (cancelled) return;
+        setOriginalBody(data.original_body ?? "");
+        setUpdatedBody(data.updated_body ?? "");
+        setSummary(data.summary ?? "");
+        setNoChange(!!data.no_change);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // join() gives a stable dep value so swapping order of an identical
+    // findings list doesn't trigger a re-fetch.
+  }, [draftId, findings.join("\n")]);
+
+  const handleAccept = async () => {
+    setAccepting(true);
+    try {
+      await onAccept(updatedBody);
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-5xl max-h-[90vh] flex flex-col rounded-xl bg-white border border-slate-200 shadow-xl relative">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl"
+          aria-label="Close"
+        >
+          ×
+        </button>
+        <div className="p-5 border-b border-slate-200">
+          <h2 className="text-base font-semibold">
+            {isMulti
+              ? `Apply ${findings.length} suggestions`
+              : "Apply suggestion"}
+          </h2>
+          {isMulti ? (
+            <div className="text-xs text-slate-600 mt-1.5">
+              <div className="font-medium mb-1">Findings being applied:</div>
+              <ol className="list-decimal pl-5 space-y-0.5 max-h-24 overflow-auto">
+                {findings.map((f, i) => (
+                  <li key={i}>{f}</li>
+                ))}
+              </ol>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-600 mt-1">
+              <span className="font-medium">Finding:</span> {findings[0]}
+            </p>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="p-12 flex flex-col items-center gap-3 text-sm text-slate-600">
+            <DashSpinner />
+            {isMulti
+              ? `Asking Claude to resolve all ${findings.length} in one pass…`
+              : "Asking Claude for the smallest edit that resolves this…"}
+          </div>
+        ) : error ? (
+          <div className="p-5 text-sm text-red-700 bg-red-50 border-t border-red-200">
+            {error}
+            <div className="mt-3">
+              <DashButton variant="outline" onClick={onClose}>
+                Close
+              </DashButton>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
+              <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+                Summary
+              </div>
+              <div className="text-sm text-slate-800">
+                {summary || "(no summary returned)"}
+              </div>
+              {noChange && (
+                <div className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1">
+                  Claude decided not to change the draft. Read the summary
+                  before accepting — there&apos;s no edit to apply.
+                </div>
+              )}
+            </div>
+
+            <RedlinePanel original={originalBody} updated={updatedBody} />
+
+
+            <div className="p-4 border-t border-slate-200 flex items-center justify-end gap-2">
+              <DashButton variant="outline" onClick={onClose} disabled={accepting}>
+                Discard
+              </DashButton>
+              <DashButton onClick={handleAccept} disabled={accepting || noChange}>
+                {accepting ? <DashSpinner /> : "Accept changes"}
+              </DashButton>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Word-level redline diff between two text blobs. Renders in a single
+ * scrollable pane in the format a legal editor expects:
+ *   - Deletions: red, line-through
+ *   - Additions: green background, underlined
+ *   - Unchanged: regular color
+ *
+ * Diff is computed lazily via useMemo so re-renders during scroll don't
+ * re-run the diff algorithm. For drafts up to ~10k chars (well above our
+ * typical post length) this is sub-50ms on commodity hardware.
+ */
+function RedlinePanel({
+  original,
+  updated,
+}: {
+  original: string;
+  updated: string;
+}) {
+  const changes = useMemo<Change[]>(
+    () => diffWords(original, updated),
+    [original, updated],
+  );
+
+  const hasAnyChange = changes.some((c) => c.added || c.removed);
+
+  // Counts surfaced in the legend so the user can scan "what's the scope of
+  // this edit" without reading the whole pane.
+  const stats = useMemo(() => {
+    let added = 0;
+    let removed = 0;
+    for (const c of changes) {
+      if (c.added) added += c.value.trim() ? c.value.trim().split(/\s+/).length : 0;
+      if (c.removed) removed += c.value.trim() ? c.value.trim().split(/\s+/).length : 0;
+    }
+    return { added, removed };
+  }, [changes]);
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-2 text-[11px] bg-slate-50 border-b border-slate-200">
+        <span className="uppercase tracking-wider text-slate-500 font-medium">
+          Redline
+        </span>
+        <span className="inline-flex items-center gap-1 text-emerald-700">
+          <span className="inline-block w-3 h-3 rounded-sm bg-emerald-100 border border-emerald-400" />
+          added
+          {stats.added > 0 && (
+            <span className="tabular-nums">({stats.added})</span>
+          )}
+        </span>
+        <span className="inline-flex items-center gap-1 text-red-700">
+          <span className="inline-block w-3 h-3 rounded-sm bg-red-100 border border-red-400" />
+          removed
+          {stats.removed > 0 && (
+            <span className="tabular-nums">({stats.removed})</span>
+          )}
+        </span>
+        {!hasAnyChange && (
+          <span className="text-slate-500 italic ml-auto">
+            (no changes — text is identical)
+          </span>
+        )}
+      </div>
+      <pre className="flex-1 overflow-auto p-4 text-xs whitespace-pre-wrap font-mono text-slate-700 leading-relaxed">
+        {changes.map((c, i) => {
+          if (c.added) {
+            return (
+              <span
+                key={i}
+                className="bg-emerald-100 text-emerald-900 underline decoration-emerald-500 decoration-1"
+              >
+                {c.value}
+              </span>
+            );
+          }
+          if (c.removed) {
+            return (
+              <span
+                key={i}
+                className="bg-red-100 text-red-800 line-through decoration-red-500 decoration-1"
+              >
+                {c.value}
+              </span>
+            );
+          }
+          return <span key={i}>{c.value}</span>;
+        })}
+      </pre>
+    </div>
+  );
+}
+
 function SeoPillar({ label, value }: { label: string; value: number }) {
   const tone =
     value >= 70
@@ -832,9 +1404,25 @@ function ScoreTile({
   hint,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   hint?: string;
 }) {
+  // null means "couldn't compute" (Claude failure). Render an obvious "n/a"
+  // rather than a red 0 that misrepresents the content.
+  if (value === null) {
+    return (
+      <div
+        className="rounded-lg border border-dashed border-slate-300 p-3 bg-slate-50/60"
+        title={hint ? `${hint} — couldn't compute, re-run analysis` : "Couldn't compute — re-run analysis"}
+      >
+        <div className="text-2xl font-bold text-slate-400">n/a</div>
+        <div className="text-xs text-slate-500 mt-1">{label}</div>
+        <div className="text-[10px] text-slate-400 mt-2 italic">
+          re-run analysis
+        </div>
+      </div>
+    );
+  }
   const tone = value >= 70 ? "emerald" : value >= 40 ? "amber" : "red";
   const color = tone === "emerald" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : "text-red-700";
   return (

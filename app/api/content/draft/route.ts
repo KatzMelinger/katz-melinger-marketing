@@ -18,6 +18,26 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
+// Map the request's narrow content_type / template_key into the broader
+// content-type label that brand-voice directions are scoped by ("Blog Post",
+// "FAQ", "Practice Page", etc.). Template key wins when present because it's
+// more specific. Used to filter structure / direction skills.
+const TEMPLATE_TO_CONTENT_TYPE: Record<string, string> = {
+  blog_general: "Blog Post",
+  faq: "FAQ",
+  case_study: "Case Study",
+  newsletter: "Email Newsletter",
+  social_post: "Social Media Post",
+  webpage: "Practice Page",
+  guide: "Blog Post",
+};
+
+const CONTENT_TYPE_FALLBACK: Record<string, string> = {
+  blog: "Blog Post",
+  social: "Social Media Post",
+  email: "Email Newsletter",
+};
+
 const TEMPLATE_INSTRUCTIONS: Record<string, string> = {
   blog_general:
     "Use a practical legal explainer format with: hook, rights overview, common mistakes, and CTA.",
@@ -95,11 +115,20 @@ export async function POST(req: Request) {
           ? ["email"]
           : [];
 
+  const resolvedContentType =
+    TEMPLATE_TO_CONTENT_TYPE[templateKey] ??
+    CONTENT_TYPE_FALLBACK[contentType] ??
+    undefined;
+
   const [brandVoice, profile, skillsContext, firmContext] = useBrandVoice
     ? await Promise.all([
         getBrandVoiceContext(),
         getLatestBrandProfile(),
-        buildSkillsContext({ platforms, practiceArea }),
+        buildSkillsContext({
+          platforms,
+          practiceArea,
+          contentType: resolvedContentType,
+        }),
         getFirmContext(),
       ])
     : ["", null, "", ""];
