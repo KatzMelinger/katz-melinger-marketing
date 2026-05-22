@@ -200,7 +200,10 @@ export async function GET() {
         citationCount: (r.citations ?? []).length,
         latencyMs: r.latency_ms,
         error: r.error,
-        responsePreview: (r.response_text ?? "").slice(0, 320),
+        // Send the full response (capped at 8k chars as a safety belt — real
+        // LLM answers are usually under 3k). The dashboard UI shows a short
+        // preview by default and lets the user expand on demand.
+        responseText: (r.response_text ?? "").slice(0, 8000),
       }));
     return {
       promptId: pid,

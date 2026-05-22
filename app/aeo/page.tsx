@@ -68,7 +68,9 @@ type Dashboard = {
       citationCount: number;
       latencyMs: number | null;
       error: string | null;
-      responsePreview: string;
+      /** Full LLM response (capped at 8k chars server-side). UI shows a
+       *  short preview by default and expands on Show more. */
+      responseText: string;
     }[];
   }[];
 };
@@ -194,6 +196,37 @@ function Bar({ pct, tone }: { pct: number; tone?: "self" | "competitor" }) {
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString();
+}
+
+/**
+ * Renders an LLM response with a collapsed-by-default preview and a
+ * Show more / Show less toggle. Used for each provider's answer in the
+ * prompt detail rows so the page stays scannable but the user can dig in
+ * without losing context (no modal, no extra request).
+ *
+ * The preview length (~360 chars) is tuned to fit three lines at the
+ * page's body font size — long enough to show the opening of the answer,
+ * short enough that 4 providers stack without dominating the screen.
+ */
+function ExpandableResponse({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const PREVIEW = 360;
+  const isLong = text.length > PREVIEW;
+  const shown = expanded || !isLong ? text : text.slice(0, PREVIEW).trimEnd() + "…";
+  return (
+    <div className="space-y-1">
+      <p className="text-xs opacity-80 whitespace-pre-wrap">{shown}</p>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="text-[11px] font-medium text-blue-600 dark:text-blue-300 hover:underline"
+        >
+          {expanded ? "Show less" : `Show more (${text.length.toLocaleString()} chars)`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function sentimentTone(s: string | null): "emerald" | "red" | "amber" | "neutral" {
@@ -452,7 +485,7 @@ function OverviewTab({ dashboard, actions }: { dashboard: Dashboard; actions: Co
           {dashboard.shareOfVoice.map((sov) => (
             <div key={sov.provider} className="space-y-2">
               <div className="text-sm font-medium capitalize">{sov.provider}</div>
-              {sov.brands.length === 0 && <p className="text-xs opacity-60">No brand mentions in this provider's answers.</p>}
+              {sov.brands.length === 0 && <p className="text-xs opacity-60">No brand mentions in this provider&apos;s answers.</p>}
               {sov.brands.slice(0, 8).map((b) => (
                 <div key={b.name} className="flex items-center gap-3 text-sm">
                   <span className="w-44 truncate opacity-90 flex items-center gap-2">
@@ -516,10 +549,10 @@ function NoShowRecommendations({ pd }: { pd: Dashboard["promptDetail"][number] }
         body: JSON.stringify({
           prompt: pd.prompt,
           providerResponses: pd.cells
-            .filter((c) => !c.error && c.responsePreview)
+            .filter((c) => !c.error && c.responseText)
             .map((c) => ({
               provider: c.provider,
-              text: c.responsePreview,
+              text: c.responseText,
               citations: [],
             })),
         }),
@@ -539,7 +572,7 @@ function NoShowRecommendations({ pd }: { pd: Dashboard["promptDetail"][number] }
       <div className="p-3 border-t border-black/10 dark:border-white/10 bg-amber-50/50 dark:bg-amber-900/10">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="text-xs text-amber-900 dark:text-amber-200 max-w-md">
-            The firm didn't appear in any LLM's answer here. Ask Claude what
+            The firm didn&apos;t appear in any LLM&apos;s answer here. Ask Claude what
             content / schema / citations would change that.
           </div>
           <button
@@ -719,7 +752,7 @@ function PromptRow({
               {c.error ? (
                 <p className="text-xs text-red-700 dark:text-red-400 font-mono">{c.error}</p>
               ) : (
-                <p className="text-xs opacity-80 whitespace-pre-wrap">{c.responsePreview}{c.responsePreview.length >= 320 ? "…" : ""}</p>
+                <ExpandableResponse text={c.responseText} />
               )}
             </div>
           ))}
