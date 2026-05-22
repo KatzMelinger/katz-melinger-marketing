@@ -9,6 +9,7 @@ import {
   SEMRUSH_DATABASE,
   SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
+import { cachedSemrushFetch } from "@/lib/semrush-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -49,8 +50,8 @@ export async function GET() {
     });
 
     const [ranksRes, blRes] = await Promise.all([
-      fetch(ranksUrl, { cache: "no-store" }),
-      fetch(backlinksUrl, { cache: "no-store" }),
+      cachedSemrushFetch(ranksUrl),
+      cachedSemrushFetch(backlinksUrl),
     ]);
 
     let organicKeywords = 0;

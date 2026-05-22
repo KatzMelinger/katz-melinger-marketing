@@ -7,6 +7,7 @@ import {
   semrushAnalyticsUrl,
   SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
+import { cachedSemrushFetch } from "@/lib/semrush-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function GET() {
       export_decode: "1",
     });
 
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await cachedSemrushFetch(url);
     const text = await res.text();
     const parsed = parseSemrushCsv(text);
     if (!parsed || parsed.rows.length === 0) {

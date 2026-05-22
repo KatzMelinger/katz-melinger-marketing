@@ -9,6 +9,7 @@ import {
   SEMRUSH_DATABASE,
   SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
+import { cachedSemrushFetch } from "@/lib/semrush-cache";
 import { listTargets } from "@/lib/seo-targets";
 
 type SemrushRecord = Record<string, string>;
@@ -111,7 +112,7 @@ async function fetchSemrushRowsFromSeo(
     return [];
   }
   const url = semrushSeoUrl({ key, database: SEMRUSH_DATABASE, ...params });
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await cachedSemrushFetch(url);
   const text = await res.text();
   const parsed = parseSemrushCsv(text);
   if (!parsed) {
@@ -129,7 +130,7 @@ async function fetchSemrushRowsFromAnalytics(
     return [];
   }
   const url = semrushAnalyticsUrl({ key, ...params });
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await cachedSemrushFetch(url);
   const text = await res.text();
   const parsed = parseSemrushCsv(text);
   if (!parsed) {

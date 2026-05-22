@@ -23,6 +23,8 @@
 export const SEMRUSH_DOMAIN = "katzmelinger.com";
 export const SEMRUSH_DATABASE = "us";
 
+import { cachedSemrushFetch } from "./semrush-cache";
+
 const SEO_BASE = "https://api.semrush.com/";
 const ANALYTICS_BASE = "https://api.semrush.com/analytics/v1/";
 
@@ -172,10 +174,7 @@ export async function getDomainKeywords(
     export_columns: "Ph,Po,Pp,Pd,Nq,Cp,Ur,Tr,Tc,Co,Nr,Td",
   });
 
-  const res = await fetch(`${SEO_BASE}?${params.toString()}`, {
-    method: "GET",
-    signal: AbortSignal.timeout(30_000),
-  });
+  const res = await cachedSemrushFetch(`${SEO_BASE}?${params.toString()}`);
 
   if (!res.ok) {
     throw new Error(`Semrush API error: ${res.status} ${res.statusText}`);
@@ -232,10 +231,7 @@ export async function getKeywordDifficulty(
     });
 
     try {
-      const res = await fetch(`${SEO_BASE}?${params.toString()}`, {
-        method: "GET",
-        signal: AbortSignal.timeout(30_000),
-      });
+      const res = await cachedSemrushFetch(`${SEO_BASE}?${params.toString()}`);
       if (!res.ok) continue;
 
       const text = await res.text();
@@ -286,10 +282,7 @@ export async function getPhraseMetrics(
     });
 
     try {
-      const res = await fetch(`${SEO_BASE}?${params.toString()}`, {
-        method: "GET",
-        signal: AbortSignal.timeout(30_000),
-      });
+      const res = await cachedSemrushFetch(`${SEO_BASE}?${params.toString()}`);
       if (!res.ok) continue;
 
       const text = await res.text();
