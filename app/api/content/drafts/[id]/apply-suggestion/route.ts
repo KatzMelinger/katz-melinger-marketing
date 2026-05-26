@@ -21,7 +21,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   CONTENT_LONG_FORM_MODEL,
-  extractJSON,
   getAnthropic,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
@@ -105,26 +104,56 @@ Current draft body:
 ${draft.body as string}
 """
 
-Return JSON only:
-{
-  "updated_body": "<full updated draft body>",
-  "summary": "<one or two sentences: what specifically did you change, and where${multi ? ". If you skipped any items, name them and say why" : ""}>",
-  "no_change": <true|false>  // true if you decided not to edit (explain in summary)
-}`;
+Call the apply_edit tool with the complete updated body, a short summary of what changed${multi ? " (and which items, if any, you skipped and why)" : ""}, and the no_change flag.`;
 
   try {
     const resp = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
       max_tokens: 8000,
       system,
+      tools: [
+        {
+          name: "apply_edit",
+          description:
+            "Return the updated draft body, a one-or-two-sentence change summary, and a no_change flag indicating whether you decided to leave the draft unchanged.",
+          input_schema: {
+            type: "object" as const,
+            properties: {
+              updated_body: {
+                type: "string",
+                description:
+                  "The COMPLETE updated draft body, in the same markdown conventions as the original. If you decided not to edit, return the original body verbatim.",
+              },
+              summary: {
+                type: "string",
+                description:
+                  "One or two sentences describing exactly what you changed and where. If no_change is true, explain why.",
+              },
+              no_change: {
+                type: "boolean",
+                description:
+                  "True if you decided not to edit the draft at all (e.g. honoring any item would require inventing facts).",
+              },
+            },
+            required: ["updated_body", "summary", "no_change"],
+          },
+        },
+      ],
+      tool_choice: { type: "tool", name: "apply_edit" },
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
-    const parsed = extractJSON<{
-      updated_body?: string;
-      summary?: string;
-      no_change?: boolean;
-    }>(text);
+
+    // tool_choice forces a tool_use block — but the SDK still types content
+    // as a union, so we narrow defensively.
+    const toolUse = resp.content.find((b) => b.type === "tool_use");
+    const parsed =
+      toolUse && toolUse.type === "tool_use"
+        ? (toolUse.input as {
+            updated_body?: string;
+            summary?: string;
+            no_change?: boolean;
+          })
+        : null;
 
     const updated_body =
       typeof parsed?.updated_body === "string" && parsed.updated_body.trim()

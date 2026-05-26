@@ -99,11 +99,70 @@ export default function BatchPage() {
   const [drafts, setDrafts] = useState<GeneratedDraft[]>([]);
   const [batchId, setBatchId] = useState<string | null>(null);
 
+  // Optional context surfaced when the user landed here from the Trending
+  // pages (Content Studio Intelligence or Social Ops Trends). We don't have
+  // a dedicated "context" field on the batch generator, so we display the
+  // background in a banner — and the topic itself already carries the angle.
+  const [trendContext, setTrendContext] = useState<{
+    angle: string | null;
+    context: string | null;
+    sourceDate: string | null;
+  } | null>(null);
+
   useEffect(() => {
     fetch("/api/content/sources")
       .then((r) => r.json())
       .then((d) => setSources(d.sources ?? []))
       .catch(() => {});
+  }, []);
+
+  // Pre-fill from URL params when arriving from a trend / keyword card.
+  // Runs once on mount; intentionally not reactive to user typing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const qTopic = searchParams.get("topic");
+    if (qTopic) setTopic(qTopic);
+
+    const qPA = searchParams.get("practiceArea");
+    if (qPA) {
+      // Fuzzy match against the batch page's PRACTICE_AREAS list so labels
+      // from the trend endpoint (e.g. "Wage & Hour Claims") map onto the
+      // closest option here (e.g. "Wage & Hour").
+      const match = PRACTICE_AREAS.find(
+        (p) =>
+          p.toLowerCase() === qPA.toLowerCase() ||
+          qPA.toLowerCase().includes(p.toLowerCase()) ||
+          p.toLowerCase().includes(qPA.toLowerCase()),
+      );
+      if (match) setPracticeArea(match);
+    }
+
+    const qKeywords = searchParams.get("keywords");
+    if (qKeywords) setTargetKeywords(qKeywords);
+
+    const qFormats = searchParams.get("formats");
+    if (qFormats) {
+      const wanted = qFormats
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      const validFormats = FORMATS.map((f) => f.id);
+      const matched = wanted.filter((w): w is FormatKey =>
+        validFormats.includes(w as FormatKey),
+      );
+      if (matched.length > 0) setSelected(new Set(matched));
+    }
+
+    const qAngle = searchParams.get("angle");
+    const qContext = searchParams.get("context");
+    const qSourceDate = searchParams.get("sourceDate");
+    if (qAngle || qContext || qSourceDate) {
+      setTrendContext({
+        angle: qAngle,
+        context: qContext,
+        sourceDate: qSourceDate,
+      });
+    }
   }, []);
 
   const toggleFormat = (f: FormatKey) => {
@@ -120,11 +179,27 @@ export default function BatchPage() {
     setDrafts([]);
     setBatchId(null);
     try {
+      // If we arrived from a trend, fold the angle + why-trending into the
+      // topic so the existing /api/content/batches endpoint (which only
+      // accepts `topic`) gets the full picture without a new field.
+      const topicWithContext = trendContext
+        ? [
+            topic.trim(),
+            trendContext.angle ? `Angle: ${trendContext.angle}` : null,
+            trendContext.context ? `Why trending: ${trendContext.context}` : null,
+            trendContext.sourceDate
+              ? `Source dated: ${trendContext.sourceDate}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        : topic.trim();
+
       const res = await fetch("/api/content/batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: topic.trim(),
+          topic: topicWithContext,
           practiceArea,
           tone,
           formats: Array.from(selected),
@@ -158,6 +233,44 @@ export default function BatchPage() {
 
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
+          {trendContext ? (
+            <DashCard className="border-amber-200 bg-amber-50/40">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs uppercase tracking-wider text-amber-800">
+                    From trending
+                    {trendContext.sourceDate
+                      ? ` · ${new Date(
+                          trendContext.sourceDate + "T00:00:00Z",
+                        ).toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}`
+                      : ""}
+                  </div>
+                  {trendContext.angle ? (
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      Angle: {trendContext.angle}
+                    </p>
+                  ) : null}
+                  {trendContext.context ? (
+                    <p className="mt-1 text-xs text-slate-700">
+                      Why it&apos;s trending: {trendContext.context}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTrendContext(null)}
+                  className="shrink-0 text-xs text-slate-500 hover:text-slate-800"
+                  aria-label="Dismiss trend context"
+                >
+                  ×
+                </button>
+              </div>
+            </DashCard>
+          ) : null}
           <DashCard>
             <div className="space-y-3">
               <div className="text-xs uppercase tracking-wider text-slate-500">

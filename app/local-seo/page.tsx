@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { GbpAiResponder } from "@/components/gbp-ai-responder";
 import { MarketingNav } from "@/components/marketing-nav";
 
 const BG = "#ffffff";
@@ -1164,6 +1165,8 @@ export default function LocalSeoPlatformPage() {
                 </table>
               </div>
             </section>
+
+            <GbpAiResponder reviews={gbpReviews} />
 
             <div className="grid gap-6 lg:grid-cols-2">
               <section

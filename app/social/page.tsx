@@ -141,6 +141,13 @@ export default async function SocialHubPage() {
           : "Configure Metricool",
     },
     {
+      href: "/social/trends",
+      label: "Trends & Playbooks",
+      description:
+        "What's trending in NY/NJ employment law right now, plus per-platform playbooks (hashtags, hooks, captions) for LinkedIn, Instagram, TikTok, Facebook.",
+      metric: "AI-generated",
+    },
+    {
       href: "/community",
       label: "Community Status",
       description:

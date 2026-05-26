@@ -11,7 +11,7 @@
  * (Multi-format Batch + AI Search), so they're not duplicated here.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ContentNav } from "@/components/content-nav";
 import {
@@ -22,6 +22,14 @@ import {
   DashSpinner,
   DashPill,
 } from "@/components/dashboard-ui";
+import {
+  clearTrendRuns,
+  deleteTrendRun,
+  listTrendRuns,
+  saveTrendRun,
+  TREND_RUNS_CHANGE_EVENT,
+  type TrendRun,
+} from "@/lib/recent-trends";
 
 type Tab = "topics" | "trends" | "metadata" | "social";
 
@@ -62,7 +70,34 @@ type TrendRow = {
   suggestedAngle: string;
   urgency: "hot" | "warm" | "evergreen";
   platforms: string[];
+  sourceDate?: string | null;
 };
+
+const MONTHS_BACK_OPTIONS = [
+  { value: 3, label: "Last 3 months" },
+  { value: 6, label: "Last 6 months" },
+  { value: 12, label: "Last 12 months" },
+];
+
+/**
+ * Build the URL into /content/batch with as much trend context as we have.
+ * Keeps it consistent with how tracked-keyword flows pass context into the
+ * generator — every relevant field becomes a query param so the batch page
+ * can pre-fill its form.
+ */
+function trendDraftHref(t: TrendRow): string {
+  const params = new URLSearchParams();
+  params.set("topic", t.suggestedAngle || t.topic);
+  if (t.suggestedAngle && t.suggestedAngle !== t.topic) {
+    params.set("angle", t.suggestedAngle);
+  }
+  if (t.whyTrending) params.set("context", t.whyTrending);
+  if (t.platforms && t.platforms.length > 0) {
+    params.set("formats", t.platforms.join(","));
+  }
+  if (t.sourceDate) params.set("sourceDate", t.sourceDate);
+  return `/content/batch?${params.toString()}`;
+}
 
 type Metadata = {
   metaTitle?: string;
@@ -88,6 +123,14 @@ function urgencyTone(u: string): "red" | "amber" | "emerald" {
 export default function IntelligencePage() {
   const [tab, setTab] = useState<Tab>("topics");
   const [practiceArea, setPracticeArea] = useState("All");
+  const [monthsBack, setMonthsBack] = useState<number>(6);
+  const [trendMeta, setTrendMeta] = useState<{
+    today?: string;
+    cutoff?: string;
+    monthsBack?: number;
+    droppedStale?: number;
+    droppedMissingDate?: number;
+  } | null>(null);
   const [topics, setTopics] = useState<TopicRow[]>([]);
   const [trends, setTrends] = useState<TrendRow[]>([]);
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -99,6 +142,21 @@ export default function IntelligencePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Recent trend runs (Trending tab) — persisted in localStorage so revisiting
+  // the page doesn't lose history and we don't have to re-spend Claude calls.
+  const [recentRuns, setRecentRuns] = useState<TrendRun[]>([]);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  useEffect(() => {
+    const sync = () => setRecentRuns(listTrendRuns());
+    sync();
+    window.addEventListener("storage", sync);
+    window.addEventListener(TREND_RUNS_CHANGE_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(TREND_RUNS_CHANGE_EVENT, sync);
+    };
+  }, []);
 
   const copy = async (value: string, key: string) => {
     await navigator.clipboard.writeText(value);
@@ -132,16 +190,43 @@ export default function IntelligencePage() {
       const res = await fetch("/api/content/intelligence/trends", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ practiceArea }),
+        body: JSON.stringify({ practiceArea, monthsBack }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed");
-      setTrends(data.trends ?? []);
+      const fresh = (data.trends ?? []) as TrendRow[];
+      setTrends(fresh);
+      setTrendMeta(data.meta ?? null);
+      const saved = saveTrendRun({ practiceArea, monthsBack, trends: fresh });
+      setActiveRunId(saved?.id ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadRun = (run: TrendRun) => {
+    setPracticeArea(run.practiceArea);
+    if (typeof run.monthsBack === "number") setMonthsBack(run.monthsBack);
+    setTrends(run.trends as TrendRow[]);
+    setActiveRunId(run.id);
+    setTrendMeta(null);
+    setError(null);
+  };
+
+  const removeRun = (id: string) => {
+    deleteTrendRun(id);
+    if (activeRunId === id) {
+      setActiveRunId(null);
+      setTrends([]);
+    }
+  };
+
+  const clearAllRuns = () => {
+    clearTrendRuns();
+    setActiveRunId(null);
+    setTrends([]);
   };
 
   const fetchSocial = async () => {
@@ -308,11 +393,116 @@ export default function IntelligencePage() {
                   ))}
                 </DashSelect>
               </div>
+              <div className="min-w-48">
+                <label className="text-xs font-medium text-slate-700">Recency</label>
+                <DashSelect
+                  value={String(monthsBack)}
+                  onChange={(e) => setMonthsBack(Number(e.target.value))}
+                  className="w-full mt-1"
+                >
+                  {MONTHS_BACK_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </DashSelect>
+              </div>
               <DashButton onClick={fetchTrends} disabled={loading}>
                 {loading ? <DashSpinner /> : "Find trending topics"}
               </DashButton>
             </div>
+            {trendMeta?.cutoff ? (
+              <p className="mt-3 text-xs text-slate-500">
+                Showing events on or after{" "}
+                <span className="font-medium text-slate-700">
+                  {new Date(trendMeta.cutoff + "T00:00:00Z").toLocaleDateString(
+                    undefined,
+                    { year: "numeric", month: "short", day: "numeric" },
+                  )}
+                </span>
+                {(trendMeta.droppedStale ?? 0) +
+                  (trendMeta.droppedMissingDate ?? 0) >
+                0 ? (
+                  <>
+                    {" "}
+                    · filtered out{" "}
+                    {(trendMeta.droppedStale ?? 0) +
+                      (trendMeta.droppedMissingDate ?? 0)}{" "}
+                    stale / undated item(s)
+                  </>
+                ) : null}
+              </p>
+            ) : null}
           </DashCard>
+
+          {recentRuns.length > 0 && (
+            <DashCard>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Recent runs
+                </h3>
+                <button
+                  type="button"
+                  onClick={clearAllRuns}
+                  className="text-xs text-slate-500 hover:text-red-700"
+                >
+                  Clear all
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">
+                Saved locally in your browser. Click a run to reopen its results
+                without re-running the AI.
+              </p>
+              <ul className="divide-y divide-slate-100">
+                {recentRuns.map((run) => {
+                  const isActive = run.id === activeRunId;
+                  const when = new Date(run.createdAt);
+                  return (
+                    <li
+                      key={run.id}
+                      className={`flex items-center justify-between gap-3 py-2 text-sm ${
+                        isActive ? "bg-[#185FA5]/5 -mx-2 px-2 rounded" : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => loadRun(run)}
+                        className="flex-1 text-left flex items-center gap-2 min-w-0"
+                      >
+                        <DashPill tone={isActive ? "blue" : "neutral"}>
+                          {run.practiceArea}
+                        </DashPill>
+                        <span className="text-xs text-slate-500 shrink-0">
+                          {when.toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        <span className="text-xs text-slate-600 truncate">
+                          {run.trends.length} topic
+                          {run.trends.length === 1 ? "" : "s"}
+                          {run.trends[0]
+                            ? ` · "${run.trends[0].topic}"`
+                            : ""}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeRun(run.id)}
+                        className="shrink-0 text-xs text-slate-400 hover:text-red-700 px-1"
+                        aria-label="Delete this run"
+                        title="Delete this run"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </DashCard>
+          )}
 
           {trends.length > 0 && (
             <div className="space-y-3">
@@ -320,7 +510,17 @@ export default function IntelligencePage() {
                 <DashCard key={i}>
                   <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
                     <h3 className="text-sm font-semibold text-slate-900">{t.topic}</h3>
-                    <DashPill tone={urgencyTone(t.urgency)}>{t.urgency}</DashPill>
+                    <div className="flex items-center gap-1.5">
+                      {t.sourceDate ? (
+                        <span className="text-[11px] text-slate-500">
+                          {new Date(t.sourceDate + "T00:00:00Z").toLocaleDateString(
+                            undefined,
+                            { year: "numeric", month: "short", day: "numeric" },
+                          )}
+                        </span>
+                      ) : null}
+                      <DashPill tone={urgencyTone(t.urgency)}>{t.urgency}</DashPill>
+                    </div>
                   </div>
                   <p className="text-xs text-slate-600 mb-2">{t.whyTrending}</p>
                   <div className="bg-[#185FA5]/5 border border-[#185FA5]/20 rounded-md p-2 mb-2">
@@ -336,7 +536,7 @@ export default function IntelligencePage() {
                       ))}
                     </div>
                     <Link
-                      href={`/content/batch?topic=${encodeURIComponent(t.suggestedAngle || t.topic)}`}
+                      href={trendDraftHref(t)}
                       className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
                     >
                       → Generate posts

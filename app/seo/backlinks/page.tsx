@@ -209,6 +209,20 @@ export default function SeoBacklinksPage() {
     return filtered;
   }, [data?.domains, domainSearch, domainSort]);
 
+  // Link quality scoring view excludes domains we've already disavowed in
+  // Google Search Console — they shouldn't count toward our visible link
+  // profile because Google is being told to ignore them. We still keep the
+  // raw `filteredDomains` for the drill-downs (All / By authority) where the
+  // intent is to see everything in the dataset.
+  const qualityScoreDomains = useMemo(
+    () =>
+      filteredDomains.filter(
+        (d) => disavowActions[d.domain]?.status !== "disavowed",
+      ),
+    [filteredDomains, disavowActions],
+  );
+  const disavowedHiddenCount = filteredDomains.length - qualityScoreDomains.length;
+
   const toxicDomains = useMemo(
     () => (data?.domains ?? []).filter((d) => d.toxicityRisk === "high"),
     [data?.domains],
@@ -451,8 +465,15 @@ export default function SeoBacklinksPage() {
               </select>
             </div>
           </div>
+          {disavowedHiddenCount > 0 ? (
+            <p className="mb-2 text-xs text-slate-500">
+              Hiding {disavowedHiddenCount} disavowed domain
+              {disavowedHiddenCount === 1 ? "" : "s"} — these don&apos;t count toward
+              link quality because Google is being told to ignore them.
+            </p>
+          ) : null}
           <DomainsTable
-            rows={filteredDomains.slice(0, 30)}
+            rows={qualityScoreDomains.slice(0, 30)}
             expandedDomain={expandedDomain}
             onToggle={toggleDomainExpand}
             samples={domainSamples}
