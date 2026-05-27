@@ -59,6 +59,7 @@ const SOCIAL_ROUTES: Route[] = [
   { href: "/reviews", label: "Reviews" },
   { href: "/local-seo", label: "Local SEO + GBP" },
   { href: "/content", label: "Content" },
+  { href: "/content/images", label: "Images" },
   { href: "/brand-voice", label: "Brand voice" },
 ];
 

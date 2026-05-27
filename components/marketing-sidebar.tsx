@@ -35,6 +35,13 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "AI Tools",
+    items: [
+      { label: "KM Agent", href: "/agent", icon: "💬" },
+      { label: "Image Generator", href: "/content/images", icon: "🖼" },
+    ],
+  },
+  {
     label: "SEO",
     items: [
       { label: "Keyword Tracker", href: "/seo/keywords", icon: "⌕" },
@@ -44,10 +51,16 @@ const GROUPS: NavGroup[] = [
       { label: "Opportunities", href: "/seo/opportunities", icon: "✨" },
       { label: "Cannibalization", href: "/seo/cannibalization", icon: "⚠" },
       { label: "Internal Links", href: "/seo/internal-links", icon: "⇄" },
+      { label: "Link Strategy", href: "/seo/link-strategy", icon: "🧩" },
+      { label: "Topical Maps", href: "/seo/topical-maps", icon: "🗺" },
+      { label: "Suggestions", href: "/seo/suggestions", icon: "📋" },
+      { label: "Content Generator", href: "/seo/generator", icon: "✎" },
       { label: "PR Pitches", href: "/seo/pr-pitches", icon: "📰" },
       { label: "Local SEO", href: "/local-seo", icon: "⌖" },
+      { label: "Local Listings", href: "/local", icon: "📍" },
       { label: "Keyword Research", href: "/keyword-research", icon: "🔎" },
       { label: "Search Console", href: "/search-console", icon: "🔍" },
+      { label: "Recent Activity", href: "/seo/recent", icon: "🕒" },
     ],
   },
   {
@@ -55,6 +68,8 @@ const GROUPS: NavGroup[] = [
     items: [
       { label: "AEO", href: "/aeo", icon: "✦" },
       { label: "AI Search", href: "/ai-search", icon: "🤖" },
+      { label: "AI Referrals", href: "/ai/referrals", icon: "↗" },
+      { label: "Bot Crawls", href: "/ai/bot-traffic", icon: "🕷" },
       { label: "llms.txt", href: "/llms-txt", icon: "📜" },
       { label: "Prompts", href: "/prompts", icon: "✨" },
       { label: "Clarity", href: "/clarity", icon: "🔥" },
@@ -65,6 +80,7 @@ const GROUPS: NavGroup[] = [
     label: "Social",
     items: [
       { label: "Analytics", href: "/social/analytics", icon: "📊" },
+      { label: "Trends & Playbooks", href: "/social/trends", icon: "🔥" },
       { label: "Community", href: "/community", icon: "💬" },
       { label: "Reviews", href: "/reviews", icon: "★" },
     ],
@@ -80,6 +96,20 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Content",
+    items: [
+      { label: "Overview", href: "/content", icon: "✎" },
+      { label: "Intelligence", href: "/content/intelligence", icon: "💡" },
+      { label: "Batch Generator", href: "/content/batch", icon: "🧪" },
+      { label: "Drafts", href: "/content/drafts", icon: "📝" },
+      { label: "KM Generator", href: "/content/km", icon: "🎨" },
+      { label: "Images", href: "/content/images", icon: "🖼" },
+      { label: "Pipeline", href: "/content/pipeline", icon: "▥" },
+      { label: "Skills", href: "/content/skills", icon: "📚" },
+      { label: "Sources", href: "/content/sources", icon: "📥" },
+    ],
+  },
+  {
     label: "Cross-hub",
     items: [
       { label: "Recommendations", href: "/recommendations", icon: "💡" },
@@ -92,7 +122,6 @@ const GROUPS: NavGroup[] = [
   {
     label: "Workspace",
     items: [
-      { label: "Content", href: "/content", icon: "✎" },
       { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
       { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
       { label: "Integrations", href: "/integrations", icon: "🔌", adminOnly: true },

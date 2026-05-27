@@ -38,6 +38,10 @@ import {
   TREND_RUNS_CHANGE_EVENT,
   type TrendRun,
 } from "@/lib/recent-trends";
+import {
+  latestPlaybookRun,
+  savePlaybookRun,
+} from "@/lib/recent-playbooks";
 
 type Tab = "trending" | "playbook";
 
@@ -144,6 +148,16 @@ export default function SocialTrendsPage() {
     };
   }, []);
 
+  // Restore the last playbook on mount so navigating away doesn't lose it.
+  useEffect(() => {
+    const last = latestPlaybookRun();
+    if (!last) return;
+    setPlaybook(last.playbook);
+    if (!socialTopic) setSocialTopic(last.topic);
+    setSocialPlatform(last.platform as SocialPlatform);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const copy = async (value: string, key: string) => {
     await navigator.clipboard.writeText(value);
     setCopied(key);
@@ -211,7 +225,15 @@ export default function SocialTrendsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed");
-      setPlaybook(data.playbook ?? null);
+      const next = data.playbook ?? null;
+      setPlaybook(next);
+      if (next) {
+        savePlaybookRun({
+          topic: socialTopic.trim(),
+          platform: socialPlatform,
+          playbook: next,
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -636,9 +658,22 @@ export default function SocialTrendsPage() {
                 {playbook.visual_ideas && playbook.visual_ideas.length > 0 ? (
                   <DashCard>
                     <h3 className="text-sm font-semibold mb-2">Visual treatment ideas</h3>
-                    <ul className="space-y-1 text-sm text-slate-700 list-disc pl-5">
+                    <ul className="space-y-2 text-sm text-slate-700">
                       {playbook.visual_ideas.map((v, i) => (
-                        <li key={i}>{v}</li>
+                        <li
+                          key={i}
+                          className="flex items-start justify-between gap-2 bg-slate-50 border border-slate-200 rounded-md p-3"
+                        >
+                          <span className="whitespace-pre-wrap">{v}</span>
+                          <a
+                            href={`/content/images?prompt=${encodeURIComponent(v)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400 hover:bg-white"
+                          >
+                            Create image
+                          </a>
+                        </li>
                       ))}
                     </ul>
                   </DashCard>

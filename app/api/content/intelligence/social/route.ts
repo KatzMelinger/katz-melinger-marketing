@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getFirmContext } from "@/lib/firm-context";
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -91,38 +91,92 @@ ${PLATFORM_RULES[platform]}`;
   const user = `Topic: "${topic}"
 Platform: ${platform}
 
-Generate a complete social media playbook. Return JSON only:
-
-{
-  "hashtags": {
-    "broad": ["3-5 high-volume general hashtags"],
-    "niche": ["5-8 topic-specific or geo-targeted hashtags"]
-  },
-  "hooks": [
-    "3 short-form video hooks (15-60s scripts). Each is 1-3 sentences max, optimized for platform's first 3 seconds. Format: 'HOOK: [opening line] | PAYOFF: [what comes after]'."
-  ],
-  "captions": [
-    "5 caption variants of different lengths and tones (urgent, educational, story-driven, list-style, question-led)"
-  ],
-  "best_times": "1-2 sentence recommendation on best days/hours to post on this platform for the firm's audience (workers in NY/NJ).",
-  "visual_ideas": [
-    "3-5 specific visual treatment ideas: composition, on-screen text, b-roll, props, location"
-  ],
-  "platform_tips": [
-    "3-5 platform-specific dos and don'ts that apply to this topic"
-  ]
-}`;
+Generate a complete social media playbook for this topic on ${platform}. Call the return_playbook tool with the full result.`;
 
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
       max_tokens: 4096,
       system,
+      tools: [
+        {
+          name: "return_playbook",
+          description:
+            "Return a complete platform-specific social media playbook: hashtag pack, video hooks, captions, posting times, visual ideas, and platform-specific tips.",
+          input_schema: {
+            type: "object" as const,
+            properties: {
+              hashtags: {
+                type: "object",
+                description: "Hashtag pack split into broad and niche.",
+                properties: {
+                  broad: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "3-5 high-volume general hashtags.",
+                  },
+                  niche: {
+                    type: "array",
+                    items: { type: "string" },
+                    description:
+                      "5-8 topic-specific or geo-targeted hashtags.",
+                  },
+                },
+                required: ["broad", "niche"],
+              },
+              hooks: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "3 short-form video hooks (15-60s). Each is 1-3 sentences, optimized for the platform's first 3 seconds. Format: 'HOOK: [opening line] | PAYOFF: [what comes after]'.",
+              },
+              captions: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "5 caption variants of different lengths and tones (urgent, educational, story-driven, list-style, question-led).",
+              },
+              best_times: {
+                type: "string",
+                description:
+                  "1-2 sentence recommendation on best days/hours to post on this platform for the firm's audience (workers in NY/NJ).",
+              },
+              visual_ideas: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "3-5 specific visual treatment ideas: composition, on-screen text, b-roll, props, location.",
+              },
+              platform_tips: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "3-5 platform-specific dos and don'ts that apply to this topic.",
+              },
+            },
+            required: [
+              "hashtags",
+              "hooks",
+              "captions",
+              "best_times",
+              "visual_ideas",
+              "platform_tips",
+            ],
+          },
+        },
+      ],
+      tool_choice: { type: "tool", name: "return_playbook" },
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
-    const playbook = extractJSON(text);
-    return NextResponse.json({ playbook, platform, topic });
+
+    const toolUse = resp.content.find((b) => b.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") {
+      return NextResponse.json(
+        { error: "Model did not return a playbook" },
+        { status: 502 },
+      );
+    }
+    return NextResponse.json({ playbook: toolUse.input, platform, topic });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to generate playbook";
     return NextResponse.json({ error: msg }, { status: 500 });

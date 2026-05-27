@@ -970,7 +970,7 @@ function AnalysisCard({
           <div className="text-xs font-medium text-slate-700 mb-2">
             Suggested images
             <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
-              Hand to design or feed into Midjourney / DALL-E
+              Click Create to generate, or hand off to Midjourney / DALL-E
             </span>
           </div>
           <ul className="space-y-2">
@@ -979,10 +979,20 @@ function AnalysisCard({
                 key={i}
                 className="rounded-md border border-slate-200 bg-white px-3 py-2"
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2">
                   <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] uppercase tracking-wider text-violet-700">
                     {img.type}
                   </span>
+                  <a
+                    href={`/content/images?prompt=${encodeURIComponent(
+                      `${img.type ? `${img.type}: ` : ""}${img.description}`,
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50"
+                  >
+                    Create image
+                  </a>
                 </div>
                 <div className="mt-1.5 text-xs text-slate-800">{img.description}</div>
                 <div className="mt-1 text-[11px] italic text-slate-500">

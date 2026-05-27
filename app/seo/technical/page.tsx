@@ -37,6 +37,41 @@ type CachedRun = {
   created_at: string;
 };
 
+type SuggestedFix = {
+  fix_type:
+    | "meta_title"
+    | "meta_description"
+    | "canonical"
+    | "schema_jsonld"
+    | "og_title"
+    | "og_description";
+  current_value: string | null;
+  suggested_value: string;
+  rationale: string;
+};
+
+type PageSnapshotSummary = {
+  url: string;
+  status: number;
+  title: string | null;
+  metaDescription: string | null;
+  canonical: string | null;
+  ogTitle: string | null;
+  ogDescription: string | null;
+  h1: string | null;
+  jsonLdBlocks: string[];
+  detectedIssues: string[];
+};
+
+const FIX_LABELS: Record<SuggestedFix["fix_type"], string> = {
+  meta_title: "Meta title",
+  meta_description: "Meta description",
+  canonical: "Canonical URL",
+  schema_jsonld: "JSON-LD schema",
+  og_title: "Open Graph title",
+  og_description: "Open Graph description",
+};
+
 function statusTone(status: string): { dot: string; text: string; bg: string } {
   if (status === "healthy" || status === "success") {
     return {
@@ -61,6 +96,98 @@ export default function SeoTechnicalPage() {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("https://www.katzmelinger.com");
+
+  // AutoPilot fix suggestions — populated by /api/seo/technical/suggest-fixes.
+  const [snapshot, setSnapshot] = useState<PageSnapshotSummary | null>(null);
+  const [fixes, setFixes] = useState<SuggestedFix[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [queuedKeys, setQueuedKeys] = useState<Set<string>>(new Set());
+  const [queuingKey, setQueuingKey] = useState<string | null>(null);
+
+  const suggestFixes = async () => {
+    setSuggestError(null);
+    setSuggesting(true);
+    setFixes([]);
+    setSnapshot(null);
+    setQueuedKeys(new Set());
+    try {
+      const res = await fetch("/api/seo/technical/suggest-fixes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setSuggestError(json?.error ?? "Suggestion failed");
+        return;
+      }
+      setSnapshot(json.snapshot ?? null);
+      setFixes((json.fixes as SuggestedFix[]) ?? []);
+    } catch (e) {
+      setSuggestError(e instanceof Error ? e.message : "Suggestion failed");
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const queueFix = async (fix: SuggestedFix) => {
+    const key = `${fix.fix_type}:${fix.suggested_value.slice(0, 64)}`;
+    setQueuingKey(key);
+    try {
+      const res = await fetch("/api/seo/technical/queue-fixes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page_url: url, fixes: [fix] }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setSuggestError(json?.error ?? "Queue failed");
+        return;
+      }
+      setQueuedKeys((prev) => {
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+    } catch (e) {
+      setSuggestError(e instanceof Error ? e.message : "Queue failed");
+    } finally {
+      setQueuingKey(null);
+    }
+  };
+
+  const queueAllFixes = async () => {
+    const remaining = fixes.filter(
+      (f) =>
+        !queuedKeys.has(`${f.fix_type}:${f.suggested_value.slice(0, 64)}`),
+    );
+    if (remaining.length === 0) return;
+    setQueuingKey("__all__");
+    try {
+      const res = await fetch("/api/seo/technical/queue-fixes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page_url: url, fixes: remaining }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setSuggestError(json?.error ?? "Queue failed");
+        return;
+      }
+      setQueuedKeys((prev) => {
+        const next = new Set(prev);
+        for (const f of remaining) {
+          next.add(`${f.fix_type}:${f.suggested_value.slice(0, 64)}`);
+        }
+        return next;
+      });
+    } catch (e) {
+      setSuggestError(e instanceof Error ? e.message : "Queue failed");
+    } finally {
+      setQueuingKey(null);
+    }
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -130,6 +257,14 @@ export default function SeoTechnicalPage() {
         >
           {scanning ? "Scanning… (60-120s)" : "Re-scan"}
         </button>
+        <button
+          onClick={suggestFixes}
+          disabled={suggesting}
+          className="rounded-md bg-violet-700 px-3 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+          title="Snapshot the page and ask Claude for AutoPilot-ready fixes"
+        >
+          {suggesting ? "Analyzing…" : "Suggest AutoPilot fixes"}
+        </button>
         {latest && (
           <span className="text-xs text-slate-500 ml-auto">
             Last scan: {new Date(latest.created_at).toLocaleString()}
@@ -172,6 +307,111 @@ export default function SeoTechnicalPage() {
             seconds.
           </p>
         </article>
+      )}
+
+      {(suggestError || snapshot || fixes.length > 0 || suggesting) && (
+        <section className="rounded-xl border border-violet-200 bg-violet-50/30 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                AutoPilot fix suggestions
+              </h2>
+              <p className="text-xs text-slate-600 mt-1">
+                Claude snapshots the live page, compares to best practices, and
+                proposes fixes. Queue any that look right — the WordPress
+                AutoPilot plugin applies them on its next 15-minute sync.
+              </p>
+            </div>
+            {fixes.length > 0 && (
+              <button
+                onClick={queueAllFixes}
+                disabled={queuingKey !== null}
+                className="shrink-0 rounded-md bg-violet-700 px-3 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+              >
+                {queuingKey === "__all__" ? "Queuing…" : "Queue all"}
+              </button>
+            )}
+          </div>
+
+          {suggestError && (
+            <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {suggestError}
+            </div>
+          )}
+
+          {suggesting && (
+            <p className="mt-4 text-sm text-slate-600">
+              Fetching page and analyzing… 10-30 seconds.
+            </p>
+          )}
+
+          {snapshot && fixes.length === 0 && !suggesting && (
+            <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              No on-page SEO fixes needed — your meta tags, canonical, and OG
+              fields look good. (Detected issues: {snapshot.detectedIssues.length})
+            </div>
+          )}
+
+          {fixes.length > 0 && (
+            <ul className="mt-4 space-y-3">
+              {fixes.map((fix, i) => {
+                const key = `${fix.fix_type}:${fix.suggested_value.slice(0, 64)}`;
+                const queued = queuedKeys.has(key);
+                const busy = queuingKey === key;
+                return (
+                  <li
+                    key={`${fix.fix_type}-${i}`}
+                    className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-violet-700">
+                        {FIX_LABELS[fix.fix_type]}
+                      </span>
+                      <button
+                        onClick={() => queueFix(fix)}
+                        disabled={queued || busy || queuingKey !== null}
+                        className={`shrink-0 rounded-md px-3 py-1 text-xs font-medium ${
+                          queued
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : "bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+                        }`}
+                      >
+                        {queued
+                          ? "Queued ✓"
+                          : busy
+                            ? "Queuing…"
+                            : "Queue fix"}
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs italic text-slate-600">
+                      {fix.rationale}
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                          Current
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-700">
+{fix.current_value && fix.current_value.length > 0
+  ? fix.current_value
+  : "(missing)"}
+                        </pre>
+                      </div>
+                      <div className="rounded-md border border-violet-200 bg-violet-50 p-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-700">
+                          Suggested
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-800">
+{fix.suggested_value}
+                        </pre>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       )}
 
       {latest && (
