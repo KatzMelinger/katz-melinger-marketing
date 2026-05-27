@@ -15,6 +15,10 @@ import {
   type ImageSize,
 } from "@/lib/openai-images";
 import { saveImagePng } from "@/lib/image-store";
+import {
+  formatImageStyleAsPromptSuffix,
+  loadImageStyle,
+} from "@/lib/image-style";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -32,8 +36,10 @@ export async function POST(req: NextRequest) {
     prompt?: unknown;
     size?: unknown;
     quality?: unknown;
+    useBrandStyle?: unknown;
   };
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const useBrandStyle = body.useBrandStyle !== false; // default true
   if (!prompt) {
     return NextResponse.json({ error: "prompt required" }, { status: 400 });
   }
@@ -55,7 +61,16 @@ export async function POST(req: NextRequest) {
       : "medium";
 
   try {
-    const results = await generateImages({ prompt, size, quality, n: 1 });
+    const styleSuffix = useBrandStyle
+      ? formatImageStyleAsPromptSuffix(await loadImageStyle())
+      : "";
+    const finalPrompt = styleSuffix ? `${prompt}${styleSuffix}` : prompt;
+    const results = await generateImages({
+      prompt: finalPrompt,
+      size,
+      quality,
+      n: 1,
+    });
     const first = results[0];
     if (!first?.b64_json) {
       return NextResponse.json(
@@ -66,10 +81,12 @@ export async function POST(req: NextRequest) {
     const bytes = Buffer.from(first.b64_json, "base64");
     const saved = await saveImagePng({
       bytes,
+      // Persist the user-typed prompt only — the brand style is the same on
+      // every call, and showing it in the library makes the prompt unreadable.
       prompt,
       size,
       quality,
-      metadata: { source: "generate" },
+      metadata: { source: "generate", brandStyleApplied: Boolean(styleSuffix) },
     });
     return NextResponse.json({ image: saved });
   } catch (err) {

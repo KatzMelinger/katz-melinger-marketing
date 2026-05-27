@@ -14,6 +14,7 @@
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 type ImageSize = "1024x1024" | "1536x1024" | "1024x1536" | "auto";
@@ -52,6 +53,7 @@ function ImageGenerator() {
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState<ImageSize>("1024x1024");
   const [quality, setQuality] = useState<ImageQuality>("medium");
+  const [useBrandStyle, setUseBrandStyle] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,7 +101,7 @@ function ImageGenerator() {
       const res = await fetch("/api/images/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, size, quality }),
+        body: JSON.stringify({ prompt, size, quality, useBrandStyle }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
@@ -124,6 +126,7 @@ function ImageGenerator() {
           prompt: editPrompt,
           size: editTarget.size,
           quality: editTarget.quality,
+          useBrandStyle,
         }),
       });
       const json = await res.json();
@@ -234,7 +237,25 @@ function ImageGenerator() {
           </div>
         </div>
 
-        <div className="mt-5 flex items-center gap-3">
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={useBrandStyle}
+              onChange={(e) => setUseBrandStyle(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-violet-700 focus:ring-violet-500"
+            />
+            Apply brand image style
+          </label>
+          <Link
+            href="/content/images/style"
+            className="text-xs text-violet-700 hover:underline"
+          >
+            Edit style →
+          </Link>
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
           <button
             type="button"
             onClick={handleGenerate}

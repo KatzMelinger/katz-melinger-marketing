@@ -17,6 +17,10 @@ import {
 } from "@/lib/openai-images";
 import { readImageBytes, saveImagePng } from "@/lib/image-store";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import {
+  formatImageStyleAsPromptSuffix,
+  loadImageStyle,
+} from "@/lib/image-style";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -35,10 +39,12 @@ export async function POST(req: NextRequest) {
     prompt?: unknown;
     size?: unknown;
     quality?: unknown;
+    useBrandStyle?: unknown;
   };
   const parentImageId =
     typeof body.parentImageId === "string" ? body.parentImageId : "";
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const useBrandStyle = body.useBrandStyle !== false; // default true
   if (!parentImageId) {
     return NextResponse.json(
       { error: "parentImageId required" },
@@ -77,9 +83,13 @@ export async function POST(req: NextRequest) {
     }
 
     const sourceBytes = await readImageBytes(parent.storage_path as string);
+    const styleSuffix = useBrandStyle
+      ? formatImageStyleAsPromptSuffix(await loadImageStyle())
+      : "";
+    const finalPrompt = styleSuffix ? `${prompt}${styleSuffix}` : prompt;
     const results = await editImage({
       imageBytes: sourceBytes,
-      prompt,
+      prompt: finalPrompt,
       size,
       quality,
       n: 1,
@@ -98,7 +108,7 @@ export async function POST(req: NextRequest) {
       size,
       quality,
       parentImageId,
-      metadata: { source: "edit" },
+      metadata: { source: "edit", brandStyleApplied: Boolean(styleSuffix) },
     });
     return NextResponse.json({ image: saved });
   } catch (err) {

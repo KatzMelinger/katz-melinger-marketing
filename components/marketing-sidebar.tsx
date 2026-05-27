@@ -104,6 +104,7 @@ const GROUPS: NavGroup[] = [
       { label: "Drafts", href: "/content/drafts", icon: "📝" },
       { label: "KM Generator", href: "/content/km", icon: "🎨" },
       { label: "Images", href: "/content/images", icon: "🖼" },
+      { label: "Image Style", href: "/content/images/style", icon: "🎨" },
       { label: "Pipeline", href: "/content/pipeline", icon: "▥" },
       { label: "Skills", href: "/content/skills", icon: "📚" },
       { label: "Sources", href: "/content/sources", icon: "📥" },
