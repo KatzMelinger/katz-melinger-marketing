@@ -1,5 +1,10 @@
 /**
- * POST /api/seo/keywords/refresh
+ * POST /api/seo/tracked-keywords/refresh
+ *   (UI trigger — Refresh button on /keyword-research and the
+ *   `refresh_tracked_keywords` agent tool)
+ *
+ * GET /api/seo/tracked-keywords/refresh
+ *   (Vercel Cron trigger — requires Authorization: Bearer ${CRON_SECRET})
  *
  * Refreshes ranking data for all tracked keywords by hitting Semrush once
  * for the firm's domain and matching tracked keywords against the result.
@@ -9,7 +14,7 @@
  *   artifacts/api-server/src/routes/keywords.ts (Replit).
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import {
   getDomainKeywords,
@@ -21,7 +26,30 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/**
+ * Vercel Cron auth — Vercel injects `Authorization: Bearer ${CRON_SECRET}` on
+ * scheduled invocations when CRON_SECRET is set as an env var. Reject anything
+ * else so the cron URL can't be abused as a public refresh button.
+ */
+function isAuthorizedCron(req: NextRequest): boolean {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return false;
+  const auth = req.headers.get("authorization") ?? "";
+  return auth === `Bearer ${expected}`;
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return await refreshTrackedKeywords();
+}
+
 export async function POST() {
+  return await refreshTrackedKeywords();
+}
+
+async function refreshTrackedKeywords() {
   try {
     const supabase = getSupabaseAdmin();
 

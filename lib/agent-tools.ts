@@ -134,6 +134,15 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "refresh_tracked_keywords",
+    description:
+      "Refresh rank data for all tracked keywords by hitting Semrush. Moves current_rank into previous_rank and writes the latest rank, search volume, and difficulty. Use this when the user asks about rank drops/wins and last_checked_at is stale (more than ~24 hours old) or current_rank is null on keywords you'd expect to rank. Returns the refreshed list.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
     name: "list_autopilot_queue",
     description:
       "List on-page SEO fixes currently in the AutoPilot queue for katzmelinger.com — pending fixes awaiting approval, approved fixes waiting for the WP plugin to apply, or recently applied fixes.",
@@ -211,6 +220,51 @@ export async function dispatchTool(
         .limit(limit);
       if (error) return { error: error.message };
       return { keywords: data ?? [], count: data?.length ?? 0 };
+    }
+
+    case "refresh_tracked_keywords": {
+      // The route doesn't read its body; an empty POST is fine.
+      const res = await fetch(internalUrl(req, "/api/seo/tracked-keywords/refresh"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          error:
+            (json as { error?: string }).error ?? `HTTP ${res.status}`,
+        };
+      }
+      // Trim payload — agent only needs the summary + the refreshed keywords.
+      const j = json as {
+        updated?: number;
+        keywords?: Array<{
+          keyword?: string;
+          current_rank?: number | null;
+          previous_rank?: number | null;
+          search_volume?: number | null;
+          difficulty?: number | null;
+          last_checked_at?: string | null;
+        }>;
+      };
+      return {
+        updated: j.updated ?? 0,
+        keywords: (j.keywords ?? []).map((k) => ({
+          keyword: k.keyword,
+          current_rank: k.current_rank ?? null,
+          previous_rank: k.previous_rank ?? null,
+          delta:
+            typeof k.current_rank === "number" &&
+            typeof k.previous_rank === "number"
+              ? k.previous_rank - k.current_rank
+              : null,
+          search_volume: k.search_volume ?? null,
+          difficulty: k.difficulty ?? null,
+          last_checked_at: k.last_checked_at ?? null,
+        })),
+      };
     }
 
     case "list_autopilot_queue": {
