@@ -53,6 +53,7 @@ const GROUPS: NavGroup[] = [
       { label: "Internal Links", href: "/seo/internal-links", icon: "⇄" },
       { label: "Link Strategy", href: "/seo/link-strategy", icon: "🧩" },
       { label: "Topical Maps", href: "/seo/topical-maps", icon: "🗺" },
+      { label: "Schema Generator", href: "/seo/schema-generator", icon: "📐" },
       { label: "Suggestions", href: "/seo/suggestions", icon: "📋" },
       { label: "Content Generator", href: "/seo/generator", icon: "✎" },
       { label: "PR Pitches", href: "/seo/pr-pitches", icon: "📰" },

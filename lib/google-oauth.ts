@@ -205,6 +205,41 @@ export async function deleteStoredToken(purpose: Purpose): Promise<void> {
 }
 
 /**
+ * Lazy backfill for `granted_email`. Older OAuth grants (pre-`openid email`
+ * scope) saved tokens without capturing the user email — the /integrations
+ * page then shows "Connected as (unknown)". On read, if granted_email is
+ * null but we have a valid access token + the right scope, fetch the email
+ * via the userinfo endpoint and persist it back. Subsequent reads short-
+ * circuit on the stored value.
+ *
+ * Returns the email (newly fetched or already stored), or null if the user
+ * needs to reconnect to add the email scope.
+ */
+export async function ensureGrantedEmail(
+  purpose: Purpose,
+): Promise<string | null> {
+  const stored = await getStoredToken(purpose);
+  if (!stored) return null;
+  if (stored.granted_email) return stored.granted_email;
+
+  const valid = await getValidAccessToken(purpose);
+  if (!valid) return null;
+
+  const email = await fetchUserEmail(valid.token);
+  if (!email) return null;
+
+  const supabase = getSupabaseAdmin();
+  await supabase
+    .from("google_oauth_tokens")
+    .update({
+      granted_email: email,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("purpose", purpose);
+  return email;
+}
+
+/**
  * Returns a valid access token for the given purpose, refreshing it if the
  * stored one is near expiry. Returns null if no token has been stored yet
  * (caller should redirect the user through the consent flow).
