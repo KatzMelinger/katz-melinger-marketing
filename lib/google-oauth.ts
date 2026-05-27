@@ -68,7 +68,10 @@ export function buildAuthorizeUrl(args: {
     scope: PURPOSE_SCOPES[args.purpose].join(" "),
     access_type: "offline",          // required to get a refresh_token
     include_granted_scopes: "true",
-    prompt: "consent",                // forces refresh_token issuance even on re-auth
+    // "select_account" forces the account picker so users can pick a non-default
+    // Google account (the firm's GBP-managing account isn't always the browser's
+    // default Gmail). "consent" forces refresh_token issuance even on re-auth.
+    prompt: "select_account consent",
     state: args.state,
   });
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
