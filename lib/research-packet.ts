@@ -27,6 +27,7 @@ import {
   type RawAskItem,
 } from "@/lib/research-sources";
 import type { PeopleAskSourceType } from "@/lib/research-libraries";
+import { detectContentOverlap, type OverlapMatch } from "@/lib/content-overlap";
 
 export type ResearchPacket = {
   id: string;
@@ -38,6 +39,7 @@ export type ResearchPacket = {
   suggested_faqs: { question: string; answer_hint: string }[];
   suggested_statutes: string[];
   suggested_angles: string[];
+  existing_coverage: OverlapMatch[];
   source_confidence: "low" | "medium" | "high";
   legal_review_required: boolean;
   status: "draft" | "ready" | "used" | "archived";
@@ -263,6 +265,22 @@ Call return_packet with the synthesized packet.`;
     confidence = baselineConfidence;
   }
 
+  // 4b. Content-overlap check against the site inventory — "link, don't
+  // redefine." Built from the topic + keyword + FAQ subjects + statutes.
+  const overlapTerms = [
+    topic,
+    args.primaryKeyword ?? "",
+    ...suggested_faqs.map((f) => f.question),
+    ...suggested_statutes,
+  ].filter(Boolean);
+  let existingCoverage: OverlapMatch[] = [];
+  try {
+    const overlap = await detectContentOverlap(overlapTerms);
+    existingCoverage = overlap.matches;
+  } catch {
+    /* no inventory yet — non-fatal */
+  }
+
   // 5. Persist.
   const sb = getSupabaseAdmin();
   const { data, error } = await sb
@@ -276,6 +294,7 @@ Call return_packet with the synthesized packet.`;
       suggested_faqs,
       suggested_statutes,
       suggested_angles,
+      existing_coverage: existingCoverage,
       source_confidence: confidence,
       legal_review_required,
       status: "ready",

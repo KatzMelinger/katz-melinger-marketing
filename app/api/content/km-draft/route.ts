@@ -36,6 +36,7 @@ import {
   type KMSearchIntent,
 } from "@/lib/km-content-system";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { detectContentOverlap } from "@/lib/content-overlap";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,7 +129,25 @@ export async function POST(req: Request) {
   // ≈ 1,200 words ≈ 1,700 tokens. 8,192 max gives headroom for either.
   const maxTokens = brief.contentType === "case_result" ? 4096 : 8192;
 
-  const userPrompt = buildBriefUserPrompt(brief);
+  let userPrompt = buildBriefUserPrompt(brief);
+
+  // Glossary-ownership / "link don't redefine" enforcement: check the site
+  // inventory for pages that already cover the brief's keywords + FAQ terms,
+  // and instruct the model to link to them instead of writing competing
+  // definitions. Fails soft when the inventory is empty.
+  try {
+    const overlapTerms = [
+      brief.primaryKeyword,
+      ...(brief.secondaryKeywords ?? []),
+      ...(brief.faqQuestions ?? []),
+    ].filter(Boolean);
+    const overlap = await detectContentOverlap(overlapTerms);
+    if (overlap.promptBlock) {
+      userPrompt += `\n\n---\n${overlap.promptBlock}`;
+    }
+  } catch {
+    /* no inventory / non-fatal */
+  }
 
   try {
     const msg = await getAnthropic().messages.create({

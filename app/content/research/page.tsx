@@ -56,6 +56,10 @@ type Packet = {
   suggested_faqs: { question: string; answer_hint: string }[];
   suggested_statutes: string[];
   suggested_angles: string[];
+  existing_coverage: {
+    term: string;
+    pages: { url: string; title: string | null; page_type: string; pillar: string | null }[];
+  }[];
   source_confidence: "low" | "medium" | "high";
   legal_review_required: boolean;
   status: string;
@@ -792,6 +796,36 @@ function PacketView({ packet }: { packet: Packet }) {
                   {s.name}
                 </a>{" "}
                 <span className="text-slate-400">({s.authority_level})</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section title={`Existing site coverage (${packet.existing_coverage?.length ?? 0})`}>
+        {!packet.existing_coverage || packet.existing_coverage.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            No overlap found in the cluster map — nothing to link instead of
+            redefine. (If the inventory is empty, run a crawl on the Cluster Map
+            page first.)
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {packet.existing_coverage.map((m, i) => (
+              <li key={i} className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs">
+                <span className="font-medium text-amber-900">
+                  "{m.term}" already covered — link, don't redefine:
+                </span>
+                <ul className="mt-1 space-y-0.5">
+                  {m.pages.map((p, j) => (
+                    <li key={j}>
+                      <a href={p.url} target="_blank" rel="noreferrer" className="text-slate-700 hover:underline">
+                        {p.title ?? p.url}
+                      </a>{" "}
+                      <span className="text-slate-400">({p.page_type})</span>
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>

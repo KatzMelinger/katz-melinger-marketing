@@ -100,6 +100,24 @@ export function KMContentGenerator() {
           ? packet.suggested_angles
           : [];
 
+        // Block 4 (cannibalization) auto-fill from the packet's existing
+        // site coverage — "link, don't redefine."
+        const coverage = Array.isArray(packet.existing_coverage)
+          ? (packet.existing_coverage as {
+              term: string;
+              pages: { url: string; title: string | null }[];
+            }[])
+          : [];
+        const cannibalizationNotes =
+          coverage.length > 0
+            ? coverage
+                .map(
+                  (c) =>
+                    `"${c.term}" already covered → link to ${c.pages[0]?.url ?? ""} instead of redefining.`,
+                )
+                .join("\n")
+            : "Site inventory checked — no existing pages overlap this topic's terms.";
+
         const instructions = [
           packet.legal_review_required
             ? "⚠ ATTORNEY REVIEW REQUIRED before publishing."
@@ -125,6 +143,8 @@ export function KMContentGenerator() {
             ? packet.suggested_statutes.filter((s: unknown) => typeof s === "string")
             : [],
           faqQuestions,
+          cannibalizationConfirmed: coverage.length === 0,
+          cannibalizationNotes,
           specialInstructions: instructions,
         }));
         setPrefillNotice(
