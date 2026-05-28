@@ -1020,12 +1020,107 @@ function AnalysisCard({
           </div>
         </div>
       )}
+      <ContentOverlapPanel
+        terms={[
+          ...Object.keys(analysis.target_keyword_hits ?? {}),
+          ...(currentTitle ? [currentTitle] : []),
+        ]}
+      />
+
       {analysis.summary && (
         <div className="mt-4 pt-4 border-t border-slate-200 text-sm italic text-slate-600">
           {analysis.summary}
         </div>
       )}
     </DashCard>
+  );
+}
+
+/**
+ * Content-overlap panel — on demand, checks the site_pages cluster map for
+ * existing pages that already cover this draft's keywords/title, and surfaces
+ * "link, don't redefine" recommendations. Decoupled from the main analysis
+ * pipeline so it never slows a re-analyze.
+ */
+function ContentOverlapPanel({ terms }: { terms: string[] }) {
+  const [loading, setLoading] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [matches, setMatches] = useState<
+    { term: string; pages: { url: string; title: string | null }[] }[]
+  >([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content/overlap-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ terms }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "check failed");
+      setMatches(json.matches ?? []);
+      setChecked(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "check failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-200">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-slate-700">
+          Content overlap check
+          <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
+            link, don&apos;t redefine
+          </span>
+        </div>
+        <button
+          onClick={run}
+          disabled={loading || terms.length === 0}
+          className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:border-slate-400 disabled:opacity-50"
+        >
+          {loading ? "Checking…" : "Check site for overlap"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      {checked && matches.length === 0 && !error && (
+        <p className="mt-2 text-xs text-emerald-700">
+          No overlap found in the cluster map — nothing to link instead of
+          redefine.
+        </p>
+      )}
+      {matches.length > 0 && (
+        <ul className="mt-2 space-y-1.5">
+          {matches.map((m, i) => (
+            <li
+              key={i}
+              className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs"
+            >
+              <span className="font-medium text-amber-900">
+                &quot;{m.term}&quot; already covered — link, don&apos;t redefine:
+              </span>{" "}
+              {m.pages.map((p, j) => (
+                <a
+                  key={j}
+                  href={p.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-slate-700 underline-offset-2 hover:underline"
+                >
+                  {p.title ?? p.url}
+                  {j < m.pages.length - 1 ? ", " : ""}
+                </a>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
