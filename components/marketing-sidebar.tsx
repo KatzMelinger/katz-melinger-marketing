@@ -100,6 +100,7 @@ const GROUPS: NavGroup[] = [
     label: "Content",
     items: [
       { label: "Overview", href: "/content", icon: "✎" },
+      { label: "Research Libraries", href: "/content/research", icon: "📚" },
       { label: "Intelligence", href: "/content/intelligence", icon: "💡" },
       { label: "Batch Generator", href: "/content/batch", icon: "🧪" },
       { label: "Drafts", href: "/content/drafts", icon: "📝" },

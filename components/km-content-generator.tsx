@@ -27,6 +27,7 @@ import {
 export function KMContentGenerator() {
   const searchParams = useSearchParams();
   const suggestionId = searchParams?.get("suggestion") ?? null;
+  const packetId = searchParams?.get("packetId") ?? null;
   const [brief, setBrief] = useState<KMBriefFormValue>(emptyBrief());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +61,83 @@ export function KMContentGenerator() {
       cancelled = true;
     };
   }, [suggestionId]);
+
+  // Pre-fill from a Research Packet when ?packetId=... is set. Maps the
+  // packet's synthesized fields onto the brief so Diana isn't filling
+  // everything by hand.
+  useEffect(() => {
+    if (!packetId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/content/research/packet?id=${packetId}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const packet = data?.packet;
+        if (!packet || typeof packet !== "object") return;
+
+        const paStr = String(packet.practice_area ?? "").toLowerCase();
+        const practiceArea =
+          paStr.includes("collection") || paStr.includes("judgment")
+            ? "collections"
+            : "employment";
+
+        const faqQuestions = Array.isArray(packet.suggested_faqs)
+          ? packet.suggested_faqs
+              .map((f: { question?: string }) => f.question)
+              .filter((q: unknown): q is string => typeof q === "string")
+          : [];
+
+        const legalLines = Array.isArray(packet.legal_sources_found)
+          ? packet.legal_sources_found
+              .map((s: { name?: string; url?: string }) => `${s.name} (${s.url})`)
+              .slice(0, 10)
+          : [];
+        const angles = Array.isArray(packet.suggested_angles)
+          ? packet.suggested_angles
+          : [];
+
+        const instructions = [
+          packet.legal_review_required
+            ? "⚠ ATTORNEY REVIEW REQUIRED before publishing."
+            : "",
+          `Research confidence: ${packet.source_confidence}.`,
+          legalLines.length > 0
+            ? `Cite/verify against these legal sources:\n- ${legalLines.join("\n- ")}`
+            : "No curated legal sources matched — source citations manually.",
+          angles.length > 0 ? `Content angles to consider:\n- ${angles.join("\n- ")}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+
+        setBrief((prev) => ({
+          ...emptyBrief(),
+          ...prev,
+          practiceArea,
+          primaryKeyword:
+            (typeof packet.primary_keyword === "string" && packet.primary_keyword) ||
+            (typeof packet.topic === "string" ? packet.topic : prev.primaryKeyword) ||
+            "",
+          statutes: Array.isArray(packet.suggested_statutes)
+            ? packet.suggested_statutes.filter((s: unknown) => typeof s === "string")
+            : [],
+          faqQuestions,
+          specialInstructions: instructions,
+        }));
+        setPrefillNotice(
+          `Brief pre-filled from Research Packet "${packet.topic}". Review every field — especially statutes and FAQs — before generating.${packet.legal_review_required ? " This topic is flagged for attorney review." : ""}`,
+        );
+      } catch {
+        // ignore — manual entry still works
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [packetId]);
 
   const errors = validateBrief(brief);
   const ready = errors.length === 0;
