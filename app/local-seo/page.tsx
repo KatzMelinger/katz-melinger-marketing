@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GbpAiResponder } from "@/components/gbp-ai-responder";
 import { MarketingNav } from "@/components/marketing-nav";
@@ -449,6 +449,14 @@ export default function LocalSeoPlatformPage() {
   const [discoveringLocations, setDiscoveringLocations] = useState(false);
   const [useCachedDiscovery, setUseCachedDiscovery] = useState(true);
   const [rateLimitRetryAt, setRateLimitRetryAt] = useState<number | null>(null);
+  // Mirror rateLimitRetryAt into a ref so `load` can read it without taking it
+  // as a dependency. Without this, every 429 sets a fresh timestamp →
+  // recreates `load` → the `useEffect(..., [load])` re-fires → another request,
+  // an infinite loop at network speed whenever GBP is rate-limited.
+  const rateLimitRetryAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    rateLimitRetryAtRef.current = rateLimitRetryAt;
+  }, [rateLimitRetryAt]);
   const [retryCountdownSec, setRetryCountdownSec] = useState(0);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -496,7 +504,8 @@ export default function LocalSeoPlatformPage() {
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
-    if (silent && rateLimitRetryAt && Date.now() < rateLimitRetryAt) {
+    const retryAt = rateLimitRetryAtRef.current;
+    if (silent && retryAt && Date.now() < retryAt) {
       return;
     }
     if (silent) setIsRefreshing(true);
@@ -563,7 +572,10 @@ export default function LocalSeoPlatformPage() {
       if (silent) setIsRefreshing(false);
       else setLoading(false);
     }
-  }, [rateLimitRetryAt, selectedAccountId, selectedLocationId]);
+    // NOTE: rateLimitRetryAt is intentionally NOT a dependency — it's read via
+    // rateLimitRetryAtRef above. Including it caused an infinite reload loop
+    // while GBP was rate-limited (see ref declaration).
+  }, [selectedAccountId, selectedLocationId]);
 
   const discoverAccounts = useCallback(async (opts?: { forceNetwork?: boolean }) => {
     const forceNetwork = opts?.forceNetwork === true;
