@@ -28,7 +28,6 @@ import {
   COLLECTIONS_PILLARS,
   KM_CONTENT_TYPE_LABELS,
   KM_HUB_LINKS,
-  KM_SYSTEM_PROMPT,
   validateBrief,
   type KMContentType,
   type KMPerPageBrief,
@@ -37,6 +36,7 @@ import {
 } from "@/lib/km-content-system";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { detectContentOverlap } from "@/lib/content-overlap";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -149,11 +149,15 @@ export async function POST(req: Request) {
     /* no inventory / non-fatal */
   }
 
+  // Per-tenant system prompt (Phase 2). Falls back to the code-defined
+  // KM_SYSTEM_PROMPT for the default tenant via getTenantConfig.
+  const tenantConfig = await getTenantConfig();
+
   try {
     const msg = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
       max_tokens: maxTokens,
-      system: cachedSystemPrompt(KM_SYSTEM_PROMPT),
+      system: cachedSystemPrompt(tenantConfig.systemPrompt),
       messages: [{ role: "user", content: userPrompt }],
     });
 

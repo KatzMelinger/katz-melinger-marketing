@@ -15,6 +15,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { getTenantConfig } from "./tenant-config";
 
 export const PRACTICE_AREAS = [
   "All",
@@ -61,9 +62,15 @@ const FALLBACK_CONTEXT =
   `- Email: ${DEFAULT_CONTACT.firmEmail}\n` +
   `- Website: ${DEFAULT_CONTACT.firmWebsite}\n`;
 
-export async function getFirmContext(): Promise<string> {
+export async function getFirmContext(tenantId?: string): Promise<string> {
   try {
     const supabase = getSupabaseAdmin();
+
+    // Per-tenant config provides the contact/geography fallback (Phase 2).
+    // brand_voice_settings still wins when a value is set there (that's where
+    // the team edits firm info on /brand-voice), then tenant_settings, then
+    // the hardcoded DEFAULT_CONTACT inside getTenantConfig.
+    const config = await getTenantConfig(tenantId);
 
     const [{ data: settingsRows }, { data: avatarRows }, sampleRes] = await Promise.all([
       supabase.from("brand_voice_settings").select("key, value"),
@@ -83,12 +90,12 @@ export async function getFirmContext(): Promise<string> {
       }
     }
 
-    const firmName = settings.firmName || DEFAULT_CONTACT.firmName;
-    const geography = settings.targetGeography || "New York and New Jersey";
-    const firmAddress = settings.firmAddress || DEFAULT_CONTACT.firmAddress;
-    const firmPhone = settings.firmPhone || DEFAULT_CONTACT.firmPhone;
-    const firmEmail = settings.firmEmail || DEFAULT_CONTACT.firmEmail;
-    const firmWebsite = settings.firmWebsite || DEFAULT_CONTACT.firmWebsite;
+    const firmName = settings.firmName || config.firmName;
+    const geography = settings.targetGeography || config.targetGeography;
+    const firmAddress = settings.firmAddress || config.firmAddress;
+    const firmPhone = settings.firmPhone || config.firmPhone;
+    const firmEmail = settings.firmEmail || config.firmEmail;
+    const firmWebsite = settings.firmWebsite || config.firmWebsite;
 
     let context =
       `${firmName} is an employment law firm in ${geography}. ` +
