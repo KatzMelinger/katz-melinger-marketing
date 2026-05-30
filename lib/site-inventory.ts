@@ -340,6 +340,88 @@ export async function crawlSiteInventory(args?: {
   };
 }
 
+/**
+ * Lightweight per-URL ingest — used to refresh the cluster map immediately
+ * when a single new page is published, without running the full sitemap crawl.
+ * Fetches title/h1 for each URL, classifies type by URL pattern + pillar via
+ * one batched Claude call, then upserts. Preserves human pillar overrides.
+ */
+export async function ingestUrls(
+  rawUrls: string[],
+): Promise<{ ingested: number; classified: number; skipped: number }> {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const u of rawUrls) {
+    try {
+      const parsed = new URL(u);
+      const normalized = parsed.toString();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        urls.push(normalized);
+      }
+    } catch {
+      /* invalid URL — skip */
+    }
+  }
+  if (urls.length === 0) {
+    return { ingested: 0, classified: 0, skipped: 0 };
+  }
+
+  const fetched = await mapLimit(urls, FETCH_CONCURRENCY, async (url) => {
+    const { title, h1 } = await fetchTitleH1(url);
+    return { url, title, h1 };
+  });
+  const usable = fetched.filter((f) => f.title || f.h1);
+  if (usable.length === 0) {
+    return {
+      ingested: 0,
+      classified: 0,
+      skipped: urls.length,
+    };
+  }
+
+  const classMap = await classifyPillars(usable);
+
+  const sb = getSupabaseAdmin();
+  const { data: existing } = await sb
+    .from("site_pages")
+    .select("url, pillar, pillar_locked")
+    .in("url", usable.map((u) => u.url));
+  const locked = new Map<string, string | null>();
+  for (const r of existing ?? []) {
+    if (r.pillar_locked) locked.set(r.url as string, (r.pillar as string) ?? null);
+  }
+
+  const now = new Date().toISOString();
+  const rows = usable.map((f) => {
+    const cls = classMap.get(f.url);
+    const isLocked = locked.has(f.url);
+    return {
+      url: f.url,
+      title: f.title,
+      h1: f.h1,
+      page_type: classifyTypeByUrl(f.url),
+      pillar: isLocked ? locked.get(f.url) ?? null : cls?.pillar ?? null,
+      practice_area: cls?.practice_area ?? null,
+      topics: cls?.topics ?? [],
+      last_crawled_at: now,
+    };
+  });
+
+  const { error } = await sb
+    .from("site_pages")
+    .upsert(rows, { onConflict: "url" });
+  if (error) {
+    throw new Error(`ingest upsert failed: ${error.message}`);
+  }
+
+  return {
+    ingested: rows.length,
+    classified: rows.filter((r) => r.pillar).length,
+    skipped: urls.length - usable.length,
+  };
+}
+
 export async function listSitePages(opts?: {
   pillar?: string;
   pageType?: SitePageType;

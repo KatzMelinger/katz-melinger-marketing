@@ -73,6 +73,34 @@ export async function PATCH(
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Auto-refresh the site_pages cluster map when a draft is published. We
+  // accept any of several metadata keys for the public URL, so as long as the
+  // dashboard (or a future WP-publish hook) records one of them, the new page
+  // lands in the inventory immediately. If no URL is set, the daily cron will
+  // catch it within 24h.
+  if (body?.status === "published") {
+    try {
+      const draftRow = data as { metadata?: Record<string, unknown> | null };
+      const meta = (draftRow.metadata ?? {}) as Record<string, unknown>;
+      const candidate =
+        meta.publishedUrl ??
+        meta.published_url ??
+        meta.public_url ??
+        meta.publicUrl ??
+        meta.permalink ??
+        meta.url;
+      if (typeof candidate === "string" && /^https?:\/\//i.test(candidate)) {
+        const { ingestUrls } = await import("@/lib/site-inventory");
+        // Fire-and-forget — the PATCH response shouldn't wait on Claude.
+        void ingestUrls([candidate]).catch((err) =>
+          console.warn("[drafts] site-inventory ingest failed:", err),
+        );
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   if (typeof body?.status === "string" && PIPELINE_STATUSES.has(body.status)) {
     const { data: existing } = await supabase
       .from("content_pipeline")
