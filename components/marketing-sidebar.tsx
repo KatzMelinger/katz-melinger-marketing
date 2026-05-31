@@ -94,6 +94,7 @@ const GROUPS: NavGroup[] = [
       { label: "Constant Contact", href: "/constant-contact", icon: "📨" },
       { label: "Forms", href: "/forms", icon: "▤" },
       { label: "Calls", href: "/calls", icon: "☎" },
+      { label: "Agent Coaching", href: "/coaching", icon: "🎯" },
     ],
   },
   {
