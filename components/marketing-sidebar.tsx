@@ -121,6 +121,7 @@ const GROUPS: NavGroup[] = [
       { label: "Alerts", href: "/alerts", icon: "🔔" },
       { label: "Analytics", href: "/analytics", icon: "▣" },
       { label: "Attribution", href: "/attribution", icon: "⎔" },
+      { label: "Marketing Spend", href: "/settings/marketing-spend", icon: "💵" },
       { label: "Pipeline", href: "/pipeline", icon: "▥" },
     ],
   },

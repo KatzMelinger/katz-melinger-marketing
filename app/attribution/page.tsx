@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Link from "next/link";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
@@ -146,13 +147,31 @@ export default async function AttributionPage() {
       <MarketingNav />
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Attribution</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Complete funnel: CallRail calls to CMS intakes, matters, settlements,
-            and channel economics.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Attribution</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Complete funnel: CallRail calls to CMS intakes, matters, settlements,
+              and channel economics.
+            </p>
+          </div>
+          <Link
+            href="/settings/marketing-spend"
+            className="rounded-lg border border-[#185FA5] px-3 py-2 text-sm font-medium text-[#185FA5] hover:bg-slate-50"
+          >
+            Edit marketing spend
+          </Link>
         </div>
+
+        {totals.spend === 0 ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
+            No marketing spend recorded, so ROI, CPA, and spend efficiency read zero.{" "}
+            <Link href="/settings/marketing-spend" className="font-medium underline">
+              Enter spend per channel
+            </Link>{" "}
+            to populate channel economics.
+          </div>
+        ) : null}
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[

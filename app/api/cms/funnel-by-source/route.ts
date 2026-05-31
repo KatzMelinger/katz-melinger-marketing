@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -79,14 +80,43 @@ function toSpendRows(input: unknown): SourceSpend[] {
     .filter((row): row is SourceSpend => row !== null);
 }
 
-export async function GET() {
-  const [intakesRaw, mattersRaw, settlementsRaw, spendRaw, attributionRaw] =
+/**
+ * Manual spend from public.marketing_spend, summed per source across the
+ * optional [since, until] month window. Used to fill in (and override) the CMS
+ * spend figures, which are empty in this deployment.
+ */
+async function fetchManualSpend(
+  since: string | null,
+  until: string | null,
+): Promise<Map<string, number>> {
+  const supabase = getSupabaseServer();
+  const out = new Map<string, number>();
+  if (!supabase) return out;
+  let q = supabase.from("marketing_spend").select("source, amount, period_month");
+  if (since) q = q.gte("period_month", since);
+  if (until) q = q.lte("period_month", until);
+  const { data, error } = await q;
+  if (error || !data) return out;
+  for (const row of data as Array<Record<string, unknown>>) {
+    const source = normalizeSource(String(row.source ?? ""));
+    out.set(source, (out.get(source) ?? 0) + num(row.amount));
+  }
+  return out;
+}
+
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  const since = sp.get("since");
+  const until = sp.get("until");
+
+  const [intakesRaw, mattersRaw, settlementsRaw, spendRaw, attributionRaw, manualSpend] =
     await Promise.all([
       fetchCmsJson<unknown>("/api/v1/intakes/by-source"),
       fetchCmsJson<unknown>("/api/v1/matters/by-source"),
       fetchCmsJson<unknown>("/api/v1/revenue/settlements-by-source"),
       fetchCmsJson<unknown>("/api/v1/marketing/spend-by-source"),
       fetchCmsJson<{ breakdown?: unknown }>("/api/v1/revenue/attribution"),
+      fetchManualSpend(since, until),
     ]);
 
   const intakes = toSourceCountRows(intakesRaw);
@@ -111,6 +141,7 @@ export async function GET() {
   for (const row of matters) keys.add(row.source);
   for (const row of settlements) keys.add(row.source);
   for (const row of spend) keys.add(row.source);
+  for (const source of manualSpend.keys()) keys.add(source);
 
   const intakesMap = new Map(intakes.map((row) => [row.source, row.count] as const));
   const mattersMap = new Map(matters.map((row) => [row.source, row.count] as const));
@@ -120,14 +151,19 @@ export async function GET() {
   const revenueMap = new Map(settlements.map((row) => [row.source, row.revenue] as const));
   const spendMap = new Map(spend.map((row) => [row.source, row.spend] as const));
 
-  const rows: FunnelRow[] = [...keys].map((source) => ({
-    source,
-    intakes: intakesMap.get(source) ?? 0,
-    matters: mattersMap.get(source) ?? settlementsMap.get(source) ?? 0,
-    settlements: settlementsMap.get(source) ?? 0,
-    revenue: revenueMap.get(source) ?? 0,
-    spend: spendMap.get(source) ?? 0,
-  }));
+  const rows: FunnelRow[] = [...keys].map((source) => {
+    // Manual spend wins when present; otherwise fall back to the CMS figure.
+    const manual = manualSpend.get(source);
+    const spendValue = manual != null && manual > 0 ? manual : spendMap.get(source) ?? 0;
+    return {
+      source,
+      intakes: intakesMap.get(source) ?? 0,
+      matters: mattersMap.get(source) ?? settlementsMap.get(source) ?? 0,
+      settlements: settlementsMap.get(source) ?? 0,
+      revenue: revenueMap.get(source) ?? 0,
+      spend: spendValue,
+    };
+  });
 
   rows.sort((a, b) => b.revenue - a.revenue || b.intakes - a.intakes);
 
