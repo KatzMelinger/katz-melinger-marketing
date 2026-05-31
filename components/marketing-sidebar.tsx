@@ -117,6 +117,7 @@ const GROUPS: NavGroup[] = [
   {
     label: "Cross-hub",
     items: [
+      { label: "Executive", href: "/executive", icon: "📈" },
       { label: "Recommendations", href: "/recommendations", icon: "💡" },
       { label: "Alerts", href: "/alerts", icon: "🔔" },
       { label: "Analytics", href: "/analytics", icon: "▣" },
