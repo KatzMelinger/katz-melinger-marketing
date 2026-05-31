@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { ga4PropertyResourceName } from "@/lib/ga4-property-id";
 import { getGoogleAccessToken } from "@/lib/google-access-token";
@@ -13,7 +13,16 @@ function num(v: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export async function GET() {
+/** Accept an explicit YYYY-MM-DD, else fall back to a GA4 relative token. */
+function ga4Date(raw: string | null, fallback: string): string {
+  if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return fallback;
+}
+
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  const startDate = ga4Date(sp.get("since"), "30daysAgo");
+  const endDate = ga4Date(sp.get("until"), "today");
   const property = ga4PropertyResourceName();
   if (!property) {
     return NextResponse.json(
@@ -48,7 +57,7 @@ export async function GET() {
 
   const url = `https://analyticsdata.googleapis.com/v1beta/${property}:runReport`;
   const body = {
-    dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+    dateRanges: [{ startDate, endDate }],
     metrics: [
       { name: "sessions" },
       { name: "activeUsers" },
