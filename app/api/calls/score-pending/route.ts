@@ -1,20 +1,55 @@
 /**
- * POST /api/calls/score-pending — auto-score every answered call >= 60s that
- * has a transcript but no current score row. Designed to be hit by a cron.
+ * Auto-score every answered call >= 60s that has a transcript but no current
+ * score row. Skips voicemails (the "answered=true && voicemail=true" combo)
+ * since those aren't conversations.
  *
- * Body (optional): { limit: number, min_duration_seconds: number, since: ISO }
+ * POST /api/calls/score-pending — UI trigger ("Score pending" button).
+ *   Body (optional): { limit: number, min_duration_seconds: number, since: ISO }
  *
- * Skips voicemails (the "answered=true && voicemail=true" combo) since those
- * aren't conversations.
+ * GET /api/calls/score-pending — Vercel Cron trigger. Requires
+ *   `Authorization: Bearer ${CRON_SECRET}`. Reads the same options from query
+ *   params (?limit=&min_duration_seconds=&since=). Registered in vercel.json.
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { scoreCall } from "@/lib/sales-coach";
-import { getSupabaseServer } from "@/lib/supabase-server";
+import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 type Json = Record<string, unknown>;
+
+type ScorePendingOptions = {
+  limit: number;
+  minDuration: number;
+  since: string | null;
+};
+
+/**
+ * Vercel injects `Authorization: Bearer ${CRON_SECRET}` on scheduled
+ * invocations when CRON_SECRET is set. Reject anything else so the cron URL
+ * can't be abused to burn Anthropic credits.
+ */
+function isAuthorizedCron(req: NextRequest): boolean {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return false;
+  return (req.headers.get("authorization") ?? "") === `Bearer ${expected}`;
+}
+
+function clampLimit(raw: unknown): number {
+  return typeof raw === "number" && Number.isFinite(raw)
+    ? Math.max(1, Math.min(50, Math.floor(raw)))
+    : 25;
+}
+
+function clampDuration(raw: unknown): number {
+  return typeof raw === "number" && Number.isFinite(raw)
+    ? Math.max(0, Math.floor(raw))
+    : 60;
+}
 
 export async function POST(req: Request) {
   const supabase = getSupabaseServer();
@@ -26,12 +61,33 @@ export async function POST(req: Request) {
   } catch {
     /* ignore */
   }
-  const limit = typeof body.limit === "number" ? Math.max(1, Math.min(50, Math.floor(body.limit))) : 25;
-  const minDuration =
-    typeof body.min_duration_seconds === "number"
-      ? Math.max(0, Math.floor(body.min_duration_seconds))
-      : 60;
-  const since = typeof body.since === "string" ? body.since : null;
+  return runScorePending(supabase, {
+    limit: clampLimit(body.limit),
+    minDuration: clampDuration(body.min_duration_seconds),
+    since: typeof body.since === "string" ? body.since : null,
+  });
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Cron has no user session — use the admin client (service role).
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
+
+  const sp = req.nextUrl.searchParams;
+  const limitParam = sp.get("limit");
+  const minParam = sp.get("min_duration_seconds");
+  return runScorePending(supabase, {
+    limit: clampLimit(limitParam ? Number(limitParam) : undefined),
+    minDuration: clampDuration(minParam ? Number(minParam) : undefined),
+    since: sp.get("since"),
+  });
+}
+
+async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptions) {
+  const { limit, minDuration, since } = opts;
 
   // Find candidates: answered, not VM, duration >= min, has transcript, no score yet.
   let q = supabase

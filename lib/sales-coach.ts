@@ -160,7 +160,7 @@ function buildSystemBlocks(rubric: RubricDimension[]): Anthropic.MessageCreatePa
         "}\n\n" +
         "Rules:\n" +
         "- 'overall_score' must equal the rounded sum of all dimension scores normalized to 100.\n" +
-        "- If the rubric is 'intake', use only intake_* dimension keys; if 'consultation', use only consult_* keys.\n" +
+        "- If the rubric is 'intake', use only intake_* dimension keys; if 'consultation', use only consult_* keys; if 'callback', use only callback_* keys.\n" +
         "- 'compliance_flags' lists every distinct occurrence of any of the 11 forbidden phrases from 5.2.3-a.\n" +
         "- Spanish summaries should use neutral South/Central American Spanish, default to 'usted'.\n" +
         "- If the transcript is missing or the call is < 60 seconds and unintelligible, return overall_score=0 and explain in summary_manager.\n" +

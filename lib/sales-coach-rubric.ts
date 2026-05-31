@@ -285,7 +285,112 @@ export const CONSULTATION_RUBRIC: RubricDimension[] = [
   },
 ];
 
-export const ALL_RUBRICS = [...INTAKE_RUBRIC, ...CONSULTATION_RUBRIC];
+/* -------------------------------------------------------------------------- */
+/* Callback / follow-up call rubric                                            */
+/*                                                                             */
+/* A callback is a re-engagement call: the PC was already spoken to once       */
+/* (intake done, or an engagement letter was sent but not signed / payment     */
+/* not completed) and the team is following up to move them forward. It reuses */
+/* the tone + objection-handling backbone of 5.2.3-a but is graded on how well */
+/* the screener re-establishes context and drives a concrete next step.        */
+/* -------------------------------------------------------------------------- */
+
+export const CALLBACK_RUBRIC: RubricDimension[] = [
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_opening_identification",
+    dimensionName: "Opening – re-introduction",
+    maxScore: 15,
+    sortOrder: 10,
+    criteriaText:
+      "Screener stated their first name AND identified the firm as Katz Melinger within the first 30 seconds, " +
+      "and made clear this is a follow-up rather than a cold call. " +
+      "Pattern: 'Hi [Name], this is [Your Name] following up from Katz Melinger.'",
+    sopReference: "5.1.2-b §1, 5.2.3-a Part 1",
+  },
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_reference_prior_context",
+    dimensionName: "Referenced prior conversation",
+    maxScore: 15,
+    sortOrder: 20,
+    criteriaText:
+      "Acknowledged where the previous interaction left off and stated the specific reason for the callback " +
+      "(e.g. 'you mentioned you wanted to think it over', 'your engagement letter is still waiting on a signature'). " +
+      "Did NOT restart the intake from scratch as if no prior contact happened.",
+    sopReference: "5.2.3-a Part 1",
+  },
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_permission_time_check",
+    dimensionName: "Permission / time check",
+    maxScore: 5,
+    sortOrder: 30,
+    criteriaText:
+      "Confirmed the PC has a few minutes to talk now, or offered to schedule a better time and send a calendar invite. " +
+      "Did not launch into the pitch without checking availability.",
+    sopReference: "5.1.2-a §1",
+  },
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_value_recap",
+    dimensionName: "Re-established value",
+    maxScore: 15,
+    sortOrder: 40,
+    criteriaText:
+      "Briefly restated what the firm can do for this specific matter and why moving forward benefits the PC, " +
+      "without re-presenting every fee tier. Reconnected the PC to the outcome they wanted.",
+    sopReference: "5.2.3-a Parts 2–5",
+  },
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_surface_open_concerns",
+    dimensionName: "Surfaced open concerns",
+    maxScore: 10,
+    sortOrder: 50,
+    criteriaText:
+      "Proactively asked what is holding the PC back or what questions remain since the last call " +
+      "(e.g. 'what's the main thing keeping you from getting started?') and listened before responding.",
+    sopReference: "5.2.3-a Objection Handling",
+  },
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_objection_handling",
+    dimensionName: "Objection handling sequence",
+    maxScore: 15,
+    sortOrder: 60,
+    criteriaText:
+      "When the PC objected (price, timing, spouse, comparison shopping), followed " +
+      "1st Attempt → 2nd Attempt → Last Resort → Escalate. " +
+      "Did NOT offer the alternative fee structure without explicit Adam/Kenneth/Nicole approval.",
+    sopReference: "5.2.3-a Objection Handling tables",
+  },
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_clear_next_step",
+    dimensionName: "Drove a concrete next step",
+    maxScore: 15,
+    sortOrder: 70,
+    criteriaText:
+      "Closed on a single, specific next action with a timeframe: sign the engagement letter, complete payment, " +
+      "or a booked consultation slot — not a vague 'let me know'. Confirmed the PC knew exactly what happens next.",
+    sopReference: "5.2.3-a Part 6, 'Assume the close'",
+  },
+  {
+    rubricType: "callback",
+    dimensionKey: "callback_tone_and_compliance",
+    dimensionName: "Tone, empathy, language compliance",
+    maxScore: 10,
+    sortOrder: 80,
+    criteriaText:
+      "Matched the PC's emotional state, stayed courteous and unpushy despite this being a follow-up, " +
+      "and used ZERO of the 11 forbidden phrases from 5.2.3-a ('you should', 'you have to', 'we can't', etc.). " +
+      "Each forbidden-phrase occurrence is a compliance flag.",
+    sopReference: "5.2.3-a Communication Best Practices",
+  },
+];
+
+export const ALL_RUBRICS = [...INTAKE_RUBRIC, ...CONSULTATION_RUBRIC, ...CALLBACK_RUBRIC];
 
 /* -------------------------------------------------------------------------- */
 /* Loader: merge defaults with DB overrides                                   */

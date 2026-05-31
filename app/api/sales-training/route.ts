@@ -25,6 +25,7 @@ export async function GET() {
 
   const intake = await loadRubric(supabase, "intake");
   const consultation = await loadRubric(supabase, "consultation");
+  const callback = await loadRubric(supabase, "callback");
 
   // The hardcoded SOPs are always available; the DB rows extend them.
   const materials = (materialsDb ?? []).length > 0
@@ -45,10 +46,12 @@ export async function GET() {
     rubric: {
       intake,
       consultation,
+      callback,
     },
     rubric_defaults: {
       intake: ALL_RUBRICS.filter((r) => r.rubricType === "intake"),
       consultation: ALL_RUBRICS.filter((r) => r.rubricType === "consultation"),
+      callback: ALL_RUBRICS.filter((r) => r.rubricType === "callback"),
     },
   });
 }

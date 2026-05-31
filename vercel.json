@@ -8,6 +8,10 @@
     {
       "path": "/api/content/site-inventory/crawl",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/calls/score-pending",
+      "schedule": "0 10 * * *"
     }
   ]
 }

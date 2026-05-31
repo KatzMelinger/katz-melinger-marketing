@@ -25,8 +25,8 @@ type RubricDimension = {
 
 type ApiResponse = {
   materials: Material[];
-  rubric: { intake: RubricDimension[]; consultation: RubricDimension[] };
-  rubric_defaults: { intake: RubricDimension[]; consultation: RubricDimension[] };
+  rubric: { intake: RubricDimension[]; consultation: RubricDimension[]; callback: RubricDimension[] };
+  rubric_defaults: { intake: RubricDimension[]; consultation: RubricDimension[]; callback: RubricDimension[] };
 };
 
 export function SalesTrainingClient() {
@@ -34,7 +34,7 @@ export function SalesTrainingClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"intake" | "consultation" | "materials">("consultation");
+  const [tab, setTab] = useState<"intake" | "consultation" | "callback" | "materials">("consultation");
   const [openMaterialId, setOpenMaterialId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -104,6 +104,9 @@ export function SalesTrainingClient() {
         </TabButton>
         <TabButton active={tab === "intake"} onClick={() => setTab("intake")}>
           Intake rubric ({data.rubric.intake.length})
+        </TabButton>
+        <TabButton active={tab === "callback"} onClick={() => setTab("callback")}>
+          Callback rubric ({data.rubric.callback.length})
         </TabButton>
         <TabButton active={tab === "materials"} onClick={() => setTab("materials")}>
           Source materials ({data.materials.length})
