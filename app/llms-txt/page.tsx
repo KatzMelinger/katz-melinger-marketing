@@ -10,7 +10,6 @@
  */
 
 import { useEffect, useState } from "react";
-import { HubSubNav } from "@/components/hub-subnav";
 import { MarketingNav } from "@/components/marketing-nav";
 
 type Version = {
@@ -73,7 +72,6 @@ export default function LlmsTxtPage() {
   return (
     <>
       <MarketingNav />
-      <HubSubNav />
       <div className="p-6 space-y-6 mx-auto max-w-7xl">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">llms.txt generator</h1>

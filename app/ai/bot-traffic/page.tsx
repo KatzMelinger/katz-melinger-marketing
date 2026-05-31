@@ -25,7 +25,6 @@ import {
 } from "recharts";
 
 import { DashCard, DashShell, DashSpinner } from "@/components/dashboard-ui";
-import { HubSubNav } from "@/components/hub-subnav";
 import { MarketingNav } from "@/components/marketing-nav";
 
 type Payload = {
@@ -89,7 +88,6 @@ export default function AiBotTrafficPage() {
       style={{ backgroundColor: "#ffffff", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <MarketingNav />
-      <HubSubNav />
       <DashShell>
         <header>
           <p className="text-xs font-semibold uppercase tracking-wider text-[#185FA5]">

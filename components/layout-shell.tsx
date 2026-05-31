@@ -10,6 +10,7 @@
 
 import { usePathname } from "next/navigation";
 import { MarketingSidebar } from "@/components/marketing-sidebar";
+import { HubSubNav } from "@/components/hub-subnav";
 
 const NO_CHROME_PATHS = ["/login"];
 
@@ -24,7 +25,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <MarketingSidebar />
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-1 min-w-0">
+        {/* Renders the Ops Hub sub-nav strip on any hub page (returns null
+            elsewhere). Mounted once here so every hub page gets it
+            consistently — pages must NOT render HubSubNav themselves. */}
+        <HubSubNav />
+        {children}
+      </div>
     </div>
   );
 }

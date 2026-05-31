@@ -1,4 +1,3 @@
-import { HubSubNav } from "@/components/hub-subnav";
 import { MarketingNav } from "@/components/marketing-nav";
 
 export function formatNumber(value: number): string {
@@ -20,7 +19,6 @@ export function SeoShell({
       style={{ backgroundColor: "#ffffff", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <MarketingNav />
-      <HubSubNav />
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <section className="space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>

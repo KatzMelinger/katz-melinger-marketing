@@ -16,7 +16,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { HubSubNav } from "@/components/hub-subnav";
 import {
   DashCard,
   DashButton,
@@ -106,7 +105,6 @@ export default function CommunityPage() {
 
   return (
     <>
-    <HubSubNav />
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Community engagement</h1>

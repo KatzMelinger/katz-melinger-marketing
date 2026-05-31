@@ -20,7 +20,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-import { HubSubNav } from "@/components/hub-subnav";
 import { MarketingNav } from "@/components/marketing-nav";
 import {
   DashCard,
@@ -244,7 +243,6 @@ export default function SocialTrendsPage() {
   return (
     <div className="min-h-full bg-white text-slate-900" style={{ fontFamily: "Arial, sans-serif" }}>
       <MarketingNav />
-      <HubSubNav />
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-rose-700">

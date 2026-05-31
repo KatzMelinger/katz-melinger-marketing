@@ -14,7 +14,6 @@
 
 import { useEffect, useState } from "react";
 
-import { HubSubNav } from "@/components/hub-subnav";
 
 type Status = { configured: boolean; projectId: string };
 
@@ -164,7 +163,6 @@ export default function ClarityPage() {
 
   return (
     <>
-    <HubSubNav />
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
         <div>
