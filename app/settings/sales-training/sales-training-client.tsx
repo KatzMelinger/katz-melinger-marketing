@@ -121,6 +121,7 @@ export function SalesTrainingClient() {
           materials={data.materials}
           openId={openMaterialId}
           setOpenId={setOpenMaterialId}
+          onUploaded={(next) => setData(next)}
         />
       )}
     </div>
@@ -253,20 +254,124 @@ function DimensionCard({
   );
 }
 
+const DOC_TYPE_OPTIONS = ["sop", "script", "playbook", "glossary", "training", "other"] as const;
+
+function MaterialsUploader({ onUploaded }: { onUploaded: (next: ApiResponse) => void }) {
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [docType, setDocType] = useState<(typeof DOC_TYPE_OPTIONS)[number]>("sop");
+  const [sectionCode, setSectionCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function upload() {
+    if (!files || files.length === 0) {
+      setErr("Choose at least one file.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("doc_type", docType);
+      if (sectionCode.trim()) fd.append("section_code", sectionCode.trim());
+      Array.from(files).forEach((f) => fd.append("files", f));
+      const res = await fetch("/api/sales-training", { method: "POST", body: fd });
+      const j = (await res.json().catch(() => ({}))) as ApiResponse & {
+        error?: string;
+        uploaded?: { file_name: string }[];
+        failures?: { filename: string; error: string }[];
+      };
+      if (!res.ok) {
+        setErr(j.error ?? "Upload failed");
+        return;
+      }
+      onUploaded(j);
+      const okN = j.uploaded?.length ?? 0;
+      const failN = j.failures?.length ?? 0;
+      setMsg(`Uploaded ${okN} file(s)${failN ? `, ${failN} failed` : ""}.`);
+      setFiles(null);
+      setSectionCode("");
+    } catch (e) {
+      setErr((e as Error).message ?? "Network error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-[#e2e8f0] p-4" style={{ backgroundColor: "#ffffff" }}>
+      <h3 className="text-sm font-semibold text-slate-900">Upload an SOP, script, or playbook</h3>
+      <p className="mt-1 text-xs text-slate-500">
+        Accepts .pdf, .docx, .txt, .md, .rtf, .html. A file sharing a section code (or filename) with an
+        existing document replaces it. Leave the section code blank to auto-detect it from the filename.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
+          Document type
+          <select
+            value={docType}
+            onChange={(e) => setDocType(e.target.value as (typeof DOC_TYPE_OPTIONS)[number])}
+            className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-2 py-1.5 text-sm text-slate-900"
+          >
+            {DOC_TYPE_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
+          Section code (optional)
+          <input
+            value={sectionCode}
+            onChange={(e) => setSectionCode(e.target.value)}
+            placeholder="e.g. 5.2.3-a"
+            className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-2 py-1.5 text-sm text-slate-900"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
+          Files
+          <input
+            type="file"
+            multiple
+            accept=".pdf,.docx,.txt,.md,.markdown,.rtf,.html,.htm"
+            onChange={(e) => setFiles(e.target.files)}
+            className="text-sm text-slate-700"
+          />
+        </label>
+        <button
+          onClick={upload}
+          disabled={busy}
+          className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {busy ? "Uploading…" : "Upload"}
+        </button>
+      </div>
+      {msg ? <p className="mt-2 text-xs text-emerald-600">{msg}</p> : null}
+      {err ? <p className="mt-2 text-xs text-rose-500">{err}</p> : null}
+    </div>
+  );
+}
+
 function MaterialsView({
   materials,
   openId,
   setOpenId,
+  onUploaded,
 }: {
   materials: Material[];
   openId: string | null;
   setOpenId: (id: string | null) => void;
+  onUploaded: (next: ApiResponse) => void;
 }) {
   return (
     <section className="space-y-3">
+      <MaterialsUploader onUploaded={onUploaded} />
       <p className="text-xs text-slate-500">
-        These are the SOPs the AI references on every call. To replace one, upload an updated docx via the
-        next-phase upload UI (or insert into <code>public.sales_training_materials</code> directly).
+        These are the SOPs the AI references on every call. Upload an updated file above to replace one
+        (or insert into <code>public.sales_training_materials</code> directly).
       </p>
       {materials.map((m, i) => {
         const id = m.id ?? `embedded-${i}`;
