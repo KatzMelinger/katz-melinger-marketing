@@ -17,8 +17,20 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
+import { CHANNEL_LABELS, type StyleScope } from "@/lib/image-style";
+
 type ImageSize = "1024x1024" | "1536x1024" | "1024x1536" | "auto";
 type ImageQuality = "low" | "medium" | "high" | "auto";
+
+// Display order for the channel selector (general first).
+const STYLE_SCOPES: StyleScope[] = [
+  "general",
+  "social_carousel",
+  "social_post",
+  "blog",
+  "website",
+  "newsletter",
+];
 
 type SavedImage = {
   id: string;
@@ -54,6 +66,7 @@ function ImageGenerator() {
   const [size, setSize] = useState<ImageSize>("1024x1024");
   const [quality, setQuality] = useState<ImageQuality>("medium");
   const [useBrandStyle, setUseBrandStyle] = useState(true);
+  const [channel, setChannel] = useState<StyleScope>("general");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,7 +114,7 @@ function ImageGenerator() {
       const res = await fetch("/api/images/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, size, quality, useBrandStyle }),
+        body: JSON.stringify({ prompt, size, quality, useBrandStyle, channel }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
@@ -127,6 +140,7 @@ function ImageGenerator() {
           size: editTarget.size,
           quality: editTarget.quality,
           useBrandStyle,
+          channel,
         }),
       });
       const json = await res.json();
@@ -237,22 +251,51 @@ function ImageGenerator() {
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={useBrandStyle}
-              onChange={(e) => setUseBrandStyle(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-violet-700 focus:ring-violet-500"
-            />
-            Apply brand image style
-          </label>
-          <Link
-            href="/content/images/style"
-            className="text-xs text-violet-700 hover:underline"
-          >
-            Edit style →
-          </Link>
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={useBrandStyle}
+                onChange={(e) => setUseBrandStyle(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-violet-700 focus:ring-violet-500"
+              />
+              Apply brand image style
+            </label>
+            <Link
+              href="/content/images/style"
+              className="text-xs text-violet-700 hover:underline"
+            >
+              Edit style →
+            </Link>
+          </div>
+
+          {useBrandStyle && (
+            <div className="mt-3">
+              <label
+                htmlFor="channel"
+                className="block text-xs font-medium text-slate-600"
+              >
+                Channel
+              </label>
+              <select
+                id="channel"
+                value={channel}
+                onChange={(e) => setChannel(e.target.value as StyleScope)}
+                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              >
+                {STYLE_SCOPES.map((s) => (
+                  <option key={s} value={s}>
+                    {CHANNEL_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                Applies the general guide plus this channel&apos;s notes, and
+                feeds the channel&apos;s uploaded design references to the model.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex items-center gap-3">

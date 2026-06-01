@@ -11,14 +11,22 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   generateImages,
+  generateWithReferences,
   type ImageQuality,
   type ImageSize,
 } from "@/lib/openai-images";
 import { saveImagePng } from "@/lib/image-store";
 import {
-  formatImageStyleAsPromptSuffix,
-  loadImageStyle,
+  composeStyleForGeneration,
+  isStyleScope,
+  type StyleScope,
 } from "@/lib/image-style";
+import {
+  listStyleAssets,
+  readStyleAssetBytes,
+} from "@/lib/image-style-assets";
+
+const MAX_REFERENCES = 4;
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -37,9 +45,14 @@ export async function POST(req: NextRequest) {
     size?: unknown;
     quality?: unknown;
     useBrandStyle?: unknown;
+    channel?: unknown;
   };
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   const useBrandStyle = body.useBrandStyle !== false; // default true
+  const channel: StyleScope =
+    typeof body.channel === "string" && isStyleScope(body.channel)
+      ? body.channel
+      : "general";
   if (!prompt) {
     return NextResponse.json({ error: "prompt required" }, { status: 400 });
   }
@@ -62,15 +75,37 @@ export async function POST(req: NextRequest) {
 
   try {
     const styleSuffix = useBrandStyle
-      ? formatImageStyleAsPromptSuffix(await loadImageStyle())
+      ? (await composeStyleForGeneration(channel)).promptSuffix
       : "";
     const finalPrompt = styleSuffix ? `${prompt}${styleSuffix}` : prompt;
-    const results = await generateImages({
-      prompt: finalPrompt,
-      size,
-      quality,
-      n: 1,
-    });
+
+    // When the channel has uploaded design references and the user hasn't
+    // opted out of brand style, anchor the generation to those references via
+    // the edits endpoint. Otherwise use plain text-to-image generation.
+    let referenceBytes: Uint8Array[] = [];
+    if (useBrandStyle) {
+      const assets = await listStyleAssets(channel);
+      const chosen = assets.slice(0, MAX_REFERENCES);
+      referenceBytes = await Promise.all(
+        chosen.map((a) => readStyleAssetBytes(a.storage_path)),
+      );
+    }
+
+    const results =
+      referenceBytes.length > 0
+        ? await generateWithReferences({
+            prompt: finalPrompt,
+            referenceImages: referenceBytes,
+            size,
+            quality,
+            n: 1,
+          })
+        : await generateImages({
+            prompt: finalPrompt,
+            size,
+            quality,
+            n: 1,
+          });
     const first = results[0];
     if (!first?.b64_json) {
       return NextResponse.json(
@@ -86,7 +121,12 @@ export async function POST(req: NextRequest) {
       prompt,
       size,
       quality,
-      metadata: { source: "generate", brandStyleApplied: Boolean(styleSuffix) },
+      metadata: {
+        source: "generate",
+        brandStyleApplied: Boolean(styleSuffix),
+        channel,
+        referenceCount: referenceBytes.length,
+      },
     });
     return NextResponse.json({ image: saved });
   } catch (err) {

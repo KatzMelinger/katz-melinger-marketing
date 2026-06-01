@@ -18,8 +18,9 @@ import {
 import { readImageBytes, saveImagePng } from "@/lib/image-store";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import {
-  formatImageStyleAsPromptSuffix,
-  loadImageStyle,
+  composeStyleForGeneration,
+  isStyleScope,
+  type StyleScope,
 } from "@/lib/image-style";
 
 export const runtime = "nodejs";
@@ -40,11 +41,16 @@ export async function POST(req: NextRequest) {
     size?: unknown;
     quality?: unknown;
     useBrandStyle?: unknown;
+    channel?: unknown;
   };
   const parentImageId =
     typeof body.parentImageId === "string" ? body.parentImageId : "";
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   const useBrandStyle = body.useBrandStyle !== false; // default true
+  const channel: StyleScope =
+    typeof body.channel === "string" && isStyleScope(body.channel)
+      ? body.channel
+      : "general";
   if (!parentImageId) {
     return NextResponse.json(
       { error: "parentImageId required" },
@@ -84,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     const sourceBytes = await readImageBytes(parent.storage_path as string);
     const styleSuffix = useBrandStyle
-      ? formatImageStyleAsPromptSuffix(await loadImageStyle())
+      ? (await composeStyleForGeneration(channel)).promptSuffix
       : "";
     const finalPrompt = styleSuffix ? `${prompt}${styleSuffix}` : prompt;
     const results = await editImage({
@@ -108,7 +114,11 @@ export async function POST(req: NextRequest) {
       size,
       quality,
       parentImageId,
-      metadata: { source: "edit", brandStyleApplied: Boolean(styleSuffix) },
+      metadata: {
+        source: "edit",
+        brandStyleApplied: Boolean(styleSuffix),
+        channel,
+      },
     });
     return NextResponse.json({ image: saved });
   } catch (err) {
