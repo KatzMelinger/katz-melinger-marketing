@@ -64,16 +64,45 @@ const DEFAULT_TARGET_KEYWORDS = [
   "whistleblower lawyer new york",
 ];
 
-const LEGAL_TRENDING_KEYWORDS = [
-  "ai workplace discrimination",
-  "ny salary transparency law",
-  "wage theft class action ny",
-  "remote work overtime rights",
-  "noncompete ban new york",
-  "pregnancy accommodations nyc",
-  "construction wage theft lawyer",
-  "retaliation claim statute of limitations",
+/**
+ * Domains that Semrush surfaces as "organic competitors" by keyword overlap
+ * but that aren't real competitors a law firm can benchmark against: legal
+ * directories, Q&A/aggregator sites, government, and reference sources. We
+ * strip these from auto-detect so the suggested-competitor list is actual
+ * firms. Matched as suffix so subdomains (e.g. blog.nolo.com) are caught too.
+ */
+const NON_COMPETITOR_DOMAINS = [
+  "justia.com",
+  "avvo.com",
+  "nolo.com",
+  "findlaw.com",
+  "lawyers.com",
+  "martindale.com",
+  "superlawyers.com",
+  "legalmatch.com",
+  "rocketlawyer.com",
+  "upcounsel.com",
+  "hg.org",
+  "expertise.com",
+  "thumbtack.com",
+  "yelp.com",
+  "wikipedia.org",
+  "law.cornell.edu",
+  "ny.gov",
+  "nyc.gov",
+  "dol.gov",
+  "eeoc.gov",
+  "nlrb.gov",
+  "indeed.com",
+  "glassdoor.com",
+  "reddit.com",
+  "quora.com",
 ];
+
+export function isNonCompetitorDomain(domain: string): boolean {
+  const d = safeDomain(domain);
+  return NON_COMPETITOR_DOMAINS.some((b) => d === b || d.endsWith(`.${b}`));
+}
 
 function asNumber(value: string | undefined): number {
   if (!value) {
@@ -210,13 +239,141 @@ export async function getDomainOrganicKeywords(
   return rows.map(parseKeywordRow).filter((row) => row.keyword);
 }
 
+/**
+ * Semrush returns a 12-month trend as a comma-separated list of normalized
+ * values (most recent last), e.g. "0.50,0.50,0.65,0.82,1.00". We score
+ * "trending" as the recent slope: how much the back half rose over the
+ * front half, mapped to 0-100. Flat/declining keywords score low.
+ */
+function trendScoreFromTd(td: string | undefined, volume: number): number {
+  const points = (td ?? "")
+    .split(",")
+    .map((v) => Number.parseFloat(v.trim()))
+    .filter((n) => Number.isFinite(n));
+  if (points.length < 4) {
+    // No usable trend series — fall back to a volume-based floor so the row
+    // still sorts sensibly rather than scoring 0.
+    return toPercent(Math.min(60, volume / 50));
+  }
+  const mid = Math.floor(points.length / 2);
+  const front = points.slice(0, mid);
+  const back = points.slice(mid);
+  const avg = (arr: number[]) => arr.reduce((s, n) => s + n, 0) / (arr.length || 1);
+  const frontAvg = avg(front) || 0.01;
+  const backAvg = avg(back);
+  const growth = (backAvg - frontAvg) / frontAvg; // -1..+inf
+  // Center 0 growth at 50, +100% growth ≈ 90, -50% ≈ 25.
+  return toPercent(50 + growth * 40);
+}
+
+/**
+ * Real "industry trending" keywords. Pulls phrase_related for a few seed
+ * targets (Semrush's "related keywords" report), which returns real search
+ * volume and a 12-month trend series (Td). We keep the rising, sufficiently
+ * searched phrases and rank by trend score. Replaces the old hardcoded list.
+ */
+export async function getTrendingKeywords(
+  seeds: string[],
+  limit = 8,
+): Promise<Array<{ keyword: string; searchVolume: number; trendScore: number }>> {
+  // Bound API cost: only seed from the first few targets.
+  const seedPhrases = seeds.slice(0, 4).filter(Boolean);
+  if (seedPhrases.length === 0) return [];
+
+  const perSeed = await Promise.all(
+    seedPhrases.map((seed) =>
+      fetchSemrushRowsFromSeo({
+        type: "phrase_related",
+        phrase: seed,
+        display_limit: "30",
+        display_sort: "nq_desc",
+        export_decode: "1",
+        export_columns: "Ph,Nq,Kd,Td",
+      }).catch(() => [] as SemrushRecord[]),
+    ),
+  );
+
+  const seen = new Set(seedPhrases.map((s) => s.toLowerCase()));
+  const out: Array<{ keyword: string; searchVolume: number; trendScore: number }> = [];
+  for (const rows of perSeed) {
+    for (const row of rows) {
+      const keyword = (row["Keyword"] ?? row["Ph"] ?? "").trim();
+      if (!keyword) continue;
+      const key = keyword.toLowerCase();
+      if (seen.has(key)) continue;
+      const volume = parseIntSafe(row["Search Volume"] ?? row["Nq"] ?? "");
+      if (volume < 50) continue; // drop near-zero-demand noise
+      seen.add(key);
+      out.push({
+        keyword,
+        searchVolume: volume,
+        trendScore: trendScoreFromTd(row["Trends"] ?? row["Td"], volume),
+      });
+    }
+  }
+
+  return out.sort((a, b) => b.trendScore - a.trendScore).slice(0, limit);
+}
+
+/**
+ * Real long-tail opportunities. Combines phrase_questions (natural-language
+ * question keywords — gold for FAQ/blog content) with phrase_related, keeps
+ * multi-word phrases the firm could realistically rank for, and returns them
+ * with real volume. Replaces the old template-string suggestions.
+ */
+export async function getLongTailSuggestions(
+  seeds: string[],
+  limit = 8,
+): Promise<Array<{ keyword: string; searchVolume: number }>> {
+  const seedPhrases = seeds.slice(0, 3).filter(Boolean);
+  if (seedPhrases.length === 0) return [];
+
+  const reports = await Promise.all(
+    seedPhrases.flatMap((seed) => [
+      fetchSemrushRowsFromSeo({
+        type: "phrase_questions",
+        phrase: seed,
+        display_limit: "20",
+        display_sort: "nq_desc",
+        export_decode: "1",
+        export_columns: "Ph,Nq",
+      }).catch(() => [] as SemrushRecord[]),
+      fetchSemrushRowsFromSeo({
+        type: "phrase_related",
+        phrase: seed,
+        display_limit: "20",
+        display_sort: "nq_desc",
+        export_decode: "1",
+        export_columns: "Ph,Nq",
+      }).catch(() => [] as SemrushRecord[]),
+    ]),
+  );
+
+  const seen = new Set<string>();
+  const out: Array<{ keyword: string; searchVolume: number }> = [];
+  for (const rows of reports) {
+    for (const row of rows) {
+      const keyword = (row["Keyword"] ?? row["Ph"] ?? "").trim();
+      const key = keyword.toLowerCase();
+      // Long-tail = 3+ words; skip head terms and dupes.
+      if (!keyword || key.split(/\s+/).length < 3 || seen.has(key)) continue;
+      const volume = parseIntSafe(row["Search Volume"] ?? row["Nq"] ?? "");
+      if (volume < 20) continue;
+      seen.add(key);
+      out.push({ keyword, searchVolume: volume });
+    }
+  }
+
+  return out.sort((a, b) => b.searchVolume - a.searchVolume).slice(0, limit);
+}
+
 export async function getTrackedKeywordPerformance(
   domain = SEMRUSH_DOMAIN,
 ): Promise<{
   tracked: Array<KeywordRow & { isTargetKeyword: boolean }>;
   missingTargets: string[];
   trendingKeywords: Array<{ keyword: string; searchVolume: number; trendScore: number }>;
-  longTailSuggestions: string[];
+  longTailSuggestions: Array<{ keyword: string; searchVolume: number }>;
 }> {
   const targets = await getTargetKeywords();
   // Pull up to 1000 keywords (Semrush per-request max) so targets that rank
@@ -280,15 +437,12 @@ export async function getTrackedKeywordPerformance(
     .filter((item) => item.position <= 0)
     .map((item) => item.keyword);
 
-  const trendingKeywords = LEGAL_TRENDING_KEYWORDS.map((keyword, index) => ({
-    keyword,
-    searchVolume: 1800 - index * 140,
-    trendScore: 88 - index * 3,
-  }));
-
-  const longTailSuggestions = targets.slice(0, 4).flatMap((keyword) => [
-    `${keyword} for remote workers`,
-    `${keyword} free consultation`,
+  // Real trending + long-tail from Semrush phrase reports, seeded from the
+  // firm's target keywords. Both fail soft to [] so a phrase-report outage
+  // never takes down the whole tracker.
+  const [trendingKeywords, longTailSuggestions] = await Promise.all([
+    getTrendingKeywords(targets).catch(() => []),
+    getLongTailSuggestions(targets).catch(() => []),
   ]);
 
   return { tracked, missingTargets, trendingKeywords, longTailSuggestions };
@@ -324,6 +478,54 @@ export async function getKeywordGapVsCompetitor(
     .filter((item) => item.searchVolume > 100 && item.competitorPosition > 0)
     .sort((a, b) => b.opportunityScore - a.opportunityScore)
     .slice(0, 30);
+}
+
+/**
+ * Keyword gap across MANY tracked competitors at once. Runs the single-domain
+ * gap for each curated competitor concurrently, then merges: for any keyword
+ * several competitors rank for, we keep the row from the competitor that
+ * ranks best (the toughest benchmark) and surface how many firms beat us on
+ * it. Powers the keywords page's competitor-opportunity table now that the
+ * firm list is the curated Supabase set rather than one hardcoded domain.
+ */
+export async function getKeywordGapVsCompetitors(
+  competitorDomains: string[],
+  ourDomain = SEMRUSH_DOMAIN,
+  limit = 30,
+): Promise<Array<CompetitorKeywordGap & { competitorsBeatingUs: number }>> {
+  const domains = competitorDomains
+    .map(safeDomain)
+    .filter((d) => d && !isNonCompetitorDomain(d));
+  if (domains.length === 0) return [];
+
+  const perDomain = await Promise.all(
+    domains.map((d) =>
+      getKeywordGapVsCompetitor(d, ourDomain).catch(() => [] as CompetitorKeywordGap[]),
+    ),
+  );
+
+  // Merge by keyword, keeping the best (lowest) competitor position seen.
+  const merged = new Map<string, CompetitorKeywordGap & { competitorsBeatingUs: number }>();
+  for (const gaps of perDomain) {
+    for (const gap of gaps) {
+      const key = gap.keyword.toLowerCase();
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, { ...gap, competitorsBeatingUs: 1 });
+        continue;
+      }
+      existing.competitorsBeatingUs += 1;
+      if (gap.competitorPosition > 0 && gap.competitorPosition < existing.competitorPosition) {
+        existing.competitorPosition = gap.competitorPosition;
+        existing.domain = gap.domain;
+        existing.opportunityScore = Math.max(existing.opportunityScore, gap.opportunityScore);
+      }
+    }
+  }
+
+  return Array.from(merged.values())
+    .sort((a, b) => b.opportunityScore - a.opportunityScore)
+    .slice(0, limit);
 }
 
 export async function getBacklinkOverview(domain = SEMRUSH_DOMAIN): Promise<{
@@ -490,7 +692,8 @@ export async function getOrganicCompetitors(
       commonKeywords: parseIntSafe(row["Common Keywords"] ?? row.Np ?? ""),
       estimatedTraffic: parseIntSafe(row["Organic Traffic"] ?? row.Ot ?? ""),
     }))
-    .filter((row) => row.domain);
+    // Drop directories/aggregators/gov so suggestions are real firms only.
+    .filter((row) => row.domain && !isNonCompetitorDomain(row.domain));
 }
 
 async function fetchPageSpeed(

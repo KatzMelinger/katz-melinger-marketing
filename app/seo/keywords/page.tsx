@@ -43,13 +43,15 @@ type KeywordResponse = {
   tracked?: Array<KeywordRow & { isTargetKeyword?: boolean }>;
   missingTargets?: string[];
   trendingKeywords?: Array<{ keyword: string; searchVolume: number; trendScore: number }>;
-  longTailSuggestions?: string[];
+  longTailSuggestions?: Array<{ keyword: string; searchVolume: number }>;
+  competitors?: string[];
   competitive?: Array<{
     keyword: string;
     competitorPosition: number;
     ourPosition: number;
     opportunityScore: number;
     domain: string;
+    competitorsBeatingUs?: number;
   }>;
 };
 
@@ -95,6 +97,15 @@ export default function SeoKeywordsPage() {
   const [targetBusy, setTargetBusy] = useState<string | null>(null);
   const [targetError, setTargetError] = useState<string | null>(null);
 
+  // Tracked-competitor management — persisted in Supabase via
+  // /api/seo/competitors. `suggested` is the Semrush auto-detected list
+  // (directories already filtered out server-side) for one-click add.
+  const [competitors, setCompetitors] = useState<string[]>([]);
+  const [suggestedCompetitors, setSuggestedCompetitors] = useState<string[]>([]);
+  const [newCompetitor, setNewCompetitor] = useState("");
+  const [competitorBusy, setCompetitorBusy] = useState<string | null>(null);
+  const [competitorError, setCompetitorError] = useState<string | null>(null);
+
   // Ideas + Create flow lives in a shared hook — modal/toast/menu state +
   // the actual fetches are all in components/content-actions.tsx so the
   // /seo/opportunities, /aeo, and /ai-search pages share the same UX.
@@ -104,15 +115,24 @@ export default function SeoKeywordsPage() {
     setLoading(true);
     return Promise.all([
       fetch("/api/seo/keywords", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/seo/keywords?competitor=nilawfirm.com", { cache: "no-store" }).then((r) =>
-        r.json(),
-      ),
+      // "all" → merged gap across every curated competitor, not one hardcoded firm.
+      fetch("/api/seo/keywords?competitor=all", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/seo/keywords/targets", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/seo/competitors", { cache: "no-store" }).then((r) => r.json()),
     ])
-      .then(([d, c, t]) => {
+      .then(([d, c, t, comp]) => {
         setData(d);
         setCompetitive(c);
         setTargets(Array.isArray(t?.targets) ? t.targets : []);
+        setCompetitors(Array.isArray(comp?.trackedDomains) ? comp.trackedDomains : []);
+        const suggestions: Array<{ domain: string; tracked?: boolean }> = Array.isArray(
+          comp?.suggestedFromSemrush,
+        )
+          ? comp.suggestedFromSemrush
+          : [];
+        setSuggestedCompetitors(
+          suggestions.filter((s) => !s.tracked).map((s) => s.domain).slice(0, 8),
+        );
       })
       .finally(() => setLoading(false));
   };
@@ -161,6 +181,49 @@ export default function SeoKeywordsPage() {
       await loadData();
     } finally {
       setTargetBusy(null);
+    }
+  };
+
+  const addCompetitor = async (domain: string, source: "manual" | "suggested" = "manual") => {
+    const trimmed = domain.trim();
+    if (!trimmed) return;
+    setCompetitorBusy(trimmed);
+    setCompetitorError(null);
+    try {
+      const res = await fetch("/api/seo/competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain: trimmed, source }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setCompetitorError(json?.error ?? "Failed to add");
+        return;
+      }
+      setNewCompetitor("");
+      await loadData();
+    } finally {
+      setCompetitorBusy(null);
+    }
+  };
+
+  const removeCompetitor = async (domain: string) => {
+    if (!confirm(`Stop tracking competitor "${domain}"?`)) return;
+    setCompetitorBusy(domain);
+    setCompetitorError(null);
+    try {
+      const res = await fetch(
+        `/api/seo/competitors?domain=${encodeURIComponent(domain)}`,
+        { method: "DELETE" },
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        setCompetitorError(json?.error ?? "Failed to remove");
+        return;
+      }
+      await loadData();
+    } finally {
+      setCompetitorBusy(null);
     }
   };
 
@@ -478,13 +541,22 @@ export default function SeoKeywordsPage() {
         </article>
         <article className="rounded-xl border border-[#e2e8f0] bg-white p-5">
           <h2 className="text-lg font-semibold">Long-tail opportunities</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Real question &amp; long-tail searches related to your targets (Semrush).
+          </p>
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
-            {(data?.longTailSuggestions ?? []).map((keyword) => (
+            {(data?.longTailSuggestions ?? []).length === 0 && !loading && (
+              <li className="text-xs text-slate-500">No long-tail suggestions available.</li>
+            )}
+            {(data?.longTailSuggestions ?? []).map((item) => (
               <li
-                key={keyword}
-                className="rounded-md border border-[#e2e8f0] bg-white px-3 py-2"
+                key={item.keyword}
+                className="flex items-center justify-between gap-3 rounded-md border border-[#e2e8f0] bg-white px-3 py-2"
               >
-                {keyword}
+                <span>{item.keyword}</span>
+                <span className="shrink-0 text-xs text-slate-500 tabular-nums">
+                  {formatNumber(item.searchVolume)}/mo
+                </span>
               </li>
             ))}
           </ul>
@@ -492,22 +564,110 @@ export default function SeoKeywordsPage() {
       </section>
 
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+        <h2 className="text-lg font-semibold">Manage tracked competitors</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Firms to benchmark against. The gap table below runs across this whole set. Saved to
+          Supabase. Suggestions come from Semrush&apos;s organic-competitor detection (directories
+          &amp; aggregators already filtered out).
+        </p>
+
+        {competitorError && (
+          <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {competitorError}
+          </div>
+        )}
+
+        <div className="mt-3 flex gap-2">
+          <input
+            type="text"
+            value={newCompetitor}
+            onChange={(e) => setNewCompetitor(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newCompetitor.trim()) addCompetitor(newCompetitor);
+            }}
+            placeholder="e.g. outtengolden.com"
+            className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+          />
+          <button
+            onClick={() => addCompetitor(newCompetitor)}
+            disabled={!newCompetitor.trim() || competitorBusy === newCompetitor.trim()}
+            className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+          >
+            {competitorBusy === newCompetitor.trim() ? "…" : "Add"}
+          </button>
+        </div>
+
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {competitors.length === 0 && !loading && (
+            <li className="text-xs text-slate-500">No tracked competitors yet.</li>
+          )}
+          {competitors.map((c) => (
+            <li
+              key={c}
+              className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-slate-50 pl-3 pr-1 py-1 text-xs text-slate-700"
+            >
+              <span>{c}</span>
+              <button
+                onClick={() => removeCompetitor(c)}
+                disabled={competitorBusy === c}
+                className="rounded-full h-5 w-5 inline-flex items-center justify-center text-slate-400 hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+                title={`Remove "${c}"`}
+                aria-label={`Remove ${c}`}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        {suggestedCompetitors.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-slate-500">Suggested by Semrush — click to track:</p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {suggestedCompetitors.map((s) => (
+                <li key={s}>
+                  <button
+                    onClick={() => addCompetitor(s, "suggested")}
+                    disabled={competitorBusy === s}
+                    className="inline-flex items-center gap-1 rounded-full border border-dashed border-[#185FA5]/40 bg-[#185FA5]/5 px-3 py-1 text-xs text-[#185FA5] hover:bg-[#185FA5]/10 disabled:opacity-50"
+                    title={`Track ${s}`}
+                  >
+                    + {s}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
         <h2 className="text-lg font-semibold">Competitor keyword opportunities</h2>
         <p className="text-xs text-slate-500 mt-1">
-          Keywords where a tracked competitor outranks us with meaningful search volume.
+          Keywords where a tracked competitor outranks us with meaningful search volume, merged
+          across {competitors.length || "your"} tracked {competitors.length === 1 ? "firm" : "firms"}.
+          &quot;Firms&quot; = how many of them beat us on that keyword.
         </p>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead className="border-b border-[#e2e8f0] text-slate-500 text-xs">
               <tr>
                 <th className="pb-2 pr-3 font-medium">Keyword</th>
-                <th className="pb-2 pr-3 font-medium">Competitor pos</th>
+                <th className="pb-2 pr-3 font-medium">Best competitor pos</th>
                 <th className="pb-2 pr-3 font-medium">Our pos</th>
+                <th className="pb-2 pr-3 font-medium">Firms</th>
                 <th className="pb-2 pr-3 font-medium">Opportunity score</th>
-                <th className="pb-2 font-medium">Domain</th>
+                <th className="pb-2 font-medium">Top domain</th>
               </tr>
             </thead>
             <tbody>
+              {(competitive?.competitive ?? []).length === 0 && !loading && (
+                <tr>
+                  <td colSpan={6} className="py-6 text-center text-slate-500">
+                    No competitor gaps found. Add tracked competitors above to populate this table.
+                  </td>
+                </tr>
+              )}
               {(competitive?.competitive ?? []).slice(0, 30).map((item) => (
                 <tr
                   key={`${item.domain}-${item.keyword}`}
@@ -518,6 +678,7 @@ export default function SeoKeywordsPage() {
                   <td className="py-2 pr-3 tabular-nums">
                     {item.ourPosition > 0 ? item.ourPosition : "—"}
                   </td>
+                  <td className="py-2 pr-3 tabular-nums">{item.competitorsBeatingUs ?? 1}</td>
                   <td className="py-2 pr-3 tabular-nums">{Math.round(item.opportunityScore)}</td>
                   <td className="py-2 text-slate-600">{item.domain}</td>
                 </tr>
