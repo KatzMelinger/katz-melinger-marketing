@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { MarketingNav } from "@/components/marketing-nav";
+import { ContentActionsRow, useContentActions } from "@/components/content-actions";
 
 type Alert = {
   id: string;
@@ -25,6 +26,62 @@ type Alert = {
   status: "new" | "read" | "dismissed";
   detected_at: string;
 };
+
+type ChannelFit = {
+  channel: string;
+  recommended: boolean;
+  score: number;
+  rationale: string;
+  formats: string[];
+};
+
+type SuggestedContent = {
+  title: string;
+  format: string;
+  channel: string;
+  why: string;
+};
+
+type TopicFit = {
+  topic: string;
+  verdict: string;
+  channels: ChannelFit[];
+  suggestedContent: SuggestedContent[];
+};
+
+// Pull the most content-relevant phrase out of an alert: an explicit keyword
+// from the payload if present, otherwise the alert title.
+function topicOf(a: Alert): string {
+  const p = a.payload ?? {};
+  for (const key of ["keyword", "prompt", "query", "phrase", "topic"]) {
+    const v = p[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return a.title;
+}
+
+// Map an analysis "format" label to a CONTENT_TYPES id understood by the
+// draft generator. Defaults to a blog post.
+function formatToContentTypeId(format: string): string {
+  const f = format.toLowerCase();
+  if (f.includes("faq")) return "faq";
+  if (f.includes("guide")) return "guide";
+  if (f.includes("case")) return "case_study";
+  if (f.includes("landing") || f.includes("service") || f.includes("page") || f.includes("web"))
+    return "webpage";
+  if (f.includes("email") || f.includes("newsletter")) return "email";
+  if (
+    f.includes("social") ||
+    f.includes("linkedin") ||
+    f.includes("instagram") ||
+    f.includes("facebook") ||
+    f.includes("tweet") ||
+    f.includes("twitter") ||
+    f.includes("video")
+  )
+    return "social_post";
+  return "blog_post";
+}
 
 type Rule = {
   id: string;
@@ -71,6 +128,42 @@ export default function AlertsPage() {
   const [summary, setSummary] = useState({ new: 0, read: 0, dismissed: 0 });
   const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
+
+  // Topic-fit analysis modal state.
+  const [analysisFor, setAnalysisFor] = useState<Alert | null>(null);
+  const [analysis, setAnalysis] = useState<TopicFit | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  // Shared Ideas / Fan-out / Create content flow (same as the SEO pages).
+  const contentActions = useContentActions();
+
+  const analyze = async (a: Alert) => {
+    setAnalysisFor(a);
+    setAnalysis(null);
+    setAnalysisError(null);
+    setAnalysisLoading(true);
+    try {
+      const res = await fetch("/api/content/intelligence/topic-fit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topicOf(a),
+          context: [a.type, a.body].filter(Boolean).join(" — "),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setAnalysisError(json?.error ?? "Analysis failed");
+        return;
+      }
+      setAnalysis(json as TopicFit);
+    } catch (e) {
+      setAnalysisError(e instanceof Error ? e.message : "Analysis failed");
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -136,7 +229,7 @@ export default function AlertsPage() {
           <p className="text-sm opacity-70 mt-1 max-w-2xl">
             Rank drops, AI mention gains and losses, sentiment shifts, new
             citations, and cannibalization — all in one inbox. The AEO evaluator
-            runs after every sweep; click "Evaluate now" to also re-check SEO
+            runs after every sweep; click &quot;Evaluate now&quot; to also re-check SEO
             rank drops.
           </p>
         </div>
@@ -192,7 +285,21 @@ export default function AlertsPage() {
                   <div className="mt-1 text-sm font-medium">{a.title}</div>
                   {a.body && <div className="mt-0.5 text-xs opacity-80">{a.body}</div>}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  <button
+                    onClick={() => analyze(a)}
+                    disabled={analysisLoading && analysisFor?.id === a.id}
+                    className="text-xs px-2 py-1 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/10 disabled:opacity-50"
+                    title="Assess this topic for SEO / AEO / Social and suggest content"
+                  >
+                    {analysisLoading && analysisFor?.id === a.id ? "Analyzing…" : "Analyze"}
+                  </button>
+                  <ContentActionsRow
+                    keyword={topicOf(a)}
+                    actions={contentActions}
+                    originSource="marketing_alert"
+                    originContext={{ alert_id: a.id, alert_type: a.type }}
+                  />
                   {a.status === "new" && (
                     <button
                       onClick={() => setStatusOf(a, "read")}
@@ -242,6 +349,151 @@ export default function AlertsPage() {
         </div>
       </Card>
       </div>
+
+      {analysisFor && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setAnalysisFor(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white dark:bg-neutral-900 shadow-2xl border border-black/10 dark:border-white/15"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 px-5 py-4">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-wide opacity-60">Topic analysis</p>
+                <h3 className="mt-1 text-lg font-semibold truncate">{topicOf(analysisFor)}</h3>
+              </div>
+              <button
+                onClick={() => setAnalysisFor(null)}
+                className="rounded p-1 opacity-60 hover:opacity-100"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {analysisLoading && (
+                <p className="text-sm opacity-70">Analyzing SEO / AEO / Social fit… (typically 5-10s)</p>
+              )}
+              {analysisError && (
+                <div className="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+                  {analysisError}
+                </div>
+              )}
+
+              {analysis && !analysisLoading && (
+                <>
+                  {analysis.verdict && (
+                    <p className="text-sm rounded-md border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-3 py-2">
+                      {analysis.verdict}
+                    </p>
+                  )}
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {analysis.channels.map((c) => (
+                      <div
+                        key={c.channel}
+                        className="rounded-lg border border-black/10 dark:border-white/10 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold">{c.channel}</span>
+                          <Pill tone={c.recommended ? "emerald" : "neutral"}>
+                            {c.recommended ? "Worth it" : "Skip"}
+                          </Pill>
+                        </div>
+                        <div className="mt-2 h-1.5 w-full rounded-full bg-black/10 dark:bg-white/10">
+                          <div
+                            className={`h-1.5 rounded-full ${
+                              c.score >= 67
+                                ? "bg-emerald-500"
+                                : c.score >= 34
+                                  ? "bg-amber-500"
+                                  : "bg-red-500"
+                            }`}
+                            style={{ width: `${Math.max(0, Math.min(100, c.score))}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-[11px] opacity-60">{c.score}/100</p>
+                        <p className="mt-1 text-xs opacity-80">{c.rationale}</p>
+                        {c.formats?.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {c.formats.map((f) => (
+                              <span
+                                key={f}
+                                className="rounded border border-black/10 dark:border-white/15 px-1.5 py-0.5 text-[10px] opacity-80"
+                              >
+                                {f}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium mb-2">Suggested content</p>
+                    {analysis.suggestedContent.length === 0 && (
+                      <p className="text-xs opacity-60">
+                        No content suggested — this topic isn&apos;t a strong fit right now.
+                      </p>
+                    )}
+                    <ul className="space-y-2">
+                      {analysis.suggestedContent.map((s) => {
+                        const busyKey = `alert-fit:${s.title}`;
+                        const isBusy = contentActions.creatingKey === busyKey;
+                        return (
+                          <li
+                            key={s.title}
+                            className="flex items-start justify-between gap-3 rounded-md border border-black/10 dark:border-white/10 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{s.title}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                                <span className="rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 px-1.5 py-0.5">
+                                  {s.channel}
+                                </span>
+                                <span className="rounded border border-black/10 dark:border-white/15 px-1.5 py-0.5 opacity-80">
+                                  {s.format}
+                                </span>
+                              </div>
+                              {s.why && <p className="mt-1 text-[11px] opacity-60">{s.why}</p>}
+                            </div>
+                            <button
+                              onClick={() =>
+                                contentActions.createDraft({
+                                  topic: s.title,
+                                  keyword: analysis.topic,
+                                  contentTypeId: formatToContentTypeId(s.format),
+                                  busyKey,
+                                  originSource: "marketing_alert_analysis",
+                                  originContext: {
+                                    alert_id: analysisFor.id,
+                                    channel: s.channel,
+                                    format: s.format,
+                                  },
+                                })
+                              }
+                              disabled={isBusy}
+                              className="shrink-0 rounded bg-[#185FA5] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                            >
+                              {isBusy ? "…" : "Create"}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {contentActions.modal}
     </>
   );
 }
