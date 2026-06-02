@@ -227,6 +227,35 @@ export default function SeoKeywordsPage() {
     }
   };
 
+  // Shared action row for the Trends + Long-tail suggestion cards: "+ Track"
+  // (adds to Supabase target keywords, reflecting already-tracked state) plus
+  // the same Ideas / Fan-out / Create content flow the tracker rows use.
+  const renderSuggestionActions = (keyword: string, originSource: string) => {
+    const isTracked = targets.includes(keyword.toLowerCase());
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => addTarget(keyword)}
+          disabled={isTracked || targetBusy === keyword.trim()}
+          className={`text-xs px-2 py-1 rounded border disabled:opacity-60 ${
+            isTracked
+              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+              : "border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5"
+          }`}
+          title={isTracked ? "Already a tracked target keyword" : "Add to tracked target keywords"}
+        >
+          {isTracked ? "Tracked ✓" : targetBusy === keyword.trim() ? "…" : "+ Track"}
+        </button>
+        <ContentActionsRow
+          keyword={keyword}
+          actions={contentActions}
+          originSource={originSource}
+          originContext={{ source_keyword: keyword }}
+        />
+      </div>
+    );
+  };
+
   const sorted = useMemo(() => {
     const rows = (data?.tracked ?? []).slice();
     const lc = search.trim().toLowerCase();
@@ -535,6 +564,7 @@ export default function SeoKeywordsPage() {
                 <p className="text-xs text-slate-500">
                   Volume {formatNumber(item.searchVolume)} · Trend {item.trendScore}
                 </p>
+                {renderSuggestionActions(item.keyword, "trending_keyword")}
               </li>
             ))}
           </ul>
@@ -551,12 +581,15 @@ export default function SeoKeywordsPage() {
             {(data?.longTailSuggestions ?? []).map((item) => (
               <li
                 key={item.keyword}
-                className="flex items-center justify-between gap-3 rounded-md border border-[#e2e8f0] bg-white px-3 py-2"
+                className="rounded-md border border-[#e2e8f0] bg-white px-3 py-2"
               >
-                <span>{item.keyword}</span>
-                <span className="shrink-0 text-xs text-slate-500 tabular-nums">
-                  {formatNumber(item.searchVolume)}/mo
-                </span>
+                <div className="flex items-center justify-between gap-3">
+                  <span>{item.keyword}</span>
+                  <span className="shrink-0 text-xs text-slate-500 tabular-nums">
+                    {formatNumber(item.searchVolume)}/mo
+                  </span>
+                </div>
+                {renderSuggestionActions(item.keyword, "long_tail_suggestion")}
               </li>
             ))}
           </ul>
