@@ -34,6 +34,12 @@ import {
   latestPlaybookRun,
   savePlaybookRun,
 } from "@/lib/recent-playbooks";
+import {
+  latestMetadataRun,
+  latestTopicsRun,
+  saveMetadataRun,
+  saveTopicsRun,
+} from "@/lib/recent-intelligence";
 
 type Tab = "topics" | "trends" | "metadata" | "social";
 
@@ -173,6 +179,24 @@ export default function IntelligencePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Restore the most recent Topics and Metadata runs on mount so their
+  // results stay on screen until the user re-runs the generator — matching
+  // the Trending and Social tabs.
+  useEffect(() => {
+    const lastTopics = latestTopicsRun();
+    if (lastTopics) {
+      setTopics(lastTopics.topics);
+      setPracticeArea(lastTopics.practiceArea);
+    }
+    const lastMeta = latestMetadataRun();
+    if (lastMeta) {
+      setMetadata(lastMeta.metadata);
+      if (!metaTopic) setMetaTopic(lastMeta.topic);
+      setMetaPageType(lastMeta.pageType);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const copy = async (value: string, key: string) => {
     await navigator.clipboard.writeText(value);
     setCopied(key);
@@ -190,7 +214,9 @@ export default function IntelligencePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed");
-      setTopics(data.topics ?? []);
+      const fresh = (data.topics ?? []) as TopicRow[];
+      setTopics(fresh);
+      saveTopicsRun({ practiceArea, topics: fresh });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -284,7 +310,11 @@ export default function IntelligencePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed");
-      setMetadata(data.metadata ?? null);
+      const fresh = (data.metadata ?? null) as Metadata | null;
+      setMetadata(fresh);
+      if (fresh) {
+        saveMetadataRun({ topic: metaTopic.trim(), pageType: metaPageType, metadata: fresh });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
