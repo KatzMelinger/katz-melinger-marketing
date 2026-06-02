@@ -34,7 +34,10 @@ export async function GET(request: NextRequest) {
       competitors: domains,
       quickWins: gaps.slice(0, 12),
       missingTargetKeywords: tracked.missingTargets,
-      longTailSuggestions: tracked.longTailSuggestions,
+      // getTrackedKeywordPerformance now returns { keyword, searchVolume }
+      // objects; this page's contract is string[] (it only needs the phrase),
+      // so flatten to keywords to avoid rendering objects as React children.
+      longTailSuggestions: tracked.longTailSuggestions.map((s) => s.keyword),
       topLinkGaps,
       summary: {
         keywordQuickWins: gaps.filter((row) => row.opportunityScore >= 70).length,
