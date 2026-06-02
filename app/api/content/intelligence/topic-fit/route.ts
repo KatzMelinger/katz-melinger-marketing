@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFirmContext } from "@/lib/firm-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -30,6 +31,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const topic = typeof body?.topic === "string" ? body.topic.trim() : "";
   const context = typeof body?.context === "string" ? body.context.trim() : "";
+  // When set, the result is cached onto this marketing alert's payload so
+  // re-opening the analysis is instant (no second LLM call).
+  const alertId = typeof body?.alertId === "string" ? body.alertId.trim() : "";
 
   if (!topic) {
     return NextResponse.json({ error: "topic required" }, { status: 400 });
@@ -84,12 +88,37 @@ Return JSON only:
       channels?: unknown[];
       suggestedContent?: unknown[];
     }>(text);
-    return NextResponse.json({
+    const result = {
       topic,
       verdict: typeof parsed.verdict === "string" ? parsed.verdict : "",
       channels: Array.isArray(parsed.channels) ? parsed.channels : [],
       suggestedContent: Array.isArray(parsed.suggestedContent) ? parsed.suggestedContent : [],
-    });
+      analyzed_at: new Date().toISOString(),
+    };
+
+    // Cache onto the alert's payload (merge — never clobber other keys).
+    if (alertId) {
+      try {
+        const supabase = getSupabaseAdmin();
+        const { data: existing } = await supabase
+          .from("marketing_alerts")
+          .select("payload")
+          .eq("id", alertId)
+          .single();
+        const payload =
+          existing?.payload && typeof existing.payload === "object"
+            ? (existing.payload as Record<string, unknown>)
+            : {};
+        await supabase
+          .from("marketing_alerts")
+          .update({ payload: { ...payload, topic_fit: result } })
+          .eq("id", alertId);
+      } catch {
+        /* caching is best-effort — still return the analysis */
+      }
+    }
+
+    return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to analyze topic";
     return NextResponse.json({ error: msg }, { status: 500 });

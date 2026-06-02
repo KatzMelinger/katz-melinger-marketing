@@ -47,7 +47,17 @@ type TopicFit = {
   verdict: string;
   channels: ChannelFit[];
   suggestedContent: SuggestedContent[];
+  analyzed_at?: string;
 };
+
+// A previously-cached analysis stored on the alert payload, if present.
+function cachedFit(a: Alert): TopicFit | null {
+  const tf = (a.payload ?? {})["topic_fit"];
+  if (tf && typeof tf === "object" && Array.isArray((tf as TopicFit).channels)) {
+    return tf as TopicFit;
+  }
+  return null;
+}
 
 // Pull the most content-relevant phrase out of an alert: an explicit keyword
 // from the payload if present, otherwise the alert title.
@@ -138,10 +148,20 @@ export default function AlertsPage() {
   // Shared Ideas / Fan-out / Create content flow (same as the SEO pages).
   const contentActions = useContentActions();
 
-  const analyze = async (a: Alert) => {
+  const analyze = async (a: Alert, force = false) => {
     setAnalysisFor(a);
-    setAnalysis(null);
     setAnalysisError(null);
+
+    // Instant path: reuse the cached analysis stored on the alert payload
+    // unless the user explicitly asked to re-run it.
+    const cached = force ? null : cachedFit(a);
+    if (cached) {
+      setAnalysis(cached);
+      setAnalysisLoading(false);
+      return;
+    }
+
+    setAnalysis(null);
     setAnalysisLoading(true);
     try {
       const res = await fetch("/api/content/intelligence/topic-fit", {
@@ -150,6 +170,7 @@ export default function AlertsPage() {
         body: JSON.stringify({
           topic: topicOf(a),
           context: [a.type, a.body].filter(Boolean).join(" — "),
+          alertId: a.id,
         }),
       });
       const json = await res.json();
@@ -158,6 +179,13 @@ export default function AlertsPage() {
         return;
       }
       setAnalysis(json as TopicFit);
+      // Embed into local state so the button flips to "View analysis" and a
+      // re-open is instant without another round-trip.
+      setAlerts((prev) =>
+        prev.map((x) =>
+          x.id === a.id ? { ...x, payload: { ...x.payload, topic_fit: json } } : x,
+        ),
+      );
     } catch (e) {
       setAnalysisError(e instanceof Error ? e.message : "Analysis failed");
     } finally {
@@ -292,7 +320,11 @@ export default function AlertsPage() {
                     className="text-xs px-2 py-1 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/10 disabled:opacity-50"
                     title="Assess this topic for SEO / AEO / Social and suggest content"
                   >
-                    {analysisLoading && analysisFor?.id === a.id ? "Analyzing…" : "Analyze"}
+                    {analysisLoading && analysisFor?.id === a.id
+                      ? "Analyzing…"
+                      : cachedFit(a)
+                        ? "View analysis"
+                        : "Analyze"}
                   </button>
                   <ContentActionsRow
                     keyword={topicOf(a)}
@@ -363,14 +395,29 @@ export default function AlertsPage() {
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-wide opacity-60">Topic analysis</p>
                 <h3 className="mt-1 text-lg font-semibold truncate">{topicOf(analysisFor)}</h3>
+                {analysis?.analyzed_at && !analysisLoading && (
+                  <p className="mt-0.5 text-[11px] opacity-50">
+                    Cached · analyzed {fmtDate(analysis.analyzed_at)}
+                  </p>
+                )}
               </div>
-              <button
-                onClick={() => setAnalysisFor(null)}
-                className="rounded p-1 opacity-60 hover:opacity-100"
-                aria-label="Close"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => analyze(analysisFor, true)}
+                  disabled={analysisLoading}
+                  className="text-xs px-2 py-1 rounded border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+                  title="Run a fresh analysis (replaces the cached result)"
+                >
+                  {analysisLoading ? "…" : "Re-analyze"}
+                </button>
+                <button
+                  onClick={() => setAnalysisFor(null)}
+                  className="rounded p-1 opacity-60 hover:opacity-100"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
             <div className="p-5 space-y-4">
