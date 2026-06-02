@@ -55,6 +55,31 @@ const TEMPLATE_INSTRUCTIONS: Record<string, string> = {
     "Structure as a comprehensive pillar guide: 1) table of contents, 2) introduction explaining who the guide is for, 3) 4-7 deep H2 sections covering rights/process/deadlines/evidence/damages/FAQs, 4) closing summary, 5) CTA. Include NY-specific statutes and deadlines where relevant.",
 };
 
+/**
+ * Guarantees a usable title when the model doesn't return one (non-JSON
+ * fallback). Prefers the first Markdown heading, then the first short line,
+ * then a title-cased version of the topic.
+ */
+function deriveTitle(content: string, fallbackTopic: string): string {
+  const clean = (s: string) =>
+    s.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
+
+  const heading = content.match(/^\s{0,3}#{1,3}\s+(.+?)\s*$/m);
+  if (heading?.[1]) return clean(heading[1]);
+
+  const firstLine = content
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (firstLine && firstLine.length <= 120) return clean(firstLine);
+
+  const topic = fallbackTopic.trim();
+  if (topic) {
+    return clean(topic.replace(/\b\w/g, (c) => c.toUpperCase()));
+  }
+  return "Untitled draft";
+}
+
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
@@ -160,28 +185,40 @@ Follow the user's output format instructions exactly. Do not fabricate case resu
 
   let userPrompt = "";
   if (contentType === "blog") {
+    // Long-form (blog + webpage/guide/faq/case_study via templateKey) must
+    // always carry a title AND structured headings — see the content policy.
     userPrompt = `Write a blog post draft.
 Topic: ${topic}
 Practice area: ${practiceArea}
 Tone: ${tone}
 Length: ${lengthGuide}
 
-Return only the blog body in Markdown (headings optional).`;
+Requirements:
+- Provide a compelling, specific title (the article's H1).
+- Structure the body with clear section headings using Markdown ## (H2) and ### (H3). Include at least 3 section headings.
+- Do NOT repeat the title as a heading at the top of the body.
+
+Return JSON only with keys: "title" (string) and "body" (string, the full article in Markdown with ## / ### headings).`;
   } else if (contentType === "social") {
+    // Social posts get a title/label for the library but no forced headings.
     userPrompt = `Write a ${platform || "social"} post.
 Topic: ${topic}
 Practice area: ${practiceArea}
 Tone: ${tone}
 Respect typical character limits; prefer one clear hook and a soft CTA to contact the firm. No hashtags unless appropriate for the platform.
 
-Return only the post text.`;
+Return JSON only with keys: "title" (string, a short internal label for this post) and "body" (string, the post text).`;
   } else if (contentType === "email") {
     userPrompt = `Write an email campaign draft.
 Campaign type: ${campaignType || "Newsletter"}
 Topic: ${topic}
 Tone: ${tone}
 
-Return JSON only with keys: "subject" (string) and "body" (string, plain text or simple HTML allowed as text).`;
+Requirements:
+- Provide a subject line.
+- Structure the body with short section subheadings so it is scannable, and end with one clear CTA.
+
+Return JSON only with keys: "subject" (string) and "body" (string, plain text or simple HTML allowed as text, with short section headings).`;
   } else {
     return NextResponse.json({ error: "Invalid content_type" }, { status: 400 });
   }
@@ -204,7 +241,13 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       textBlock && textBlock.type === "text" ? textBlock.text : "";
 
     // Autosave to the drafts library so every generation is recoverable.
-    async function autosave(format: string, body: string, metadata: Record<string, unknown> = {}) {
+    // Every draft gets a non-null title (policy: all content is titled).
+    async function autosave(
+      format: string,
+      body: string,
+      title: string,
+      metadata: Record<string, unknown> = {},
+    ) {
       const supabase = getSupabaseServer();
       if (!supabase) return null;
       try {
@@ -215,6 +258,7 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
             template: templateKey || null,
             topic,
             practice_area: practiceArea,
+            title: title || deriveTitle(body, topic),
             body,
             metadata: {
               ...metadata,
@@ -252,10 +296,13 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       } catch {
         /* fall through — keep the raw text so nothing is lost */
       }
-      const draftId = await autosave("email", bodyText, { subject });
+      // The subject line is the email's title in the drafts library.
+      const title = subject || deriveTitle(bodyText, topic);
+      const draftId = await autosave("email", bodyText, title, { subject });
       return NextResponse.json({
         draft_id: draftId,
         subject,
+        title,
         body: bodyText,
         raw: text,
         template: templateKey || null,
@@ -263,10 +310,29 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       });
     }
 
-    const draftId = await autosave(contentType === "social" ? "social" : "blog", text);
+    // Blog (incl. webpage/guide/faq/case_study) and social now return
+    // { title, body } JSON. Parse it; fall back to the raw text as the body
+    // and a derived title so a non-JSON response still saves cleanly.
+    let body = text;
+    let title = "";
+    try {
+      const parsed = extractJSON<{ title?: string; body?: string }>(text);
+      if (typeof parsed?.body === "string" && parsed.body.trim()) body = parsed.body;
+      if (typeof parsed?.title === "string") title = parsed.title.trim();
+    } catch {
+      /* non-JSON — keep raw text as body, derive a title below */
+    }
+    title = title || deriveTitle(body, topic);
+
+    const draftId = await autosave(
+      contentType === "social" ? "social" : "blog",
+      body,
+      title,
+    );
     return NextResponse.json({
       draft_id: draftId,
-      content: text,
+      title,
+      content: body,
       template: templateKey || null,
       used_brand_voice: useBrandVoice,
     });

@@ -191,6 +191,8 @@ async function autosave(brief: KMPerPageBrief, body: string): Promise<string | n
         topic: brief.primaryKeyword,
         practice_area:
           brief.practiceArea === "employment" ? "Employment Law" : "Commercial Collections",
+        // The brief's H1 is the on-page title; fall back to meta title / keyword.
+        title: brief.h1 || brief.metaTitle || brief.primaryKeyword,
         body,
         metadata: {
           km_brief: brief,
