@@ -56,6 +56,11 @@ const FORMATS: { id: FormatKey; label: string; hint: string }[] = [
   { id: "video_long", label: "YouTube video script", hint: "5-8 min, segments + B-roll cues" },
 ];
 
+// Runtime presets for the long-form audio/video scripts. "Custom…" reveals a
+// free-text field so any length can be entered.
+const PODCAST_LENGTHS = ["5-10 minutes", "10-30 minutes", "30-60 minutes"];
+const YOUTUBE_LENGTHS = ["3-5 minutes", "5-10 minutes", "10-20 minutes", "20-40 minutes"];
+
 type Source = {
   id: string;
   source_type: string;
@@ -92,6 +97,11 @@ export default function BatchPage() {
     DEFAULT_PRACTICE_AREAS[0],
   );
   const [tone, setTone] = useState("Professional, plain-spoken, accessible");
+  // Per-format target runtime for podcast + YouTube scripts.
+  const [podcastLen, setPodcastLen] = useState("5-10 minutes");
+  const [podcastCustom, setPodcastCustom] = useState("");
+  const [youtubeLen, setYoutubeLen] = useState("5-10 minutes");
+  const [youtubeCustom, setYoutubeCustom] = useState("");
   const [selected, setSelected] = useState<Set<FormatKey>>(
     () => new Set(visibleFormats as readonly FormatKey[]),
   );
@@ -230,6 +240,18 @@ export default function BatchPage() {
             .map((s) => s.trim())
             .filter(Boolean),
           sourceId: sourceId || undefined,
+          formatDurations: (() => {
+            const d: Record<string, string> = {};
+            if (selected.has("podcast")) {
+              const v = podcastLen === "custom" ? podcastCustom.trim() : podcastLen;
+              if (v) d.podcast = v;
+            }
+            if (selected.has("video_long")) {
+              const v = youtubeLen === "custom" ? youtubeCustom.trim() : youtubeLen;
+              if (v) d.video_long = v;
+            }
+            return d;
+          })(),
         }),
       });
       const data = await res.json();
@@ -395,6 +417,32 @@ export default function BatchPage() {
                 );
               })}
             </div>
+
+            {(selected.has("podcast") || selected.has("video_long")) && (
+              <div className="mt-4 grid sm:grid-cols-2 gap-3 border-t border-slate-100 pt-4">
+                {selected.has("podcast") && (
+                  <LengthPicker
+                    label="Podcast length"
+                    presets={PODCAST_LENGTHS}
+                    value={podcastLen}
+                    onValue={setPodcastLen}
+                    custom={podcastCustom}
+                    onCustom={setPodcastCustom}
+                  />
+                )}
+                {selected.has("video_long") && (
+                  <LengthPicker
+                    label="YouTube video length"
+                    presets={YOUTUBE_LENGTHS}
+                    value={youtubeLen}
+                    onValue={setYoutubeLen}
+                    custom={youtubeCustom}
+                    onCustom={setYoutubeCustom}
+                  />
+                )}
+              </div>
+            )}
+
             <div className="mt-4 flex items-center gap-3">
               <DashButton
                 onClick={generate}
@@ -488,5 +536,49 @@ function DraftCard({ draft }: { draft: GeneratedDraft }) {
         </div>
       )}
     </DashCard>
+  );
+}
+
+function LengthPicker({
+  label,
+  presets,
+  value,
+  onValue,
+  custom,
+  onCustom,
+}: {
+  label: string;
+  presets: string[];
+  value: string;
+  onValue: (v: string) => void;
+  custom: string;
+  onCustom: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-slate-700">{label}</label>
+      <div className="mt-1 flex gap-2">
+        <select
+          value={value}
+          onChange={(e) => onValue(e.target.value)}
+          className="rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+        >
+          {presets.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+          <option value="custom">Custom…</option>
+        </select>
+        {value === "custom" && (
+          <input
+            value={custom}
+            onChange={(e) => onCustom(e.target.value)}
+            placeholder="e.g. 45 minutes"
+            className="flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+          />
+        )}
+      </div>
+    </div>
   );
 }

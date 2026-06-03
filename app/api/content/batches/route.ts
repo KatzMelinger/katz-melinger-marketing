@@ -62,6 +62,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Optional per-format target runtime (podcast / video). Whitelist keys and
+  // cap length so it's safe to drop into the prompt.
+  let formatDurations: Partial<Record<FormatKey, string>> | undefined;
+  if (body?.formatDurations && typeof body.formatDurations === "object") {
+    const out: Partial<Record<FormatKey, string>> = {};
+    for (const [k, v] of Object.entries(body.formatDurations as Record<string, unknown>)) {
+      if (ALLOWED.includes(k as FormatKey) && typeof v === "string" && v.trim()) {
+        out[k as FormatKey] = v.trim().slice(0, 40);
+      }
+    }
+    if (Object.keys(out).length > 0) formatDurations = out;
+  }
+
   // If sourceId provided, pull its content for repurposing.
   let sourceText: string | null = null;
   if (body?.sourceId) {
@@ -85,6 +98,7 @@ export async function POST(req: NextRequest) {
       competitorGaps: body.competitorGaps,
       sourceId: body.sourceId ?? null,
       sourceText,
+      formatDurations,
       originSource:
         typeof body?.origin_source === "string" ? body.origin_source : null,
       originContext:

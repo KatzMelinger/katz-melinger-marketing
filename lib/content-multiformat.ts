@@ -106,9 +106,19 @@ function buildUserPrompt(args: {
   seoBriefHeadings?: string[];
   competitorGaps?: string[];
   sourceText?: string | null;
+  formatDurations?: Partial<Record<FormatKey, string>>;
 }): string {
   const requestedSpec = args.formats
-    .map((f) => `- ${f}: ${FORMAT_INSTRUCTIONS[f]}`)
+    .map((f) => {
+      const base = FORMAT_INSTRUCTIONS[f];
+      const dur = args.formatDurations?.[f];
+      // An explicit target runtime overrides the default length baked into the
+      // base instruction (e.g. podcast/video). ~130-160 spoken words/minute.
+      const durNote = dur
+        ? ` TARGET RUNTIME: ${dur} — this overrides any default length above; scale the number of segments, depth, and word count to fill it (~130-160 spoken words per minute).`
+        : "";
+      return `- ${f}: ${base}${durNote}`;
+    })
     .join("\n");
 
   const sourceBlock = args.sourceText
@@ -171,6 +181,7 @@ export async function generateMultiFormat(args: {
   sourceText?: string | null;
   originSource?: string | null;
   originContext?: Record<string, unknown> | null;
+  formatDurations?: Partial<Record<FormatKey, string>>;
 }): Promise<MultiFormatResult> {
   const supabase = getSupabaseAdmin();
   const [firm, skillsContext] = await Promise.all([
@@ -195,6 +206,7 @@ export async function generateMultiFormat(args: {
       seoBriefHeadings: args.seoBriefHeadings,
       competitorGaps: args.competitorGaps,
       sourceText: args.sourceText,
+      formatDurations: args.formatDurations,
     });
 
   const [longResult, shortResult] = await Promise.all([
