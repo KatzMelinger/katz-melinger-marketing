@@ -1,19 +1,62 @@
 /**
  * POST /api/aeo/runs/start
+ *   Body: { providers?: string[], promptIds?: string[] }
+ *   Manual/UI trigger. Creates an aeo_runs row and kicks the sweep off in the
+ *   background. Returns { runId } so the caller can poll /api/aeo/runs/[id].
  *
- * Body: { providers?: string[], promptIds?: string[] }
- *
- * Creates an aeo_runs row and kicks the sweep off in the background. Returns
- * { runId } so the caller can poll /api/aeo/runs/[id] for status.
+ * GET /api/aeo/runs/start
+ *   Weekly Vercel Cron trigger (requires Authorization: Bearer ${CRON_SECRET}).
+ *   Runs the AEO sweep — which auto-evaluates AEO alerts (lost/gained AI
+ *   mentions, sentiment, new citations) on completion — and re-checks rank-drop
+ *   alerts. This is what keeps Marketing Alerts updating on its own.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { startRun, executeRun } from "@/lib/aeo-runner";
+import { evaluateRankAlerts } from "@/lib/alerts-engine";
 import type { AEOProviderId } from "@/lib/aeo-providers";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+/**
+ * Vercel injects `Authorization: Bearer ${CRON_SECRET}` on scheduled
+ * invocations when CRON_SECRET is set. Reject anything else so the GET cron
+ * endpoint can't be abused to spend API budget.
+ */
+function isAuthorizedCron(req: NextRequest): boolean {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return false;
+  return (req.headers.get("authorization") ?? "") === `Bearer ${expected}`;
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rank-drop alerts: quick, reads the keyword table refreshed by the daily cron.
+  const rank = await evaluateRankAlerts().catch(() => ({ written: 0 }));
+
+  // AEO sweep: evaluates AEO alerts itself when it finishes. Run in background
+  // so the cron response returns promptly; the function stays alive for it.
+  let runId: string | null = null;
+  let sweepError: string | undefined;
+  try {
+    runId = await startRun({ triggeredBy: "cron" });
+    after(executeRun(runId));
+  } catch (e) {
+    sweepError = e instanceof Error ? e.message : "sweep failed";
+  }
+
+  return NextResponse.json({
+    ok: true,
+    runId,
+    rankAlertsWritten: rank.written,
+    ...(sweepError ? { sweepError } : {}),
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
