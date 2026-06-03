@@ -47,7 +47,7 @@ export async function GET() {
   });
 }
 
-const ALLOWED: FormatKey[] = ["blog", "linkedin", "twitter", "facebook", "instagram", "email", "podcast"];
+const ALLOWED: FormatKey[] = ["blog", "linkedin", "twitter", "facebook", "instagram", "email", "podcast", "video_short", "video_long"];
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));

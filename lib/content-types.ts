@@ -22,7 +22,9 @@ export type FormatKey =
   | "facebook"
   | "instagram"
   | "email"
-  | "podcast";
+  | "podcast"
+  | "video_short"
+  | "video_long";
 
 export const CONTENT_TYPE_LABEL: Record<ContentTypeKey, string> = {
   website: "Website",
@@ -32,12 +34,20 @@ export const CONTENT_TYPE_LABEL: Record<ContentTypeKey, string> = {
 
 /**
  * Which draft `format` values belong to each top-level content type.
- * Podcast lives under Social Media (long-form audio is treated as social/
- * distribution content here, not website content).
+ * Podcast and video scripts live under Social Media (audio/video are treated
+ * as social/distribution content here, not website content).
  */
 export const CONTENT_TYPE_FORMATS: Record<ContentTypeKey, FormatKey[]> = {
   website: ["blog"],
-  social: ["linkedin", "twitter", "facebook", "instagram", "podcast"],
+  social: [
+    "linkedin",
+    "twitter",
+    "facebook",
+    "instagram",
+    "podcast",
+    "video_short",
+    "video_long",
+  ],
   email: ["email"],
 };
 

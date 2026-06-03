@@ -34,9 +34,17 @@ export type FormatKey =
   | "facebook"
   | "instagram"
   | "email"
-  | "podcast";
+  | "podcast"
+  | "video_short"
+  | "video_long";
 
-const LONG_FORM_FORMATS: FormatKey[] = ["blog", "email", "podcast"];
+const LONG_FORM_FORMATS: FormatKey[] = [
+  "blog",
+  "email",
+  "podcast",
+  "video_short",
+  "video_long",
+];
 
 const FORMAT_INSTRUCTIONS: Record<FormatKey, string> = {
   blog: "800-1200 word blog post with H2/H3 headings, lead paragraph, 3-5 sections, and a CTA. Use markdown formatting.",
@@ -46,6 +54,10 @@ const FORMAT_INSTRUCTIONS: Record<FormatKey, string> = {
   instagram: "Instagram caption: 150-220 words, 5-8 relevant hashtags at the end, line breaks for readability, opens with a hook.",
   email: "Email newsletter: a subject line (under 60 chars), preview text (under 110 chars), and 250-400 word body broken into short scannable sections with subheadings. Single clear CTA.",
   podcast: "5-7 minute solo podcast script: cold open hook (15-30 sec), intro, 3 main points with examples, recap, and call-to-action. Include speaker notes in [brackets] for tone shifts and pauses.",
+  video_short:
+    "30-60 second vertical short-form video script (Reels / TikTok / YouTube Shorts). Format as a two-column shot list using a Markdown table with columns 'Voiceover' (the spoken words) and 'On-screen / B-roll' (visual cues, on-screen text, captions). Open with a 3-second pattern-interrupt hook. One single core idea only. Keep total spoken words under ~150. End with a clear verbal CTA and a suggested on-screen end-card caption.",
+  video_long:
+    "5-8 minute YouTube video script. Structure: hook (0-15 sec), intro stating what the viewer will learn, 3-4 main segments, a brief mid-roll re-hook, recap, and CTA (subscribe + contact the firm). For each segment include a [B-roll / visual cue] note and a suggested on-screen lower-third. Use spoken-word cadence with short sentences, and mark [PAUSE], [tone shift], and [cut to ...] directions in brackets.",
 };
 
 export type MultiFormatResult = {
