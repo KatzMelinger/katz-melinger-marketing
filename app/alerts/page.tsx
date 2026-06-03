@@ -138,6 +138,8 @@ export default function AlertsPage() {
   const [summary, setSummary] = useState({ new: 0, read: 0, dismissed: 0 });
   const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
+  const [sweeping, setSweeping] = useState(false);
+  const [sweepMsg, setSweepMsg] = useState<string | null>(null);
 
   // Topic-fit analysis modal state.
   const [analysisFor, setAnalysisFor] = useState<Alert | null>(null);
@@ -231,6 +233,29 @@ export default function AlertsPage() {
     }
   };
 
+  // One-click AEO sweep. Runs across the configured AI providers; AEO alerts
+  // are evaluated automatically when it finishes (and the FIRST sweep just
+  // seeds the baseline, since alerts come from diffing against the prior run).
+  const runSweep = async () => {
+    setSweeping(true);
+    setSweepMsg(null);
+    try {
+      const res = await fetch("/api/aeo/runs/start", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSweepMsg(json?.error ?? "Failed to start sweep");
+        return;
+      }
+      setSweepMsg(
+        "AEO sweep started — it runs in the background (a few minutes). New AI-mention alerts appear here once it finishes.",
+      );
+    } catch (e) {
+      setSweepMsg(e instanceof Error ? e.message : "Failed to start sweep");
+    } finally {
+      setSweeping(false);
+    }
+  };
+
   const setRule = async (rule: Rule, patch: Partial<Rule>) => {
     await fetch(`/api/alerts/rules/${rule.id}`, {
       method: "PATCH",
@@ -261,14 +286,30 @@ export default function AlertsPage() {
             rank drops.
           </p>
         </div>
-        <button
-          onClick={evaluate}
-          disabled={evaluating}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
-        >
-          {evaluating ? "Evaluating…" : "Evaluate now"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={runSweep}
+            disabled={sweeping}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-foreground text-background hover:opacity-90 disabled:opacity-50"
+            title="Run an AEO sweep now to refresh AI-mention alerts"
+          >
+            {sweeping ? "Starting sweep…" : "Run AEO sweep now"}
+          </button>
+          <button
+            onClick={evaluate}
+            disabled={evaluating}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+          >
+            {evaluating ? "Evaluating…" : "Evaluate now"}
+          </button>
+        </div>
       </div>
+
+      {sweepMsg && (
+        <div className="rounded-md border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-2 text-xs opacity-80">
+          {sweepMsg}
+        </div>
+      )}
 
       <div className="flex gap-2 border-b border-black/10 dark:border-white/10 pb-3">
         {tabs.map((t) => (

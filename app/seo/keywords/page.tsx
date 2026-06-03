@@ -361,10 +361,12 @@ export default function SeoKeywordsPage() {
 
   // Tracker pagination math.
   const PAGE_STEP = 20;
+  const ALL_SIZE = 1_000_000; // sentinel for "show all" (finite so math stays safe)
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const safePage = Math.min(page, totalPages - 1);
   const pageStart = safePage * pageSize;
   const pageRows = sorted.slice(pageStart, pageStart + pageSize);
+  const pageSizeValue = pageSize >= ALL_SIZE ? "all" : String(pageSize);
 
   return (
     <SeoShell
@@ -651,27 +653,23 @@ export default function SeoKeywordsPage() {
           </p>
           {sorted.length > PAGE_STEP && (
             <div className="flex items-center gap-2">
-              {pageSize < sorted.length && (
-                <button
-                  onClick={() => setPageSize((s) => s + PAGE_STEP)}
-                  className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                  title="Show 20 more rows on this page"
-                >
-                  Show 20 more
-                </button>
-              )}
-              {pageSize !== PAGE_STEP && (
-                <button
-                  onClick={() => {
-                    setPageSize(PAGE_STEP);
+              <label className="flex items-center gap-1 text-xs text-slate-500">
+                Per page:
+                <select
+                  value={pageSizeValue}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPageSize(v === "all" ? ALL_SIZE : Number(v));
                     setPage(0);
                   }}
-                  className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                  title="Back to 20 per page"
+                  className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs text-slate-700"
                 >
-                  Reset to 20
-                </button>
-              )}
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
               <button
                 onClick={() => setPage(Math.max(0, safePage - 1))}
                 disabled={safePage <= 0}
