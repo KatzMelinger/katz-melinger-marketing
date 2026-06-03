@@ -22,6 +22,11 @@ import {
   type RegionFilter,
   type StateFilter,
 } from "@/lib/keyword-geo";
+import {
+  classifyKeywordCluster,
+  CLUSTER_FILTER_OPTIONS,
+  type ClusterFilter,
+} from "@/lib/keyword-cluster";
 import { recordSearch } from "@/lib/recent-searches";
 
 type KeywordRow = {
@@ -65,6 +70,17 @@ type SortKey =
   | "cpc"
   | "trafficCost";
 
+// Sort keys for the "Competitor keyword opportunities" table (separate from the
+// target tracker above so the two tables sort independently).
+type CompSortKey =
+  | "keyword"
+  | "competitorPosition"
+  | "ourPosition"
+  | "competitorsBeatingUs"
+  | "opportunityScore"
+  | "domain"
+  | "cluster";
+
 // Geo classification + filter logic now lives in lib/keyword-geo so the
 // /seo/keywords/competitive page can share it.
 
@@ -88,6 +104,13 @@ export default function SeoKeywordsPage() {
   // Default hides out-of-state keywords since the firm is NY/NJ-only.
   const [stateFilter, setStateFilter] = useState<StateFilter>("ny_nj_and_generic");
   const [regionFilter, setRegionFilter] = useState<RegionFilter>("all");
+
+  // Competitor-opportunity table: independent sort + filters (by competitor
+  // domain and by keyword cluster/practice area).
+  const [compSortKey, setCompSortKey] = useState<CompSortKey>("opportunityScore");
+  const [compSortDir, setCompSortDir] = useState<"asc" | "desc">("desc");
+  const [compDomainFilter, setCompDomainFilter] = useState<string>("all");
+  const [clusterFilter, setClusterFilter] = useState<ClusterFilter>("all");
 
   // Tracker pagination: 20 per page, with "show more" (grow the page) or
   // page-by-page nav. `manageOpen` collapses the "Manage target keywords" card.
@@ -348,6 +371,60 @@ export default function SeoKeywordsPage() {
   };
 
   const sortIndicator = (key: SortKey) => (sortKey !== key ? "" : sortDir === "asc" ? " ▲" : " ▼");
+
+  const setCompSort = (key: CompSortKey) => {
+    if (key === compSortKey) {
+      setCompSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setCompSortKey(key);
+      // Keyword/domain/cluster default A→Z; numeric columns default high→low.
+      setCompSortDir(key === "keyword" || key === "domain" || key === "cluster" ? "asc" : "desc");
+    }
+  };
+  const compSortIndicator = (key: CompSortKey) =>
+    compSortKey !== key ? "" : compSortDir === "asc" ? " ▲" : " ▼";
+
+  // Competitor gaps, tagged with a practice-area cluster, then filtered + sorted.
+  // The API already caps the merged set at 30; we tag/filter/sort that set.
+  const competitiveRows = useMemo(() => {
+    const rows = (competitive?.competitive ?? []).map((r) => ({
+      ...r,
+      competitorsBeatingUs: r.competitorsBeatingUs ?? 1,
+      cluster: classifyKeywordCluster(r.keyword),
+    }));
+    const filtered = rows.filter((r) => {
+      if (compDomainFilter !== "all" && r.domain !== compDomainFilter) return false;
+      if (clusterFilter !== "all" && r.cluster.key !== clusterFilter) return false;
+      return true;
+    });
+    filtered.sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (compSortKey === "cluster") {
+        av = a.cluster.label;
+        bv = b.cluster.label;
+      } else {
+        av = a[compSortKey];
+        bv = b[compSortKey];
+      }
+      if (typeof av === "string" && typeof bv === "string") {
+        return compSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      const aNum = typeof av === "number" ? av : 0;
+      const bNum = typeof bv === "number" ? bv : 0;
+      return compSortDir === "asc" ? aNum - bNum : bNum - aNum;
+    });
+    return filtered;
+  }, [competitive, compDomainFilter, clusterFilter, compSortKey, compSortDir]);
+
+  // Distinct competitor domains present in the gap set, for the filter dropdown.
+  const competitorDomains = useMemo(
+    () =>
+      Array.from(new Set((competitive?.competitive ?? []).map((r) => r.domain))).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [competitive],
+  );
 
   const top10Count = (data?.tracked ?? []).filter(
     (i) => i.position > 0 && i.position <= 10,
@@ -816,43 +893,95 @@ export default function SeoKeywordsPage() {
       </section>
 
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
-        <h2 className="text-lg font-semibold">Competitor keyword opportunities</h2>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-lg font-semibold">Competitor keyword opportunities</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={compDomainFilter}
+              onChange={(e) => setCompDomainFilter(e.target.value)}
+              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0]"
+              title="Filter to a single competitor domain"
+            >
+              <option value="all">All competitors</option>
+              {competitorDomains.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <select
+              value={clusterFilter}
+              onChange={(e) => setClusterFilter(e.target.value as ClusterFilter)}
+              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0]"
+              title="Filter to a single practice-area cluster"
+            >
+              {CLUSTER_FILTER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         <p className="text-xs text-slate-500 mt-1">
           Keywords where a tracked competitor outranks us with meaningful search volume, merged
           across {competitors.length || "your"} tracked {competitors.length === 1 ? "firm" : "firms"}.
-          &quot;Firms&quot; = how many of them beat us on that keyword.
+          &quot;Firms&quot; = how many of them beat us on that keyword. Click any column header to
+          sort; filter by competitor or practice-area cluster above.
         </p>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <table className="w-full min-w-[940px] text-left text-sm">
             <thead className="border-b border-[#e2e8f0] text-slate-500 text-xs">
               <tr>
-                <th className="pb-2 pr-3 font-medium">Keyword</th>
-                <th className="pb-2 pr-3 font-medium">Best competitor pos</th>
-                <th className="pb-2 pr-3 font-medium">Our pos</th>
-                <th className="pb-2 pr-3 font-medium">Firms</th>
-                <th className="pb-2 pr-3 font-medium">Opportunity score</th>
-                <th className="pb-2 font-medium">Top domain</th>
+                <ThButton onClick={() => setCompSort("keyword")}>
+                  Keyword{compSortIndicator("keyword")}
+                </ThButton>
+                <ThButton onClick={() => setCompSort("cluster")}>
+                  Cluster{compSortIndicator("cluster")}
+                </ThButton>
+                <ThButton onClick={() => setCompSort("competitorPosition")}>
+                  Best competitor pos{compSortIndicator("competitorPosition")}
+                </ThButton>
+                <ThButton onClick={() => setCompSort("ourPosition")}>
+                  Our pos{compSortIndicator("ourPosition")}
+                </ThButton>
+                <ThButton onClick={() => setCompSort("competitorsBeatingUs")}>
+                  Firms{compSortIndicator("competitorsBeatingUs")}
+                </ThButton>
+                <ThButton onClick={() => setCompSort("opportunityScore")}>
+                  Opportunity score{compSortIndicator("opportunityScore")}
+                </ThButton>
+                <ThButton onClick={() => setCompSort("domain")}>
+                  Top domain{compSortIndicator("domain")}
+                </ThButton>
               </tr>
             </thead>
             <tbody>
-              {(competitive?.competitive ?? []).length === 0 && !loading && (
+              {competitiveRows.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-500">
-                    No competitor gaps found. Add tracked competitors above to populate this table.
+                  <td colSpan={7} className="py-6 text-center text-slate-500">
+                    {(competitive?.competitive ?? []).length === 0
+                      ? "No competitor gaps found. Add tracked competitors above to populate this table."
+                      : "No gaps match these filters."}
                   </td>
                 </tr>
               )}
-              {(competitive?.competitive ?? []).slice(0, 30).map((item) => (
+              {competitiveRows.map((item) => (
                 <tr
                   key={`${item.domain}-${item.keyword}`}
                   className="border-b border-[#e2e8f0]/60 last:border-0 hover:bg-slate-50"
                 >
                   <td className="py-2 pr-3 text-slate-900">{item.keyword}</td>
+                  <td className="py-2 pr-3">
+                    <span className="text-[11px] px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600">
+                      {item.cluster.label}
+                    </span>
+                  </td>
                   <td className="py-2 pr-3 tabular-nums">{item.competitorPosition}</td>
                   <td className="py-2 pr-3 tabular-nums">
                     {item.ourPosition > 0 ? item.ourPosition : "—"}
                   </td>
-                  <td className="py-2 pr-3 tabular-nums">{item.competitorsBeatingUs ?? 1}</td>
+                  <td className="py-2 pr-3 tabular-nums">{item.competitorsBeatingUs}</td>
                   <td className="py-2 pr-3 tabular-nums">{Math.round(item.opportunityScore)}</td>
                   <td className="py-2 text-slate-600">{item.domain}</td>
                 </tr>

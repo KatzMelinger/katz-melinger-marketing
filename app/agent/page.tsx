@@ -69,6 +69,8 @@ export default function AgentPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastSteps, setLastSteps] = useState<Step[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Lets the Stop button abort an in-progress /api/agent request.
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setMessages(loadHistory());
@@ -97,11 +99,15 @@ export default function AgentPage() {
     setError(null);
     setLastSteps([]);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: nextHistory }),
+        signal: controller.signal,
       });
       const data = (await res.json()) as {
         text?: string;
@@ -113,10 +119,20 @@ export default function AgentPage() {
       setMessages((m) => [...m, { role: "assistant", content: reply }]);
       setLastSteps(data.steps ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "agent error");
+      // User hit Stop — not an error; just note it and keep their message.
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setMessages((m) => [...m, { role: "assistant", content: "⏹ Stopped." }]);
+      } else {
+        setError(e instanceof Error ? e.message : "agent error");
+      }
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
+  };
+
+  const stop = () => {
+    abortRef.current?.abort();
   };
 
   const reset = () => {
@@ -230,9 +246,17 @@ export default function AgentPage() {
           rows={2}
           className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm resize-none focus:border-[#185FA5] focus:outline-none"
         />
-        <DashButton onClick={() => void send(input)} disabled={loading || !input.trim()}>
-          {loading ? <DashSpinner /> : "Send"}
-        </DashButton>
+        {loading ? (
+          <DashButton variant="danger" onClick={stop}>
+            <span className="inline-flex items-center gap-2">
+              <DashSpinner /> Stop
+            </span>
+          </DashButton>
+        ) : (
+          <DashButton type="submit" onClick={() => void send(input)} disabled={!input.trim()}>
+            Send
+          </DashButton>
+        )}
       </form>
 
       {/* Tool transparency: show what Claude actually called on the last turn */}

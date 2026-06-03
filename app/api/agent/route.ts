@@ -85,14 +85,27 @@ Keep responses focused. Default to short, scannable bullets unless the user asks
   let iterations = 0;
 
   while (iterations < MAX_ITERATIONS) {
+    // The user hit "Stop" (or the connection dropped) — bail with partial work.
+    if (req.signal.aborted) break;
     iterations += 1;
-    const resp = await anthropic.messages.create({
-      model: KEYWORD_RESEARCH_MODEL,
-      max_tokens: 2048,
-      system: cachedSystemPrompt(system),
-      tools: TOOLS,
-      messages,
-    });
+    let resp;
+    try {
+      resp = await anthropic.messages.create(
+        {
+          model: KEYWORD_RESEARCH_MODEL,
+          max_tokens: 2048,
+          system: cachedSystemPrompt(system),
+          tools: TOOLS,
+          messages,
+        },
+        // Propagate the abort so the in-flight request to Anthropic is cancelled
+        // immediately, not just at the next loop boundary.
+        { signal: req.signal },
+      );
+    } catch (err) {
+      if (req.signal.aborted) break;
+      throw err;
+    }
 
     // Capture any assistant text + tool_use blocks from this turn.
     const assistantBlocks = resp.content;
@@ -151,5 +164,6 @@ Keep responses focused. Default to short, scannable bullets unless the user asks
     steps,
     iterations,
     hitLimit: iterations >= MAX_ITERATIONS,
+    aborted: req.signal.aborted,
   });
 }
