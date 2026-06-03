@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * KM Agent — chat front-end for /api/agent.
+ * Agent Assistant — chat front-end for /api/agent.
  *
  * One front door to every intelligence tool the dashboard exposes: trending
  * topics, topic ideas, social playbooks, tracked-keyword status, active
@@ -146,7 +146,7 @@ export default function AgentPage() {
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-5xl mx-auto">
       <div className="mb-6 flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">KM Agent</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Agent Assistant</h1>
           <p className="text-sm text-slate-600 mt-1">
             Chat-driven access to every intelligence tool in MarketOS — trending
             topics, recommendations, tracked keywords, the AutoPilot queue, more.

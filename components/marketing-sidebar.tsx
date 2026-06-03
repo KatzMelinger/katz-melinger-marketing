@@ -37,7 +37,7 @@ const GROUPS: NavGroup[] = [
   {
     label: "AI Tools",
     items: [
-      { label: "KM Agent", href: "/agent", icon: "💬" },
+      { label: "Agent Assistant", href: "/agent", icon: "💬" },
       { label: "Image Generator", href: "/content/images", icon: "🖼" },
     ],
   },
