@@ -11,6 +11,7 @@ import {
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
 import { listTargets } from "@/lib/seo-targets";
+import { getSupabaseServer } from "@/lib/supabase-server";
 
 type SemrushRecord = Record<string, string>;
 
@@ -208,6 +209,24 @@ function parseKeywordRow(row: SemrushRecord): KeywordRow {
  * and then to the legacy hardcoded list so the page never returns empty.
  */
 export async function getTargetKeywords(): Promise<string[]> {
+  // Unified source of truth: the seo_keywords tracker table (the same list the
+  // KM Agent reads and the rank-refresh cron updates). This makes every
+  // intelligence feature that calls getTargetKeywords() — gap analysis,
+  // topical maps, alerts, recommendations, briefs, correlation — read the same
+  // list as the agent. Falls back to the legacy seo_target_keywords list, then
+  // env / defaults, so nothing breaks before/after migration.
+  try {
+    const sb = getSupabaseServer();
+    if (sb) {
+      const { data } = await sb.from("seo_keywords").select("keyword");
+      const kws = (data ?? [])
+        .map((r) => (typeof r.keyword === "string" ? r.keyword.trim() : ""))
+        .filter(Boolean);
+      if (kws.length > 0) return kws;
+    }
+  } catch {
+    // fall through to legacy targets / env / defaults
+  }
   try {
     const fromDb = await listTargets();
     if (fromDb.length > 0) return fromDb;

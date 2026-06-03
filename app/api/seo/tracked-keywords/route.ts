@@ -12,6 +12,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { lookupKeywordRanking } from "@/lib/semrush";
+import {
+  isSemrushPushEnabled,
+  pushKeywordsToCampaign,
+} from "@/lib/semrush-position-tracking";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -75,6 +79,29 @@ function validateBody(body: CreateKeywordBody): {
   };
 }
 
+export async function DELETE(req: NextRequest) {
+  const keyword = req.nextUrl.searchParams.get("keyword")?.trim();
+  if (!keyword) {
+    return NextResponse.json({ error: "keyword query param required" }, { status: 400 });
+  }
+  try {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from("seo_keywords")
+      .delete()
+      .ilike("keyword", keyword);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, removed: keyword });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message ?? "Failed to remove keyword" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as CreateKeywordBody;
@@ -117,7 +144,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to add keyword" }, { status: 500 });
     }
 
-    return NextResponse.json(data, { status: 201 });
+    // Two-way sync: mirror the new keyword into the Semrush Position Tracking
+    // campaign so Semrush's dashboards/reports stay in sync. Best-effort and
+    // only when explicitly enabled (it spends 100 API units/keyword) — never
+    // fails the add.
+    let semrushPush: Awaited<ReturnType<typeof pushKeywordsToCampaign>> | undefined;
+    if (isSemrushPushEnabled()) {
+      semrushPush = await pushKeywordsToCampaign([parsed.value.keyword]).catch(
+        () => undefined,
+      );
+    }
+
+    return NextResponse.json({ ...data, semrushPush }, { status: 201 });
   } catch (err: any) {
     console.error("[seo/tracked-keywords POST] Failed:", err?.message);
     return NextResponse.json({ error: "Failed to add keyword" }, { status: 500 });

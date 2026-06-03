@@ -96,6 +96,8 @@ export default function SeoKeywordsPage() {
   const [newTarget, setNewTarget] = useState("");
   const [targetBusy, setTargetBusy] = useState<string | null>(null);
   const [targetError, setTargetError] = useState<string | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushResult, setPushResult] = useState<string | null>(null);
 
   // Tracked-competitor management — persisted in Supabase via
   // /api/seo/competitors. `suggested` is the Semrush auto-detected list
@@ -117,13 +119,19 @@ export default function SeoKeywordsPage() {
       fetch("/api/seo/keywords", { cache: "no-store" }).then((r) => r.json()),
       // "all" → merged gap across every curated competitor, not one hardcoded firm.
       fetch("/api/seo/keywords?competitor=all", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/seo/keywords/targets", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/seo/tracked-keywords", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/seo/competitors", { cache: "no-store" }).then((r) => r.json()),
     ])
       .then(([d, c, t, comp]) => {
         setData(d);
         setCompetitive(c);
-        setTargets(Array.isArray(t?.targets) ? t.targets : []);
+        // Unified source of truth: seo_keywords (same list the KM Agent reads).
+        // GET /api/seo/tracked-keywords returns an array of row objects.
+        setTargets(
+          Array.isArray(t)
+            ? t.map((row: { keyword?: string }) => row.keyword ?? "").filter(Boolean)
+            : [],
+        );
         setCompetitors(Array.isArray(comp?.trackedDomains) ? comp.trackedDomains : []);
         const suggestions: Array<{ domain: string; tracked?: boolean }> = Array.isArray(
           comp?.suggestedFromSemrush,
@@ -147,7 +155,7 @@ export default function SeoKeywordsPage() {
     setTargetBusy(trimmed);
     setTargetError(null);
     try {
-      const res = await fetch("/api/seo/keywords/targets", {
+      const res = await fetch("/api/seo/tracked-keywords", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ keyword: trimmed }),
@@ -170,7 +178,7 @@ export default function SeoKeywordsPage() {
     setTargetError(null);
     try {
       const res = await fetch(
-        `/api/seo/keywords/targets?keyword=${encodeURIComponent(keyword)}`,
+        `/api/seo/tracked-keywords?keyword=${encodeURIComponent(keyword)}`,
         { method: "DELETE" },
       );
       const json = await res.json();
@@ -181,6 +189,42 @@ export default function SeoKeywordsPage() {
       await loadData();
     } finally {
       setTargetBusy(null);
+    }
+  };
+
+  // One-time bulk push of every tracked keyword into the Semrush Position
+  // Tracking campaign. Spends ~100 API units/keyword, so we confirm first.
+  const pushToSemrush = async () => {
+    if (
+      !confirm(
+        `Push all ${targets.length} tracked keywords into your Semrush Position Tracking campaign?\n\nThis spends ~100 Semrush API units per keyword (about ${(
+          targets.length * 100
+        ).toLocaleString()} total). Run this once.`,
+      )
+    )
+      return;
+    setPushBusy(true);
+    setPushResult(null);
+    try {
+      const res = await fetch("/api/seo/tracked-keywords/push-to-semrush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setPushResult(`❌ ${json?.error ?? "Push failed"}`);
+        return;
+      }
+      setPushResult(
+        `✓ Pushed ${json.pushed ?? 0} of ${json.attempted ?? 0} keywords (${(
+          json.unitsSpent ?? 0
+        ).toLocaleString()} API units).`,
+      );
+    } catch (e) {
+      setPushResult(`❌ ${e instanceof Error ? e.message : "Push failed"}`);
+    } finally {
+      setPushBusy(false);
     }
   };
 
@@ -322,11 +366,29 @@ export default function SeoKeywordsPage() {
       </section>
 
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
-        <h2 className="text-lg font-semibold">Manage target keywords</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Phrases the firm wants to rank for. Saved to Supabase — survive Vercel cold boots and
-          drive the tracker below.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Manage target keywords</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Phrases the firm wants to rank for. Saved to Supabase — survive Vercel cold boots and
+              drive the tracker below.
+            </p>
+          </div>
+          <button
+            onClick={pushToSemrush}
+            disabled={pushBusy || targets.length === 0}
+            className="shrink-0 rounded-md border border-[#185FA5] px-3 py-2 text-xs font-medium text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+            title="Add all tracked keywords to your Semrush Position Tracking campaign (spends ~100 API units each)"
+          >
+            {pushBusy ? "Pushing…" : "Push all to Semrush"}
+          </button>
+        </div>
+
+        {pushResult && (
+          <div className="mt-2 rounded-md border border-[#e2e8f0] bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            {pushResult}
+          </div>
+        )}
 
         {targetError && (
           <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
