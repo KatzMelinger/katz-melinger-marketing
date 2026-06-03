@@ -89,6 +89,12 @@ export default function SeoKeywordsPage() {
   const [stateFilter, setStateFilter] = useState<StateFilter>("ny_nj_and_generic");
   const [regionFilter, setRegionFilter] = useState<RegionFilter>("all");
 
+  // Tracker pagination: 20 per page, with "show more" (grow the page) or
+  // page-by-page nav. `manageOpen` collapses the "Manage target keywords" card.
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
+  const [manageOpen, setManageOpen] = useState(false);
+
   // Target keyword management — persisted in Supabase via
   // /api/seo/keywords/targets. The tracker table below shows one row per
   // target, populated with Semrush position/volume/KD data.
@@ -326,6 +332,11 @@ export default function SeoKeywordsPage() {
     return filtered;
   }, [data, search, sortKey, sortDir, showRanking, stateFilter, regionFilter]);
 
+  // Reset to the first page whenever the filtered set changes underneath us.
+  useEffect(() => {
+    setPage(0);
+  }, [search, showRanking, stateFilter, regionFilter]);
+
   const setSort = (key: SortKey) => {
     if (key === sortKey) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -348,6 +359,13 @@ export default function SeoKeywordsPage() {
     0,
   );
 
+  // Tracker pagination math.
+  const PAGE_STEP = 20;
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * pageSize;
+  const pageRows = sorted.slice(pageStart, pageStart + pageSize);
+
   return (
     <SeoShell
       title="Keyword Tracking & Research"
@@ -367,13 +385,24 @@ export default function SeoKeywordsPage() {
 
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Manage target keywords</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Phrases the firm wants to rank for. Saved to Supabase — survive Vercel cold boots and
-              drive the tracker below.
-            </p>
-          </div>
+          <button
+            onClick={() => setManageOpen((o) => !o)}
+            className="flex items-start gap-2 text-left"
+            aria-expanded={manageOpen}
+          >
+            <span className="mt-0.5 text-slate-400">{manageOpen ? "▾" : "▸"}</span>
+            <span>
+              <span className="block text-lg font-semibold text-slate-900">
+                Manage target keywords{" "}
+                <span className="text-sm font-normal text-slate-400">
+                  ({targets.length})
+                </span>
+              </span>
+              <span className="mt-1 block text-xs text-slate-500">
+                Phrases the firm wants to rank for. {manageOpen ? "" : "Click to expand."}
+              </span>
+            </span>
+          </button>
           <button
             onClick={pushToSemrush}
             disabled={pushBusy || targets.length === 0}
@@ -390,54 +419,58 @@ export default function SeoKeywordsPage() {
           </div>
         )}
 
-        {targetError && (
-          <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
-            {targetError}
-          </div>
-        )}
+        {manageOpen && (
+          <>
+            {targetError && (
+              <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {targetError}
+              </div>
+            )}
 
-        <div className="mt-3 flex gap-2">
-          <input
-            type="text"
-            value={newTarget}
-            onChange={(e) => setNewTarget(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newTarget.trim()) addTarget(newTarget);
-            }}
-            placeholder='e.g. "best employment lawyer brooklyn"'
-            className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
-          />
-          <button
-            onClick={() => addTarget(newTarget)}
-            disabled={!newTarget.trim() || targetBusy === newTarget.trim()}
-            className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
-          >
-            {targetBusy === newTarget.trim() ? "…" : "Add"}
-          </button>
-        </div>
-
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {targets.length === 0 && !loading && (
-            <li className="text-xs text-slate-500">No target keywords yet.</li>
-          )}
-          {targets.map((t) => (
-            <li
-              key={t}
-              className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-slate-50 pl-3 pr-1 py-1 text-xs text-slate-700"
-            >
-              <span>{t}</span>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={newTarget}
+                onChange={(e) => setNewTarget(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newTarget.trim()) addTarget(newTarget);
+                }}
+                placeholder='e.g. "best employment lawyer brooklyn"'
+                className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+              />
               <button
-                onClick={() => removeTarget(t)}
-                disabled={targetBusy === t}
-                className="rounded-full h-5 w-5 inline-flex items-center justify-center text-slate-400 hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
-                title={`Remove "${t}"`}
-                aria-label={`Remove ${t}`}
+                onClick={() => addTarget(newTarget)}
+                disabled={!newTarget.trim() || targetBusy === newTarget.trim()}
+                className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
               >
-                ×
+                {targetBusy === newTarget.trim() ? "…" : "Add"}
               </button>
-            </li>
-          ))}
-        </ul>
+            </div>
+
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {targets.length === 0 && !loading && (
+                <li className="text-xs text-slate-500">No target keywords yet.</li>
+              )}
+              {targets.map((t) => (
+                <li
+                  key={t}
+                  className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-slate-50 pl-3 pr-1 py-1 text-xs text-slate-700"
+                >
+                  <span>{t}</span>
+                  <button
+                    onClick={() => removeTarget(t)}
+                    disabled={targetBusy === t}
+                    className="rounded-full h-5 w-5 inline-flex items-center justify-center text-slate-400 hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+                    title={`Remove "${t}"`}
+                    aria-label={`Remove ${t}`}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
 
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
@@ -535,7 +568,7 @@ export default function SeoKeywordsPage() {
                   </td>
                 </tr>
               )}
-              {sorted.map((item) => {
+              {pageRows.map((item) => {
                 const geo = classifyKeywordGeo(item.keyword);
                 const badgeLabel = geo.city
                   ? geo.city
@@ -608,9 +641,57 @@ export default function SeoKeywordsPage() {
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-slate-500 mt-3">
-          Showing {sorted.length} of {totalTracked} keywords. Click any column header to sort.
-        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-500">
+            {sorted.length === 0
+              ? "No keywords match these filters."
+              : `Showing ${pageStart + 1}–${Math.min(pageStart + pageSize, sorted.length)} of ${sorted.length}${
+                  sorted.length !== totalTracked ? ` (filtered from ${totalTracked})` : ""
+                }. Click any column header to sort.`}
+          </p>
+          {sorted.length > PAGE_STEP && (
+            <div className="flex items-center gap-2">
+              {pageSize < sorted.length && (
+                <button
+                  onClick={() => setPageSize((s) => s + PAGE_STEP)}
+                  className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                  title="Show 20 more rows on this page"
+                >
+                  Show 20 more
+                </button>
+              )}
+              {pageSize !== PAGE_STEP && (
+                <button
+                  onClick={() => {
+                    setPageSize(PAGE_STEP);
+                    setPage(0);
+                  }}
+                  className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                  title="Back to 20 per page"
+                >
+                  Reset to 20
+                </button>
+              )}
+              <button
+                onClick={() => setPage(Math.max(0, safePage - 1))}
+                disabled={safePage <= 0}
+                className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                ◀ Prev
+              </button>
+              <span className="text-xs text-slate-500 tabular-nums">
+                Page {safePage + 1} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
+                disabled={safePage >= totalPages - 1}
+                className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next ▶
+              </button>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
