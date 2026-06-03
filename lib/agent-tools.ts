@@ -46,6 +46,15 @@ async function postInternal(
   return json;
 }
 
+async function getInternal(req: { url: string }, path: string): Promise<unknown> {
+  const res = await fetch(internalUrl(req, path), { cache: "no-store" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { error: (json as { error?: string }).error ?? `HTTP ${res.status}` };
+  }
+  return json;
+}
+
 // ============================================================================
 // Tool definitions (the schema Claude sees)
 // ============================================================================
@@ -54,7 +63,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "find_trending_topics",
     description:
-      "Find current trending topics in NY/NJ employment law that the firm could write about. Returns each topic with urgency (hot/warm/evergreen), suggested angle, and platforms. Respects a recency window so 2024 events don't get surfaced as current.",
+      "AI-SUGGESTED topic ideas in NY/NJ employment law (urgency, angle, platforms), based on the model's training knowledge — NOT live trend data, and it can be wrong about what's actually current. To validate real demand for a specific keyword, use check_keyword_trend (real Semrush data) instead.",
     input_schema: {
       type: "object",
       properties: {
@@ -140,6 +149,63 @@ export const TOOLS: ToolDef[] = [
     input_schema: {
       type: "object",
       properties: {},
+    },
+  },
+  {
+    name: "get_keyword_opportunities",
+    description:
+      "Pull NEW keyword opportunities from Semrush (real data): quick wins (keywords a competitor outranks us for, scored), target keywords we don't yet rank for, long-tail question suggestions, and high-authority link gaps. This is Step 1 of the content-opportunity workflow — use it to find topics worth creating pages for.",
+    input_schema: {
+      type: "object",
+      properties: {
+        competitor: {
+          type: "string",
+          description:
+            "Optional competitor domain to gap-analyze against (e.g. 'outtengolden.com'). Omit to use the first tracked competitor.",
+        },
+      },
+    },
+  },
+  {
+    name: "check_keyword_trend",
+    description:
+      "Check a keyword's REAL 12-month search-interest trend from Semrush. Returns monthly trend values, search volume, and direction (rising/stable/falling/unknown). Use this to validate whether an opportunity has growing or fading demand — the 'is it worth it?' check. Prefer this over find_trending_topics for demand validation.",
+    input_schema: {
+      type: "object",
+      properties: {
+        keyword: { type: "string", description: "The keyword to check." },
+      },
+      required: ["keyword"],
+    },
+  },
+  {
+    name: "generate_research_packet",
+    description:
+      "Build a Research Packet for a topic — the legal-accuracy + demand-validation step. It matches the curated Legal Authority library, gathers People-Also-Ask questions from live sources (Semrush, Search Console, Autocomplete, Reddit, YouTube), checks overlap with existing pages, and synthesizes suggested FAQs, statutes to cite, content angles, a source-confidence score, and whether legal review is required. Saves the packet and returns it. Run this BEFORE recommending or briefing a page so content is legally grounded.",
+    input_schema: {
+      type: "object",
+      properties: {
+        topic: { type: "string", description: "The topic/keyword to research." },
+        practiceArea: { type: "string", description: "Practice area (optional)." },
+        primaryKeyword: {
+          type: "string",
+          description: "Primary keyword if different from the topic (optional).",
+        },
+      },
+      required: ["topic"],
+    },
+  },
+  {
+    name: "generate_content_brief",
+    description:
+      "Generate an SEO content brief for a topic: target keywords, a suggested H2/H3 outline, and competitor gaps to cover. Pair with generate_research_packet for legal grounding. (Full per-page drafting with the KM system prompt is done from the KM Generator UI, which needs a complete brief.)",
+    input_schema: {
+      type: "object",
+      properties: {
+        topic: { type: "string", description: "The topic to brief." },
+        practiceArea: { type: "string", description: "Practice area (optional)." },
+      },
+      required: ["topic"],
     },
   },
   {
@@ -265,6 +331,48 @@ export async function dispatchTool(
           last_checked_at: k.last_checked_at ?? null,
         })),
       };
+    }
+
+    case "get_keyword_opportunities": {
+      const competitor =
+        typeof input.competitor === "string" && input.competitor.trim()
+          ? `?competitor=${encodeURIComponent(input.competitor.trim())}`
+          : "";
+      return await getInternal(req, `/api/seo/opportunities${competitor}`);
+    }
+
+    case "check_keyword_trend": {
+      const keyword = typeof input.keyword === "string" ? input.keyword.trim() : "";
+      if (!keyword) return { error: "keyword is required" };
+      return await getInternal(
+        req,
+        `/api/seo/keywords/trend?keyword=${encodeURIComponent(keyword)}`,
+      );
+    }
+
+    case "generate_research_packet": {
+      const topic = typeof input.topic === "string" ? input.topic.trim() : "";
+      if (!topic) return { error: "topic is required" };
+      return await postInternal(req, "/api/content/research/packet", {
+        topic,
+        practiceArea:
+          typeof input.practiceArea === "string" ? input.practiceArea : undefined,
+        primaryKeyword:
+          typeof input.primaryKeyword === "string" ? input.primaryKeyword : undefined,
+      });
+    }
+
+    case "generate_content_brief": {
+      const topic = typeof input.topic === "string" ? input.topic.trim() : "";
+      if (!topic) return { error: "topic is required" };
+      const pa =
+        typeof input.practiceArea === "string" && input.practiceArea.trim()
+          ? `&practice_area=${encodeURIComponent(input.practiceArea.trim())}`
+          : "";
+      return await getInternal(
+        req,
+        `/api/seo/content/brief?topic=${encodeURIComponent(topic)}${pa}`,
+      );
     }
 
     case "list_autopilot_queue": {

@@ -305,6 +305,66 @@ export async function getPhraseMetrics(
 }
 
 /**
+ * Real 12-month search-interest trend for a keyword, from Semrush's `phrase_this`
+ * report (the `Td` / Trends column). Returns the monthly values, search volume,
+ * and a derived direction. This is the legitimate replacement for the
+ * LLM-"trends" guesser — use it to validate whether demand is rising or fading.
+ *
+ * Td is a comma-separated list of ~12 relative values (0–1), oldest first. We
+ * compare the most-recent quarter against the earliest to classify direction.
+ */
+export async function getKeywordTrend(
+  keyword: string,
+  database: string = SEMRUSH_DATABASE,
+): Promise<{
+  keyword: string;
+  searchVolume: number | null;
+  trend: number[];
+  direction: "rising" | "stable" | "falling" | "unknown";
+}> {
+  const empty = {
+    keyword,
+    searchVolume: null as number | null,
+    trend: [] as number[],
+    direction: "unknown" as const,
+  };
+  try {
+    const key = getApiKey();
+    const params = new URLSearchParams({
+      type: "phrase_this",
+      key,
+      phrase: keyword,
+      database,
+      export_columns: "Ph,Nq,Td",
+    });
+    const res = await cachedSemrushFetch(`${SEO_BASE}?${params.toString()}`);
+    if (!res.ok) return empty;
+    const text = await res.text();
+    if (text.startsWith("ERROR")) return empty;
+
+    const rows = parseSemrushCsvObjects(text);
+    const r = rows[0];
+    if (!r) return empty;
+
+    const searchVolume = toNum(r["Search Volume"]);
+    const trend = (r["Trends"] ?? "")
+      .split(",")
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n));
+
+    let direction: "rising" | "stable" | "falling" | "unknown" = "unknown";
+    if (trend.length >= 4) {
+      const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+      const diff = avg(trend.slice(-3)) - avg(trend.slice(0, 3));
+      direction = diff > 0.1 ? "rising" : diff < -0.1 ? "falling" : "stable";
+    }
+    return { keyword, searchVolume, trend, direction };
+  } catch {
+    return empty;
+  }
+}
+
+/**
  * Convenience: look up a single keyword on the firm's domain. Used by the
  * "add tracked keyword" flow to populate initial position/volume/difficulty.
  */
