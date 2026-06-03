@@ -31,8 +31,18 @@ import {
   CONTENT_TYPE_LABEL,
   readContentType,
 } from "@/lib/content-types";
+import { DEFAULT_PRACTICE_AREAS } from "@/lib/practice-areas";
 
-type FormatKey = "blog" | "linkedin" | "twitter" | "facebook" | "instagram" | "email" | "podcast";
+type FormatKey =
+  | "blog"
+  | "linkedin"
+  | "twitter"
+  | "facebook"
+  | "instagram"
+  | "email"
+  | "podcast"
+  | "video_short"
+  | "video_long";
 
 const FORMATS: { id: FormatKey; label: string; hint: string }[] = [
   { id: "blog", label: "Blog post", hint: "800-1200 words, headings, CTA" },
@@ -42,15 +52,8 @@ const FORMATS: { id: FormatKey; label: string; hint: string }[] = [
   { id: "instagram", label: "Instagram caption", hint: "150-220 words + hashtags" },
   { id: "email", label: "Email newsletter", hint: "Subject + preview + 250-400 word body" },
   { id: "podcast", label: "Podcast script", hint: "5-7 min solo, with speaker notes" },
-];
-
-const PRACTICE_AREAS = [
-  "General",
-  "Wage & Hour",
-  "Discrimination",
-  "Class Action",
-  "Judgment Enforcement",
-  "Severance",
+  { id: "video_short", label: "Short video script", hint: "Reels/TikTok/Shorts, 30-60s shot list" },
+  { id: "video_long", label: "YouTube video script", hint: "5-8 min, segments + B-roll cues" },
 ];
 
 type Source = {
@@ -82,7 +85,12 @@ export default function BatchPage() {
   );
 
   const [topic, setTopic] = useState("");
-  const [practiceArea, setPracticeArea] = useState("General");
+  const [practiceAreas, setPracticeAreas] = useState<string[]>([
+    ...DEFAULT_PRACTICE_AREAS,
+  ]);
+  const [practiceArea, setPracticeArea] = useState<string>(
+    DEFAULT_PRACTICE_AREAS[0],
+  );
   const [tone, setTone] = useState("Professional, plain-spoken, accessible");
   const [selected, setSelected] = useState<Set<FormatKey>>(
     () => new Set(visibleFormats as readonly FormatKey[]),
@@ -116,6 +124,20 @@ export default function BatchPage() {
       .catch(() => {});
   }, []);
 
+  // Live practice-area list (editable on /settings/practice-areas). Reconcile
+  // the current selection so we never sit on an option that no longer exists.
+  useEffect(() => {
+    fetch("/api/practice-areas")
+      .then((r) => r.json())
+      .then((d) => {
+        const list: string[] = Array.isArray(d?.areas) ? d.areas : [];
+        if (list.length === 0) return;
+        setPracticeAreas(list);
+        setPracticeArea((cur) => (list.includes(cur) ? cur : list[0]));
+      })
+      .catch(() => {});
+  }, []);
+
   // Pre-fill from URL params when arriving from a trend / keyword card.
   // Runs once on mount; intentionally not reactive to user typing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,7 +150,7 @@ export default function BatchPage() {
       // Fuzzy match against the batch page's PRACTICE_AREAS list so labels
       // from the trend endpoint (e.g. "Wage & Hour Claims") map onto the
       // closest option here (e.g. "Wage & Hour").
-      const match = PRACTICE_AREAS.find(
+      const match = practiceAreas.find(
         (p) =>
           p.toLowerCase() === qPA.toLowerCase() ||
           qPA.toLowerCase().includes(p.toLowerCase()) ||
@@ -294,7 +316,7 @@ export default function BatchPage() {
                     onChange={(e) => setPracticeArea(e.target.value)}
                     className="w-full mt-1"
                   >
-                    {PRACTICE_AREAS.map((p) => (
+                    {practiceAreas.map((p) => (
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </DashSelect>

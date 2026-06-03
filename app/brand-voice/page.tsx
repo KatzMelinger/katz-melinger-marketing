@@ -1264,7 +1264,7 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
           <div>
             <p className="text-[11px] opacity-60 mb-1">Practice areas</p>
             <div className="flex flex-wrap gap-1.5">
-              {PRACTICE_AREAS.filter((p) => p !== "General").map((p) => (
+              {PRACTICE_AREAS.map((p) => (
                 <Chip
                   key={p}
                   on={draft.practiceAreas.has(p)}

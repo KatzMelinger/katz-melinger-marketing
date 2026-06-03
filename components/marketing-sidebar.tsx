@@ -130,6 +130,7 @@ const GROUPS: NavGroup[] = [
     label: "Workspace",
     items: [
       { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
+      { label: "Practice Areas", href: "/settings/practice-areas", icon: "⚖" },
       { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
       { label: "Integrations", href: "/integrations", icon: "🔌", adminOnly: true },
       { label: "Users", href: "/admin/users", icon: "👥", adminOnly: true },

@@ -30,6 +30,7 @@ import {
   CONTENT_TYPE_LABEL,
   readContentType,
 } from "@/lib/content-types";
+import { DEFAULT_PRACTICE_AREAS } from "@/lib/practice-areas";
 
 type Draft = {
   id: string;
@@ -93,6 +94,23 @@ const TEMPLATE_LABEL: Record<string, string> = {
 };
 
 /**
+ * Friendlier labels for the raw `format` column — used as the final fallback
+ * for templateless drafts (social/audio/video) so the type pill doesn't show
+ * a bare key like "video_short".
+ */
+const FORMAT_LABEL: Record<string, string> = {
+  blog: "Blog post",
+  linkedin: "LinkedIn post",
+  twitter: "Twitter / X thread",
+  facebook: "Facebook post",
+  instagram: "Instagram caption",
+  email: "Email",
+  podcast: "Podcast script",
+  video_short: "Short video script",
+  video_long: "YouTube video script",
+};
+
+/**
  * Display label for a draft's "what kind of content is this" pill. Prefers:
  *   1. metadata.origin_context.page_type — set by the import flow with the
  *      precise option label the user picked.
@@ -110,7 +128,7 @@ function draftTypeLabel(d: Draft): string {
   if (pageType) return pageType;
   if (d.template && TEMPLATE_LABEL[d.template]) return TEMPLATE_LABEL[d.template];
   if (d.template) return d.template;
-  return d.format;
+  return FORMAT_LABEL[d.format] ?? d.format;
 }
 
 type Analysis = {
@@ -1601,18 +1619,11 @@ const IMPORT_FORMAT_OPTIONS: {
   { value: "facebook", label: "Facebook post", contentType: "social", format: "facebook", template: null },
   { value: "instagram", label: "Instagram caption", contentType: "social", format: "instagram", template: null },
   { value: "podcast", label: "Podcast script", contentType: "social", format: "podcast", template: null },
+  { value: "video_short", label: "Short video script (Reels/TikTok)", contentType: "social", format: "video_short", template: null },
+  { value: "video_long", label: "YouTube video script", contentType: "social", format: "video_long", template: null },
   // Email
   { value: "email_newsletter", label: "Email — newsletter", contentType: "email", format: "email", template: "newsletter" },
   { value: "email_case_update", label: "Email — case update", contentType: "email", format: "email", template: "case_study" },
-];
-
-const IMPORT_PRACTICE_AREAS = [
-  "General",
-  "Wage & Hour",
-  "Discrimination",
-  "Class Action",
-  "Judgment Enforcement",
-  "Severance",
 ];
 
 function ImportDraftModal({
@@ -1635,12 +1646,30 @@ function ImportDraftModal({
     IMPORT_FORMAT_OPTIONS.find((f) => f.value === formatOption) ?? IMPORT_FORMAT_OPTIONS[0];
   const [topic, setTopic] = useState("");
   const [title, setTitle] = useState("");
-  const [practiceArea, setPracticeArea] = useState("General");
+  const [practiceAreas, setPracticeAreas] = useState<string[]>([
+    ...DEFAULT_PRACTICE_AREAS,
+  ]);
+  const [practiceArea, setPracticeArea] = useState<string>(
+    DEFAULT_PRACTICE_AREAS[0],
+  );
   const [body, setBody] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [targetKeywords, setTargetKeywords] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Live practice-area list (editable on /settings/practice-areas).
+  useEffect(() => {
+    fetch("/api/practice-areas")
+      .then((r) => r.json())
+      .then((d) => {
+        const list: string[] = Array.isArray(d?.areas) ? d.areas : [];
+        if (list.length === 0) return;
+        setPracticeAreas(list);
+        setPracticeArea((cur) => (list.includes(cur) ? cur : list[0]));
+      })
+      .catch(() => {});
+  }, []);
 
   const canSubmit =
     !submitting &&
@@ -1819,7 +1848,7 @@ function ImportDraftModal({
                 onChange={(e) => setPracticeArea(e.target.value)}
                 className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
               >
-                {IMPORT_PRACTICE_AREAS.map((p) => (
+                {practiceAreas.map((p) => (
                   <option key={p} value={p}>
                     {p}
                   </option>

@@ -16,9 +16,14 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { getTenantConfig } from "./tenant-config";
+import { getPracticeAreas } from "./practice-areas";
 
+/**
+ * @deprecated The live list now comes from the `practice_areas` table via
+ * getPracticeAreas() (edited on /settings/practice-areas). This constant is
+ * only the offline fallback string used when the DB is unreachable.
+ */
 export const PRACTICE_AREAS = [
-  "All",
   "Employment Discrimination",
   "FMLA (Family and Medical Leave Act)",
   "Wage & Hour Claims (overtime, class actions)",
@@ -55,7 +60,7 @@ const DEFAULT_CONTACT = {
 const FALLBACK_CONTEXT =
   `${DEFAULT_CONTACT.firmName} is a plaintiff-side employment law firm based in ` +
   `New York City, serving clients in NY and NJ. Practice areas: ` +
-  `${PRACTICE_AREAS.filter((p) => p !== "All").join(", ")}.\n\n` +
+  `${PRACTICE_AREAS.join(", ")}.\n\n` +
   `CONTACT INFO (use these verbatim — never fabricate):\n` +
   `- Address: ${DEFAULT_CONTACT.firmAddress}\n` +
   `- Phone: ${DEFAULT_CONTACT.firmPhone}\n` +
@@ -97,9 +102,12 @@ export async function getFirmContext(tenantId?: string): Promise<string> {
     const firmEmail = settings.firmEmail || config.firmEmail;
     const firmWebsite = settings.firmWebsite || config.firmWebsite;
 
+    // Live, editable practice-area list (falls back to the constant below).
+    const practiceAreaList = await getPracticeAreas();
+
     let context =
       `${firmName} is an employment law firm in ${geography}. ` +
-      `Practice areas: ${PRACTICE_AREAS.filter((p) => p !== "All").join(", ")}.\n`;
+      `Practice areas: ${practiceAreaList.join(", ")}.\n`;
 
     context +=
       `\nCONTACT INFO (use these verbatim in any CTA, signature, or contact ` +
