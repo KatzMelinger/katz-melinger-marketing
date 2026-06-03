@@ -209,6 +209,29 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "run_opportunity_pipeline",
+    description:
+      "Run the full Opportunity → Brief pipeline in one shot: source Semrush keyword opportunities, validate each with REAL trend + volume data and a transparent 'worth it?' score, then for the top winners build a Research Packet (legal-authority match + People-Also-Ask + confidence + legal-review flag) and an SEO content brief. Returns a ranked report. This is the end-to-end content-opportunity workflow — use it when asked 'what should we write next?' or to find + vet + brief opportunities automatically.",
+    input_schema: {
+      type: "object",
+      properties: {
+        practiceArea: { type: "string", description: "Practice area to focus on (optional)." },
+        competitor: {
+          type: "string",
+          description: "A specific competitor domain to gap-analyze (optional; defaults to tracked competitors).",
+        },
+        topN: {
+          type: "number",
+          description: "How many top winners to deep-research + brief (1-8, default 3). Higher = slower.",
+        },
+        deep: {
+          type: "boolean",
+          description: "If false, returns only the fast scored radar (no research packets/briefs). Default true.",
+        },
+      },
+    },
+  },
+  {
     name: "list_autopilot_queue",
     description:
       "List on-page SEO fixes currently in the AutoPilot queue for katzmelinger.com — pending fixes awaiting approval, approved fixes waiting for the WP plugin to apply, or recently applied fixes.",
@@ -373,6 +396,15 @@ export async function dispatchTool(
         req,
         `/api/seo/content/brief?topic=${encodeURIComponent(topic)}${pa}`,
       );
+    }
+
+    case "run_opportunity_pipeline": {
+      const payload: Record<string, unknown> = {};
+      if (typeof input.practiceArea === "string") payload.practiceArea = input.practiceArea;
+      if (typeof input.competitor === "string") payload.competitor = input.competitor;
+      if (typeof input.topN === "number") payload.topN = input.topN;
+      if (input.deep === false) payload.deep = false;
+      return await postInternal(req, "/api/content/opportunity-pipeline", payload);
     }
 
     case "list_autopilot_queue": {
