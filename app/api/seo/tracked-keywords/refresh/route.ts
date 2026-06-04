@@ -78,8 +78,11 @@ async function refreshTrackedKeywords() {
     let semrushRows: SemrushKeywordRow[];
     try {
       semrushRows = await getDomainKeywords(undefined, undefined, 1000, 0, "traffic", "desc");
-    } catch (err: any) {
-      console.error("[seo/keywords/refresh] Semrush failed:", err?.message);
+    } catch (err) {
+      console.error(
+        "[seo/keywords/refresh] Semrush failed:",
+        err instanceof Error ? err.message : String(err),
+      );
       return NextResponse.json(
         { error: "Could not reach Semrush API" },
         { status: 502 },
@@ -212,8 +215,11 @@ async function refreshTrackedKeywords() {
       keywords: refreshed ?? [],
       cannibalizationIssues,
     });
-  } catch (err: any) {
-    console.error("[seo/keywords/refresh] Failed:", err?.message);
+  } catch (err) {
+    console.error(
+      "[seo/keywords/refresh] Failed:",
+      err instanceof Error ? err.message : String(err),
+    );
     return NextResponse.json(
       { error: "Failed to refresh keyword rankings" },
       { status: 500 },
