@@ -103,6 +103,20 @@ const TABS: { id: StatusTab; label: string }[] = [
   { id: "disregard", label: "Disregard" },
 ];
 
+type CategoryFilter = RecCategory | "all";
+
+const CATEGORIES: { id: CategoryFilter; label: string }[] = [
+  { id: "all", label: "All sources" },
+  { id: "seo", label: "SEO" },
+  { id: "aeo", label: "AEO" },
+  { id: "content", label: "Content" },
+  { id: "technical", label: "Technical" },
+  { id: "local", label: "Local" },
+  { id: "social", label: "Social" },
+];
+
+const VALID_CATEGORIES: RecCategory[] = ["seo", "aeo", "content", "technical", "local", "social"];
+
 export default function RecommendationsPage() {
   const [tab, setTab] = useState<StatusTab | "history">("active");
   const [items, setItems] = useState<Item[]>([]);
@@ -111,6 +125,20 @@ export default function RecommendationsPage() {
   const [genStatus, setGenStatus] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  // Source filter. `/seo/suggestions` redirects here with `?category=seo`, which
+  // is how the old standalone SEO Suggestions queue now lives inside this page.
+  const [category, setCategory] = useState<CategoryFilter>("all");
+
+  useEffect(() => {
+    try {
+      const c = new URLSearchParams(window.location.search).get("category");
+      if (c && VALID_CATEGORIES.includes(c as RecCategory)) {
+        setCategory(c as RecCategory);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const refreshItems = useCallback(async () => {
     setLoading(true);
@@ -183,18 +211,22 @@ export default function RecommendationsPage() {
     }
   };
 
+  // Apply the source filter before counting/listing so the tab badges reflect
+  // the active category.
+  const inCategory = category === "all" ? items : items.filter((i) => i.category === category);
+
   const counts = {
-    active: items.filter((i) => i.status === "active").length,
-    done: items.filter((i) => i.status === "done").length,
-    hold: items.filter((i) => i.status === "hold").length,
-    disregard: items.filter((i) => i.status === "disregard").length,
+    active: inCategory.filter((i) => i.status === "active").length,
+    done: inCategory.filter((i) => i.status === "done").length,
+    hold: inCategory.filter((i) => i.status === "hold").length,
+    disregard: inCategory.filter((i) => i.status === "disregard").length,
   };
 
   // Active tab: sort high-impact / low-effort first. Other tabs: most recent first.
   const visible = (
     tab === "history"
       ? []
-      : items.filter((i) => i.status === tab).slice()
+      : inCategory.filter((i) => i.status === tab).slice()
   ).sort((a, b) => {
     if (tab === "active") {
       const score = (r: Item) =>
@@ -282,6 +314,28 @@ export default function RecommendationsPage() {
             History
           </button>
         </div>
+
+        {tab !== "history" && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-500 mr-1">Source:</span>
+            {CATEGORIES.map((c) => {
+              const active = category === c.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setCategory(c.id)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    active
+                      ? "border-[#185FA5] bg-[#185FA5]/10 text-[#185FA5]"
+                      : "border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {tab === "history" ? (
           history.length === 0 ? (

@@ -30,7 +30,6 @@ const SEO_ROUTES: Route[] = [
   { href: "/seo/technical", label: "Technical" },
   { href: "/seo/cannibalization", label: "Cannibalization" },
   { href: "/seo/topical-maps", label: "Topical maps" },
-  { href: "/seo/suggestions", label: "Suggestions" },
   { href: "/seo/generator", label: "Content generator" },
   { href: "/seo/pr-pitches", label: "PR pitches" },
   { href: "/keyword-research", label: "Keyword research" },

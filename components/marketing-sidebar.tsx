@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * Collapsible sidebar that replaces the old horizontal MarketingNav.
+ * Collapsible sidebar that mirrors the nine-department structure defined in
+ * `lib/departments.ts` (the same source of truth that drives the executive
+ * board on the home page).
  *
- * Items are organized into four buckets — Acquisition, Search & AI,
- * Reach & Reputation, Workspace — to keep the nav scannable as we keep
- * adding features. Each section is independently collapsible; the whole
- * sidebar can collapse to icons-only via the chevron at the top.
+ * The three daily-driver departments (SEO Content, On-Page SEO, Off-Page SEO)
+ * are expanded by default; the rest start collapsed. Each group carries the
+ * department's accent color. `phase2` items render dimmed and non-clickable
+ * with a "Soon" pill.
  *
- * State (sidebar collapsed + per-section open) is persisted in
- * localStorage so the user's preference survives navigation and reload.
+ * State (sidebar collapsed + per-department open) is persisted in localStorage
+ * so the user's preference survives navigation and reload. On first load the
+ * per-department default comes from `department.defaultOpen`.
  *
  * Rendered once globally from app/layout.tsx — pages should not import or
  * render this directly.
@@ -19,129 +22,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type Role = "user" | "admin";
-type NavItem = { label: string; href: string; icon: string; adminOnly?: boolean };
-type NavGroup = { label: string; items: NavItem[] };
+import { DEPARTMENTS, HOME_NAV_ITEM, type DeptItem } from "@/lib/departments";
 
-const GROUPS: NavGroup[] = [
-  {
-    label: "Hubs",
-    items: [
-      { label: "Dashboard", href: "/", icon: "⌂" },
-      { label: "SEO Ops", href: "/seo", icon: "◎" },
-      { label: "AI Ops", href: "/ai", icon: "✦" },
-      { label: "Social Ops", href: "/social", icon: "♺" },
-      { label: "Campaigns Ops", href: "/campaigns", icon: "💰" },
-    ],
-  },
-  {
-    label: "AI Tools",
-    items: [
-      { label: "Agent Assistant", href: "/agent", icon: "💬" },
-      { label: "Image Generator", href: "/content/images", icon: "🖼" },
-    ],
-  },
-  {
-    label: "SEO",
-    items: [
-      { label: "Keyword Tracker", href: "/seo/keywords", icon: "⌕" },
-      { label: "Competitors", href: "/seo/competitors", icon: "⚔" },
-      { label: "Backlinks", href: "/seo/backlinks", icon: "🔗" },
-      { label: "Technical", href: "/seo/technical", icon: "🛠" },
-      { label: "Opportunities", href: "/seo/opportunities", icon: "✨" },
-      { label: "Cannibalization", href: "/seo/cannibalization", icon: "⚠" },
-      { label: "Internal Links", href: "/seo/internal-links", icon: "⇄" },
-      { label: "Link Strategy", href: "/seo/link-strategy", icon: "🧩" },
-      { label: "Topical Maps", href: "/seo/topical-maps", icon: "🗺" },
-      { label: "Schema Generator", href: "/seo/schema-generator", icon: "📐" },
-      { label: "Suggestions", href: "/seo/suggestions", icon: "📋" },
-      { label: "Content Generator", href: "/seo/generator", icon: "✎" },
-      { label: "PR Pitches", href: "/seo/pr-pitches", icon: "📰" },
-      { label: "Local SEO", href: "/local-seo", icon: "⌖" },
-      { label: "Local Listings", href: "/local", icon: "📍" },
-      { label: "Keyword Research", href: "/keyword-research", icon: "🔎" },
-      { label: "Search Console", href: "/search-console", icon: "🔍" },
-      { label: "Recent Activity", href: "/seo/recent", icon: "🕒" },
-    ],
-  },
-  {
-    label: "AI",
-    items: [
-      { label: "AEO", href: "/aeo", icon: "✦" },
-      { label: "AI Search", href: "/ai-search", icon: "🤖" },
-      { label: "AI Referrals", href: "/ai/referrals", icon: "↗" },
-      { label: "Bot Crawls", href: "/ai/bot-traffic", icon: "🕷" },
-      { label: "llms.txt", href: "/llms-txt", icon: "📜" },
-      { label: "Prompts", href: "/prompts", icon: "✨" },
-      { label: "Clarity", href: "/clarity", icon: "🔥" },
-      { label: "Correlation", href: "/correlation", icon: "⇄" },
-    ],
-  },
-  {
-    label: "Social",
-    items: [
-      { label: "Analytics", href: "/social/analytics", icon: "📊" },
-      { label: "Trends & Playbooks", href: "/social/trends", icon: "🔥" },
-      { label: "Community", href: "/community", icon: "💬" },
-      { label: "Reviews", href: "/reviews", icon: "★" },
-    ],
-  },
-  {
-    label: "Campaigns",
-    items: [
-      { label: "Paid Ads", href: "/ads", icon: "💰" },
-      { label: "Email", href: "/email", icon: "✉" },
-      { label: "Constant Contact", href: "/constant-contact", icon: "📨" },
-      { label: "Forms", href: "/forms", icon: "▤" },
-      { label: "Calls", href: "/calls", icon: "☎" },
-      { label: "Agent Coaching", href: "/coaching", icon: "🎯" },
-    ],
-  },
-  {
-    label: "Content",
-    items: [
-      { label: "Overview", href: "/content", icon: "✎" },
-      { label: "Research Libraries", href: "/content/research", icon: "📚" },
-      { label: "Cluster Map", href: "/content/site-map", icon: "🗺" },
-      { label: "Intelligence", href: "/content/intelligence", icon: "💡" },
-      { label: "Opportunity Pipeline", href: "/content/opportunities-pipeline", icon: "🎯" },
-      { label: "Batch Generator", href: "/content/batch", icon: "🧪" },
-      { label: "Drafts", href: "/content/drafts", icon: "📝" },
-      { label: "KM Generator", href: "/content/km", icon: "🎨" },
-      { label: "Images", href: "/content/images", icon: "🖼" },
-      { label: "Image Style", href: "/content/images/style", icon: "🎨" },
-      { label: "Pipeline", href: "/content/pipeline", icon: "▥" },
-      { label: "Skills", href: "/content/skills", icon: "📚" },
-      { label: "Sources", href: "/content/sources", icon: "📥" },
-    ],
-  },
-  {
-    label: "Cross-hub",
-    items: [
-      { label: "Executive", href: "/executive", icon: "📈" },
-      { label: "Recommendations", href: "/recommendations", icon: "💡" },
-      { label: "Alerts", href: "/alerts", icon: "🔔" },
-      { label: "Analytics", href: "/analytics", icon: "▣" },
-      { label: "Attribution", href: "/attribution", icon: "⎔" },
-      { label: "Marketing Spend", href: "/settings/marketing-spend", icon: "💵" },
-      { label: "Pipeline", href: "/pipeline", icon: "▥" },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { label: "Brand Voice", href: "/brand-voice", icon: "🎙" },
-      { label: "Practice Areas", href: "/settings/practice-areas", icon: "⚖" },
-      { label: "Sales coach", href: "/settings/sales-training", icon: "🎯" },
-      { label: "Integrations", href: "/integrations", icon: "🔌", adminOnly: true },
-      { label: "Users", href: "/admin/users", icon: "👥", adminOnly: true },
-      { label: "Settings", href: "/settings", icon: "⚙", adminOnly: true },
-    ],
-  },
-];
+type Role = "user" | "admin";
 
 const STORAGE_COLLAPSED = "km_sidebar_collapsed";
 const STORAGE_GROUPS = "km_sidebar_groups";
+
+function defaultOpenState(): Record<string, boolean> {
+  return Object.fromEntries(DEPARTMENTS.map((d) => [d.key, d.defaultOpen]));
+}
 
 function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
@@ -154,9 +44,7 @@ type Me = { id: string; email: string; role: Role };
 export function MarketingSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(GROUPS.map((g) => [g.label, true])),
-  );
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(defaultOpenState);
   const [hydrated, setHydrated] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
 
@@ -196,8 +84,8 @@ export function MarketingSidebar() {
     }
   };
 
-  const toggleGroup = (label: string) => {
-    const next = { ...openGroups, [label]: !openGroups[label] };
+  const toggleGroup = (key: string) => {
+    const next = { ...openGroups, [key]: !openGroups[key] };
     setOpenGroups(next);
     try {
       localStorage.setItem(STORAGE_GROUPS, JSON.stringify(next));
@@ -207,6 +95,8 @@ export function MarketingSidebar() {
   };
 
   const width = collapsed ? "60px" : "232px";
+
+  const homeActive = isActive(pathname, HOME_NAV_ITEM.href);
 
   return (
     <aside
@@ -236,46 +126,65 @@ export function MarketingSidebar() {
       </div>
 
       <nav className="flex flex-col px-2 py-3 gap-2 flex-1">
-        {GROUPS.map((group) => {
-          const open = collapsed || openGroups[group.label];
-          const visibleItems = group.items.filter((it) => !it.adminOnly || isAdmin);
+        {/* Home dashboard — always visible above the department groups. */}
+        <Link
+          href={HOME_NAV_ITEM.href}
+          title={HOME_NAV_ITEM.label}
+          className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
+            homeActive
+              ? "bg-[#185FA5]/10 font-semibold text-[#185FA5]"
+              : "text-slate-700 hover:bg-slate-200/70 hover:text-slate-900"
+          } ${collapsed ? "justify-center" : ""}`}
+        >
+          <span aria-hidden className="text-base leading-none shrink-0">
+            {HOME_NAV_ITEM.icon}
+          </span>
+          {!collapsed && <span className="truncate">{HOME_NAV_ITEM.label}</span>}
+        </Link>
+
+        {DEPARTMENTS.map((dept) => {
+          const open = collapsed || openGroups[dept.key];
+          const visibleItems = dept.items.filter((it) => !it.adminOnly || isAdmin);
           if (visibleItems.length === 0) return null;
           return (
-            <div key={group.label}>
+            <div key={dept.key}>
               {!collapsed && (
                 <button
                   type="button"
-                  onClick={() => toggleGroup(group.label)}
-                  className="w-full flex items-center justify-between px-2 py-2 text-sm font-semibold tracking-tight text-slate-900 hover:text-[#185FA5]"
+                  onClick={() => toggleGroup(dept.key)}
+                  className="w-full flex items-center justify-between gap-2 px-2 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 hover:text-slate-900"
                 >
-                  <span>{group.label}</span>
-                  <span aria-hidden className="text-xs text-slate-500">
-                    {openGroups[group.label] ? "▾" : "▸"}
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span
+                      aria-hidden
+                      className="h-3 w-1 shrink-0 rounded-full"
+                      style={{ backgroundColor: dept.accent }}
+                    />
+                    <span className="truncate">{dept.label}</span>
+                  </span>
+                  <span aria-hidden className="text-xs text-slate-400">
+                    {openGroups[dept.key] ? "▾" : "▸"}
                   </span>
                 </button>
               )}
+              {collapsed && (
+                <div
+                  aria-hidden
+                  className="mx-auto my-1 h-0.5 w-5 rounded-full"
+                  style={{ backgroundColor: dept.accent }}
+                />
+              )}
               {open && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {visibleItems.map((item) => {
-                    const active = isActive(pathname, item.href);
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        title={item.label}
-                        className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
-                          active
-                            ? "bg-[#185FA5]/10 font-semibold text-[#185FA5]"
-                            : "text-slate-700 hover:bg-slate-200/70 hover:text-slate-900"
-                        } ${collapsed ? "justify-center" : ""}`}
-                      >
-                        <span aria-hidden className="text-base leading-none shrink-0">
-                          {item.icon}
-                        </span>
-                        {!collapsed && <span className="truncate">{item.label}</span>}
-                      </Link>
-                    );
-                  })}
+                  {visibleItems.map((item) => (
+                    <SidebarItem
+                      key={item.href}
+                      item={item}
+                      accent={dept.accent}
+                      collapsed={collapsed}
+                      active={isActive(pathname, item.href)}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -310,5 +219,61 @@ export function MarketingSidebar() {
         </div>
       )}
     </aside>
+  );
+}
+
+function SidebarItem({
+  item,
+  accent,
+  collapsed,
+  active,
+}: {
+  item: DeptItem;
+  accent: string;
+  collapsed: boolean;
+  active: boolean;
+}) {
+  // Phase 2 items have no page yet — show them dimmed and non-clickable so the
+  // roadmap is visible without producing dead links.
+  if (item.status === "phase2") {
+    return (
+      <div
+        title={`${item.label} — coming soon`}
+        aria-disabled
+        className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-400 cursor-default ${
+          collapsed ? "justify-center" : ""
+        }`}
+      >
+        <span aria-hidden className="text-base leading-none shrink-0 opacity-60">
+          {item.icon}
+        </span>
+        {!collapsed && (
+          <>
+            <span className="truncate">{item.label}</span>
+            <span className="ml-auto rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
+              Soon
+            </span>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={item.href}
+      title={item.label}
+      className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
+        active
+          ? "font-semibold text-slate-900"
+          : "text-slate-700 hover:bg-slate-200/70 hover:text-slate-900"
+      } ${collapsed ? "justify-center" : ""}`}
+      style={active ? { backgroundColor: `${accent}1a` } : undefined}
+    >
+      <span aria-hidden className="text-base leading-none shrink-0">
+        {item.icon}
+      </span>
+      {!collapsed && <span className="truncate">{item.label}</span>}
+    </Link>
   );
 }
