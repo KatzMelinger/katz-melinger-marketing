@@ -49,7 +49,7 @@ export async function GET() {
 
   const runId = latestRun?.[0]?.id ?? null;
 
-  let citationsByUrl = new Map<string, { count: number; providers: Set<string>; prompts: Set<string> }>();
+  const citationsByUrl = new Map<string, { count: number; providers: Set<string>; prompts: Set<string> }>();
   if (runId) {
     const { data: responses } = await supabase
       .from("aeo_responses")

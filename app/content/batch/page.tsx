@@ -150,7 +150,6 @@ export default function BatchPage() {
 
   // Pre-fill from URL params when arriving from a trend / keyword card.
   // Runs once on mount; intentionally not reactive to user typing.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const qTopic = searchParams.get("topic");
     if (qTopic) setTopic(qTopic);

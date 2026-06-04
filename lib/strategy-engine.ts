@@ -375,7 +375,7 @@ export async function suggestForCluster(input: ClusterInput): Promise<StrategyDe
   const rules = rulesDecision({ ...input, intent });
   const edge = detectEdgeCase(input);
 
-  let pillarId = inferPillar(input, practiceArea);
+  const pillarId = inferPillar(input, practiceArea);
   let claudeData: Partial<StrategyDecision> | null = null;
   let decisionSource: StrategyDecision["decisionSource"] = "rules";
 

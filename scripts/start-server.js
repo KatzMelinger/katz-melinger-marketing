@@ -44,7 +44,6 @@ for (const name of STRIP_IF_EMPTY) {
 }
 if (stripped.length > 0) {
   // Visible in the start log so future debugging takes 5 seconds, not 2 hours.
-  // eslint-disable-next-line no-console
   console.log(
     `[start-server] Stripped empty env vars so .env.local can load real values: ${stripped.join(", ")}`,
   );

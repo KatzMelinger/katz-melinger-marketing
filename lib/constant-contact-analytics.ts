@@ -76,7 +76,7 @@ function parseCampaignRow(
   let clicks = extractNumber(
     status.unique_clicks ?? status.clicks ?? c.unique_clicks ?? c.clicks,
   );
-  let emails_sent = extractNumber(
+  const emails_sent = extractNumber(
     status.emails_sent ?? status.sends ?? status.send_count ?? c.emails_sent,
   );
 
