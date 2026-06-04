@@ -930,7 +930,7 @@ export default function SeoKeywordsPage() {
           sort; filter by competitor or practice-area cluster above.
         </p>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[940px] text-left text-sm">
+          <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="border-b border-[#e2e8f0] text-slate-500 text-xs">
               <tr>
                 <ThButton onClick={() => setCompSort("keyword")}>
@@ -954,12 +954,13 @@ export default function SeoKeywordsPage() {
                 <ThButton onClick={() => setCompSort("domain")}>
                   Top domain{compSortIndicator("domain")}
                 </ThButton>
+                <th className="pb-2 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {competitiveRows.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={7} className="py-6 text-center text-slate-500">
+                  <td colSpan={8} className="py-6 text-center text-slate-500">
                     {(competitive?.competitive ?? []).length === 0
                       ? "No competitor gaps found. Add tracked competitors above to populate this table."
                       : "No gaps match these filters."}
@@ -983,7 +984,15 @@ export default function SeoKeywordsPage() {
                   </td>
                   <td className="py-2 pr-3 tabular-nums">{item.competitorsBeatingUs}</td>
                   <td className="py-2 pr-3 tabular-nums">{Math.round(item.opportunityScore)}</td>
-                  <td className="py-2 text-slate-600">{item.domain}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.domain}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    <ContentActionsRow
+                      keyword={item.keyword}
+                      actions={contentActions}
+                      originSource="competitor_gap"
+                      originContext={{ source_keyword: item.keyword, competitor_domain: item.domain }}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
