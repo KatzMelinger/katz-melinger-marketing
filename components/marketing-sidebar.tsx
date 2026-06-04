@@ -23,15 +23,18 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { DEPARTMENTS, HOME_NAV_ITEM, type DeptItem } from "@/lib/departments";
+import { usePersistentState, useHydrated } from "@/lib/use-persistent-state";
 
 type Role = "user" | "admin";
 
 const STORAGE_COLLAPSED = "km_sidebar_collapsed";
 const STORAGE_GROUPS = "km_sidebar_groups";
 
-function defaultOpenState(): Record<string, boolean> {
-  return Object.fromEntries(DEPARTMENTS.map((d) => [d.key, d.defaultOpen]));
-}
+// Stable reference (computed once) so it can serve as the persistent-state
+// fallback without re-triggering snapshots on every render.
+const DEFAULT_GROUPS: Record<string, boolean> = Object.fromEntries(
+  DEPARTMENTS.map((d) => [d.key, d.defaultOpen]),
+);
 
 function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
@@ -43,24 +46,24 @@ type Me = { id: string; email: string; role: Role };
 
 export function MarketingSidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(defaultOpenState);
-  const [hydrated, setHydrated] = useState(false);
+  const hydrated = useHydrated();
+  const [collapsed, setCollapsed] = usePersistentState<boolean>(
+    STORAGE_COLLAPSED,
+    false,
+    (raw) => raw === "1",
+    (value) => (value ? "1" : "0"),
+  );
+  const [openGroups, setOpenGroups] = usePersistentState<Record<string, boolean>>(
+    STORAGE_GROUPS,
+    DEFAULT_GROUPS,
+    (raw) => ({ ...DEFAULT_GROUPS, ...(JSON.parse(raw) as Record<string, boolean>) }),
+    (value) => JSON.stringify(value),
+  );
   const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
-    setHydrated(true);
-    try {
-      setCollapsed(localStorage.getItem(STORAGE_COLLAPSED) === "1");
-      const raw = localStorage.getItem(STORAGE_GROUPS);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, boolean>;
-        setOpenGroups((prev) => ({ ...prev, ...parsed }));
-      }
-    } catch {
-      /* ignore */
-    }
     // Load the current user so we can hide admin links and show the user menu.
+    // (setState lives in the async .then(), not the effect body.)
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setMe(d?.user ?? null))
@@ -74,25 +77,10 @@ export function MarketingSidebar() {
 
   const isAdmin = me?.role === "admin";
 
-  const toggleCollapsed = () => {
-    const next = !collapsed;
-    setCollapsed(next);
-    try {
-      localStorage.setItem(STORAGE_COLLAPSED, next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  };
+  const toggleCollapsed = () => setCollapsed((prev) => !prev);
 
-  const toggleGroup = (key: string) => {
-    const next = { ...openGroups, [key]: !openGroups[key] };
-    setOpenGroups(next);
-    try {
-      localStorage.setItem(STORAGE_GROUPS, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-  };
+  const toggleGroup = (key: string) =>
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const width = collapsed ? "60px" : "232px";
 

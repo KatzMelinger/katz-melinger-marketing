@@ -17,9 +17,8 @@
  * owns the toggle state.
  */
 
-import { useEffect, useState } from "react";
-
 import type { Kpi } from "@/lib/dashboard-snapshots";
+import { usePersistentState } from "@/lib/use-persistent-state";
 
 // Bumped to _v2_ so stale per-panel state from the earlier "collapsed by
 // default" board is discarded — every panel now starts open, and only
@@ -45,27 +44,15 @@ export function DepartmentPanel({
   /** Rich detail revealed when expanded. Omit for KPI-only panels. */
   children?: React.ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  // Persisted per panel; falls back to defaultExpanded until the user toggles.
+  const [expanded, setExpanded] = usePersistentState<boolean>(
+    `${STORAGE_PREFIX}${panelKey}`,
+    defaultExpanded,
+    (raw) => (raw === "1" ? true : raw === "0" ? false : defaultExpanded),
+    (value) => (value ? "1" : "0"),
+  );
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(`${STORAGE_PREFIX}${panelKey}`);
-      if (raw === "1") setExpanded(true);
-      else if (raw === "0") setExpanded(false);
-    } catch {
-      /* ignore */
-    }
-  }, [panelKey]);
-
-  const toggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    try {
-      localStorage.setItem(`${STORAGE_PREFIX}${panelKey}`, next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  };
+  const toggle = () => setExpanded((prev) => !prev);
 
   return (
     <section className="overflow-hidden rounded-xl border border-[#e2e8f0] bg-white shadow-sm">
