@@ -112,6 +112,13 @@ export default function SeoKeywordsPage() {
   const [compDomainFilter, setCompDomainFilter] = useState<string>("all");
   const [clusterFilter, setClusterFilter] = useState<ClusterFilter>("all");
 
+  // Latest cannibalization snapshot (keyword → the 2+ of OUR URLs competing for
+  // it). Read-only from the persisted scan — no Semrush spend. Used to suggest a
+  // next action per competitor-gap keyword (new URL vs optimize vs de-cannibalize).
+  const [cannibalIssues, setCannibalIssues] = useState<
+    Array<{ keyword: string; urls: { url: string; position: number }[]; severity: string }>
+  >([]);
+
   // Tracker pagination: 20 per page, with "show more" (grow the page) or
   // page-by-page nav. `manageOpen` collapses the "Manage target keywords" card.
   const [page, setPage] = useState(0);
@@ -150,10 +157,17 @@ export default function SeoKeywordsPage() {
       fetch("/api/seo/keywords?competitor=all", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/seo/tracked-keywords", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/seo/competitors", { cache: "no-store" }).then((r) => r.json()),
+      // Latest persisted cannibalization snapshot (no scan triggered here).
+      fetch("/api/seo/cannibalization/latest", { cache: "no-store" })
+        .then((r) => r.json())
+        .catch(() => ({ snapshot: null })),
     ])
-      .then(([d, c, t, comp]) => {
+      .then(([d, c, t, comp, cann]) => {
         setData(d);
         setCompetitive(c);
+        setCannibalIssues(
+          Array.isArray(cann?.snapshot?.issues) ? cann.snapshot.issues : [],
+        );
         // Unified source of truth: seo_keywords (same list the KM Agent reads).
         // GET /api/seo/tracked-keywords returns an array of row objects.
         setTargets(
@@ -384,14 +398,43 @@ export default function SeoKeywordsPage() {
   const compSortIndicator = (key: CompSortKey) =>
     compSortKey !== key ? "" : compSortDir === "asc" ? " ▲" : " ▼";
 
-  // Competitor gaps, tagged with a practice-area cluster, then filtered + sorted.
-  // The API already caps the merged set at 30; we tag/filter/sort that set.
+  // keyword (lowercased) → the 2+ of OUR URLs already competing for it.
+  const cannibalMap = useMemo(() => {
+    const m = new Map<string, { urls: { url: string; position: number }[]; severity: string }>();
+    for (const issue of cannibalIssues) {
+      if (!issue?.keyword) continue;
+      m.set(issue.keyword.toLowerCase().trim(), {
+        urls: issue.urls ?? [],
+        severity: issue.severity ?? "low",
+      });
+    }
+    return m;
+  }, [cannibalIssues]);
+
+  // Competitor gaps, tagged with a practice-area cluster + a suggested next
+  // action, then filtered + sorted. The API already caps the merged set at 30.
+  //
+  // Suggested action heuristic (cheap, reuses data we already have):
+  //   - cannibalization → we already rank 2+ URLs for it (from the latest scan);
+  //     consolidate instead of writing more.
+  //   - new_url        → we don't rank at all (ourPosition 0); create a page.
+  //   - optimize       → we rank one URL but a competitor beats us; strengthen it.
   const competitiveRows = useMemo(() => {
-    const rows = (competitive?.competitive ?? []).map((r) => ({
-      ...r,
-      competitorsBeatingUs: r.competitorsBeatingUs ?? 1,
-      cluster: classifyKeywordCluster(r.keyword),
-    }));
+    const rows = (competitive?.competitive ?? []).map((r) => {
+      const cannibal = cannibalMap.get(r.keyword.toLowerCase().trim());
+      const action: "cannibalization" | "new_url" | "optimize" = cannibal
+        ? "cannibalization"
+        : r.ourPosition > 0
+          ? "optimize"
+          : "new_url";
+      return {
+        ...r,
+        competitorsBeatingUs: r.competitorsBeatingUs ?? 1,
+        cluster: classifyKeywordCluster(r.keyword),
+        action,
+        cannibalUrls: cannibal?.urls ?? [],
+      };
+    });
     const filtered = rows.filter((r) => {
       if (compDomainFilter !== "all" && r.domain !== compDomainFilter) return false;
       if (clusterFilter !== "all" && r.cluster.key !== clusterFilter) return false;
@@ -415,7 +458,7 @@ export default function SeoKeywordsPage() {
       return compSortDir === "asc" ? aNum - bNum : bNum - aNum;
     });
     return filtered;
-  }, [competitive, compDomainFilter, clusterFilter, compSortKey, compSortDir]);
+  }, [competitive, cannibalMap, compDomainFilter, clusterFilter, compSortKey, compSortDir]);
 
   // Distinct competitor domains present in the gap set, for the filter dropdown.
   const competitorDomains = useMemo(
@@ -927,10 +970,20 @@ export default function SeoKeywordsPage() {
           Keywords where a tracked competitor outranks us with meaningful search volume, merged
           across {competitors.length || "your"} tracked {competitors.length === 1 ? "firm" : "firms"}.
           &quot;Firms&quot; = how many of them beat us on that keyword. Click any column header to
-          sort; filter by competitor or practice-area cluster above.
+          sort; filter by competitor or practice-area cluster above. &quot;Suggested action&quot;
+          tells you whether to add a new URL, optimize an existing page, or fix cannibalization.
         </p>
+        {cannibalIssues.length === 0 && (
+          <p className="text-[11px] text-slate-400 mt-1">
+            Tip: cannibalization suggestions need a scan — run one on the{" "}
+            <a href="/seo/cannibalization" className="text-[#185FA5] hover:underline">
+              Cannibalization page
+            </a>{" "}
+            to flag keywords where 2+ of your own pages already compete.
+          </p>
+        )}
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[1080px] text-left text-sm">
+          <table className="w-full min-w-[1240px] text-left text-sm">
             <thead className="border-b border-[#e2e8f0] text-slate-500 text-xs">
               <tr>
                 <ThButton onClick={() => setCompSort("keyword")}>
@@ -954,13 +1007,14 @@ export default function SeoKeywordsPage() {
                 <ThButton onClick={() => setCompSort("domain")}>
                   Top domain{compSortIndicator("domain")}
                 </ThButton>
+                <th className="pb-2 pr-3 font-medium">Suggested action</th>
                 <th className="pb-2 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {competitiveRows.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-slate-500">
+                  <td colSpan={9} className="py-6 text-center text-slate-500">
                     {(competitive?.competitive ?? []).length === 0
                       ? "No competitor gaps found. Add tracked competitors above to populate this table."
                       : "No gaps match these filters."}
@@ -985,6 +1039,9 @@ export default function SeoKeywordsPage() {
                   <td className="py-2 pr-3 tabular-nums">{item.competitorsBeatingUs}</td>
                   <td className="py-2 pr-3 tabular-nums">{Math.round(item.opportunityScore)}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.domain}</td>
+                  <td className="py-2 pr-3">
+                    <SuggestedAction action={item.action} cannibalUrls={item.cannibalUrls} />
+                  </td>
                   <td className="py-2 text-right whitespace-nowrap">
                     <ContentActionsRow
                       keyword={item.keyword}
@@ -1016,6 +1073,45 @@ function ThButton({ children, onClick }: { children: React.ReactNode; onClick: (
         {children}
       </button>
     </th>
+  );
+}
+
+function SuggestedAction({
+  action,
+  cannibalUrls,
+}: {
+  action: "cannibalization" | "new_url" | "optimize";
+  cannibalUrls: { url: string; position: number }[];
+}) {
+  if (action === "cannibalization") {
+    const list = cannibalUrls.map((u) => `• ${u.url} (pos ${u.position})`).join("\n");
+    return (
+      <a
+        href="/seo/cannibalization"
+        className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-100"
+        title={`${cannibalUrls.length} of our pages already rank for this — consolidate them instead of adding more:\n${list}`}
+      >
+        Fix cannibalization{cannibalUrls.length ? ` (${cannibalUrls.length})` : ""}
+      </a>
+    );
+  }
+  if (action === "new_url") {
+    return (
+      <span
+        className="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700"
+        title="We don't rank for this keyword — create a new page targeting it (use the Create content action →)."
+      >
+        Add new URL
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"
+      title="We already rank a page for this but a competitor beats us — strengthen the existing page rather than creating a new one."
+    >
+      Optimize page
+    </span>
   );
 }
 
