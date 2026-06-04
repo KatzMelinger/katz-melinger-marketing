@@ -16,10 +16,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { detectCannibalization } from "@/lib/cannibalization";
 import {
   getDomainKeywords,
   getKeywordDifficulty,
   getPhraseMetrics,
+  SEMRUSH_DOMAIN,
   type SemrushKeywordRow,
 } from "@/lib/semrush";
 
@@ -191,7 +193,25 @@ async function refreshTrackedKeywords() {
       .select("*")
       .order("created_at", { ascending: true });
 
-    return NextResponse.json({ updated, keywords: refreshed ?? [] });
+    // Keep the cannibalization snapshot fresh on the same schedule as rankings,
+    // reusing the domain_organic rows we already pulled above — no extra Semrush
+    // spend. Non-fatal: a failure here must not fail the ranking refresh.
+    let cannibalizationIssues: number | null = null;
+    try {
+      const { issues } = await detectCannibalization(SEMRUSH_DOMAIN, semrushRows);
+      cannibalizationIssues = issues.length;
+    } catch (err) {
+      console.error(
+        "[seo/keywords/refresh] cannibalization scan failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    return NextResponse.json({
+      updated,
+      keywords: refreshed ?? [],
+      cannibalizationIssues,
+    });
   } catch (err: any) {
     console.error("[seo/keywords/refresh] Failed:", err?.message);
     return NextResponse.json(

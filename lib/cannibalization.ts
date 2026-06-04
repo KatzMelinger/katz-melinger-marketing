@@ -11,7 +11,7 @@
  * detection.
  */
 
-import { getDomainKeywords, SEMRUSH_DOMAIN } from "./semrush";
+import { getDomainKeywords, SEMRUSH_DOMAIN, type SemrushKeywordRow } from "./semrush";
 import { getSupabaseAdmin } from "./supabase-server";
 import {
   evaluateCannibalizationAlerts,
@@ -37,10 +37,15 @@ function classifySeverity(positions: number[]): "low" | "medium" | "high" {
 
 export async function detectCannibalization(
   domain: string = SEMRUSH_DOMAIN,
+  prefetchedRows?: SemrushKeywordRow[],
 ): Promise<{ snapshotId: string; issues: CannibalizationDetail[] }> {
   // Pull a wide enough slice that we can group meaningfully — 1000 rows
   // matches the keyword_research refresh budget and keeps Semrush units low.
-  const rows = await getDomainKeywords(domain, undefined, 1000, 0, "traffic", "desc");
+  // Callers that already hold the firm's domain_organic report (e.g. the daily
+  // rank-refresh cron) can pass it in to avoid a second Semrush call.
+  const rows =
+    prefetchedRows ??
+    (await getDomainKeywords(domain, undefined, 1000, 0, "traffic", "desc"));
 
   const grouped = new Map<
     string,
