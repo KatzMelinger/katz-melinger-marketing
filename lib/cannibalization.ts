@@ -96,6 +96,32 @@ export async function detectCannibalization(
     .single();
   if (error) throw new Error(`Failed to save snapshot: ${error.message}`);
 
+  // Retention: keep only the 3 most recent snapshots per domain (every reader
+  // only ever reads the latest; the extra two are a rollback buffer). Now that
+  // the daily rank-refresh cron rebuilds this, snapshots would otherwise grow
+  // unbounded. Best-effort — a prune failure must not fail the scan.
+  try {
+    const { data: recent } = await supabase
+      .from("cannibalization_snapshots")
+      .select("id")
+      .eq("domain", domain)
+      .order("created_at", { ascending: false })
+      .limit(3);
+    if (recent && recent.length === 3) {
+      const keepIds = recent.map((r) => r.id);
+      await supabase
+        .from("cannibalization_snapshots")
+        .delete()
+        .eq("domain", domain)
+        .not("id", "in", `(${keepIds.join(",")})`);
+    }
+  } catch (pruneErr) {
+    console.error(
+      "[cannibalization] snapshot prune failed:",
+      pruneErr instanceof Error ? pruneErr.message : String(pruneErr),
+    );
+  }
+
   // Surface high-severity cannibalization in the alerts inbox.
   const alertIssues: CannibalizationIssue[] = issues
     .filter((i) => i.severity !== "low")
