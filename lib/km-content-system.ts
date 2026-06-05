@@ -53,6 +53,12 @@ export const EMPLOYMENT_PILLARS: KMPillar[] = [
   { id: "sexual-harassment", label: "Sexual Harassment", url: "/sexual-harassment/", practiceArea: "employment" },
   { id: "leave", label: "Leave and Accommodations", url: "/leave-accommodations/", practiceArea: "employment" },
   { id: "hostile", label: "Hostile Work Environment", url: "/hostile-work-environment/", practiceArea: "employment" },
+  // Added: real practice pages confirmed live (200). These give severance /
+  // non-compete, retaliation, and whistleblower keywords a correct pillar
+  // instead of defaulting to wage-theft.
+  { id: "severance", label: "Severance Agreements", url: "/severance/", practiceArea: "employment" },
+  { id: "retaliation", label: "Retaliation", url: "/retaliation/", practiceArea: "employment" },
+  { id: "whistleblower", label: "Whistleblower Protection", url: "/whistleblower/", practiceArea: "employment" },
 ];
 
 export const COLLECTIONS_PILLARS: KMPillar[] = [
@@ -64,7 +70,8 @@ export const COLLECTIONS_PILLARS: KMPillar[] = [
 export const ALL_KM_PILLARS: KMPillar[] = [...EMPLOYMENT_PILLARS, ...COLLECTIONS_PILLARS];
 
 export const KM_HUB_LINKS: Record<KMPracticeArea, string> = {
-  employment: "/nyc-employment-lawyer/",
+  // Was /nyc-employment-lawyer/ which 404s; /employment-law/ is the live hub.
+  employment: "/employment-law/",
   collections: "/civil-litigation/collections-judgment-enforcement/",
 };
 
