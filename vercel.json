@@ -6,6 +6,10 @@
       "schedule": "0 11 * * *"
     },
     {
+      "path": "/api/seo/opportunities/sync",
+      "schedule": "0 8 * * *"
+    },
+    {
       "path": "/api/content/site-inventory/crawl",
       "schedule": "0 9 * * *"
     },

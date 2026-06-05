@@ -45,6 +45,10 @@ type SecondarySuggestion = {
   intent: string | null;
 };
 
+type LinkPlanItem = { url: string; anchor: string; section: string };
+type LinkPlanFlag = { url: string; title: string | null; reason: string };
+type LinkPlan = { links: LinkPlanItem[]; flagged: LinkPlanFlag[] };
+
 const CONTENT_TYPES: { id: KMContentType; label: string }[] = [
   { id: "practice_page", label: "Practice Page (commercial)" },
   { id: "blog_post", label: "Blog Post (informational)" },
@@ -111,6 +115,9 @@ export function KmBriefWizard({
   const [error, setError] = useState<string | null>(null);
   const [doneDraftId, setDoneDraftId] = useState<string | null | undefined>(undefined);
 
+  const [linkPlan, setLinkPlan] = useState<LinkPlan | null>(null);
+  const [linkPlanLoading, setLinkPlanLoading] = useState(false);
+
   const set = useCallback(
     (patch: Partial<KMPerPageBrief>) => setBrief((b) => ({ ...b, ...patch })),
     [],
@@ -137,6 +144,50 @@ export function KmBriefWizard({
       .then((d) => setSecondary(Array.isArray(d?.suggestions) ? d.suggestions : []))
       .finally(() => setSecLoading(false));
   }, [step, secondary.length, opportunity.keyword]);
+
+  // Build the internal link plan when reaching the final (Meta) step. Asks the
+  // Cluster Map which live pages relate to this brief, then pre-selects them all
+  // into brief.internalLinks so the generator is constrained to confirmed URLs.
+  useEffect(() => {
+    if (step !== 4 || linkPlan !== null) return;
+    setLinkPlanLoading(true);
+    fetch("/api/seo/link-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        primaryKeyword: brief.primaryKeyword,
+        secondaryKeywords: brief.secondaryKeywords ?? [],
+        faqQuestions: brief.faqQuestions ?? [],
+        pillarId: brief.pillarId,
+        practiceArea: brief.practiceArea,
+        excludeUrl: brief.urlSlug ? `/${brief.urlSlug}/` : undefined,
+      }),
+    })
+      .then((r) => r.json())
+      .then((d: LinkPlan) => {
+        const plan: LinkPlan = {
+          links: Array.isArray(d?.links) ? d.links : [],
+          flagged: Array.isArray(d?.flagged) ? d.flagged : [],
+        };
+        setLinkPlan(plan);
+        // Default: include every confirmed link.
+        set({ internalLinks: plan.links });
+      })
+      .catch(() => setLinkPlan({ links: [], flagged: [] }))
+      .finally(() => setLinkPlanLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  const selectedLinks = new Set((brief.internalLinks ?? []).map((l) => l.url));
+  const toggleLink = (item: LinkPlanItem) => {
+    const current = brief.internalLinks ?? [];
+    const exists = current.some((l) => l.url === item.url);
+    set({
+      internalLinks: exists
+        ? current.filter((l) => l.url !== item.url)
+        : [...current, item],
+    });
+  };
 
   const selectedKw = new Set(brief.secondaryKeywords ?? []);
   const toggleKw = (kw: string) => {
@@ -423,6 +474,65 @@ export function KmBriefWizard({
                     <Field label="URL slug"><input className="inp" value={brief.urlSlug ?? ""} onChange={(e) => set({ urlSlug: e.target.value })} /></Field>
                     <Field label="Internal pillar link"><input className="inp" value={brief.internalPillarLink ?? ""} onChange={(e) => set({ internalPillarLink: e.target.value })} /></Field>
                   </div>
+
+                  {/* Suggested Internal Links — auto-filled from the Cluster Map. */}
+                  <div className="rounded-lg border border-slate-200">
+                    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+                      <span className="text-xs font-semibold text-slate-700">Suggested internal links</span>
+                      <span className="text-[10px] text-slate-500">
+                        from the Cluster Map · confirmed live pages only
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      {linkPlanLoading && (
+                        <p className="text-xs text-slate-500">Checking the Cluster Map…</p>
+                      )}
+                      {!linkPlanLoading && linkPlan && linkPlan.links.length === 0 && (
+                        <p className="text-xs text-slate-400">
+                          No related live pages found. The generator will link only to the pillar above.
+                        </p>
+                      )}
+                      {!linkPlanLoading && linkPlan && linkPlan.links.length > 0 && (
+                        <ul className="space-y-1.5">
+                          {linkPlan.links.map((l) => (
+                            <li key={l.url} className="flex items-start gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={selectedLinks.has(l.url)}
+                                onChange={() => toggleLink(l)}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="text-slate-800">{l.anchor}</span>
+                                <span className="ml-1.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                                  {l.section}
+                                </span>
+                                <span className="block truncate text-[11px] text-slate-400">{l.url}</span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {!linkPlanLoading && linkPlan && linkPlan.flagged.length > 0 && (
+                        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-2">
+                          <p className="text-[11px] font-medium text-amber-700">
+                            Excluded (cannibalization risk):
+                          </p>
+                          <ul className="mt-1 space-y-1">
+                            {linkPlan.flagged.map((f) => (
+                              <li key={f.url} className="text-[11px] text-amber-800">
+                                {f.title ?? f.url} — {f.reason}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <p className="mt-2 text-[11px] text-slate-400">
+                        The generator may use only these internal links. It cannot invent others.
+                      </p>
+                    </div>
+                  </div>
+
                   <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                     <input type="checkbox" className="mt-0.5" checked={!!brief.cannibalizationConfirmed} onChange={(e) => set({ cannibalizationConfirmed: e.target.checked })} />
                     <span className="text-slate-700">I confirmed this keyword isn&apos;t already covered by an existing KM page (cannibalization check).</span>

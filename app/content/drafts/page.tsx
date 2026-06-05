@@ -567,6 +567,14 @@ export default function DraftsPage() {
                 </div>
               </DashCard>
 
+              <LinkVerificationCard
+                draftId={selectedDraft.id}
+                onBodyChange={(b) => {
+                  setEditBody(b);
+                  setSelectedDraft((d) => (d ? { ...d, body: b } : d));
+                }}
+              />
+
               {analysis && (
                 <AnalysisCard
                   analysis={analysis}
@@ -701,6 +709,123 @@ function DraftStatusDropdown({
         </>
       )}
     </div>
+  );
+}
+
+type VerifiedLink = {
+  href: string;
+  anchor: string;
+  type: "internal" | "external";
+  status: "confirmed" | "unverified" | "external";
+  matchedUrl?: string;
+  matchedTitle?: string | null;
+};
+type LinkVerifyResult = {
+  links: VerifiedLink[];
+  counts: { total: number; confirmed: number; unverified: number; external: number };
+};
+
+/**
+ * Publishing-QA link check. Verifies every link in the draft against the
+ * Cluster Map: confirmed (live), unverified (likely invented), or external.
+ * Unverified internal links can be stripped before a human publishes.
+ */
+function LinkVerificationCard({
+  draftId,
+  onBodyChange,
+}: {
+  draftId: string;
+  onBodyChange: (body: string) => void;
+}) {
+  const [result, setResult] = useState<LinkVerifyResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (strip: boolean) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/content/drafts/${draftId}/verify-links`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strip }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResult({ links: data.links ?? [], counts: data.counts });
+        if (data.stripped && typeof data.body === "string") onBodyChange(data.body);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Reset when switching drafts.
+  useEffect(() => {
+    setResult(null);
+  }, [draftId]);
+
+  const toneFor = (s: VerifiedLink["status"]): "emerald" | "red" | "neutral" =>
+    s === "confirmed" ? "emerald" : s === "unverified" ? "red" : "neutral";
+  const labelFor = (s: VerifiedLink["status"]) =>
+    s === "confirmed" ? "Live" : s === "unverified" ? "Needs verification" : "External";
+
+  return (
+    <DashCard>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">Link verification</h3>
+          <p className="text-xs text-slate-500">
+            Checks every link against the live Cluster Map before publishing.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {result && result.counts.unverified > 0 && (
+            <DashButton variant="danger" onClick={() => run(true)} disabled={busy}>
+              {busy ? <DashSpinner /> : `Strip ${result.counts.unverified} invented`}
+            </DashButton>
+          )}
+          <DashButton variant="outline" onClick={() => run(false)} disabled={busy}>
+            {busy ? <DashSpinner /> : result ? "Re-check" : "Verify links"}
+          </DashButton>
+        </div>
+      </div>
+
+      {result && (
+        <div className="mt-3">
+          <div className="mb-2 flex flex-wrap gap-2 text-xs">
+            <DashPill tone="emerald">{result.counts.confirmed} live</DashPill>
+            <DashPill tone={result.counts.unverified > 0 ? "red" : "neutral"}>
+              {result.counts.unverified} needs verification
+            </DashPill>
+            <DashPill tone="neutral">{result.counts.external} external</DashPill>
+          </div>
+          {result.counts.total === 0 ? (
+            <p className="text-xs text-slate-400">No links found in this draft.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+              {result.links.map((l, i) => (
+                <li key={`${l.href}-${i}`} className="flex items-start gap-2 px-3 py-2 text-sm">
+                  <DashPill tone={toneFor(l.status)}>{labelFor(l.status)}</DashPill>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-slate-800">{l.anchor || "(no anchor)"}</span>
+                    <span className="block truncate text-[11px] text-slate-400">
+                      {l.href}
+                      {l.matchedTitle ? ` → ${l.matchedTitle}` : ""}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {result.counts.unverified > 0 && (
+            <p className="mt-2 text-[11px] text-red-600">
+              {result.counts.unverified} internal link
+              {result.counts.unverified > 1 ? "s do" : " does"} not match any live page. Strip
+              {result.counts.unverified > 1 ? " them" : " it"} before publishing.
+            </p>
+          )}
+        </div>
+      )}
+    </DashCard>
   );
 }
 

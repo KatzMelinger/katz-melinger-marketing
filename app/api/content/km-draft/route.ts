@@ -59,6 +59,24 @@ function asStringArray(v: unknown): string[] {
   return v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim());
 }
 
+function asInternalLinks(v: unknown): KMPerPageBrief["internalLinks"] {
+  if (!Array.isArray(v)) return [];
+  const out: NonNullable<KMPerPageBrief["internalLinks"]> = [];
+  for (const item of v) {
+    if (item && typeof item === "object") {
+      const o = item as Record<string, unknown>;
+      const url = asString(o.url).trim();
+      if (!url) continue;
+      out.push({
+        url,
+        anchor: asString(o.anchor).trim() || url,
+        section: asString(o.section).trim() || "Body",
+      });
+    }
+  }
+  return out;
+}
+
 function parseBrief(o: Record<string, unknown>): Partial<KMPerPageBrief> {
   const contentType = CONTENT_TYPES.includes(o.contentType as KMContentType)
     ? (o.contentType as KMContentType)
@@ -89,6 +107,7 @@ function parseBrief(o: Record<string, unknown>): Partial<KMPerPageBrief> {
     evidenceTypes: asStringArray(o.evidenceTypes),
     thresholds: asStringArray(o.thresholds),
     faqQuestions: asStringArray(o.faqQuestions),
+    internalLinks: asInternalLinks(o.internalLinks),
     specialInstructions: asString(o.specialInstructions).trim() || undefined,
   };
 }
@@ -159,6 +178,22 @@ export async function POST(req: Request) {
     }
   } catch {
     /* no inventory / non-fatal */
+  }
+
+  // Authoritative internal link plan: the generator may use ONLY these confirmed
+  // internal links and must not invent others. This is the "link plan into the
+  // generator" connection — the URLs come from the Cluster Map via the brief.
+  const linkPlan = brief.internalLinks ?? [];
+  if (linkPlan.length > 0) {
+    const planLines = linkPlan.map(
+      (l) => `- ${l.anchor} → ${l.url}  (place in: ${l.section})`,
+    );
+    userPrompt +=
+      `\n\n---\nAPPROVED INTERNAL LINK PLAN — these are the ONLY internal links you may use. ` +
+      `Each is a confirmed live page. Use the given anchor text and place the link in the indicated section. ` +
+      `Do NOT invent, guess, or add any other internal link (any relative URL or katzmelinger.com URL). ` +
+      `You may still cite external authorities (statutes, courts, government sites) in prose.\n` +
+      planLines.join("\n");
   }
 
   // Per-tenant system prompt (Phase 2). Falls back to the code-defined

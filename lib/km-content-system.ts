@@ -79,6 +79,20 @@ export const KM_HUB_LINKS: Record<KMPracticeArea, string> = {
  * The Per-Page Brief payload. Every field except optional ones must be
  * present before content generation is allowed.
  */
+/**
+ * A single confirmed internal link in the brief's link plan. Every entry is a
+ * live page from the Cluster Map (site_pages) or a known pillar/hub URL — the
+ * generator is constrained to these and may not invent other internal links.
+ */
+export type KMInternalLink = {
+  /** Relative path or absolute URL of the live page to link to. */
+  url: string;
+  /** Suggested anchor text. */
+  anchor: string;
+  /** Where the link belongs, e.g. "Pillar / CTA" or "Body". */
+  section: string;
+};
+
 export type KMPerPageBrief = {
   contentType: KMContentType;
   practiceArea: KMPracticeArea;
@@ -98,6 +112,8 @@ export type KMPerPageBrief = {
   evidenceTypes?: string[];
   thresholds?: string[];
   faqQuestions?: string[];
+  /** Confirmed internal links the generator must use (and not exceed). */
+  internalLinks?: KMInternalLink[];
   specialInstructions?: string;
 };
 

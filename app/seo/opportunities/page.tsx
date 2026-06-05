@@ -25,6 +25,7 @@ type Opportunity = {
   id: string;
   keyword: string;
   source: string;
+  listName: string | null;
   competitor: string | null;
   searchVolume: number | null;
   keywordDifficulty: number | null;
@@ -51,6 +52,7 @@ const SOURCE_LABEL: Record<string, string> = {
   quickwin: "Quick win",
   missing: "Missing target",
   longtail: "Long-tail",
+  imported: "Imported",
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -85,6 +87,8 @@ export default function SeoOpportunitiesPage() {
   const [showCovered, setShowCovered] = useState(false);
   const [showHandled, setShowHandled] = useState(false);
   const [wizardOpp, setWizardOpp] = useState<Opportunity | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [listFilter, setListFilter] = useState<string>("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -144,7 +148,12 @@ export default function SeoOpportunitiesPage() {
   };
 
   const counts = data?.counts;
-  const rows = data?.opportunities ?? [];
+  const allRows = data?.opportunities ?? [];
+  const listNames = Array.from(
+    new Set(allRows.map((o) => o.listName).filter((n): n is string => !!n)),
+  ).sort();
+  const rows =
+    listFilter === "all" ? allRows : allRows.filter((o) => o.listName === listFilter);
 
   return (
     <SeoShell
@@ -178,6 +187,21 @@ export default function SeoOpportunitiesPage() {
             <input type="checkbox" checked={showHandled} onChange={(e) => setShowHandled(e.target.checked)} />
             <span className="text-slate-700">Show handled</span>
           </label>
+          {listNames.length > 0 && (
+            <label className="inline-flex items-center gap-2">
+              <span className="text-slate-500">List:</span>
+              <select
+                value={listFilter}
+                onChange={(e) => setListFilter(e.target.value)}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+              >
+                <option value="all">All lists</option>
+                {listNames.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-slate-500">
@@ -185,6 +209,12 @@ export default function SeoOpportunitiesPage() {
               ? `Synced ${new Date(data.lastSyncedAt).toLocaleString()}`
               : "Never synced"}
           </span>
+          <button
+            onClick={() => setShowImport(true)}
+            className="rounded-md border border-[#185FA5] px-3 py-1.5 font-medium text-[#185FA5] hover:bg-[#185FA5]/5"
+          >
+            Import SEMrush list
+          </button>
           <button
             onClick={refresh}
             disabled={syncing}
@@ -233,6 +263,11 @@ export default function SeoOpportunitiesPage() {
                 >
                   <td className="py-2 pr-3">
                     <span className="text-slate-900">{o.keyword}</span>
+                    {o.listName && (
+                      <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">
+                        {o.listName}
+                      </span>
+                    )}
                     {o.excluded && o.excludeReason && (
                       <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">
                         {o.excludeReason}
@@ -329,7 +364,147 @@ export default function SeoOpportunitiesPage() {
           }}
         />
       )}
+
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            setShowImport(false);
+            fetchData();
+          }}
+        />
+      )}
     </SeoShell>
+  );
+}
+
+function ImportModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [listName, setListName] = useState("");
+  const [practiceArea, setPracticeArea] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ imported: number; excluded: number } | null>(null);
+
+  const submit = async () => {
+    if (!file || !listName.trim()) {
+      setError("Choose a CSV file and name the list.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("listName", listName.trim());
+      if (practiceArea) fd.append("practiceArea", practiceArea);
+      const res = await fetch("/api/seo/opportunities/import", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Import failed");
+      setResult({ imported: json.imported ?? 0, excluded: json.excluded ?? 0 });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Import a SEMrush list</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Upload a keyword export (Keyword Gap, Organic Research, or Position Tracking). Each
+              keyword is filtered, classified, and deduped against your live pages, then tagged with
+              the list name.
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100" aria-label="Close">×</button>
+        </div>
+
+        {result ? (
+          <div className="mt-5 space-y-3 text-center">
+            <div className="text-2xl">✓</div>
+            <p className="text-sm text-slate-700">
+              Imported <b>{result.imported}</b> keywords into &ldquo;{listName.trim()}&rdquo;
+              {result.excluded > 0 && <> ({result.excluded} filtered as junk/branded)</>}.
+            </p>
+            <button
+              onClick={onImported}
+              className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8]"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">List name</span>
+              <input
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                placeholder="e.g. gap retaliation"
+                value={listName}
+                onChange={(e) => setListName(e.target.value)}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                Practice area (optional — inferred per keyword if blank)
+              </span>
+              <select
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                value={practiceArea}
+                onChange={(e) => setPracticeArea(e.target.value)}
+              >
+                <option value="">Infer automatically</option>
+                <option value="employment">Employment</option>
+                <option value="collections">Collections</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">CSV file</span>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-[#185FA5]/10 file:px-3 file:py-1.5 file:text-[#185FA5]"
+              />
+            </label>
+            {error && (
+              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {error}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={onClose}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submit}
+                disabled={busy}
+                className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              >
+                {busy ? "Importing…" : "Import"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

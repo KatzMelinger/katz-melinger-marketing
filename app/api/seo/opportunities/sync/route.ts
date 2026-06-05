@@ -1,5 +1,9 @@
 /**
  * POST /api/seo/opportunities/sync
+ *   (UI trigger — "Refresh opportunities" button on /seo/opportunities)
+ *
+ * GET /api/seo/opportunities/sync
+ *   (Vercel Cron trigger — requires Authorization: Bearer ${CRON_SECRET})
  *
  * Refreshes the seo_opportunities table from SEMrush: pulls competitor gaps +
  * missing targets + long-tail suggestions, runs the relevance filter
@@ -8,13 +12,11 @@
  * Re-syncing never resurrects or downgrades a row the user has acted on — an
  * existing `dismissed` / `brief` / `in_production` / `published` status is
  * preserved; only the metric + relevance fields refresh. New keywords land as
- * `status: "new"`.
- *
- * Classification (intent/practice area/content type) and dedupe are added in
- * Phase B; this Phase-A version handles filtering + the persistent spine.
+ * `status: "new"`. Imported list keywords (`source: "imported"`) keep their
+ * `list_name` because upsert only touches the columns in the sync payload.
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { detectContentOverlap } from "@/lib/content-overlap";
 import type { KMContentType, KMSearchIntent } from "@/lib/km-content-system";
@@ -58,7 +60,29 @@ type Candidate = {
 
 const normalize = (k: string) => k.trim().toLowerCase();
 
+/**
+ * Vercel Cron auth — Vercel injects `Authorization: Bearer ${CRON_SECRET}` on
+ * scheduled invocations when CRON_SECRET is set. Reject anything else so the
+ * cron URL can't be abused as a public, SEMrush-spending refresh button.
+ */
+function isAuthorizedCron(req: NextRequest): boolean {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return false;
+  return (req.headers.get("authorization") ?? "") === `Bearer ${expected}`;
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return runSync();
+}
+
 export async function POST() {
+  return runSync();
+}
+
+async function runSync() {
   try {
     const competitors = await listCompetitors();
     const ctx = {

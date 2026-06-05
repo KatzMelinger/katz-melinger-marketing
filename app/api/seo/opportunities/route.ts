@@ -25,6 +25,7 @@ type Row = {
   id: string;
   keyword: string;
   source: string;
+  list_name: string | null;
   competitor: string | null;
   search_volume: number | null;
   keyword_difficulty: number | null;
@@ -96,6 +97,7 @@ export async function GET(req: NextRequest) {
         id: r.id,
         keyword: r.keyword,
         source: r.source,
+        listName: r.list_name,
         competitor: r.competitor,
         searchVolume: r.search_volume,
         keywordDifficulty: r.keyword_difficulty,
