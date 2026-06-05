@@ -36,6 +36,11 @@ import {
 } from "@/lib/km-content-system";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { detectContentOverlap } from "@/lib/content-overlap";
+import {
+  languageDirective,
+  normalizeLanguage,
+  type ContentLanguage,
+} from "@/lib/content-language";
 import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
@@ -124,12 +129,19 @@ export async function POST(req: Request) {
   }
 
   const brief = partial as KMPerPageBrief;
+  const language = normalizeLanguage((body as Record<string, unknown>).language);
 
   // Practice Page = up to 2,500 words ≈ 3,500 tokens output. Case Result
   // ≈ 1,200 words ≈ 1,700 tokens. 8,192 max gives headroom for either.
   const maxTokens = brief.contentType === "case_result" ? 4096 : 8192;
 
   let userPrompt = buildBriefUserPrompt(brief);
+
+  // Spanish (or any non-English) output directive.
+  const langBlock = languageDirective(language);
+  if (langBlock) {
+    userPrompt += `\n\n---\n${langBlock}`;
+  }
 
   // Glossary-ownership / "link don't redefine" enforcement: check the site
   // inventory for pages that already cover the brief's keywords + FAQ terms,
@@ -164,13 +176,14 @@ export async function POST(req: Request) {
     const textBlock = msg.content.find((b) => b.type === "text");
     const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
 
-    const draftId = await autosave(brief, text);
+    const draftId = await autosave(brief, text, language);
 
     return NextResponse.json({
       draft_id: draftId,
       content: text,
       content_type: brief.contentType,
       practice_area: brief.practiceArea,
+      language,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Anthropic request failed";
@@ -178,7 +191,11 @@ export async function POST(req: Request) {
   }
 }
 
-async function autosave(brief: KMPerPageBrief, body: string): Promise<string | null> {
+async function autosave(
+  brief: KMPerPageBrief,
+  body: string,
+  language: ContentLanguage,
+): Promise<string | null> {
   const supabase = getSupabaseServer();
   if (!supabase) return null;
   try {
@@ -198,6 +215,7 @@ async function autosave(brief: KMPerPageBrief, body: string): Promise<string | n
           km_brief: brief,
           km_content_type: KM_CONTENT_TYPE_LABELS[brief.contentType],
           hub_link: KM_HUB_LINKS[brief.practiceArea],
+          language,
         },
         seo_brief: {
           primaryKeyword: brief.primaryKeyword,

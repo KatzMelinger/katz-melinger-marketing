@@ -17,6 +17,7 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { ANTI_AI_VOICE_RULES } from "./anti-ai-voice";
+import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
 import {
@@ -82,7 +83,9 @@ function buildSystemPrompt(args: {
   firm: string;
   skillsContext: string;
   tone: string | undefined;
+  language?: ContentLanguage;
 }): string {
+  const langBlock = languageDirective(args.language ?? "en");
   return `You are a marketing copywriter for Katz Melinger PLLC.
 ${args.firm}
 
@@ -90,7 +93,7 @@ ${ANTI_AI_VOICE_RULES}
 ${args.skillsContext ? `\n${args.skillsContext}\n` : ""}
 Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.
 Avoid legalese. Never fabricate case results or guarantees. Stay compliant — recommend speaking with an attorney rather than asserting outcomes.
-
+${langBlock ? `\n${langBlock}\n` : ""}
 For each requested format, return:
 - title (or subject for email)
 - preview_text (email only)
@@ -182,6 +185,7 @@ export async function generateMultiFormat(args: {
   originSource?: string | null;
   originContext?: Record<string, unknown> | null;
   formatDurations?: Partial<Record<FormatKey, string>>;
+  language?: ContentLanguage;
 }): Promise<MultiFormatResult> {
   const supabase = getSupabaseAdmin();
   const [firm, skillsContext] = await Promise.all([
@@ -192,7 +196,12 @@ export async function generateMultiFormat(args: {
     }),
   ]);
 
-  const system = buildSystemPrompt({ firm, skillsContext, tone: args.tone });
+  const system = buildSystemPrompt({
+    firm,
+    skillsContext,
+    tone: args.tone,
+    language: args.language,
+  });
 
   const longForm = args.formats.filter((f) => LONG_FORM_FORMATS.includes(f));
   const shortForm = args.formats.filter((f) => !LONG_FORM_FORMATS.includes(f));

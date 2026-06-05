@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { normalizeLanguage } from "@/lib/content-language";
 import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
 
 export const runtime = "nodejs";
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest) {
         body?.origin_context && typeof body.origin_context === "object"
           ? (body.origin_context as Record<string, unknown>)
           : null,
+      language: normalizeLanguage(body?.language),
     });
     return NextResponse.json(result);
   } catch (err) {

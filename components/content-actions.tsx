@@ -18,6 +18,8 @@
 
 import { useState } from "react";
 
+import { CONTENT_LANGUAGES, type ContentLanguage } from "@/lib/content-language";
+
 export type ContentIdea = {
   headline: string;
   summary: string;
@@ -124,6 +126,9 @@ export function useContentActions() {
   // row's menu is open (only one open at a time).
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
+  // Output language for every draft created from this hook (English / Spanish).
+  const [language, setLanguage] = useState<ContentLanguage>("en");
+
   // Fan-out modal — long-tail LLM prompts for a keyword.
   const [fanOutFor, setFanOutFor] = useState<string | null>(null);
   const [fanOutLoading, setFanOutLoading] = useState(false);
@@ -221,6 +226,7 @@ export function useContentActions() {
             : null,
           origin_source: params.originSource ?? null,
           origin_context: params.originContext ?? null,
+          language,
         }),
       });
       const json = await res.json();
@@ -295,6 +301,8 @@ export function useContentActions() {
           error={recsError}
           ideas={recsIdeas}
           creatingKey={creatingKey}
+          language={language}
+          onLanguageChange={setLanguage}
           onClose={closeRecs}
           onCreate={(idea, contentTypeId) =>
             createDraft({
@@ -322,6 +330,8 @@ export function useContentActions() {
           error={fanOutError}
           prompts={fanOutPrompts}
           creatingKey={creatingKey}
+          language={language}
+          onLanguageChange={setLanguage}
           onClose={closeFanOut}
           onCreate={(p, contentTypeId) =>
             createDraft({
@@ -354,8 +364,35 @@ export function useContentActions() {
     fanOutFor,
     menuFor,
     setMenuFor,
+    language,
+    setLanguage,
     modal,
   };
+}
+
+/** Compact English / Spanish output-language toggle shown in the create modals. */
+function LanguageToggle({
+  value,
+  onChange,
+}: {
+  value: ContentLanguage;
+  onChange: (l: ContentLanguage) => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-md border border-[#e2e8f0] p-0.5">
+      {CONTENT_LANGUAGES.map((l) => (
+        <button
+          key={l.id}
+          onClick={() => onChange(l.id)}
+          className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+            value === l.id ? "bg-[#185FA5] text-white" : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          {l.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export type ContentActions = ReturnType<typeof useContentActions>;
@@ -480,6 +517,8 @@ function RecommendationsModal({
   error,
   ideas,
   creatingKey,
+  language,
+  onLanguageChange,
   onClose,
   onCreate,
 }: {
@@ -488,6 +527,8 @@ function RecommendationsModal({
   error: string | null;
   ideas: ContentIdea[];
   creatingKey: string | null;
+  language: ContentLanguage;
+  onLanguageChange: (l: ContentLanguage) => void;
   onClose: () => void;
   onCreate: (idea: ContentIdea, contentTypeId: string) => void;
 }) {
@@ -510,13 +551,16 @@ function RecommendationsModal({
               AI-suggested article angles. Pick a content type after choosing an idea.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-2">
+            <LanguageToggle value={language} onChange={onLanguageChange} />
+            <button
+              onClick={onClose}
+              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="p-5">
@@ -650,6 +694,8 @@ function FanOutModal({
   error,
   prompts,
   creatingKey,
+  language,
+  onLanguageChange,
   onClose,
   onCreate,
 }: {
@@ -658,6 +704,8 @@ function FanOutModal({
   error: string | null;
   prompts: FanOutPrompt[];
   creatingKey: string | null;
+  language: ContentLanguage;
+  onLanguageChange: (l: ContentLanguage) => void;
   onClose: () => void;
   onCreate: (p: FanOutPrompt, contentTypeId: string) => void;
 }) {
@@ -692,13 +740,16 @@ function FanOutModal({
               opportunity — pick a funnel stage to filter.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-2">
+            <LanguageToggle value={language} onChange={onLanguageChange} />
+            <button
+              onClick={onClose}
+              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="p-5">

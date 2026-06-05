@@ -13,6 +13,7 @@ import {
   getLatestBrandProfile,
 } from "@/lib/content-brand-voice";
 import { buildSkillsContext } from "@/lib/content-skills";
+import { languageDirective, normalizeLanguage } from "@/lib/content-language";
 import { getFirmContext } from "@/lib/firm-context";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
@@ -221,6 +222,12 @@ Requirements:
 Return JSON only with keys: "subject" (string) and "body" (string, plain text or simple HTML allowed as text, with short section headings).`;
   } else {
     return NextResponse.json({ error: "Invalid content_type" }, { status: 400 });
+  }
+
+  // Spanish (or any non-English) output directive — applies to every format.
+  const langBlock = languageDirective(normalizeLanguage(o.language));
+  if (langBlock) {
+    userPrompt += `\n\n${langBlock}`;
   }
 
   try {

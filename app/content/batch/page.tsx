@@ -26,6 +26,7 @@ import {
   DashSpinner,
   DashPill,
 } from "@/components/dashboard-ui";
+import { CONTENT_LANGUAGES, type ContentLanguage } from "@/lib/content-language";
 import {
   CONTENT_TYPE_FORMATS,
   CONTENT_TYPE_LABEL,
@@ -97,6 +98,7 @@ export default function BatchPage() {
     DEFAULT_PRACTICE_AREAS[0],
   );
   const [tone, setTone] = useState("Professional, plain-spoken, accessible");
+  const [language, setLanguage] = useState<ContentLanguage>("en");
   // Per-format target runtime for podcast + YouTube scripts.
   const [podcastLen, setPodcastLen] = useState("5-10 minutes");
   const [podcastCustom, setPodcastCustom] = useState("");
@@ -233,6 +235,7 @@ export default function BatchPage() {
           topic: topicWithContext,
           practiceArea,
           tone,
+          language,
           formats: Array.from(selected),
           targetKeywords: targetKeywords
             .split(",")
@@ -349,6 +352,18 @@ export default function BatchPage() {
                     onChange={(e) => setTone(e.target.value)}
                     className="w-full mt-1"
                   />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Language</label>
+                  <DashSelect
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value as ContentLanguage)}
+                    className="w-full mt-1"
+                  >
+                    {CONTENT_LANGUAGES.map((l) => (
+                      <option key={l.id} value={l.id}>{l.label}</option>
+                    ))}
+                  </DashSelect>
                 </div>
               </div>
 

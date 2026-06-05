@@ -23,6 +23,7 @@ import {
   KM_CONTENT_TYPE_LABELS,
   type KMPerPageBrief,
 } from "@/lib/km-content-system";
+import { CONTENT_LANGUAGES, type ContentLanguage } from "@/lib/content-language";
 
 export function KMContentGenerator() {
   const searchParams = useSearchParams();
@@ -35,6 +36,7 @@ export function KMContentGenerator() {
   const [output, setOutput] = useState<string>("");
   const [draftId, setDraftId] = useState<string | null>(null);
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
+  const [language, setLanguage] = useState<ContentLanguage>("en");
 
   // Pre-fill from an approved (or pending) suggestion when ?suggestion=... is set.
   useEffect(() => {
@@ -173,7 +175,7 @@ export function KMContentGenerator() {
       const res = await fetch("/api/content/km-draft", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(brief),
+        body: JSON.stringify({ ...brief, language }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -231,6 +233,16 @@ export function KMContentGenerator() {
         <KMPerPageBriefForm value={brief} onChange={setBrief} />
 
         <div className="sticky bottom-0 bg-white/95 dark:bg-black/40 backdrop-blur border-t border-black/10 dark:border-white/10 py-3 -mx-1 px-1 flex items-center gap-3">
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as ContentLanguage)}
+            className="rounded-md border border-slate-300 px-2 py-2 text-sm text-slate-700"
+            title="Output language"
+          >
+            {CONTENT_LANGUAGES.map((l) => (
+              <option key={l.id} value={l.id}>{l.label}</option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={handleGenerate}

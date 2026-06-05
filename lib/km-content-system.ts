@@ -131,6 +131,89 @@ export function pillarsForPracticeArea(area: KMPracticeArea): KMPillar[] {
 }
 
 /**
+ * The required section skeletons, as structured data, so UIs (e.g. the SEO
+ * brief wizard's Structure step) can pre-fill the KM 15/12/8-section outline
+ * instead of a generic one. These mirror Sections 7-9 of KM_SYSTEM_PROMPT; the
+ * system prompt remains the source of truth that the generator enforces.
+ */
+export type KMSection = { n: string; heading: string };
+
+export const KM_STRUCTURES: {
+  practice_page: KMSection[];
+  blog_post_employment: KMSection[];
+  blog_post_collections: KMSection[];
+  case_result: KMSection[];
+} = {
+  practice_page: [
+    { n: "01", heading: "Page Setup (keyword, slug, meta, cannibalization check)" },
+    { n: "02", heading: "H1 + Introduction" },
+    { n: "03", heading: "What Is This?" },
+    { n: "04", heading: "Who Is This For?" },
+    { n: "05", heading: "Which Parties Must Comply?" },
+    { n: "06", heading: "Specific Protections or Remedies" },
+    { n: "07", heading: "Federal vs. State Law" },
+    { n: "08", heading: "Legal Remedies or Enforcement Tools" },
+    { n: "09", heading: "How to File or Initiate" },
+    { n: "10", heading: "Evidence and Documentation" },
+    { n: "11", heading: "Statute of Limitations or Enforcement Window" },
+    { n: "12", heading: "How Your Case or Matter Gets Handled" },
+    { n: "13", heading: "Why Katz Melinger" },
+    { n: "14", heading: "FAQ (6-8 questions)" },
+    { n: "15", heading: "Closing CTA" },
+  ],
+  blog_post_employment: [
+    { n: "01", heading: "Scenario" },
+    { n: "02", heading: "Explanation" },
+    { n: "03", heading: "Signs" },
+    { n: "04", heading: "What the Law Says" },
+    { n: "05", heading: "What Employers Cannot Do" },
+    { n: "06", heading: "What the Reader Can Recover" },
+    { n: "07", heading: "What to Do Right Now" },
+    { n: "08", heading: "Common Mistakes to Avoid" },
+    { n: "09", heading: "How Long They Have to Act" },
+    { n: "10", heading: "FAQ (5-7 questions)" },
+    { n: "11", heading: "Conclusion" },
+    { n: "12", heading: "CTA (links to pillar page)" },
+  ],
+  blog_post_collections: [
+    { n: "01", heading: "The Business Problem" },
+    { n: "02", heading: "Why Enforcement Stalls" },
+    { n: "03", heading: "What the Law Provides" },
+    { n: "04", heading: "The Enforcement Process" },
+    { n: "05", heading: "Enforcement Tools Available" },
+    { n: "06", heading: "What to Document and Preserve" },
+    { n: "07", heading: "Timeline and Enforcement Deadlines" },
+    { n: "08", heading: "Common Mistakes Creditors Make" },
+    { n: "09", heading: "When to Call a Lawyer" },
+    { n: "10", heading: "FAQ (5-7 questions)" },
+    { n: "11", heading: "Conclusion" },
+    { n: "12", heading: "CTA (links to collections pillar)" },
+  ],
+  case_result: [
+    { n: "01", heading: "Situation" },
+    { n: "02", heading: "Legal Issue" },
+    { n: "03", heading: "Challenges" },
+    { n: "04", heading: "Strategy" },
+    { n: "05", heading: "Outcome" },
+    { n: "06", heading: "What This Means" },
+    { n: "07", heading: "FAQ (3-5 questions)" },
+    { n: "08", heading: "CTA (links to pillar page)" },
+  ],
+};
+
+/** Returns the KM section skeleton for a content type + practice area. */
+export function getKmStructure(
+  contentType: KMContentType,
+  practiceArea: KMPracticeArea,
+): KMSection[] {
+  if (contentType === "practice_page") return KM_STRUCTURES.practice_page;
+  if (contentType === "case_result") return KM_STRUCTURES.case_result;
+  return practiceArea === "collections"
+    ? KM_STRUCTURES.blog_post_collections
+    : KM_STRUCTURES.blog_post_employment;
+}
+
+/**
  * Renders a filled brief as the user-prompt text. Pairs with
  * KM_SYSTEM_PROMPT (the system-level instruction set).
  */
