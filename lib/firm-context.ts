@@ -16,6 +16,7 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { getTenantConfig } from "./tenant-config";
+import { resolveTenantId } from "./tenant-context";
 import { getPracticeAreas } from "./practice-areas";
 
 /**
@@ -70,21 +71,24 @@ const FALLBACK_CONTEXT =
 export async function getFirmContext(tenantId?: string): Promise<string> {
   try {
     const supabase = getSupabaseAdmin();
+    const tid = tenantId ?? (await resolveTenantId());
 
     // Per-tenant config provides the contact/geography fallback (Phase 2).
     // brand_voice_settings still wins when a value is set there (that's where
     // the team edits firm info on /brand-voice), then tenant_settings, then
     // the hardcoded DEFAULT_CONTACT inside getTenantConfig.
-    const config = await getTenantConfig(tenantId);
+    const config = await getTenantConfig(tid);
 
+    // service-role here (may run in background content-gen) → scope by tenant.
     const [{ data: settingsRows }, { data: avatarRows }, sampleRes] = await Promise.all([
-      supabase.from("brand_voice_settings").select("key, value"),
-      supabase.from("brand_voice_avatars").select("*"),
+      supabase.from("brand_voice_settings").select("key, value").eq("tenant_id", tid),
+      supabase.from("brand_voice_avatars").select("*").eq("tenant_id", tid),
       // brand_voice_samples may not exist on instances that haven't run the
       // v2 migration. Tolerate the failure.
       supabase
         .from("brand_voice_samples")
         .select("title, content, content_type, notes")
+        .eq("tenant_id", tid)
         .order("created_at", { ascending: false }),
     ]);
 

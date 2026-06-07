@@ -5,7 +5,7 @@
  * through the service-role client; RLS exists for any future client-side use.
  */
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 // ---------- ad_creatives ---------------------------------------------------
 
@@ -45,7 +45,7 @@ export interface AdCreativeInput {
 }
 
 export async function listAdCreatives(): Promise<AdCreative[]> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("ad_creatives")
     .select("*")
@@ -55,12 +55,13 @@ export async function listAdCreatives(): Promise<AdCreative[]> {
 }
 
 export async function createAdCreative(input: AdCreativeInput): Promise<AdCreative> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("ad_creatives")
     .insert({
       ...input,
       status: input.status ?? "draft",
+      tenant_id: tenantId,
     })
     .select("*")
     .single();
@@ -72,7 +73,7 @@ export async function updateAdCreative(
   id: string,
   patch: Partial<AdCreativeInput> & { compliance_score?: number; compliance_checked_at?: string },
 ): Promise<AdCreative> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("ad_creatives")
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -84,7 +85,7 @@ export async function updateAdCreative(
 }
 
 export async function deleteAdCreative(id: string): Promise<void> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { error } = await supabase.from("ad_creatives").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -103,7 +104,7 @@ export interface NegativeKeyword {
 }
 
 export async function listNegativeKeywords(): Promise<NegativeKeyword[]> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("negative_keywords")
     .select("*")
@@ -118,7 +119,7 @@ export async function createNegativeKeyword(input: {
   reason?: string | null;
   source?: string | null;
 }): Promise<NegativeKeyword> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("negative_keywords")
     .insert({
@@ -126,6 +127,7 @@ export async function createNegativeKeyword(input: {
       match_type: input.match_type ?? "phrase",
       reason: input.reason ?? null,
       source: input.source ?? "manual",
+      tenant_id: tenantId,
     })
     .select("*")
     .single();
@@ -134,7 +136,7 @@ export async function createNegativeKeyword(input: {
 }
 
 export async function deleteNegativeKeyword(id: string): Promise<void> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { error } = await supabase.from("negative_keywords").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -158,7 +160,7 @@ export async function recordComplianceCheck(input: {
   creative_id?: string | null;
   result: unknown;
 }): Promise<ComplianceCheckRow> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("ad_compliance_checks")
     .insert({
@@ -167,6 +169,7 @@ export async function recordComplianceCheck(input: {
       jurisdiction: input.jurisdiction ?? "NY,NJ",
       creative_id: input.creative_id ?? null,
       result: input.result,
+      tenant_id: tenantId,
     })
     .select("*")
     .single();
@@ -175,7 +178,7 @@ export async function recordComplianceCheck(input: {
 }
 
 export async function listRecentComplianceChecks(limit = 20): Promise<ComplianceCheckRow[]> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("ad_compliance_checks")
     .select("*")
@@ -204,7 +207,7 @@ export interface PlatformAccount {
 }
 
 export async function listPlatformAccounts(): Promise<PlatformAccount[]> {
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("ad_platform_accounts")
     .select("*")

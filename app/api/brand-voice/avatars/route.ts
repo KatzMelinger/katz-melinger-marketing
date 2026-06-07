@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -82,7 +82,7 @@ function buildRow(
 
 export async function GET() {
   try {
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data, error } = await supabase
       .from("brand_voice_avatars")
       .select("*")
@@ -110,10 +110,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: built.error }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
+    const { supabase, tenantId } = await getTenantClient();
     const { data, error } = await supabase
       .from("brand_voice_avatars")
-      .insert(built.row)
+      .insert({ ...built.row, tenant_id: tenantId })
       .select()
       .single();
 
@@ -143,7 +143,7 @@ export async function PATCH(req: NextRequest) {
     }
     built.row.updated_at = new Date().toISOString();
 
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data, error } = await supabase
       .from("brand_voice_avatars")
       .update(built.row)
@@ -174,7 +174,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data, error } = await supabase
       .from("brand_voice_avatars")
       .delete()

@@ -45,6 +45,16 @@ export async function getTenantDb() {
   };
 }
 
+/** Raw authenticated client + tenantId for request-context libs/stores that
+ *  want RLS-enforced reads with minimal change. Reads auto-scope; remember to
+ *  stamp tenant_id on inserts (use `tenantId`). Do NOT use in cron contexts
+ *  (no user session → RLS sees nothing) — use getTenantJobDb there. */
+export async function getTenantClient() {
+  const supabase = await getSupabaseRouteClient();
+  const tenantId = await resolveTenantId();
+  return { supabase, tenantId };
+}
+
 /** Service-role data access for a SPECIFIC tenant (crons/jobs). RLS is bypassed,
  *  so reads are pre-filtered and writes stamped here in code. */
 export function getTenantJobDb(tenantId: string) {
