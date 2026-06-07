@@ -16,7 +16,7 @@ import {
   type ImageSize,
 } from "@/lib/openai-images";
 import { readImageBytes, saveImagePng } from "@/lib/image-store";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 import {
   composeStyleForGeneration,
   isStyleScope,
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       : "medium";
 
   try {
-    const sb = getSupabaseAdmin();
+    const sb = await getTenantDb();
     const { data: parent, error: parentErr } = await sb
       .from("generated_images")
       .select("storage_path, size, quality")

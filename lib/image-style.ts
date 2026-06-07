@@ -8,7 +8,7 @@
  * still works out of the box.
  */
 
-import { getSupabaseServer } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const IMAGE_STYLE_KEYS = [
   "visualDirection",
@@ -39,9 +39,8 @@ const FIELD_LABELS: Record<ImageStyleKey, string> = {
 };
 
 export async function loadImageStyle(): Promise<ImageStyleSettings> {
-  const sb = getSupabaseServer();
-  if (!sb) return { ...EMPTY };
   try {
+    const { supabase: sb } = await getTenantClient();
     const { data, error } = await sb
       .from("image_style_settings")
       .select("key, value");
@@ -63,19 +62,19 @@ export async function loadImageStyle(): Promise<ImageStyleSettings> {
 export async function saveImageStyle(
   patch: Partial<ImageStyleSettings>,
 ): Promise<ImageStyleSettings> {
-  const sb = getSupabaseServer();
-  if (!sb) return { ...EMPTY, ...patch } as ImageStyleSettings;
+  const { supabase: sb, tenantId } = await getTenantClient();
   const rows = Object.entries(patch)
     .filter(([key]) => (IMAGE_STYLE_KEYS as readonly string[]).includes(key))
     .map(([key, value]) => ({
       key,
       value: typeof value === "string" ? value : "",
       updated_at: new Date().toISOString(),
+      tenant_id: tenantId,
     }));
   if (rows.length === 0) return loadImageStyle();
   const { error } = await sb
     .from("image_style_settings")
-    .upsert(rows, { onConflict: "key" });
+    .upsert(rows, { onConflict: "tenant_id,key" });
   if (error) throw new Error(error.message);
   return loadImageStyle();
 }
@@ -147,9 +146,8 @@ const EMPTY_CHANNEL_NOTES: ChannelNotes = {
 };
 
 export async function loadChannelNotes(): Promise<ChannelNotes> {
-  const sb = getSupabaseServer();
-  if (!sb) return { ...EMPTY_CHANNEL_NOTES };
   try {
+    const { supabase: sb } = await getTenantClient();
     const { data, error } = await sb
       .from("image_style_channels")
       .select("channel, notes");
@@ -171,15 +169,15 @@ export async function saveChannelNotes(
   channel: StyleChannel,
   notes: string,
 ): Promise<ChannelNotes> {
-  const sb = getSupabaseServer();
-  if (!sb) return { ...EMPTY_CHANNEL_NOTES, [channel]: notes };
+  const { supabase: sb, tenantId } = await getTenantClient();
   const { error } = await sb.from("image_style_channels").upsert(
     {
       channel,
       notes: typeof notes === "string" ? notes : "",
       updated_at: new Date().toISOString(),
+      tenant_id: tenantId,
     },
-    { onConflict: "channel" },
+    { onConflict: "tenant_id,channel" },
   );
   if (error) throw new Error(error.message);
   return loadChannelNotes();

@@ -11,6 +11,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export type SavedImage = {
   id: string;
@@ -52,7 +53,10 @@ export async function saveImagePng(opts: {
   const { data: publicData } = sb.storage.from(BUCKET).getPublicUrl(path);
   const publicUrl = publicData.publicUrl;
 
-  const { data, error } = await sb
+  // Table write goes through the tenant client (RLS-enforced + stamped); the
+  // storage upload above stays on the service-role client.
+  const { supabase: db, tenantId } = await getTenantClient();
+  const { data, error } = await db
     .from("generated_images")
     .insert({
       id,
@@ -63,6 +67,7 @@ export async function saveImagePng(opts: {
       public_url: publicUrl,
       parent_image_id: opts.parentImageId ?? null,
       metadata: opts.metadata ?? {},
+      tenant_id: tenantId,
     })
     .select("*")
     .maybeSingle();
@@ -93,8 +98,9 @@ export async function readImageBytes(storagePath: string): Promise<Uint8Array> {
 }
 
 export async function deleteSavedImage(id: string): Promise<void> {
-  const sb = getSupabaseAdmin();
-  const { data: row, error: readError } = await sb
+  // Table read/delete are tenant-scoped (RLS); storage removal uses service-role.
+  const { supabase: db } = await getTenantClient();
+  const { data: row, error: readError } = await db
     .from("generated_images")
     .select("storage_path")
     .eq("id", id)
@@ -104,6 +110,6 @@ export async function deleteSavedImage(id: string): Promise<void> {
   }
   if (!row) return;
 
-  await sb.storage.from(BUCKET).remove([row.storage_path as string]);
-  await sb.from("generated_images").delete().eq("id", id);
+  await getSupabaseAdmin().storage.from(BUCKET).remove([row.storage_path as string]);
+  await db.from("generated_images").delete().eq("id", id);
 }

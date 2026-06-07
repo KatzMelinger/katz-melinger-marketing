@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     ? Math.max(1, Math.min(limitRaw, 100))
     : 24;
 
-  const sb = getSupabaseAdmin();
+  const sb = await getTenantDb();
   const { data, error } = await sb
     .from("generated_images")
     .select(
