@@ -13,7 +13,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 import { SEMRUSH_DOMAIN } from "@/lib/semrush";
 
 export const runtime = "nodejs";
@@ -34,7 +34,7 @@ function normalize(url: string | null): string | null {
 }
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const supabase = await getTenantDb();
 
   const { data: keywords } = await supabase
     .from("seo_keywords")

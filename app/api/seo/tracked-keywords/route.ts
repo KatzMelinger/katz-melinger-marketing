@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 import { lookupKeywordRanking } from "@/lib/semrush";
 import {
   isSemrushPushEnabled,
@@ -25,8 +25,8 @@ const MAX_NOTES_LENGTH = 1000;
 
 export async function GET() {
   try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    const db = await getTenantDb();
+    const { data, error } = await db
       .from("seo_keywords")
       .select("*")
       .order("created_at", { ascending: true });
@@ -85,8 +85,8 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "keyword query param required" }, { status: 400 });
   }
   try {
-    const supabase = getSupabaseAdmin();
-    const { error } = await supabase
+    const db = await getTenantDb();
+    const { error } = await db
       .from("seo_keywords")
       .delete()
       .ilike("keyword", keyword);
@@ -117,10 +117,9 @@ export async function POST(req: NextRequest) {
       url: null,
     }));
 
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("seo_keywords")
-      .insert({
+    const db = await getTenantDb();
+    const { data, error } = await db
+      .insert("seo_keywords", {
         keyword: parsed.value.keyword,
         practice_area: parsed.value.practice_area,
         notes: parsed.value.notes,
