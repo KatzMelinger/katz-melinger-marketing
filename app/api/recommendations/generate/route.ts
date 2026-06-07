@@ -13,7 +13,7 @@ import {
   listSuppressedTitles,
   persistGeneratedRecommendations,
 } from "@/lib/recommendation-items";
-import { getSupabaseServer } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -27,22 +27,19 @@ export async function POST() {
 
     // Persist the whole batch to history (for the batch-replay sidebar)…
     let historyId: string | null = null;
-    const supabase = getSupabaseServer();
-    if (supabase) {
-      try {
-        const { data } = await supabase
-          .from("recommendations_history")
-          .insert({
-            recommendations: result.recommendations,
-            evidence: result.evidence,
-            rec_count: result.recommendations.length,
-          })
-          .select("id")
-          .single();
-        historyId = (data?.id as string | undefined) ?? null;
-      } catch (err) {
-        console.warn("[recommendations/generate] history persist failed:", err);
-      }
+    try {
+      const db = await getTenantDb();
+      const { data } = await db
+        .insert("recommendations_history", {
+          recommendations: result.recommendations,
+          evidence: result.evidence,
+          rec_count: result.recommendations.length,
+        })
+        .select("id")
+        .single();
+      historyId = (data?.id as string | undefined) ?? null;
+    } catch (err) {
+      console.warn("[recommendations/generate] history persist failed:", err);
     }
 
     // …and each recommendation as a tracked item with status='active' (skips
