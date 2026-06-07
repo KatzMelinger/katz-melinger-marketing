@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/supabase-route";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 
@@ -63,14 +64,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invite returned no user" }, { status: 500 });
   }
 
-  // The on_auth_user_created trigger inserts an app_users row with role=user.
-  // If the requested role is admin, upgrade it now.
-  if (role === "admin") {
-    await admin
-      .from("app_users")
-      .update({ role: "admin", updated_at: new Date().toISOString() })
-      .eq("user_id", userId);
-  }
+  // The on_auth_user_created trigger inserts an app_users row (role=user) under
+  // the DEFAULT tenant. Stamp it with the inviting admin's tenant so invited
+  // users join the right firm, and apply the requested role.
+  const tenantId = await resolveTenantId();
+  await admin
+    .from("app_users")
+    .update({
+      tenant_id: tenantId,
+      role,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
 
   return NextResponse.json({ ok: true, user_id: userId });
 }
