@@ -32,7 +32,7 @@ import {
 } from "@/lib/keyword-filter";
 import { listCompetitors } from "@/lib/seo-competitors";
 import { inferIntent, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -137,11 +137,11 @@ export async function POST(req: Request) {
       competitorTokens: competitorTokensFromDomains(competitors),
     };
 
-    const supabase = getSupabaseAdmin();
+    const db = await getTenantDb();
     const keys = candidates.map((c) => c.keyword);
 
-    // Preserve user-acted statuses (same rule as /sync).
-    const { data: existingRows } = await supabase
+    // Preserve user-acted statuses (same rule as /sync). RLS-scoped to tenant.
+    const { data: existingRows } = await db
       .from("seo_opportunities")
       .select("keyword, status")
       .in("keyword", keys);
@@ -206,9 +206,10 @@ export async function POST(req: Request) {
       };
     });
 
-    const { error } = await supabase
-      .from("seo_opportunities")
-      .upsert(rows, { onConflict: "keyword" });
+    // upsert stamps tenant_id on every row; conflict key includes tenant_id.
+    const { error } = await db.upsert("seo_opportunities", rows, {
+      onConflict: "tenant_id,keyword",
+    });
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

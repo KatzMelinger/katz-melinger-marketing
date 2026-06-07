@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,8 +44,10 @@ export async function PATCH(
     if (typeof body.briefId === "string") update.brief_id = body.briefId;
     if (typeof body.draftId === "string") update.draft_id = body.draftId;
 
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    // RLS scopes the update to the caller's tenant — a user cannot modify
+    // another firm's opportunity even by guessing its id.
+    const db = await getTenantDb();
+    const { data, error } = await db
       .from("seo_opportunities")
       .update(update)
       .eq("id", id)
