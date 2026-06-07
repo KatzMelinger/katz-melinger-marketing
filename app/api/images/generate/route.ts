@@ -16,8 +16,8 @@ import {
   type ImageSize,
 } from "@/lib/openai-images";
 import { saveImagePng } from "@/lib/image-store";
+import { composeStyleForGeneration } from "@/lib/image-style-store";
 import {
-  composeStyleForGeneration,
   isStyleScope,
   type StyleScope,
 } from "@/lib/image-style";

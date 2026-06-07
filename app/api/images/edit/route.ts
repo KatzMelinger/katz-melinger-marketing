@@ -17,8 +17,8 @@ import {
 } from "@/lib/openai-images";
 import { readImageBytes, saveImagePng } from "@/lib/image-store";
 import { getTenantDb } from "@/lib/tenant-db";
+import { composeStyleForGeneration } from "@/lib/image-style-store";
 import {
-  composeStyleForGeneration,
   isStyleScope,
   type StyleScope,
 } from "@/lib/image-style";

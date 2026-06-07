@@ -11,12 +11,14 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   IMAGE_STYLE_KEYS,
   isStyleChannel,
+  type ImageStyleSettings,
+} from "@/lib/image-style";
+import {
   loadChannelNotes,
   loadImageStyle,
   saveChannelNotes,
   saveImageStyle,
-  type ImageStyleSettings,
-} from "@/lib/image-style";
+} from "@/lib/image-style-store";
 
 export const runtime = "nodejs";
 
