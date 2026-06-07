@@ -15,7 +15,7 @@
 
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import {
   insertPeopleAskBatch,
   listLegalSources,
@@ -282,11 +282,12 @@ Call return_packet with the synthesized packet.`;
   }
 
   // 5. Persist.
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const { data, error } = await sb
     .from("research_packets")
     .insert({
       topic,
+      tenant_id: tenantId,
       practice_area: practiceArea,
       primary_keyword: args.primaryKeyword ?? null,
       legal_sources_found: legalMatches,
@@ -315,7 +316,7 @@ Call return_packet with the synthesized packet.`;
 }
 
 export async function listResearchPackets(limit = 30): Promise<ResearchPacket[]> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const { data, error } = await sb
     .from("research_packets")
     .select("*")
@@ -328,7 +329,7 @@ export async function listResearchPackets(limit = 30): Promise<ResearchPacket[]>
 export async function getResearchPacket(
   id: string,
 ): Promise<ResearchPacket | null> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const { data, error } = await sb
     .from("research_packets")
     .select("*")
