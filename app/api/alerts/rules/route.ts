@@ -3,12 +3,12 @@
  */
 
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data, error } = await supabase
     .from("marketing_alert_rules")
     .select("*")

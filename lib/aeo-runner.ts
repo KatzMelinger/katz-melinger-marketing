@@ -181,9 +181,9 @@ export async function executeRun(runId: string): Promise<void> {
       })
       .eq("id", runId);
 
-    // Diff against the previous done run and write any alerts.
+    // Diff against the previous done run and write any alerts (same tenant).
     try {
-      await evaluateAEOAlerts(runId);
+      await evaluateAEOAlerts(runId, tid);
     } catch (err) {
       logger.warn(
         { runId, error: err instanceof Error ? err.message : String(err) },

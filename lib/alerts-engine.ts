@@ -12,6 +12,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import { logger } from "./logger";
 
 export type AlertType =
@@ -35,8 +36,9 @@ export type WriteAlertArgs = {
   dedupeKey?: string;
 };
 
-export async function writeAlert(args: WriteAlertArgs): Promise<boolean> {
+export async function writeAlert(args: WriteAlertArgs, tenantId?: string): Promise<boolean> {
   const supabase = getSupabaseAdmin();
+  const tid = tenantId ?? (await resolveTenantId());
 
   if (args.dedupeKey) {
     const { data: existing } = await supabase
@@ -44,6 +46,7 @@ export async function writeAlert(args: WriteAlertArgs): Promise<boolean> {
       .select("id")
       .eq("type", args.type)
       .eq("status", "new")
+      .eq("tenant_id", tid)
       .contains("payload", { dedupe_key: args.dedupeKey })
       .limit(1);
     if (existing && existing.length > 0) return false;
@@ -61,6 +64,7 @@ export async function writeAlert(args: WriteAlertArgs): Promise<boolean> {
     title: args.title,
     body: args.body ?? null,
     payload,
+    tenant_id: tid,
   });
   if (error) {
     logger.warn({ type: args.type, error: error.message }, "Failed to write alert");
@@ -110,13 +114,19 @@ async function loadPromptsByIds(ids: string[]): Promise<Map<string, string>> {
   return m;
 }
 
-export async function evaluateAEOAlerts(currentRunId: string): Promise<void> {
+export async function evaluateAEOAlerts(
+  currentRunId: string,
+  tenantId?: string,
+): Promise<void> {
   const supabase = getSupabaseAdmin();
+  const tid = tenantId ?? (await resolveTenantId());
+  const write = (a: WriteAlertArgs) => writeAlert(a, tid);
 
   const { data: previous } = await supabase
     .from("aeo_runs")
     .select("id")
     .eq("status", "done")
+    .eq("tenant_id", tid)
     .neq("id", currentRunId)
     .order("completed_at", { ascending: false })
     .limit(1);
@@ -142,7 +152,7 @@ export async function evaluateAEOAlerts(currentRunId: string): Promise<void> {
 
     // (1) AEO loss / gain
     if (prior.selfMentioned && !cur.selfMentioned) {
-      await writeAlert({
+      await write({
         type: "aeo_loss",
         severity: "high",
         source: "aeo",
@@ -152,7 +162,7 @@ export async function evaluateAEOAlerts(currentRunId: string): Promise<void> {
         dedupeKey: `aeo_loss::${cur.promptId}::${cur.provider}::${currentRunId}`,
       });
     } else if (!prior.selfMentioned && cur.selfMentioned) {
-      await writeAlert({
+      await write({
         type: "aeo_gain",
         severity: "low",
         source: "aeo",
@@ -172,7 +182,7 @@ export async function evaluateAEOAlerts(currentRunId: string): Promise<void> {
       prior.selfSentiment !== cur.selfSentiment &&
       cur.selfSentiment === "negative"
     ) {
-      await writeAlert({
+      await write({
         type: "sentiment_shift",
         severity: "high",
         source: "aeo",
@@ -192,7 +202,7 @@ export async function evaluateAEOAlerts(currentRunId: string): Promise<void> {
     // (3) New citation domains we hadn't seen for this (prompt, provider)
     for (const domain of cur.citationDomains) {
       if (!prior.citationDomains.has(domain)) {
-        await writeAlert({
+        await write({
           type: "new_citation",
           severity: "low",
           source: "aeo",
@@ -215,12 +225,15 @@ export async function evaluateAEOAlerts(currentRunId: string): Promise<void> {
 // SEO rank-drop alerts — read seo_keywords and compare current vs previous
 // ---------------------------------------------------------------------------
 
-export async function evaluateRankAlerts(): Promise<{ written: number }> {
+export async function evaluateRankAlerts(tenantId?: string): Promise<{ written: number }> {
   const supabase = getSupabaseAdmin();
+  const tid = tenantId ?? (await resolveTenantId());
+  const write = (a: WriteAlertArgs) => writeAlert(a, tid);
   const { data: rule } = await supabase
     .from("marketing_alert_rules")
     .select("threshold, enabled")
     .eq("type", "rank_drop")
+    .eq("tenant_id", tid)
     .maybeSingle();
   if (rule && !rule.enabled) return { written: 0 };
 
@@ -229,7 +242,8 @@ export async function evaluateRankAlerts(): Promise<{ written: number }> {
 
   const { data: keywords, error } = await supabase
     .from("seo_keywords")
-    .select("id, keyword, current_rank, previous_rank, search_volume, url, last_checked_at");
+    .select("id, keyword, current_rank, previous_rank, search_volume, url, last_checked_at")
+    .eq("tenant_id", tid);
   if (error) throw new Error(error.message);
 
   let written = 0;
@@ -239,7 +253,7 @@ export async function evaluateRankAlerts(): Promise<{ written: number }> {
     if (drop < minDrop) continue;
     if ((kw.search_volume ?? 0) < minVolume) continue;
 
-    const ok = await writeAlert({
+    const ok = await write({
       type: "rank_drop",
       severity: drop >= 10 ? "high" : "medium",
       source: "seo",
@@ -273,10 +287,13 @@ export type CannibalizationIssue = {
 export async function evaluateCannibalizationAlerts(
   snapshotId: string,
   issues: CannibalizationIssue[],
+  tenantId?: string,
 ): Promise<{ written: number }> {
+  const tid = tenantId ?? (await resolveTenantId());
+  const write = (a: WriteAlertArgs) => writeAlert(a, tid);
   let written = 0;
   for (const issue of issues) {
-    const ok = await writeAlert({
+    const ok = await write({
       type: "cannibalization",
       severity: issue.severity,
       source: "seo",

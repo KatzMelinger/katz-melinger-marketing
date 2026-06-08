@@ -37,13 +37,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Rank-drop alerts: quick, reads the keyword table refreshed by the daily cron.
-  const rank = await evaluateRankAlerts().catch(() => ({ written: 0 }));
-
-  // AEO sweep per tenant (cron has no session → process every active firm).
+  // Cron has no session → process every active firm: rank-drop alerts + AEO sweep.
   const runIds: string[] = [];
+  let rankAlertsWritten = 0;
   let sweepError: string | undefined;
   for (const tenantId of await listTenantIds()) {
+    const rank = await evaluateRankAlerts(tenantId).catch(() => ({ written: 0 }));
+    rankAlertsWritten += rank.written;
     try {
       const runId = await startRun({ triggeredBy: "cron" }, tenantId);
       after(executeRun(runId));
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     runIds,
-    rankAlertsWritten: rank.written,
+    rankAlertsWritten,
     ...(sweepError ? { sweepError } : {}),
   });
 }
