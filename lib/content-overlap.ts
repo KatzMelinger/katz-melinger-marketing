@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import type { SitePage } from "@/lib/site-inventory";
 
 export type OverlapMatch = {
@@ -91,6 +92,7 @@ export async function detectContentOverlap(
   const { data, error } = await sb
     .from("site_pages")
     .select("id, url, title, h1, page_type, pillar, topics")
+    .eq("tenant_id", await resolveTenantId())
     .limit(1000);
   if (error || !data) {
     // No inventory yet — fail soft so callers never break.

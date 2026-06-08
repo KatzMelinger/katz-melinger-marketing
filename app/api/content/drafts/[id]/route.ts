@@ -92,7 +92,8 @@ export async function PATCH(
       if (typeof candidate === "string" && /^https?:\/\//i.test(candidate)) {
         const { ingestUrls } = await import("@/lib/site-inventory");
         // Fire-and-forget — the PATCH response shouldn't wait on Claude.
-        void ingestUrls([candidate]).catch((err) =>
+        // Pass tenantId so the background ingest is scoped even off-request.
+        void ingestUrls([candidate], tenantId).catch((err) =>
           console.warn("[drafts] site-inventory ingest failed:", err),
         );
       }
