@@ -345,6 +345,7 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Anthropic request failed";
+    console.error("[content/draft] failed:", message, e instanceof Error ? e.stack : "");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

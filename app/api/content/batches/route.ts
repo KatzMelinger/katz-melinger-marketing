@@ -112,6 +112,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Batch generation failed";
+    console.error("[content/batches] failed:", msg, err instanceof Error ? err.stack : "");
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

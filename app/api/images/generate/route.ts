@@ -131,6 +131,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ image: saved });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Image generation failed";
+    console.error("[images/generate] failed:", msg, err instanceof Error ? err.stack : "");
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
