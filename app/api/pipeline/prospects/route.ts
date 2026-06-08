@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +13,11 @@ export async function GET() {
       { status: 503 },
     );
   }
+  const tid = await resolveTenantId();
   const { data, error } = await sb
     .from("prospects")
     .select("*")
+    .eq("tenant_id", tid)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -80,7 +83,7 @@ export async function POST(req: Request) {
 
   const { data, error } = await sb
     .from("prospects")
-    .insert(row)
+    .insert({ ...row, tenant_id: await resolveTenantId() })
     .select("id")
     .maybeSingle();
 

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("reviews")
       .select("*")
+      .eq("tenant_id", await resolveTenantId())
       .order("review_date", { ascending: false, nullsFirst: false });
 
     if (error) {

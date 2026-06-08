@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,7 @@ function num(v: unknown): number | null {
 export async function GET(req: NextRequest) {
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
+  const tid = await resolveTenantId();
 
   const sp = req.nextUrl.searchParams;
   const since = sp.get("since");
@@ -60,6 +62,7 @@ export async function GET(req: NextRequest) {
   const { data: calls, error: callsErr } = await supabase
     .from("calls")
     .select("id, agent_email")
+    .eq("tenant_id", tid)
     .limit(20000);
   if (callsErr) return NextResponse.json({ error: callsErr.message }, { status: 500 });
   const agentByCall = new Map<string, string>();
@@ -73,6 +76,7 @@ export async function GET(req: NextRequest) {
   let sq = supabase
     .from("call_scores")
     .select("call_id, overall_score, rubric_type, scored_at, dimension_scores")
+    .eq("tenant_id", tid)
     .order("scored_at", { ascending: false })
     .limit(5000);
   if (since) sq = sq.gte("scored_at", since);

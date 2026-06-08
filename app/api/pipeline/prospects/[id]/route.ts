@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export async function PATCH(req: Request, ctx: Params) {
     return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   }
 
-  const { error } = await sb.from("prospects").update(patch).eq("id", id);
+  const { error } = await sb.from("prospects").update(patch).eq("tenant_id", await resolveTenantId()).eq("id", id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -16,6 +16,7 @@
  */
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import {
   getAnthropic,
   KEYWORD_RESEARCH_MODEL,
@@ -55,6 +56,7 @@ export async function createJob(
       job_type: jobType,
       status: "pending",
       request_params: requestParams,
+      tenant_id: await resolveTenantId(),
     })
     .select("id")
     .single();
@@ -73,6 +75,7 @@ export async function getJob(jobId: string): Promise<JobRow | null> {
   const { data, error } = await supabase
     .from("keyword_research_jobs")
     .select("*")
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", jobId)
     .maybeSingle();
 

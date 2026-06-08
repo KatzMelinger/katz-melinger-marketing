@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 export const maxDuration = 10;
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("keyword_research_jobs")
       .select("id, request_params, result, completed_at, started_at")
+      .eq("tenant_id", await resolveTenantId())
       .eq("job_type", type)
       .eq("status", "done")
       .order("completed_at", { ascending: false })

@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 
 import { scoreCall } from "@/lib/sales-coach";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       ? rubricTypeRaw
       : undefined;
 
-  const { data: call, error: cErr } = await supabase.from("calls").select("*").eq("id", id).maybeSingle();
+  const tid = await resolveTenantId();
+  const { data: call, error: cErr } = await supabase.from("calls").select("*").eq("tenant_id", tid).eq("id", id).maybeSingle();
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
   if (!call) return NextResponse.json({ error: "call not found" }, { status: 404 });
 
@@ -76,6 +78,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     summary_manager: r.summary_manager,
     model_id: r.model_id,
     prompt_version: r.prompt_version,
+    tenant_id: tid,
   };
 
   const { data: saved, error: sErr } = await supabase

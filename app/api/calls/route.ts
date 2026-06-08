@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 
 import { fetchAllCallRailCalls } from "@/lib/callrail-fetch";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +18,13 @@ type Json = Record<string, unknown>;
 export async function GET() {
   const supabase = getSupabaseServer();
   if (supabase) {
+    const tid = await resolveTenantId();
     const { data: calls, error } = await supabase
       .from("calls")
       .select(
         "id,customer_name,customer_phone_number,duration,answered,voicemail,direction,source_name,start_time,first_call,lead_status,agent_email,transcription_language",
       )
+      .eq("tenant_id", tid)
       .order("start_time", { ascending: false })
       .limit(2000);
     if (!error && calls && calls.length > 0) {
@@ -29,6 +32,7 @@ export async function GET() {
       const { data: scores } = await supabase
         .from("call_scores")
         .select("call_id, overall_score, rubric_type, language, scored_at")
+        .eq("tenant_id", tid)
         .in("call_id", ids)
         .order("scored_at", { ascending: false });
       // Take the most recent score per call_id

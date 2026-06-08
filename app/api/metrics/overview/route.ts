@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,7 @@ type WindowAgg = {
 export async function GET(req: NextRequest) {
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
+  const tid = await resolveTenantId();
 
   const sp = req.nextUrl.searchParams;
   const untilDay = parseDay(sp.get("until")) ?? new Date();
@@ -82,6 +84,7 @@ export async function GET(req: NextRequest) {
   const { data: calls, error: callsErr } = await supabase
     .from("calls")
     .select("answered, voicemail, start_time")
+    .eq("tenant_id", tid)
     .gte("start_time", priorStart.toISOString())
     .lte("start_time", curEnd.toISOString())
     .limit(50000);
@@ -91,6 +94,7 @@ export async function GET(req: NextRequest) {
   const { data: scores, error: scoresErr } = await supabase
     .from("call_scores")
     .select("overall_score, scored_at")
+    .eq("tenant_id", tid)
     .gte("scored_at", priorStart.toISOString())
     .lte("scored_at", curEnd.toISOString())
     .limit(50000);
@@ -100,6 +104,7 @@ export async function GET(req: NextRequest) {
   const { data: spendRows, error: spendErr } = await supabase
     .from("marketing_spend")
     .select("amount, period_month")
+    .eq("tenant_id", tid)
     .gte("period_month", dayKey(new Date(Date.UTC(priorStart.getUTCFullYear(), priorStart.getUTCMonth(), 1))))
     .lte("period_month", dayKey(curEnd))
     .limit(50000);

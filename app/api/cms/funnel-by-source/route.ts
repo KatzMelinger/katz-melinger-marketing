@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ async function fetchManualSpend(
   const supabase = getSupabaseServer();
   const out = new Map<string, number>();
   if (!supabase) return out;
-  let q = supabase.from("marketing_spend").select("source, amount, period_month");
+  let q = supabase.from("marketing_spend").select("source, amount, period_month").eq("tenant_id", await resolveTenantId());
   if (since) q = q.gte("period_month", since);
   if (until) q = q.lte("period_month", until);
   const { data, error } = await q;

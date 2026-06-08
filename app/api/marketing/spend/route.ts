@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +34,11 @@ export async function GET(req: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 
   const sp = req.nextUrl.searchParams;
+  const tid = await resolveTenantId();
   let q = supabase
     .from("marketing_spend")
     .select("id, source, period_month, amount, notes, updated_at")
+    .eq("tenant_id", tid)
     .order("period_month", { ascending: false })
     .order("source", { ascending: true });
   const since = firstOfMonth(sp.get("since"));
@@ -72,8 +75,8 @@ export async function POST(req: NextRequest) {
   const { error } = await supabase
     .from("marketing_spend")
     .upsert(
-      { source, period_month: periodMonth, amount, notes, updated_at: new Date().toISOString() },
-      { onConflict: "source,period_month" },
+      { source, period_month: periodMonth, amount, notes, updated_at: new Date().toISOString(), tenant_id: await resolveTenantId() },
+      { onConflict: "tenant_id,source,period_month" },
     );
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return GET(req);
@@ -86,7 +89,7 @@ export async function DELETE(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const { error } = await supabase.from("marketing_spend").delete().eq("id", id);
+  const { error } = await supabase.from("marketing_spend").delete().eq("tenant_id", await resolveTenantId()).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return GET(req);
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,11 @@ export async function GET(req: Request) {
     );
   }
 
+  const tid = await resolveTenantId();
   const { data, error } = await sb
     .from("sales_activities")
     .select("*")
+    .eq("tenant_id", tid)
     .eq("prospect_id", prospectId)
     .order("created_at", { ascending: false });
 
@@ -69,9 +72,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   }
 
+  const tid = await resolveTenantId();
   const { data, error } = await sb
     .from("sales_activities")
-    .insert(row)
+    .insert({ ...row, tenant_id: tid })
     .select("id")
     .maybeSingle();
 
@@ -82,6 +86,7 @@ export async function POST(req: Request) {
   await sb
     .from("prospects")
     .update({ last_activity: new Date().toISOString().slice(0, 10) })
+    .eq("tenant_id", tid)
     .eq("id", prospectId);
 
   return NextResponse.json({ id: data?.id });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
 
   const { data, error } = await sb
     .from("social_posts")
-    .insert({ platform, title, body: textBody })
+    .insert({ platform, title, body: textBody, tenant_id: await resolveTenantId() })
     .select("id")
     .maybeSingle();
 

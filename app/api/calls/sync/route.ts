@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 
 import { fetchAllCallRailCallsDetailed } from "@/lib/callrail-fetch";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export async function POST(req: Request) {
   if (!supabase) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
   }
+  const tid = await resolveTenantId();
 
   let since: string | undefined;
   try {
@@ -100,6 +102,7 @@ export async function POST(req: Request) {
         transcription_language: detectLanguage(c.transcription ?? null),
         raw: c as unknown as Json,
         synced_at: new Date().toISOString(),
+        tenant_id: tid,
       };
     });
 

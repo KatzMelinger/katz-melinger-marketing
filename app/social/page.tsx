@@ -11,6 +11,7 @@ import type { Metadata } from "next";
 import { HubShell, type HubCard, type HubKpi } from "@/components/hub-shell";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,8 @@ async function fetchReviewsSnapshot(): Promise<{
     if (!sb) return null;
     const { data, error } = await sb
       .from("reviews")
-      .select("platform, rating, review_date, created_at");
+      .select("platform, rating, review_date, created_at")
+      .eq("tenant_id", await resolveTenantId());
     if (error || !data) return null;
     const rows = data as Array<{
       platform?: string;
