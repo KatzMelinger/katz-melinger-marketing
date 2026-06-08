@@ -20,6 +20,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 export type Purpose = "gbp";
 
@@ -159,14 +160,16 @@ export async function saveTokens(args: {
   tokens: TokenResponse;
   granted_email: string | null;
   preserveRefreshTokenIfMissing?: boolean;
+  tenantId?: string;
 }): Promise<void> {
   const supabase = getSupabaseAdmin();
+  const tid = args.tenantId ?? (await resolveTenantId());
   const expiresAt = new Date(Date.now() + args.tokens.expires_in * 1000).toISOString();
 
   // Google sometimes omits refresh_token on re-auth; preserve the existing one.
   let refreshToken = args.tokens.refresh_token;
   if (!refreshToken && args.preserveRefreshTokenIfMissing) {
-    const existing = await getStoredToken(args.purpose);
+    const existing = await getStoredToken(args.purpose, tid);
     refreshToken = existing?.refresh_token;
   }
   if (!refreshToken) {
@@ -183,28 +186,42 @@ export async function saveTokens(args: {
     expires_at: expiresAt,
     granted_email: args.granted_email,
     updated_at: new Date().toISOString(),
+    tenant_id: tid,
   };
 
   const { error } = await supabase
     .from("google_oauth_tokens")
-    .upsert(row, { onConflict: "purpose" });
+    .upsert(row, { onConflict: "tenant_id,purpose" });
   if (error) throw new Error(`Failed to save tokens: ${error.message}`);
 }
 
-export async function getStoredToken(purpose: Purpose): Promise<StoredToken | null> {
+export async function getStoredToken(
+  purpose: Purpose,
+  tenantId?: string,
+): Promise<StoredToken | null> {
   const supabase = getSupabaseAdmin();
+  const tid = tenantId ?? (await resolveTenantId());
   const { data, error } = await supabase
     .from("google_oauth_tokens")
     .select("*")
+    .eq("tenant_id", tid)
     .eq("purpose", purpose)
     .maybeSingle();
   if (error) return null;
   return (data as StoredToken | null) ?? null;
 }
 
-export async function deleteStoredToken(purpose: Purpose): Promise<void> {
+export async function deleteStoredToken(
+  purpose: Purpose,
+  tenantId?: string,
+): Promise<void> {
   const supabase = getSupabaseAdmin();
-  await supabase.from("google_oauth_tokens").delete().eq("purpose", purpose);
+  const tid = tenantId ?? (await resolveTenantId());
+  await supabase
+    .from("google_oauth_tokens")
+    .delete()
+    .eq("tenant_id", tid)
+    .eq("purpose", purpose);
 }
 
 /**
@@ -220,12 +237,14 @@ export async function deleteStoredToken(purpose: Purpose): Promise<void> {
  */
 export async function ensureGrantedEmail(
   purpose: Purpose,
+  tenantId?: string,
 ): Promise<string | null> {
-  const stored = await getStoredToken(purpose);
+  const tid = tenantId ?? (await resolveTenantId());
+  const stored = await getStoredToken(purpose, tid);
   if (!stored) return null;
   if (stored.granted_email) return stored.granted_email;
 
-  const valid = await getValidAccessToken(purpose);
+  const valid = await getValidAccessToken(purpose, tid);
   if (!valid) return null;
 
   const email = await fetchUserEmail(valid.token);
@@ -238,6 +257,7 @@ export async function ensureGrantedEmail(
       granted_email: email,
       updated_at: new Date().toISOString(),
     })
+    .eq("tenant_id", tid)
     .eq("purpose", purpose);
   return email;
 }
@@ -247,8 +267,12 @@ export async function ensureGrantedEmail(
  * stored one is near expiry. Returns null if no token has been stored yet
  * (caller should redirect the user through the consent flow).
  */
-export async function getValidAccessToken(purpose: Purpose): Promise<{ token: string; granted_email: string | null } | null> {
-  const stored = await getStoredToken(purpose);
+export async function getValidAccessToken(
+  purpose: Purpose,
+  tenantId?: string,
+): Promise<{ token: string; granted_email: string | null } | null> {
+  const tid = tenantId ?? (await resolveTenantId());
+  const stored = await getStoredToken(purpose, tid);
   if (!stored) return null;
 
   const expiresAt = new Date(stored.expires_at).getTime();
@@ -266,6 +290,7 @@ export async function getValidAccessToken(purpose: Purpose): Promise<{ token: st
       tokens: refreshed,
       granted_email: stored.granted_email,
       preserveRefreshTokenIfMissing: true,
+      tenantId: tid,
     });
     return { token: refreshed.access_token, granted_email: stored.granted_email };
   } catch (err) {
