@@ -17,6 +17,7 @@ import { getTenantClient } from "@/lib/tenant-db";
 import { isStyleScope, type StyleScope } from "@/lib/image-style";
 
 const BUCKET = "generated-images";
+const SIGNED_URL_TTL = 60 * 60 * 24 * 365; // private bucket → long-lived signed URLs
 
 export type StyleAsset = {
   id: string;
@@ -58,9 +59,10 @@ export async function saveStyleAsset(opts: {
   }
 
   const sb = getSupabaseAdmin();
+  const { supabase: db, tenantId } = await getTenantClient();
   const id = crypto.randomUUID();
   const ext = EXT_BY_TYPE[opts.contentType] ?? "png";
-  const path = `style-references/${opts.channel}/${id}.${ext}`;
+  const path = `${tenantId}/style-references/${opts.channel}/${id}.${ext}`;
 
   const { error: uploadError } = await sb.storage
     .from(BUCKET)
@@ -72,10 +74,9 @@ export async function saveStyleAsset(opts: {
     throw new Error(`storage upload failed: ${uploadError.message}`);
   }
 
-  const { data: publicData } = sb.storage.from(BUCKET).getPublicUrl(path);
-  const publicUrl = publicData.publicUrl;
+  const { data: signed } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
+  const publicUrl = signed?.signedUrl ?? "";
 
-  const { supabase: db, tenantId } = await getTenantClient();
   const { data, error } = await db
     .from("image_style_assets")
     .insert({

@@ -21,6 +21,8 @@ import {
 } from "./video-providers";
 
 const BUCKET = "video-renders";
+const SIGNED_URL_TTL = 60 * 60 * 24 * 365; // private bucket → long-lived signed URLs
+// TODO(content batch): prefix video paths with tenant_id + flip video_renders RLS.
 
 export type VideoRender = {
   id: string;
@@ -205,8 +207,8 @@ async function persistToStorage(
       .from(BUCKET)
       .upload(path, bytes, { contentType: "video/mp4", upsert: true });
     if (error) return null;
-    const { data } = sb.storage.from(BUCKET).getPublicUrl(path);
-    return { path, publicUrl: data.publicUrl };
+    const { data } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
+    return { path, publicUrl: data?.signedUrl ?? "" };
   } catch {
     return null;
   }
