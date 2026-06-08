@@ -17,7 +17,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import { getTenantConfig } from "./tenant-config";
 import { resolveTenantId } from "./tenant-context";
-import { getPracticeAreas } from "./practice-areas";
+import { getPracticeAreas } from "./practice-areas-store";
 
 /**
  * @deprecated The live list now comes from the `practice_areas` table via
@@ -107,7 +107,7 @@ export async function getFirmContext(tenantId?: string): Promise<string> {
     const firmWebsite = settings.firmWebsite || config.firmWebsite;
 
     // Live, editable practice-area list (falls back to the constant below).
-    const practiceAreaList = await getPracticeAreas();
+    const practiceAreaList = await getPracticeAreas(tid);
 
     let context =
       `${firmName} is an employment law firm in ${geography}. ` +

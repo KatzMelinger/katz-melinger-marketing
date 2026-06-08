@@ -13,6 +13,7 @@
 
 import { getFirmContext } from "./firm-context";
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import { logger } from "./logger";
 
 const USER_AGENT = "KMDashboard-LLMSTxt/1.0";
@@ -160,7 +161,7 @@ export async function generateLlmsTxt(input: string): Promise<{
   const supabase = getSupabaseAdmin();
   const { data: row, error } = await supabase
     .from("llms_txt_versions")
-    .insert({ domain: host, content: md, source_pages: pages })
+    .insert({ domain: host, content: md, source_pages: pages, tenant_id: await resolveTenantId() })
     .select("id")
     .single();
   if (error) throw new Error(`Failed to save version: ${error.message}`);

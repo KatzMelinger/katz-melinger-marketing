@@ -10,7 +10,9 @@
  * synchronous imports — prefer the DB-backed accessors for anything new.
  */
 
-import { getSupabaseAdmin } from "./supabase-server";
+// NOTE: keep this module free of server-only imports (next/headers, Supabase) —
+// it's imported by client components for the constants below. The DB-backed
+// accessor lives in lib/practice-areas-store.ts (server-only).
 
 export const DEFAULT_PRACTICE_AREAS = [
   "Wage & Hour",
@@ -25,24 +27,4 @@ export const PRACTICE_AREAS = DEFAULT_PRACTICE_AREAS;
 
 export type PracticeArea = string;
 
-/**
- * Live practice-area labels in display order. Falls back to
- * DEFAULT_PRACTICE_AREAS when the table is empty or unreachable, so callers
- * never get an empty dropdown.
- */
-export async function getPracticeAreas(): Promise<string[]> {
-  try {
-    const sb = getSupabaseAdmin();
-    const { data, error } = await sb
-      .from("practice_areas")
-      .select("label")
-      .order("sort_order", { ascending: true });
-    if (error || !data || data.length === 0) return [...DEFAULT_PRACTICE_AREAS];
-    const labels = data
-      .map((r) => (typeof r.label === "string" ? r.label.trim() : ""))
-      .filter(Boolean);
-    return labels.length > 0 ? labels : [...DEFAULT_PRACTICE_AREAS];
-  } catch {
-    return [...DEFAULT_PRACTICE_AREAS];
-  }
-}
+// getPracticeAreas() now lives in lib/practice-areas-store.ts (server-only).

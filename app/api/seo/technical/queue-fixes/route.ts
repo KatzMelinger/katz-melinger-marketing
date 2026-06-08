@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import { normalizeDomain, type FixType } from "@/lib/wp-autopilot";
 
 export const runtime = "nodejs";
@@ -99,9 +100,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const sb = getSupabaseAdmin();
+    const tid = await resolveTenantId();
     const { data, error } = await sb
       .from("wp_autopilot_recommendations")
-      .insert(rows)
+      .insert(rows.map((r) => ({ ...r, tenant_id: tid })))
       .select("id, fix_type, status");
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

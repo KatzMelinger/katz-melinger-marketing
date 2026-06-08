@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
   try {
     const items = await listRecommendations({
       domain: auth.domain,
+      tenantId: auth.tenantId,
       status,
       limit,
     });

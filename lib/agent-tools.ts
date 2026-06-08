@@ -10,6 +10,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 /** Shape Anthropic SDK expects for a tool. */
 export type ToolDef = {
@@ -285,6 +286,7 @@ export async function dispatchTool(
       let q = sb
         .from("recommendation_items")
         .select("id, title, rationale, category, effort, impact, status, created_at")
+        .eq("tenant_id", await resolveTenantId())
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(typeof input.limit === "number" ? Math.min(input.limit, 50) : 10);
@@ -305,6 +307,7 @@ export async function dispatchTool(
         .select(
           "id, keyword, practice_area, current_rank, previous_rank, search_volume, difficulty, url, last_checked_at",
         )
+        .eq("tenant_id", await resolveTenantId())
         .order("current_rank", { ascending: true, nullsFirst: false })
         .limit(limit);
       if (error) return { error: error.message };
@@ -418,6 +421,7 @@ export async function dispatchTool(
         .select(
           "id, page_url, fix_type, current_value, suggested_value, rationale, status, applied_at, created_at",
         )
+        .eq("tenant_id", await resolveTenantId())
         .eq("status", status)
         .order("created_at", { ascending: false })
         .limit(limit);

@@ -12,7 +12,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { DEFAULT_PRACTICE_AREAS, getPracticeAreas } from "@/lib/practice-areas";
+import { DEFAULT_PRACTICE_AREAS } from "@/lib/practice-areas";
+import { getPracticeAreas } from "@/lib/practice-areas-store";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,16 +62,16 @@ export async function PUT(req: NextRequest) {
 
   try {
     const sb = getSupabaseAdmin();
-    // Replace-all: clear then insert in order. Supabase requires a filter on
-    // delete, so match every row via an impossible-id inequality.
+    const tid = await resolveTenantId();
+    // Replace-all within this tenant: clear then insert in order.
     const { error: delErr } = await sb
       .from("practice_areas")
       .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000");
+      .eq("tenant_id", tid);
     if (delErr) {
       return NextResponse.json({ error: delErr.message }, { status: 500 });
     }
-    const rows = areas.map((label, i) => ({ label, sort_order: i }));
+    const rows = areas.map((label, i) => ({ label, sort_order: i, tenant_id: tid }));
     const { error: insErr } = await sb.from("practice_areas").insert(rows);
     if (insErr) {
       return NextResponse.json({ error: insErr.message }, { status: 500 });
