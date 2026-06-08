@@ -104,7 +104,7 @@ async function runSyncForTenant(tenantId: string) {
 
     const [gaps, tracked] = await Promise.all([
       getKeywordGapVsCompetitors(competitors, semrushDomain, 120).catch(() => []),
-      getTrackedKeywordPerformance(semrushDomain).catch(() => ({
+      getTrackedKeywordPerformance(semrushDomain, tenantId).catch(() => ({
         missingTargets: [] as string[],
         longTailSuggestions: [] as Array<{ keyword: string; searchVolume: number }>,
       })),
