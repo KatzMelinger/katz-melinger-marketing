@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (!platform || !VALID_PLATFORMS.includes(platform as (typeof VALID_PLATFORMS)[number])) {
     return NextResponse.json({ error: "platform required" }, { status: 400 });
   }
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data, error } = await supabase
     .from("community_post_status")
     .select("post_id, status, notes, marked_at")

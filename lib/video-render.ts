@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import {
   getVideoProvider,
   type RenderOptions,
@@ -97,6 +98,7 @@ export async function startRender(args: {
       status: job.status,
       options,
       cost_cents: job.estimatedCostCents ?? null,
+      tenant_id: await resolveTenantId(),
     })
     .select("*")
     .single();
@@ -112,6 +114,7 @@ export async function getRender(id: string): Promise<VideoRender | null> {
     .from("video_renders")
     .select("*")
     .eq("id", id)
+    .eq("tenant_id", await resolveTenantId())
     .maybeSingle();
   return (data as VideoRender) ?? null;
 }
@@ -122,6 +125,7 @@ export async function listRendersForDraft(draftId: string): Promise<VideoRender[
     .from("video_renders")
     .select("*")
     .eq("draft_id", draftId)
+    .eq("tenant_id", await resolveTenantId())
     .order("created_at", { ascending: false });
   return (data as VideoRender[]) ?? [];
 }
@@ -179,6 +183,7 @@ async function updateRender(
     .from("video_renders")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id)
+    .eq("tenant_id", await resolveTenantId())
     .select("*")
     .single();
   if (error || !data) {
@@ -202,7 +207,7 @@ async function persistToStorage(
     const bytes = new Uint8Array(await res.arrayBuffer());
     const sb = getSupabaseAdmin();
     const yyyymm = new Date().toISOString().slice(0, 7); // shardable path
-    const path = `${yyyymm}/${renderId}.mp4`;
+    const path = `${await resolveTenantId()}/${yyyymm}/${renderId}.mp4`;
     const { error } = await sb.storage
       .from(BUCKET)
       .upload(path, bytes, { contentType: "video/mp4", upsert: true });
@@ -220,5 +225,9 @@ export async function deleteRender(id: string): Promise<void> {
   if (row?.storage_path) {
     await sb.storage.from(BUCKET).remove([row.storage_path]).catch(() => {});
   }
-  await sb.from("video_renders").delete().eq("id", id);
+  await sb
+    .from("video_renders")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", await resolveTenantId());
 }
