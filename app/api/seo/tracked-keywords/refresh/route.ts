@@ -211,7 +211,7 @@ async function refreshTrackedKeywords(tenantId: string) {
     // spend. Non-fatal: a failure here must not fail the ranking refresh.
     let cannibalizationIssues: number | null = null;
     try {
-      const { issues } = await detectCannibalization(semrushDomain, semrushRows);
+      const { issues } = await detectCannibalization(semrushDomain, semrushRows, tenantId);
       cannibalizationIssues = issues.length;
     } catch (err) {
       console.error(
