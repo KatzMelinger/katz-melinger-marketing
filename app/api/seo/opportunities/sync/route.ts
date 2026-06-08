@@ -96,7 +96,7 @@ async function runSyncForTenant(tenantId: string) {
   try {
     // Firm-specific config (Semrush domain etc.) instead of a hardcoded constant.
     const { semrushDomain } = await getTenantConfig(tenantId);
-    const competitors = await listCompetitors();
+    const competitors = await listCompetitors(tenantId);
     const ctx = {
       brandTokens: KM_BRAND_TOKENS,
       competitorTokens: competitorTokensFromDomains(competitors),

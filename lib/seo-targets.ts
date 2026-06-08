@@ -11,6 +11,7 @@
  */
 
 import { getSupabaseAdmin, getSupabaseServer } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 const FALLBACK_TARGETS = [
   "new york employment lawyer",
@@ -38,14 +39,16 @@ function envTargets(): string[] {
     .filter(Boolean);
 }
 
-export async function listTargets(): Promise<string[]> {
+export async function listTargets(tenantId?: string): Promise<string[]> {
   const supabase = getSupabaseServer();
   if (!supabase) {
     return Array.from(new Set([...FALLBACK_TARGETS, ...envTargets()])).sort();
   }
+  const tid = tenantId ?? (await resolveTenantId());
   const { data, error } = await supabase
     .from("seo_target_keywords")
-    .select("keyword");
+    .select("keyword")
+    .eq("tenant_id", tid);
   if (error || !data) {
     return Array.from(new Set([...FALLBACK_TARGETS, ...envTargets()])).sort();
   }
@@ -57,12 +60,12 @@ export async function listTargets(): Promise<string[]> {
     const now = new Date().toISOString();
     const initial = Array.from(new Set([...FALLBACK_TARGETS, ...envTargets()]));
     const rows = [
-      { keyword: SEED_MARKER, source: "system", added_at: now },
-      ...initial.map((k) => ({ keyword: k, source: "system", added_at: now })),
+      { keyword: SEED_MARKER, source: "system", added_at: now, tenant_id: tid },
+      ...initial.map((k) => ({ keyword: k, source: "system", added_at: now, tenant_id: tid })),
     ];
     await admin
       .from("seo_target_keywords")
-      .upsert(rows, { onConflict: "keyword" });
+      .upsert(rows, { onConflict: "tenant_id,keyword" });
     return initial.sort();
   }
 
@@ -77,6 +80,7 @@ export type AddResult = { ok: boolean; keyword: string; reason?: string };
 export async function addTarget(
   rawKeyword: string,
   source: "manual" | "suggested" = "manual",
+  tenantId?: string,
 ): Promise<AddResult> {
   const keyword = normalizeKeyword(rawKeyword);
   if (!keyword || keyword.length < 2) {
@@ -85,12 +89,13 @@ export async function addTarget(
   if (keyword.length > 120) {
     return { ok: false, keyword, reason: "Keyword is too long (max 120 chars)" };
   }
+  const tid = tenantId ?? (await resolveTenantId());
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("seo_target_keywords")
     .upsert(
-      { keyword, source, added_at: new Date().toISOString() },
-      { onConflict: "keyword" },
+      { keyword, source, added_at: new Date().toISOString(), tenant_id: tid },
+      { onConflict: "tenant_id,keyword" },
     );
   if (error) {
     return { ok: false, keyword, reason: error.message };
@@ -100,14 +105,17 @@ export async function addTarget(
 
 export async function removeTarget(
   rawKeyword: string,
+  tenantId?: string,
 ): Promise<{ ok: boolean; keyword: string; reason?: string }> {
   const keyword = normalizeKeyword(rawKeyword);
   if (!keyword) return { ok: false, keyword, reason: "Invalid keyword" };
+  const tid = tenantId ?? (await resolveTenantId());
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("seo_target_keywords")
     .delete()
-    .eq("keyword", keyword);
+    .eq("keyword", keyword)
+    .eq("tenant_id", tid);
   if (error) return { ok: false, keyword, reason: error.message };
   return { ok: true, keyword };
 }
