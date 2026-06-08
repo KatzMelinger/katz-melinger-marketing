@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ export async function GET(
   const { data, error } = await supabase
     .from("ai_prompt_runs")
     .select("id, variables, output, input_tokens, output_tokens, cost_estimate, latency_ms, status, error, created_at")
+    .eq("tenant_id", await resolveTenantId())
     .eq("prompt_id", id)
     .order("created_at", { ascending: false })
     .limit(50);

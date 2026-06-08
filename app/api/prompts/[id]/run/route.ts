@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import { runPrompt } from "@/lib/prompt-runner";
 import { getCurrentUser } from "@/lib/supabase-route";
 
@@ -19,6 +20,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const tid = await resolveTenantId();
   const body = await req.json().catch(() => ({}));
   const variables = (body?.variables ?? {}) as Record<string, string>;
   const maxTokensOverride = Number(body?.max_tokens ?? NaN);
@@ -27,6 +29,7 @@ export async function POST(
   const { data: prompt, error } = await supabase
     .from("ai_prompts")
     .select("*")
+    .eq("tenant_id", tid)
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -56,6 +59,7 @@ export async function POST(
       latency_ms: result.latencyMs,
       status: "success",
       ran_by: me?.id ?? null,
+      tenant_id: tid,
     });
 
     return NextResponse.json({
@@ -76,6 +80,7 @@ export async function POST(
       status: "failed",
       error: msg,
       ran_by: me?.id ?? null,
+      tenant_id: tid,
     });
     return NextResponse.json({ error: msg }, { status: 500 });
   }

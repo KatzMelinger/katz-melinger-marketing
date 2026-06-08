@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { detectAiBot } from "@/lib/ai-bot-detect";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantIdByDomain } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const sb = getSupabaseAdmin();
+    // Session-less endpoint: derive the tenant from the crawled host.
+    const tenantId = await resolveTenantIdByDomain(
+      host ?? req.headers.get("host"),
+    );
     const { error } = await sb.from("ai_bot_hits").insert({
       bot: detected.bot,
       user_agent: ua,
@@ -62,6 +67,7 @@ export async function POST(req: NextRequest) {
       status,
       ip_hash: ipHash,
       meta: { vendor: detected.vendor, purpose: detected.purpose, ...meta },
+      tenant_id: tenantId,
     });
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

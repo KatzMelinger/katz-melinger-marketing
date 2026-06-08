@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import { extractVariables } from "@/lib/prompt-runner";
 
 export const runtime = "nodejs";
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
   let q = supabase
     .from("ai_prompts")
     .select("id, project_id, title, description, variables, model, max_tokens, tags, created_at, updated_at")
+    .eq("tenant_id", await resolveTenantId())
     .order("updated_at", { ascending: false });
   if (projectId) q = q.eq("project_id", projectId);
   const { data, error } = await q;
@@ -46,6 +48,7 @@ export async function POST(req: NextRequest) {
       model: body?.model ?? "claude-sonnet-4-5-20250929",
       max_tokens: Number(body?.max_tokens ?? 4096),
       tags: Array.isArray(body?.tags) ? body.tags : [],
+      tenant_id: await resolveTenantId(),
     })
     .select()
     .single();
