@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { startRun, executeRun } from "@/lib/aeo-runner";
 import { evaluateRankAlerts } from "@/lib/alerts-engine";
+import { listTenantIds } from "@/lib/tenant-db";
 import type { AEOProviderId } from "@/lib/aeo-providers";
 
 export const runtime = "nodejs";
@@ -39,20 +40,22 @@ export async function GET(req: NextRequest) {
   // Rank-drop alerts: quick, reads the keyword table refreshed by the daily cron.
   const rank = await evaluateRankAlerts().catch(() => ({ written: 0 }));
 
-  // AEO sweep: evaluates AEO alerts itself when it finishes. Run in background
-  // so the cron response returns promptly; the function stays alive for it.
-  let runId: string | null = null;
+  // AEO sweep per tenant (cron has no session → process every active firm).
+  const runIds: string[] = [];
   let sweepError: string | undefined;
-  try {
-    runId = await startRun({ triggeredBy: "cron" });
-    after(executeRun(runId));
-  } catch (e) {
-    sweepError = e instanceof Error ? e.message : "sweep failed";
+  for (const tenantId of await listTenantIds()) {
+    try {
+      const runId = await startRun({ triggeredBy: "cron" }, tenantId);
+      after(executeRun(runId));
+      runIds.push(runId);
+    } catch (e) {
+      sweepError = e instanceof Error ? e.message : "sweep failed";
+    }
   }
 
   return NextResponse.json({
     ok: true,
-    runId,
+    runIds,
     rankAlertsWritten: rank.written,
     ...(sweepError ? { sweepError } : {}),
   });

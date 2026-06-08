@@ -5,12 +5,12 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data, error } = await supabase
     .from("aeo_prompts")
     .select("*")
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   if (!body?.prompt || typeof body.prompt !== "string") {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("aeo_prompts")
     .insert({
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
       intent: body.intent ?? null,
       geography: body.geography ?? null,
       enabled: body.enabled !== false,
+      tenant_id: tenantId,
     })
     .select()
     .single();
