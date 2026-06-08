@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { normalizeLanguage } from "@/lib/content-language";
 import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
 
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
   // If sourceId provided, pull its content for repurposing.
   let sourceText: string | null = null;
   if (body?.sourceId) {
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data } = await supabase
       .from("content_sources")
       .select("content")

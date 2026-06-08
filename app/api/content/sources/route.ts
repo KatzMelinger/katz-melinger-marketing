@@ -10,14 +10,14 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { ingestSource } from "@/lib/content-source";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data, error } = await supabase
     .from("content_sources")
     .select("id, source_type, filename, url, word_count, notes, review_summary, created_at")

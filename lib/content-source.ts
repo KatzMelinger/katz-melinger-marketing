@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import { extractText } from "./document-extract";
 
@@ -135,6 +136,7 @@ export async function ingestSource(args: {
   const review = await reviewSource(content);
 
   const supabase = getSupabaseAdmin();
+  const tid = await resolveTenantId();
   const { data, error } = await supabase
     .from("content_sources")
     .insert({
@@ -145,6 +147,7 @@ export async function ingestSource(args: {
       word_count: content.split(/\s+/).filter(Boolean).length,
       notes: args.notes ?? null,
       review_summary: review,
+      tenant_id: tid,
     })
     .select("id, source_type, filename, url, word_count, content, review_summary")
     .single();

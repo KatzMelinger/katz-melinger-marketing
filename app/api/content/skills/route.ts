@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { listSkills, type SkillType } from "@/lib/content-skills";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     const sections = readStringArray(b?.sections);
     const requiredElements = readStringArray(b?.requiredElements);
 
-    const supabase = getSupabaseAdmin();
+    const { supabase, tenantId } = await getTenantClient();
     const { data, error } = await supabase
       .from("content_skills")
       .insert({
@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
         max_words: maxWords,
         sections,
         required_elements: requiredElements,
+        tenant_id: tenantId,
       })
       .select()
       .single();

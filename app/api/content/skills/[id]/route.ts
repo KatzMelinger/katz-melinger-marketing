@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { type SkillType } from "@/lib/content-skills";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,7 +81,7 @@ export async function PATCH(
     const requiredElements = readScopeArray(b?.requiredElements);
     if (requiredElements !== undefined) patch.required_elements = requiredElements;
 
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data, error } = await supabase
       .from("content_skills")
       .update(patch)
@@ -107,7 +107,7 @@ export async function DELETE(
     const { id } = await ctx.params;
     if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
 
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { error } = await supabase
       .from("content_skills")
       .delete()
