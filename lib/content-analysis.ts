@@ -12,6 +12,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import { getFirmContext } from "./firm-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import {
@@ -747,6 +748,7 @@ export async function analyzeDraft(args: {
     template = null,
   } = args;
   const supabase = getSupabaseAdmin();
+  const tid = await resolveTenantId();
 
   const { words, sentences, syllables } = basicMetrics(body);
   const flesch = fleschReadingEase(words.length, sentences, syllables);
@@ -816,7 +818,7 @@ export async function analyzeDraft(args: {
   // the offending fields and retry. Newest columns (suggested_titles /
   // suggested_images) drop first, then seo_/linkability_/outreach_angles,
   // then CASH-era columns. Each retry strips one generation of columns.
-  let { error } = await supabase.from("content_analyses").insert({
+  let { error } = await supabase.from("content_analyses").insert({ tenant_id: tid,
     draft_id: draftId,
     ...persistable,
   });
@@ -824,7 +826,7 @@ export async function analyzeDraft(args: {
     const withoutEnhancements = { ...persistable };
     delete (withoutEnhancements as Partial<ContentAnalysis>).suggested_titles;
     delete (withoutEnhancements as Partial<ContentAnalysis>).suggested_images;
-    const retry = await supabase.from("content_analyses").insert({
+    const retry = await supabase.from("content_analyses").insert({ tenant_id: tid,
       draft_id: draftId,
       ...withoutEnhancements,
     });
@@ -847,14 +849,14 @@ export async function analyzeDraft(args: {
       cash_findings: analysis.cash_findings,
       summary: analysis.summary,
     };
-    const retry = await supabase.from("content_analyses").insert({
+    const retry = await supabase.from("content_analyses").insert({ tenant_id: tid,
       draft_id: draftId,
       ...withoutNew,
     });
     error = retry.error;
   }
   if (error && /cash_/.test(error.message)) {
-    await supabase.from("content_analyses").insert({
+    await supabase.from("content_analyses").insert({ tenant_id: tid,
       draft_id: draftId,
       readability_score: analysis.readability_score,
       reading_grade_level: analysis.reading_grade_level,

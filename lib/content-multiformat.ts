@@ -16,6 +16,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import { ANTI_AI_VOICE_RULES } from "./anti-ai-voice";
 import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
@@ -239,6 +240,7 @@ export async function generateMultiFormat(args: {
     formats: { ...longResult.formats, ...shortResult.formats },
   };
 
+  const tid = await resolveTenantId();
   const { data: batchRow, error: batchErr } = await supabase
     .from("content_batches")
     .insert({
@@ -246,6 +248,7 @@ export async function generateMultiFormat(args: {
       practice_area: args.practiceArea ?? null,
       formats: args.formats,
       source_id: args.sourceId ?? null,
+      tenant_id: tid,
     })
     .select("id")
     .single();
@@ -284,6 +287,7 @@ export async function generateMultiFormat(args: {
               competitorGaps: args.competitorGaps,
             }
           : null,
+        tenant_id: tid,
       })
       .select("id, format, title, body, metadata")
       .single();

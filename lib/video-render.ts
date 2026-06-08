@@ -61,6 +61,7 @@ export async function startRender(args: {
   const { data: draft, error: draftErr } = await sb
     .from("content_drafts")
     .select("id, body, title, format")
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", args.draftId)
     .maybeSingle();
   if (draftErr) throw new RenderError(draftErr.message, 500);

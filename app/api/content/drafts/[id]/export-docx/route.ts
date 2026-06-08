@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { buildDraftDocx, suggestFilename } from "@/lib/content-export-docx";
 
 export const runtime = "nodejs";
@@ -15,7 +15,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("content_drafts")
     .select("format, topic, title, body, metadata, practice_area, created_at")

@@ -25,7 +25,7 @@ import { Buffer } from "node:buffer";
 import { NextRequest, NextResponse } from "next/server";
 
 import { extractText, isSupportedUpload, SUPPORTED_UPLOAD_EXTENSIONS } from "@/lib/document-extract";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -85,7 +85,7 @@ async function insertDraft(args: {
     },
   };
 
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("content_drafts")
     .insert({
@@ -97,6 +97,7 @@ async function insertDraft(args: {
       metadata,
       practice_area: args.practiceArea,
       seo_brief: args.targetKeywords.length > 0 ? { targetKeywords: args.targetKeywords } : null,
+      tenant_id: tenantId,
     })
     .select("id")
     .single();

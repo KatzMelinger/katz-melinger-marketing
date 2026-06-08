@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("content_drafts")
     .select("*")
@@ -64,7 +64,7 @@ export async function PATCH(
   for (const key of ["title", "body", "metadata", "status", "practice_area"]) {
     if (key in (body ?? {})) patch[key] = body[key];
   }
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("content_drafts")
     .update(patch)
@@ -127,6 +127,7 @@ export async function PATCH(
         bucket: "bofu_education",
         content_type: contentType,
         draft_id: id,
+        tenant_id: tenantId,
       });
     }
   }
@@ -139,7 +140,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { error } = await supabase.from("content_drafts").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
