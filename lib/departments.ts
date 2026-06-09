@@ -47,7 +47,7 @@ export const DEPARTMENTS: Department[] = [
     accent: "#185FA5",
     defaultOpen: true,
     items: [
-      { label: "Content Dashboard", href: "/content", icon: "▤", status: "active" },
+      { label: "Marketing copy", href: "/content", icon: "▤", status: "active" },
       { label: "Opportunities", href: "/seo/opportunities", icon: "✨", status: "active" },
       { label: "Research Queue", href: "/content/research", icon: "📚", status: "active" },
       { label: "Content Decisions", href: "/content/decisions", icon: "✓", status: "phase2" },
@@ -171,7 +171,7 @@ export const DEPARTMENTS: Department[] = [
     items: [
       { label: "Agent Assistant", href: "/agent", icon: "💬", status: "active" },
       { label: "Brand Voice", href: "/brand-voice", icon: "🎙", status: "active" },
-      { label: "Content Generator", href: "/content/km", icon: "✎", status: "active" },
+      { label: "SEO content", href: "/content/km", icon: "✎", status: "active" },
       { label: "Image Generator", href: "/content/images", icon: "🖼", status: "active" },
       { label: "Practice Areas", href: "/settings/practice-areas", icon: "⚖", status: "active" },
       { label: "Sales Coach", href: "/settings/sales-training", icon: "🎯", status: "active" },

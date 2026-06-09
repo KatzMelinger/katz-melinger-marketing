@@ -26,7 +26,7 @@ function SeoGeneratorBody() {
 export default function SeoGeneratorPage() {
   return (
     <SeoShell
-      title="Content generator"
+      title="SEO content"
       subtitle="Generate a Practice Page, Blog Post, or Case Result against the full content system prompt — start from scratch, or open a research packet to pre-fill the brief."
     >
       <Suspense fallback={null}>

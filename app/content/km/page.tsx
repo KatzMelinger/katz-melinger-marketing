@@ -18,7 +18,7 @@ export default function ContentGeneratorPage() {
     <main className="p-6 max-w-7xl mx-auto">
       <MarketingNav />
       <div className="mb-2 flex items-center gap-2">
-        <h1 className="text-2xl font-semibold">Content generator</h1>
+        <h1 className="text-2xl font-semibold">SEO content</h1>
         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
           Website pages
         </span>
@@ -28,7 +28,7 @@ export default function ContentGeneratorPage() {
         content system prompt — voice, structure, internal links, and AEO rules
         enforced. Start from scratch here, or open a brief from the SEO
         Opportunity Radar to pre-fill the keyword and pillar. For social posts
-        or email, use <b>Generate</b> or <b>Multi-format batch</b>.
+        or email, use <b>Marketing copy</b> or <b>Multi-format batch</b>.
       </p>
       <ContentNav />
 

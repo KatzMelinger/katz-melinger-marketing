@@ -11,8 +11,8 @@ import { readContentType } from "@/lib/content-types";
  * the current Website / Social Media / Email selection along.
  */
 const TYPE_SCOPED_TABS = [
-  { href: "/content", label: "Generate" },
-  { href: "/content/km", label: "Content generator" },
+  { href: "/content", label: "Marketing copy" },
+  { href: "/content/km", label: "SEO content" },
   { href: "/content/batch", label: "Multi-format batch" },
   { href: "/content/intelligence", label: "Intelligence" },
   { href: "/content/pipeline", label: "Pipeline" },

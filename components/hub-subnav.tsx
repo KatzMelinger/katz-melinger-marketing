@@ -30,7 +30,7 @@ const SEO_ROUTES: Route[] = [
   { href: "/seo/technical", label: "Technical" },
   { href: "/seo/cannibalization", label: "Cannibalization" },
   { href: "/seo/topical-maps", label: "Topical maps" },
-  { href: "/seo/generator", label: "Content generator" },
+  { href: "/seo/generator", label: "SEO content" },
   { href: "/seo/pr-pitches", label: "PR pitches" },
   { href: "/keyword-research", label: "Keyword research" },
   { href: "/search-console", label: "Search Console" },
@@ -58,7 +58,7 @@ const SOCIAL_ROUTES: Route[] = [
   { href: "/community", label: "Community" },
   { href: "/reviews", label: "Reviews" },
   { href: "/local-seo", label: "Local SEO + GBP" },
-  { href: "/content", label: "Content" },
+  { href: "/content", label: "Marketing copy" },
   { href: "/content/images", label: "Images" },
   { href: "/brand-voice", label: "Brand voice" },
 ];
