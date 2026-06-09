@@ -81,6 +81,14 @@ export function ContentNav() {
           </Link>
         );
       })}
+
+      {/* Jump to the SEO Opportunity Radar — the source of pre-filled briefs. */}
+      <Link
+        href="/seo/opportunities"
+        className="ml-auto mb-1 inline-flex items-center gap-1 rounded-md bg-[#185FA5]/10 px-3 py-1.5 text-sm font-medium text-[#185FA5] hover:bg-[#185FA5]/15"
+      >
+        SEO Opportunity Radar ↗
+      </Link>
     </div>
   );
 }
