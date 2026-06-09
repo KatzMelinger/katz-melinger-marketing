@@ -8,6 +8,7 @@
  *
  * Skipped paths:
  *   - /login (the login page itself)
+ *   - /signup (self-serve firm signup — reachable without a session)
  *   - /api/auth/* (signin/signout routes)
  *   - /api/google/oauth/* and /api/constant-contact/oauth/* (third-party
  *     redirects come back unauthenticated; the OAuth callbacks restrict
@@ -19,6 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_PATHS = [
   "/login",
+  "/signup", // self-serve firm signup — must be reachable without a session
   "/api/auth",
   "/api/google/oauth",
   "/api/constant-contact/oauth",
