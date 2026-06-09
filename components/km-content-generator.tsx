@@ -6,7 +6,9 @@
  * Loads the brief form, calls /api/content/km-draft on submit, shows the
  * generated content, and links to /content/drafts/[id] for editing.
  *
- * Mounted on both /content/km and /seo/generator.
+ * Now used only for the /seo/generator deep-link pre-fill path (?packetId= /
+ * ?suggestion=), where the richer research fields are mapped onto the brief.
+ * The default generator surface is the unified ContentGeneratorLauncher.
  */
 
 import { useEffect, useState } from "react";
