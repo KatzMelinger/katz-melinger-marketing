@@ -88,3 +88,42 @@ export async function requireAdmin(): Promise<SessionUser> {
   if (user.role !== "admin") throw new Error("Forbidden: admin only");
   return user;
 }
+
+/**
+ * Platform super-admins (the operator of the whole product, e.g. Katz Melinger)
+ * are identified by the SUPER_ADMIN_EMAILS env var — a comma-separated list.
+ * This is deliberately env-controlled (not a DB role) so the cross-tenant
+ * capability can't be granted by anything inside a tenant's own data, and so
+ * there's no DB-level RLS bypass to get wrong. Super-admin routes verify this,
+ * then use the service-role client (which already bypasses RLS) to operate
+ * across every tenant.
+ */
+export function isSuperAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  // Prefer an explicit SUPER_ADMIN_EMAILS list. If it's unset/empty, fall back
+  // to ADMIN_EMAILS — that's already the platform-owner bootstrap list, so the
+  // operator is a super-admin out of the box without extra env setup. Set
+  // SUPER_ADMIN_EMAILS explicitly to decouple the two lists.
+  const raw =
+    (process.env.SUPER_ADMIN_EMAILS ?? "").trim() ||
+    (process.env.ADMIN_EMAILS ?? "");
+  const list = raw
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(email.toLowerCase());
+}
+
+export async function isSuperAdmin(): Promise<boolean> {
+  const user = await getCurrentUser();
+  return isSuperAdminEmail(user?.email);
+}
+
+export async function requireSuperAdmin(): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  if (!isSuperAdminEmail(user.email)) {
+    throw new Error("Forbidden: super-admin only");
+  }
+  return user;
+}
