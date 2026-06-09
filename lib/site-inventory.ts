@@ -16,7 +16,8 @@
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
-import { ALL_KM_PILLARS } from "@/lib/km-content-system";
+import { type KMPillar } from "@/lib/km-content-system";
+import { getPillars } from "@/lib/pillars-store";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; KMSiteInventory/0.1; +https://katzmelinger.com)";
 const MAX_PAGES = 300;
@@ -148,7 +149,7 @@ async function mapLimit<T, R>(
 // ---------------------------------------------------------------------------
 // URL-pattern page_type classification (cheap, deterministic).
 // ---------------------------------------------------------------------------
-function classifyTypeByUrl(url: string): SitePageType {
+function classifyTypeByUrl(url: string, pillarPaths: Set<string>): SitePageType {
   const p = (() => {
     try {
       return new URL(url).pathname.toLowerCase();
@@ -160,8 +161,8 @@ function classifyTypeByUrl(url: string): SitePageType {
   if (/case-result|case-results|results|verdict|settlement/.test(p))
     return "case_result";
   if (/practice-area|practice-areas/.test(p)) return "practice_area";
-  // Pillar URLs come from the known pillar list.
-  if (ALL_KM_PILLARS.some((pl) => p.replace(/\/$/, "") === pl.url.replace(/\/$/, "")))
+  // Pillar URLs come from the live (DB-driven) pillar list.
+  if (pillarPaths.has(p.replace(/\/$/, "")))
     return "pillar";
   return "service_page";
 }
@@ -178,11 +179,12 @@ type Classification = {
 
 async function classifyPillars(
   pages: { url: string; title: string | null; h1: string | null }[],
+  pillars: KMPillar[],
 ): Promise<Map<string, Classification>> {
   const out = new Map<string, Classification>();
   if (pages.length === 0) return out;
 
-  const pillarList = ALL_KM_PILLARS.map(
+  const pillarList = pillars.map(
     (p) => `- ${p.id} (${p.label}, ${p.practiceArea})`,
   ).join("\n");
 
@@ -244,7 +246,7 @@ async function classifyPillars(
             topics?: string[];
           }>;
         };
-        const validPillars = new Set(ALL_KM_PILLARS.map((p) => p.id));
+        const validPillars = new Set(pillars.map((p) => p.id));
         for (const it of input.items ?? []) {
           if (!it.url) continue;
           out.set(it.url, {
@@ -298,7 +300,11 @@ export async function crawlSiteInventory(args?: {
   const usable = fetched.filter((f) => f.title || f.h1);
 
   // Classify pillars in batches.
-  const classMap = await classifyPillars(usable);
+  const pillars = await getPillars(tid);
+  const pillarPaths = new Set(
+    pillars.map((p) => p.url.replace(/\/$/, "").toLowerCase()),
+  );
+  const classMap = await classifyPillars(usable, pillars);
 
   // Load existing rows to preserve human pillar overrides.
   const sb = getSupabaseAdmin();
@@ -319,7 +325,7 @@ export async function crawlSiteInventory(args?: {
       url: f.url,
       title: f.title,
       h1: f.h1,
-      page_type: classifyTypeByUrl(f.url),
+      page_type: classifyTypeByUrl(f.url, pillarPaths),
       pillar: isLocked ? locked.get(f.url) ?? null : cls?.pillar ?? null,
       practice_area: cls?.practice_area ?? null,
       topics: cls?.topics ?? [],
@@ -387,7 +393,11 @@ export async function ingestUrls(
     };
   }
 
-  const classMap = await classifyPillars(usable);
+  const pillars = await getPillars(tid);
+  const pillarPaths = new Set(
+    pillars.map((p) => p.url.replace(/\/$/, "").toLowerCase()),
+  );
+  const classMap = await classifyPillars(usable, pillars);
 
   const sb = getSupabaseAdmin();
   const { data: existing } = await sb
@@ -408,7 +418,7 @@ export async function ingestUrls(
       url: f.url,
       title: f.title,
       h1: f.h1,
-      page_type: classifyTypeByUrl(f.url),
+      page_type: classifyTypeByUrl(f.url, pillarPaths),
       pillar: isLocked ? locked.get(f.url) ?? null : cls?.pillar ?? null,
       practice_area: cls?.practice_area ?? null,
       topics: cls?.topics ?? [],

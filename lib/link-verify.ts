@@ -13,7 +13,8 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
-import { ALL_KM_PILLARS, KM_HUB_LINKS } from "@/lib/km-content-system";
+import { KM_HUB_LINKS } from "@/lib/km-content-system";
+import { getPillars } from "@/lib/pillars-store";
 
 export type LinkType = "internal" | "external";
 export type LinkStatus = "confirmed" | "unverified" | "external";
@@ -92,7 +93,7 @@ export async function verifyLinks(body: string): Promise<LinkVerifyResult> {
   } catch {
     /* no inventory — pillars/hubs below still verify the required up-links */
   }
-  for (const p of ALL_KM_PILLARS) {
+  for (const p of await getPillars()) {
     liveByPath.set(normalizePath(p.url), { url: p.url, title: p.label });
   }
   for (const url of Object.values(KM_HUB_LINKS)) {

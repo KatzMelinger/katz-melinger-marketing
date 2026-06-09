@@ -19,10 +19,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { type ContentLanguage } from "@/lib/content-language";
 import {
   getKmStructure,
+  pillarsForArea,
   pillarsForPracticeArea,
   validateBrief,
   type KMContentType,
   type KMPerPageBrief,
+  type KMPillar,
   type KMPracticeArea,
   type KMSearchIntent,
 } from "@/lib/km-content-system";
@@ -136,16 +138,28 @@ export function KmBriefWizard({
   const [linkPlanLoading, setLinkPlanLoading] = useState(false);
   const [metaBusy, setMetaBusy] = useState(false);
 
+  // Live, DB-driven pillar list. Falls back to the code constants until it
+  // loads, so the dropdown is never empty.
+  const [allPillars, setAllPillars] = useState<KMPillar[]>([]);
+  useEffect(() => {
+    fetch("/api/content/pillars")
+      .then((r) => r.json())
+      .then((d) => setAllPillars(Array.isArray(d?.pillars) ? d.pillars : []))
+      .catch(() => setAllPillars([]));
+  }, []);
+
   const set = useCallback(
     (patch: Partial<KMPerPageBrief>) => setBrief((b) => ({ ...b, ...patch })),
     [],
   );
 
   // When practice area changes, keep the pillar valid + refresh the pillar link.
-  const pillars = useMemo(
-    () => pillarsForPracticeArea((brief.practiceArea as KMPracticeArea) || "employment"),
-    [brief.practiceArea],
-  );
+  const pillars = useMemo(() => {
+    const area = (brief.practiceArea as KMPracticeArea) || "employment";
+    return allPillars.length > 0
+      ? pillarsForArea(allPillars, area)
+      : pillarsForPracticeArea(area);
+  }, [brief.practiceArea, allPillars]);
   useEffect(() => {
     if (!pillars.find((p) => p.id === brief.pillarId)) {
       const first = pillars[0];

@@ -32,6 +32,7 @@ import {
 } from "@/lib/keyword-filter";
 import { listCompetitors } from "@/lib/seo-competitors";
 import { inferIntent, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
+import { getPillars } from "@/lib/pillars-store";
 import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
@@ -158,6 +159,8 @@ export async function POST(req: Request) {
     }
 
     const now = new Date().toISOString();
+    // Live, DB-driven pillar list so the grouper routes to current pillars.
+    const pillars = await getPillars();
     const rows = candidates.map((c) => {
       const quality = scoreKeyword(c.keyword, { searchVolume: c.searchVolume }, ctx);
       const prior = existingStatus.get(c.keyword);
@@ -171,7 +174,7 @@ export async function POST(req: Request) {
       };
       const practiceArea = areaOverride ?? inferPracticeArea(clusterInput);
       const intent = inferIntent(clusterInput);
-      const pillarId = inferPillar(clusterInput, practiceArea);
+      const pillarId = inferPillar(clusterInput, practiceArea, pillars);
 
       return {
         keyword: c.keyword,

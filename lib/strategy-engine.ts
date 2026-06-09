@@ -25,6 +25,7 @@ import {
   ALL_KM_PILLARS,
   EMPLOYMENT_PILLARS,
   COLLECTIONS_PILLARS,
+  type KMPillar,
   type KMContentType,
   type KMPerPageBrief,
   type KMPracticeArea,
@@ -100,10 +101,18 @@ export function inferPracticeArea(input: ClusterInput): KMPracticeArea {
 /**
  * Best-effort pillar matching by keyword overlap.
  */
-export function inferPillar(input: ClusterInput, area: KMPracticeArea): string {
+export function inferPillar(
+  input: ClusterInput,
+  area: KMPracticeArea,
+  pillars?: KMPillar[],
+): string {
   const text = `${input.clusterName} ${input.primaryKeyword} ${(input.secondaryKeywords ?? []).join(" ")}`.toLowerCase();
-  const pool = area === "employment" ? EMPLOYMENT_PILLARS : COLLECTIONS_PILLARS;
+  // Use the live (DB-driven) list when provided; otherwise fall back to the
+  // code constants so existing callers behave exactly as before.
+  const all = pillars ?? [...EMPLOYMENT_PILLARS, ...COLLECTIONS_PILLARS];
+  const pool = all.filter((p) => p.practiceArea === area);
 
+  // Built-in keyword hints, used when a pillar carries no `keywords` of its own.
   const PILLAR_HINTS: Record<string, string[]> = {
     "wage-theft": ["wage", "overtime", "unpaid", "minimum wage", "tip", "off the clock", "flsa", "nyll"],
     "wrongful-termination": ["wrongful termination", "fired", "fired without cause", "retaliation firing"],
@@ -122,7 +131,8 @@ export function inferPillar(input: ClusterInput, area: KMPracticeArea): string {
   let bestId = pool[0]?.id ?? "";
   let bestScore = 0;
   for (const p of pool) {
-    const hints = PILLAR_HINTS[p.id] ?? [];
+    // A pillar's own keywords take precedence; built-ins fall back to the table.
+    const hints = p.keywords && p.keywords.length ? p.keywords : PILLAR_HINTS[p.id] ?? [];
     const score = hints.reduce((acc, h) => (text.includes(h) ? acc + 1 : acc), 0);
     if (score > bestScore) {
       bestScore = score;

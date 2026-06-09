@@ -17,10 +17,11 @@
 
 import { detectContentOverlap } from "@/lib/content-overlap";
 import {
-  getPillarById,
+  findPillar,
   type KMInternalLink,
   type KMPracticeArea,
 } from "@/lib/km-content-system";
+import { getPillars } from "@/lib/pillars-store";
 
 export type LinkPlanInput = {
   primaryKeyword: string;
@@ -103,7 +104,9 @@ export async function buildLinkPlan(input: LinkPlanInput): Promise<LinkPlan> {
   }
 
   // Always include the assigned pillar (known-live, required up-link).
-  const pillar = input.pillarId ? getPillarById(input.pillarId) : undefined;
+  const pillar = input.pillarId
+    ? findPillar(await getPillars(), input.pillarId)
+    : undefined;
   if (pillar) {
     const pillarPath = normalizePath(pillar.url);
     if (

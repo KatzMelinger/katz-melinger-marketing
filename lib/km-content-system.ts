@@ -44,6 +44,13 @@ export type KMPillar = {
   label: string;
   url: string;
   practiceArea: KMPracticeArea;
+  /**
+   * Keyword hints the grouper uses to route keywords to this pillar. Optional:
+   * built-in pillars fall back to the PILLAR_HINTS table in strategy-engine;
+   * pillars created via the editor/wizard carry their own hints here so the
+   * grouper can match them without a code change.
+   */
+  keywords?: string[];
 };
 
 export const EMPLOYMENT_PILLARS: KMPillar[] = [
@@ -151,6 +158,35 @@ export function getPillarById(id: string): KMPillar | undefined {
 
 export function pillarsForPracticeArea(area: KMPracticeArea): KMPillar[] {
   return area === "employment" ? EMPLOYMENT_PILLARS : COLLECTIONS_PILLARS;
+}
+
+/**
+ * Pure, list-based variants used once pillars are DB-driven. The server
+ * resolves the live list via lib/pillars-store.getPillars(); the client fetches
+ * it from /api/content/pillars. Both then use these to filter/find without
+ * touching the hard-coded constants.
+ */
+export function pillarsForArea(pillars: KMPillar[], area: KMPracticeArea): KMPillar[] {
+  return pillars.filter((p) => p.practiceArea === area);
+}
+
+export function findPillar(pillars: KMPillar[], id: string): KMPillar | undefined {
+  return pillars.find((p) => p.id === id);
+}
+
+/** Validate + normalize a raw pillar object (from DB JSONB or an API body). */
+export function normalizePillar(raw: unknown): KMPillar | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const id = typeof o.id === "string" ? o.id.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : "";
+  const label = typeof o.label === "string" ? o.label.trim() : "";
+  const url = typeof o.url === "string" ? o.url.trim() : "";
+  const practiceArea = o.practiceArea === "collections" ? "collections" : "employment";
+  if (!id || !label || !url) return null;
+  const keywords = Array.isArray(o.keywords)
+    ? o.keywords.filter((k): k is string => typeof k === "string" && k.trim().length > 0).map((k) => k.trim().toLowerCase())
+    : undefined;
+  return { id, label, url, practiceArea, ...(keywords && keywords.length ? { keywords } : {}) };
 }
 
 /**

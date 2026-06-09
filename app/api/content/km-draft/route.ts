@@ -24,8 +24,6 @@ import {
 } from "@/lib/anthropic";
 import {
   buildBriefUserPrompt,
-  EMPLOYMENT_PILLARS,
-  COLLECTIONS_PILLARS,
   KM_CONTENT_TYPE_LABELS,
   KM_HUB_LINKS,
   validateBrief,
@@ -36,6 +34,7 @@ import {
 } from "@/lib/km-content-system";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { getPillars } from "@/lib/pillars-store";
 import { detectContentOverlap } from "@/lib/content-overlap";
 import {
   languageDirective,
@@ -113,11 +112,6 @@ function parseBrief(o: Record<string, unknown>): Partial<KMPerPageBrief> {
   };
 }
 
-function pillarMatchesPracticeArea(pillarId: string, area: KMPracticeArea): boolean {
-  const pool = area === "employment" ? EMPLOYMENT_PILLARS : COLLECTIONS_PILLARS;
-  return pool.some((p) => p.id === pillarId);
-}
-
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
@@ -140,8 +134,13 @@ export async function POST(req: Request) {
   const errors = validateBrief(partial);
 
   // Cross-field check: pillar must belong to the selected practice area
-  if (partial.practiceArea && partial.pillarId && !pillarMatchesPracticeArea(partial.pillarId, partial.practiceArea)) {
-    errors.push("Pillar mapping does not match the selected practice area");
+  // (validated against the live, DB-driven pillar list).
+  if (partial.practiceArea && partial.pillarId) {
+    const pillars = await getPillars();
+    const ok = pillars.some(
+      (p) => p.id === partial.pillarId && p.practiceArea === partial.practiceArea,
+    );
+    if (!ok) errors.push("Pillar mapping does not match the selected practice area");
   }
 
   if (errors.length > 0) {

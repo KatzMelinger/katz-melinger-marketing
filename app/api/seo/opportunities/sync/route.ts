@@ -31,6 +31,7 @@ import {
   getTrackedKeywordPerformance,
 } from "@/lib/seo-intelligence";
 import { inferIntent, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
+import { getPillars } from "@/lib/pillars-store";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
@@ -101,6 +102,8 @@ async function runSyncForTenant(tenantId: string) {
       brandTokens: KM_BRAND_TOKENS,
       competitorTokens: competitorTokensFromDomains(competitors),
     };
+    // Live, DB-driven pillar list so the grouper routes to current pillars.
+    const pillars = await getPillars(tenantId);
 
     const [gaps, tracked] = await Promise.all([
       getKeywordGapVsCompetitors(competitors, semrushDomain, 120).catch(() => []),
@@ -201,7 +204,7 @@ async function runSyncForTenant(tenantId: string) {
       };
       const practiceArea = inferPracticeArea(clusterInput);
       const intent = inferIntent(clusterInput);
-      const pillarId = inferPillar(clusterInput, practiceArea);
+      const pillarId = inferPillar(clusterInput, practiceArea, pillars);
 
       return {
         keyword: c.keyword,
