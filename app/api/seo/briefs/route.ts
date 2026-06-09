@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizeLanguage } from "@/lib/content-language";
 import type { KMPerPageBrief } from "@/lib/km-content-system";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
         metrics: { language },
         status: "approved",
         source: "opportunity_radar",
+        tenant_id: await resolveTenantId(),
       })
       .select("id")
       .single();

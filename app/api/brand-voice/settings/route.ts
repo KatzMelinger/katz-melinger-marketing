@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -19,8 +19,8 @@ const MAX_VALUE_LENGTH = 40000;
 
 export async function GET() {
   try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    const db = await getTenantDb();
+    const { data, error } = await db
       .from("brand_voice_settings")
       .select("key, value, updated_at");
 
@@ -80,10 +80,10 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ settings: {} });
     }
 
-    const supabase = getSupabaseAdmin();
-    const { error } = await supabase
-      .from("brand_voice_settings")
-      .upsert(rows, { onConflict: "key" });
+    const db = await getTenantDb();
+    const { error } = await db.upsert("brand_voice_settings", rows, {
+      onConflict: "tenant_id,key",
+    });
 
     if (error) {
       console.error("[brand-voice/settings PUT] Supabase error:", error.message);
@@ -91,7 +91,7 @@ export async function PUT(req: NextRequest) {
     }
 
     // Return the full updated set so the client can swap state in one go.
-    const { data: updated } = await supabase
+    const { data: updated } = await db
       .from("brand_voice_settings")
       .select("key, value");
     const out: Record<string, string> = {};

@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const { data, error } = await supabase
     .from("brief_suggestions")
     .select("*")
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id)
     .maybeSingle();
   if (error) {
@@ -84,6 +86,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const { data, error } = await supabase
     .from("brief_suggestions")
     .update(patch)
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id)
     .select()
     .maybeSingle();
@@ -102,7 +105,11 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("brief_suggestions").delete().eq("id", id);
+  const { error } = await supabase
+    .from("brief_suggestions")
+    .delete()
+    .eq("tenant_id", await resolveTenantId())
+    .eq("id", id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

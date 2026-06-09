@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { scoreCall } from "@/lib/sales-coach";
 import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ type ScorePendingOptions = {
   limit: number;
   minDuration: number;
   since: string | null;
+  // null = all tenants (cron); set = only this tenant (manual button).
+  tenantId: string | null;
 };
 
 /**
@@ -65,6 +68,7 @@ export async function POST(req: Request) {
     limit: clampLimit(body.limit),
     minDuration: clampDuration(body.min_duration_seconds),
     since: typeof body.since === "string" ? body.since : null,
+    tenantId: await resolveTenantId(),
   });
 }
 
@@ -83,16 +87,17 @@ export async function GET(req: NextRequest) {
     limit: clampLimit(limitParam ? Number(limitParam) : undefined),
     minDuration: clampDuration(minParam ? Number(minParam) : undefined),
     since: sp.get("since"),
+    tenantId: null,
   });
 }
 
 async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptions) {
-  const { limit, minDuration, since } = opts;
+  const { limit, minDuration, since, tenantId } = opts;
 
   // Find candidates: answered, not VM, duration >= min, has transcript, no score yet.
   let q = supabase
     .from("calls")
-    .select("id, customer_name, agent_email, duration, start_time, direction, source_name, transcription")
+    .select("id, tenant_id, customer_name, agent_email, duration, start_time, direction, source_name, transcription")
     .eq("answered", true)
     .eq("voicemail", false)
     .gte("duration", minDuration)
@@ -100,6 +105,7 @@ async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptio
     .order("start_time", { ascending: false })
     .limit(500); // overshoot then filter
   if (since) q = q.gte("start_time", since);
+  if (tenantId) q = q.eq("tenant_id", tenantId);
   const { data: candidates, error } = await q;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -145,6 +151,7 @@ async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptio
     const r = out.result;
     const { error: insErr } = await supabase.from("call_scores").insert({
       call_id: id,
+      tenant_id: (c.tenant_id as string) ?? tenantId,
       rubric_type: r.rubric_type,
       language: r.language,
       overall_score: r.overall_score,

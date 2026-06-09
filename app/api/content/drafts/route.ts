@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const format = searchParams.get("format");
   const limit = Math.min(Number(searchParams.get("limit") ?? "50"), 200);
 
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   let q = supabase
     .from("content_drafts")
     .select("id, batch_id, format, template, topic, practice_area, title, body, metadata, status, created_at, updated_at")
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (!body?.format || !body?.topic || !body?.body) {
     return NextResponse.json({ error: "format, topic, body required" }, { status: 400 });
   }
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("content_drafts")
     .insert({
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       practice_area: body.practiceArea ?? null,
       seo_brief: body.seoBrief ?? null,
       source_id: body.sourceId ?? null,
+      tenant_id: tenantId,
     })
     .select()
     .single();

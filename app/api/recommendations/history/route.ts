@@ -4,17 +4,17 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const id = searchParams.get("id");
-  const supabase = getSupabaseAdmin();
+  const db = await getTenantDb();
 
   if (id) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("recommendations_history")
       .select("*")
       .eq("id", id)
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("recommendations_history")
     .select("id, rec_count, evidence, created_at")
     .order("created_at", { ascending: false })

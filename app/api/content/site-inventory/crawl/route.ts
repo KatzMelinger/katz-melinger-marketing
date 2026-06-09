@@ -9,6 +9,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { crawlSiteInventory } from "@/lib/site-inventory";
+import { listTenantIds } from "@/lib/tenant-db";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -24,8 +26,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const result = await crawlSiteInventory();
-    return NextResponse.json(result);
+    // Cron: crawl every tenant's own site into its own tenant-scoped inventory.
+    const tenantIds = await listTenantIds();
+    const perTenant: Record<string, unknown> = {};
+    for (const tenantId of tenantIds) {
+      try {
+        const cfg = await getTenantConfig(tenantId);
+        perTenant[tenantId] = await crawlSiteInventory({
+          domain: cfg.semrushDomain,
+          tenantId,
+        });
+      } catch (e) {
+        perTenant[tenantId] = {
+          error: e instanceof Error ? e.message : "crawl failed",
+        };
+      }
+    }
+    return NextResponse.json({ tenants: tenantIds.length, perTenant });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "crawl failed" },

@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 import {
   pushKeywordsToCampaign,
   SEMRUSH_CAMPAIGN_ID,
@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    const db = await getTenantDb();
+    const { data, error } = await db
       .from("seo_keywords")
       .select("keyword")
       .limit(MAX_PUSH);

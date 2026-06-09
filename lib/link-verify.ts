@@ -12,6 +12,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import { ALL_KM_PILLARS, KM_HUB_LINKS } from "@/lib/km-content-system";
 
 export type LinkType = "internal" | "external";
@@ -75,7 +76,11 @@ export async function verifyLinks(body: string): Promise<LinkVerifyResult> {
   const liveByPath = new Map<string, { url: string; title: string | null }>();
   try {
     const sb = getSupabaseAdmin();
-    const { data } = await sb.from("site_pages").select("url, title").limit(2000);
+    const { data } = await sb
+      .from("site_pages")
+      .select("url, title")
+      .eq("tenant_id", await resolveTenantId())
+      .limit(2000);
     for (const row of (data ?? []) as { url: string; title: string | null }[]) {
       try {
         const u = new URL(row.url, `https://www.${INTERNAL_HOST}`);

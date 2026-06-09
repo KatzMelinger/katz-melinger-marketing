@@ -24,7 +24,7 @@ import {
   getAnthropic,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -61,7 +61,7 @@ export async function POST(
     );
   }
 
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data: draft, error } = await supabase
     .from("content_drafts")
     .select("body, title, topic, format, template")

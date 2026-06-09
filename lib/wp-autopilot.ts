@@ -67,13 +67,14 @@ export function generateToken(): string {
 export async function authenticateToken(token: string): Promise<{
   domain: string;
   tokenId: string;
+  tenantId: string;
 } | null> {
   if (!token || token.length < 16) return null;
   const sb = getSupabaseAdmin();
   const tokenHash = hashToken(token);
   const { data, error } = await sb
     .from("wp_autopilot_tokens")
-    .select("id, domain, revoked_at")
+    .select("id, domain, tenant_id, revoked_at")
     .eq("token_hash", tokenHash)
     .maybeSingle();
   if (error || !data) return null;
@@ -85,7 +86,12 @@ export async function authenticateToken(token: string): Promise<{
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", data.id);
 
-  return { domain: data.domain as string, tokenId: data.id as string };
+  // The token is the tenant authority for plugin requests (no session cookie).
+  return {
+    domain: data.domain as string,
+    tokenId: data.id as string,
+    tenantId: data.tenant_id as string,
+  };
 }
 
 /** Normalize a domain string for comparison (lowercase, strip protocol/www/path). */
@@ -100,6 +106,7 @@ export function normalizeDomain(input: string): string {
 
 export async function listRecommendations(args: {
   domain: string;
+  tenantId: string;
   status?: FixStatus;
   limit?: number;
 }): Promise<AutoPilotRecommendation[]> {
@@ -108,6 +115,7 @@ export async function listRecommendations(args: {
   let q = sb
     .from("wp_autopilot_recommendations")
     .select("*")
+    .eq("tenant_id", args.tenantId)
     .eq("domain", domain)
     .order("created_at", { ascending: false })
     .limit(args.limit ?? 100);
@@ -126,6 +134,7 @@ export async function listRecommendations(args: {
 export async function markApplied(args: {
   id: string;
   domain: string;
+  tenantId: string;
   appliedValue: string;
   wpPostId?: number | null;
   metadata?: Record<string, unknown>;
@@ -136,6 +145,7 @@ export async function markApplied(args: {
   const { data: existing, error: lookupErr } = await sb
     .from("wp_autopilot_recommendations")
     .select("id, domain, status, metadata")
+    .eq("tenant_id", args.tenantId)
     .eq("id", args.id)
     .maybeSingle();
   if (lookupErr) throw new Error(lookupErr.message);
@@ -161,6 +171,7 @@ export async function markApplied(args: {
       wp_post_id: args.wpPostId ?? null,
       metadata: mergedMetadata,
     })
+    .eq("tenant_id", args.tenantId)
     .eq("id", args.id)
     .select("*")
     .maybeSingle();

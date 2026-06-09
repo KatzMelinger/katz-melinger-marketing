@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import {
   generateToken,
   hashToken,
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb
     .from("wp_autopilot_tokens")
-    .insert({ domain, token_hash: tokenHash, label })
+    .insert({ domain, token_hash: tokenHash, label, tenant_id: await resolveTenantId() })
     .select("id, domain, label, created_at")
     .maybeSingle();
   if (error || !data) {
@@ -73,6 +74,7 @@ export async function GET(req: NextRequest) {
   let q = sb
     .from("wp_autopilot_tokens")
     .select("id, domain, label, last_used_at, revoked_at, created_at")
+    .eq("tenant_id", await resolveTenantId())
     .order("created_at", { ascending: false });
   if (domainParam) q = q.eq("domain", normalizeDomain(domainParam));
   const { data, error } = await q;
@@ -92,6 +94,7 @@ export async function DELETE(req: NextRequest) {
   const { error } = await sb
     .from("wp_autopilot_tokens")
     .update({ revoked_at: new Date().toISOString() })
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

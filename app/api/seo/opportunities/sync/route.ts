@@ -30,9 +30,10 @@ import {
   getKeywordGapVsCompetitors,
   getTrackedKeywordPerformance,
 } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
 import { inferIntent, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantConfig } from "@/lib/tenant-config";
+import { resolveTenantId } from "@/lib/tenant-context";
+import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
 
 /** Intent → KM content type (Practice Page / Blog / Case Result). */
 function contentTypeFromIntent(intent: KMSearchIntent): KMContentType {
@@ -75,24 +76,35 @@ export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return runSync();
+  // The cron has no logged-in user, so it can't infer a tenant — it must
+  // process every active firm explicitly, each with its own config.
+  const tenantIds = await listTenantIds();
+  const results = [];
+  for (const tenantId of tenantIds) {
+    results.push({ tenantId, ...(await runSyncForTenant(tenantId)) });
+  }
+  return NextResponse.json({ tenants: results.length, results });
 }
 
 export async function POST() {
-  return runSync();
+  // UI "Refresh" button — sync only the caller's firm.
+  const tenantId = await resolveTenantId();
+  return NextResponse.json(await runSyncForTenant(tenantId));
 }
 
-async function runSync() {
+async function runSyncForTenant(tenantId: string) {
   try {
-    const competitors = await listCompetitors();
+    // Firm-specific config (Semrush domain etc.) instead of a hardcoded constant.
+    const { semrushDomain } = await getTenantConfig(tenantId);
+    const competitors = await listCompetitors(tenantId);
     const ctx = {
       brandTokens: KM_BRAND_TOKENS,
       competitorTokens: competitorTokensFromDomains(competitors),
     };
 
     const [gaps, tracked] = await Promise.all([
-      getKeywordGapVsCompetitors(competitors, SEMRUSH_DOMAIN, 120).catch(() => []),
-      getTrackedKeywordPerformance(SEMRUSH_DOMAIN).catch(() => ({
+      getKeywordGapVsCompetitors(competitors, semrushDomain, 120).catch(() => []),
+      getTrackedKeywordPerformance(semrushDomain, tenantId).catch(() => ({
         missingTargets: [] as string[],
         longTailSuggestions: [] as Array<{ keyword: string; searchVolume: number }>,
       })),
@@ -145,19 +157,20 @@ async function runSync() {
 
     const candidates = Array.from(byKeyword.values()).slice(0, MAX_KEYWORDS);
     if (candidates.length === 0) {
-      return NextResponse.json({ synced: 0, message: "No candidates returned from SEMrush." });
+      return { synced: 0, message: "No candidates returned from SEMrush." };
     }
 
-    const supabase = getSupabaseAdmin();
+    const db = getTenantJobDb(tenantId);
 
-    // Preserve user-acted statuses: fetch existing rows for these keywords.
+    // Preserve user-acted statuses: fetch this tenant's existing rows.
     const keys = candidates.map((c) => c.keyword);
-    const { data: existingRows } = await supabase
-      .from("seo_opportunities")
-      .select("keyword, status")
+    const { data: existingRows } = await db
+      .select("seo_opportunities", "keyword, status")
       .in("keyword", keys);
     const existingStatus = new Map(
-      (existingRows ?? []).map((r) => [r.keyword as string, r.status as string]),
+      ((existingRows ?? []) as unknown as Array<{ keyword: string; status: string }>).map(
+        (r) => [r.keyword, r.status],
+      ),
     );
 
     // Dedupe against existing site pages in one query (Phase B). Map each
@@ -219,23 +232,21 @@ async function runSync() {
       };
     });
 
-    const { error } = await supabase
-      .from("seo_opportunities")
-      .upsert(rows, { onConflict: "keyword" });
+    // upsert stamps tenant_id; conflict key is (tenant_id, keyword).
+    const { error } = await db.upsert("seo_opportunities", rows, {
+      onConflict: "tenant_id,keyword",
+    });
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return { error: error.message };
     }
 
     const excluded = rows.filter((r) => r.excluded).length;
-    return NextResponse.json({
+    return {
       synced: rows.length,
       excluded,
       kept: rows.length - excluded,
-    });
+    };
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Sync failed" },
-      { status: 500 },
-    );
+    return { error: e instanceof Error ? e.message : "Sync failed" };
   }
 }

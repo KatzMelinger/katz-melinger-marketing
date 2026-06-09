@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await sb
     .from("ai_bot_hits")
     .select("bot, user_agent, host, path, status, hit_at, meta")
+    .eq("tenant_id", await resolveTenantId())
     .gte("hit_at", since)
     .order("hit_at", { ascending: false })
     .limit(10000);

@@ -11,6 +11,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export type SavedImage = {
   id: string;
@@ -25,6 +26,9 @@ export type SavedImage = {
 };
 
 const BUCKET = "generated-images";
+// Buckets are PRIVATE for tenant isolation, so we serve signed URLs. Long-lived
+// (1y) so stored URLs stay valid; the file itself is unreachable without the token.
+const SIGNED_URL_TTL = 60 * 60 * 24 * 365;
 
 export async function saveImagePng(opts: {
   bytes: Uint8Array;
@@ -35,9 +39,11 @@ export async function saveImagePng(opts: {
   metadata?: Record<string, unknown>;
 }): Promise<SavedImage> {
   const sb = getSupabaseAdmin();
+  // Tenant comes first so the storage path lives under the tenant's folder.
+  const { supabase: db, tenantId } = await getTenantClient();
   const id = crypto.randomUUID();
   const yyyymm = new Date().toISOString().slice(0, 7); // 2026-05 — keeps paths shardable
-  const path = `${yyyymm}/${id}.png`;
+  const path = `${tenantId}/${yyyymm}/${id}.png`;
 
   const { error: uploadError } = await sb.storage
     .from(BUCKET)
@@ -49,10 +55,11 @@ export async function saveImagePng(opts: {
     throw new Error(`storage upload failed: ${uploadError.message}`);
   }
 
-  const { data: publicData } = sb.storage.from(BUCKET).getPublicUrl(path);
-  const publicUrl = publicData.publicUrl;
+  // Private bucket → signed URL (service-role can sign any path).
+  const { data: signed } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
+  const publicUrl = signed?.signedUrl ?? "";
 
-  const { data, error } = await sb
+  const { data, error } = await db
     .from("generated_images")
     .insert({
       id,
@@ -63,6 +70,7 @@ export async function saveImagePng(opts: {
       public_url: publicUrl,
       parent_image_id: opts.parentImageId ?? null,
       metadata: opts.metadata ?? {},
+      tenant_id: tenantId,
     })
     .select("*")
     .maybeSingle();
@@ -93,8 +101,9 @@ export async function readImageBytes(storagePath: string): Promise<Uint8Array> {
 }
 
 export async function deleteSavedImage(id: string): Promise<void> {
-  const sb = getSupabaseAdmin();
-  const { data: row, error: readError } = await sb
+  // Table read/delete are tenant-scoped (RLS); storage removal uses service-role.
+  const { supabase: db } = await getTenantClient();
+  const { data: row, error: readError } = await db
     .from("generated_images")
     .select("storage_path")
     .eq("id", id)
@@ -104,6 +113,6 @@ export async function deleteSavedImage(id: string): Promise<void> {
   }
   if (!row) return;
 
-  await sb.storage.from(BUCKET).remove([row.storage_path as string]);
-  await sb.from("generated_images").delete().eq("id", id);
+  await getSupabaseAdmin().storage.from(BUCKET).remove([row.storage_path as string]);
+  await db.from("generated_images").delete().eq("id", id);
 }

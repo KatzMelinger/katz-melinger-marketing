@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import { extractVariables } from "@/lib/prompt-runner";
 
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ export async function GET(
   const { data, error } = await supabase
     .from("ai_prompts")
     .select("*")
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -51,6 +53,7 @@ export async function PATCH(
     const { data: existing } = await supabase
       .from("ai_prompts")
       .select("system_prompt, user_prompt")
+      .eq("tenant_id", await resolveTenantId())
       .eq("id", id)
       .maybeSingle();
     const sys = "system_prompt" in patch ? (patch.system_prompt as string | null) : existing?.system_prompt;
@@ -62,6 +65,7 @@ export async function PATCH(
   const { data, error } = await supabase
     .from("ai_prompts")
     .update(patch)
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id)
     .select()
     .single();
@@ -75,7 +79,7 @@ export async function DELETE(
 ) {
   const { id } = await params;
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("ai_prompts").delete().eq("id", id);
+  const { error } = await supabase.from("ai_prompts").delete().eq("tenant_id", await resolveTenantId()).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

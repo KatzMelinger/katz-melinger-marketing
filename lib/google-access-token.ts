@@ -10,6 +10,7 @@ const GBP_SCOPE = "https://www.googleapis.com/auth/business.manage";
 
 export async function getGoogleAccessToken(
   scopes: string[],
+  tenantId?: string,
 ): Promise<{ token: string } | { error: string }> {
   // For Business Profile we prefer the user-OAuth token (stored after the
   // /api/google/oauth/start flow) since service accounts can't auto-accept
@@ -18,7 +19,7 @@ export async function getGoogleAccessToken(
   // is clearer when it does.
   if (scopes.includes(GBP_SCOPE)) {
     try {
-      const oauth = await getValidAccessToken("gbp");
+      const oauth = await getValidAccessToken("gbp", tenantId);
       if (oauth) {
         if (process.env.GOOGLE_DEBUG_AUTH === "1") {
           console.log("[GoogleAuth] using stored OAuth token for GBP", {

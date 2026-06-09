@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { analyzeDraft } from "@/lib/content-analysis";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function POST(
     ? (body.targetKeywords as string[])
     : [];
 
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data: draft, error } = await supabase
     .from("content_drafts")
     .select("body, seo_brief, title, topic, format, template")

@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -76,7 +76,7 @@ export async function PATCH(
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("content_pipeline")
     .update(patch)
@@ -96,7 +96,7 @@ export async function DELETE(
   if (!Number.isFinite(numericId)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { error } = await supabase
     .from("content_pipeline")
     .delete()

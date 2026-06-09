@@ -35,6 +35,7 @@ import {
   type KMSearchIntent,
 } from "@/lib/km-content-system";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import { detectContentOverlap } from "@/lib/content-overlap";
 import {
   languageDirective,
@@ -248,11 +249,13 @@ async function autosave(
 ): Promise<string | null> {
   const supabase = getSupabaseServer();
   if (!supabase) return null;
+  const tid = await resolveTenantId();
   try {
     const format = `km_${brief.contentType}`;
     const { data } = await supabase
       .from("content_drafts")
       .insert({
+        tenant_id: tid,
         format,
         template: `km_${brief.contentType}`,
         topic: brief.primaryKeyword,

@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const tid = await resolveTenantId();
 
   const [callQ, scoreQ] = await Promise.all([
-    supabase.from("calls").select("*").eq("id", id).maybeSingle(),
+    supabase.from("calls").select("*").eq("tenant_id", tid).eq("id", id).maybeSingle(),
     supabase
       .from("call_scores")
       .select("*")
+      .eq("tenant_id", tid)
       .eq("call_id", id)
       .order("scored_at", { ascending: false })
       .limit(1)

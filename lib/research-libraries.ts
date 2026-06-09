@@ -8,7 +8,7 @@
  * connectors (lib/research-sources.ts) when the research layer runs.
  */
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export type LegalSourceType =
   | "statute"
@@ -79,7 +79,7 @@ export async function listLegalSources(opts?: {
   practiceArea?: string;
   search?: string;
 }): Promise<LegalAuthoritySource[]> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   let q = sb
     .from("legal_authority_sources")
     .select("*")
@@ -94,7 +94,7 @@ export async function listLegalSources(opts?: {
 export async function upsertLegalSource(
   row: Partial<LegalAuthoritySource> & { name: string; url: string },
 ): Promise<LegalAuthoritySource> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const payload: Record<string, unknown> = {
     name: row.name,
     url: row.url,
@@ -106,6 +106,7 @@ export async function upsertLegalSource(
     notes: row.notes ?? null,
     review_status: row.review_status ?? "unverified",
     last_verified_at: row.last_verified_at ?? null,
+    tenant_id: tenantId,
   };
   if (row.id) payload.id = row.id;
   const { data, error } = await sb
@@ -118,7 +119,7 @@ export async function upsertLegalSource(
 }
 
 export async function deleteLegalSource(id: string): Promise<void> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const { error } = await sb
     .from("legal_authority_sources")
     .delete()
@@ -135,7 +136,7 @@ export async function listPeopleAskSources(opts?: {
   sourceType?: PeopleAskSourceType;
   search?: string;
 }): Promise<PeopleAskSource[]> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   let q = sb
     .from("people_ask_sources")
     .select("*")
@@ -152,7 +153,7 @@ export async function listPeopleAskSources(opts?: {
 export async function upsertPeopleAskSource(
   row: Partial<PeopleAskSource> & { content: string },
 ): Promise<PeopleAskSource> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const payload: Record<string, unknown> = {
     content: row.content,
     source_type: row.source_type ?? "manual",
@@ -164,6 +165,7 @@ export async function upsertPeopleAskSource(
     source_url: row.source_url ?? null,
     metric: row.metric ?? {},
     review_status: row.review_status ?? "unverified",
+    tenant_id: tenantId,
   };
   if (row.id) payload.id = row.id;
   const { data, error } = await sb
@@ -184,7 +186,7 @@ export async function insertPeopleAskBatch(
   rows: Array<Partial<PeopleAskSource> & { content: string }>,
 ): Promise<number> {
   if (rows.length === 0) return 0;
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
 
   // Pull existing (content, source_type) pairs to dedupe.
   const { data: existing } = await sb
@@ -215,6 +217,7 @@ export async function insertPeopleAskBatch(
     source_url: r.source_url ?? null,
     metric: r.metric ?? {},
     review_status: "unverified" as const,
+    tenant_id: tenantId,
   }));
   const { error } = await sb.from("people_ask_sources").insert(payload);
   if (error) throw new Error(error.message);
@@ -222,7 +225,7 @@ export async function insertPeopleAskBatch(
 }
 
 export async function deletePeopleAskSource(id: string): Promise<void> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const { error } = await sb
     .from("people_ask_sources")
     .delete()

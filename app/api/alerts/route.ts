@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") ?? "new";
   const type = searchParams.get("type");
 
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   let query = supabase
     .from("marketing_alerts")
     .select("*")

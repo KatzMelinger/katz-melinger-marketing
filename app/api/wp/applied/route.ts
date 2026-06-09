@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
     const updated = await markApplied({
       id,
       domain: auth.domain,
+      tenantId: auth.tenantId,
       appliedValue,
       wpPostId,
       metadata,

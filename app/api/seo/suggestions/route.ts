@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { suggestForCluster, type ClusterInput } from "@/lib/strategy-engine";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
     let q = supabase
       .from("brief_suggestions")
       .select("*")
+      .eq("tenant_id", await resolveTenantId())
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -107,6 +109,7 @@ export async function POST(req: NextRequest) {
         existing_url: cluster.existingUrl ?? null,
         source: typeof o.source === "string" ? o.source : "manual",
         source_ref: typeof o.sourceRef === "string" ? o.sourceRef : null,
+        tenant_id: await resolveTenantId(),
       })
       .select()
       .single();

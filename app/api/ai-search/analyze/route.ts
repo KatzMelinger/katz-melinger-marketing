@@ -16,6 +16,7 @@ import {
 } from "@/lib/anthropic";
 import type { AISiteCrawlResult } from "@/lib/ai-crawler";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -175,6 +176,7 @@ Provide your analysis in JSON format:
             crawl: crawlData,
             analysis,
             overall_score: typeof analysis?.overallScore === "number" ? analysis.overallScore : null,
+            tenant_id: await resolveTenantId(),
           })
           .select("id")
           .single();

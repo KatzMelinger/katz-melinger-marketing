@@ -14,6 +14,7 @@
 
 import { logger } from "./logger";
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 const USER_AGENT = "KMDashboard-LinkAuditor/1.0";
 // Bumped from 30 to 100 so the audit picks up a meaningful slice of the
@@ -234,6 +235,7 @@ export async function runInternalLinkAudit(input: string): Promise<LinkAuditResu
       thin_pages: thinPages,
       hub_pages: hubs,
       page_graph: graph,
+      tenant_id: await resolveTenantId(),
     })
     .select("id")
     .single();

@@ -12,6 +12,7 @@
  */
 
 import { getSupabaseAdmin, getSupabaseServer } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 const FALLBACK_COMPETITORS = [
   "nilawfirm.com",
@@ -40,14 +41,16 @@ function envCompetitors(): string[] {
     .filter(Boolean);
 }
 
-export async function listCompetitors(): Promise<string[]> {
+export async function listCompetitors(tenantId?: string): Promise<string[]> {
   const supabase = getSupabaseServer();
   if (!supabase) {
     return Array.from(new Set([...FALLBACK_COMPETITORS, ...envCompetitors()])).sort();
   }
+  const tid = tenantId ?? (await resolveTenantId());
   const { data, error } = await supabase
     .from("seo_tracked_competitors")
-    .select("domain");
+    .select("domain")
+    .eq("tenant_id", tid);
   if (error || !data) {
     return Array.from(new Set([...FALLBACK_COMPETITORS, ...envCompetitors()])).sort();
   }
@@ -59,12 +62,12 @@ export async function listCompetitors(): Promise<string[]> {
     const now = new Date().toISOString();
     const initial = Array.from(new Set([...FALLBACK_COMPETITORS, ...envCompetitors()]));
     const rows = [
-      { domain: SEED_MARKER, source: "env_seed", added_at: now },
-      ...initial.map((d) => ({ domain: d, source: "env_seed", added_at: now })),
+      { domain: SEED_MARKER, source: "env_seed", added_at: now, tenant_id: tid },
+      ...initial.map((d) => ({ domain: d, source: "env_seed", added_at: now, tenant_id: tid })),
     ];
     const { error: seedError } = await admin
       .from("seo_tracked_competitors")
-      .upsert(rows, { onConflict: "domain" });
+      .upsert(rows, { onConflict: "tenant_id,domain" });
     if (seedError) {
       console.error("[seo-competitors] seed upsert failed:", seedError.message);
     }
@@ -82,29 +85,33 @@ export type AddResult = { ok: boolean; domain: string; reason?: string };
 export async function addCompetitor(
   rawDomain: string,
   source: "manual" | "suggested" = "manual",
+  tenantId?: string,
 ): Promise<AddResult> {
   const domain = normalizeDomain(rawDomain);
   if (!domain || !domain.includes(".")) {
     return { ok: false, domain, reason: "Invalid domain" };
   }
+  const tid = tenantId ?? (await resolveTenantId());
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("seo_tracked_competitors")
-    .upsert({ domain, source, added_at: new Date().toISOString() }, { onConflict: "domain" });
+    .upsert({ domain, source, added_at: new Date().toISOString(), tenant_id: tid }, { onConflict: "tenant_id,domain" });
   if (error) {
     return { ok: false, domain, reason: error.message };
   }
   return { ok: true, domain };
 }
 
-export async function removeCompetitor(rawDomain: string): Promise<{ ok: boolean; domain: string; reason?: string }> {
+export async function removeCompetitor(rawDomain: string, tenantId?: string): Promise<{ ok: boolean; domain: string; reason?: string }> {
   const domain = normalizeDomain(rawDomain);
   if (!domain) return { ok: false, domain, reason: "Invalid domain" };
+  const tid = tenantId ?? (await resolveTenantId());
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("seo_tracked_competitors")
     .delete()
-    .eq("domain", domain);
+    .eq("domain", domain)
+    .eq("tenant_id", tid);
   if (error) return { ok: false, domain, reason: error.message };
   return { ok: true, domain };
 }

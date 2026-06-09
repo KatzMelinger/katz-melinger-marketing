@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { verifyLinks } from "@/lib/link-verify";
 
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ export async function POST(
   const body = await req.json().catch(() => ({}) as Record<string, unknown>);
   const strip = body?.strip === true;
 
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data: draft, error } = await supabase
     .from("content_drafts")
     .select("id, body")

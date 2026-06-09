@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export type BrandDocumentType = "brand" | "sample";
 
@@ -251,6 +252,7 @@ export async function getBrandVoiceContext(): Promise<string> {
   const { data } = await sb
     .from("brand_voice")
     .select("context")
+    .eq("tenant_id", await resolveTenantId())
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -262,9 +264,11 @@ export async function setBrandVoiceContext(context: string): Promise<{ ok: boole
   const sb = getSupabaseServer();
   if (!sb) return { ok: false, error: "Supabase is not configured" };
 
+  const tid = await resolveTenantId();
   const { data: existing } = await sb
     .from("brand_voice")
     .select("id")
+    .eq("tenant_id", tid)
     .limit(1)
     .maybeSingle();
 
@@ -279,12 +283,13 @@ export async function setBrandVoiceContext(context: string): Promise<{ ok: boole
         context,
         updated_at: new Date().toISOString(),
       })
+      .eq("tenant_id", tid)
       .eq("id", id);
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   }
 
-  const { error } = await sb.from("brand_voice").insert({ context });
+  const { error } = await sb.from("brand_voice").insert({ context, tenant_id: tid });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
@@ -297,6 +302,7 @@ export async function listBrandDocuments(
   let query = sb
     .from("brand_voice_documents")
     .select("id, filename, document_type, text_excerpt, text_length, uploaded_at")
+    .eq("tenant_id", await resolveTenantId())
     .order("uploaded_at", { ascending: false })
     .limit(100);
   if (docType) {
@@ -312,6 +318,7 @@ export async function listDocumentTexts(): Promise<string[]> {
   const { data } = await sb
     .from("brand_voice_documents")
     .select("extracted_text")
+    .eq("tenant_id", await resolveTenantId())
     .order("uploaded_at", { ascending: false })
     .limit(200);
   if (!Array.isArray(data)) return [];
@@ -340,6 +347,7 @@ export async function insertBrandDocument(input: {
     text_excerpt: text.slice(0, 1200),
     text_length: text.length,
     uploaded_at: new Date().toISOString(),
+    tenant_id: await resolveTenantId(),
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -361,7 +369,7 @@ export async function saveBrandProfile(profile: BrandVoiceProfile): Promise<{ ok
   };
   const { error } = await sb
     .from("brand_voice_profiles")
-    .insert(payload);
+    .insert({ ...payload, tenant_id: await resolveTenantId() });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
@@ -374,6 +382,7 @@ export async function getLatestBrandProfile(): Promise<BrandVoiceProfile | null>
     .select(
       "tone, style_preferences, legal_terms, common_phrases, disclaimers, messaging_patterns, guidelines_summary, source_document_count, updated_at",
     )
+    .eq("tenant_id", await resolveTenantId())
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();

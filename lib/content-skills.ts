@@ -20,6 +20,7 @@
  */
 
 import { getSupabaseServer } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 export type SkillType =
   | "voice_rule"
@@ -104,12 +105,14 @@ function rowToSkill(r: SkillRow): ContentSkill {
   };
 }
 
-export async function listSkills(): Promise<ContentSkill[]> {
+export async function listSkills(tenantId?: string): Promise<ContentSkill[]> {
   const supabase = getSupabaseServer();
   if (!supabase) return [];
+  const tid = tenantId ?? (await resolveTenantId());
   const { data, error } = await supabase
     .from("content_skills")
     .select("*")
+    .eq("tenant_id", tid)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error || !data) return [];

@@ -13,7 +13,7 @@
 
 import { NextResponse } from "next/server";
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +61,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const pillarFilter = url.searchParams.get("pillar") ?? "All";
 
-  const sb = getSupabaseAdmin();
+  const sb = await getTenantDb();
   const { data, error } = await sb
     .from("seo_keywords")
     .select(

@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,8 +36,8 @@ export async function GET(req: NextRequest) {
     const words = significantWords(keyword);
     if (words.length === 0) return NextResponse.json({ suggestions: [] });
 
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    const db = await getTenantDb();
+    const { data, error } = await db
       .from("seo_opportunities")
       .select("keyword, search_volume, keyword_difficulty, intent")
       .eq("excluded", false)

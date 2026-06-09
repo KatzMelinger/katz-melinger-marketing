@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -26,7 +26,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export async function GET() {
   try {
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data, error } = await supabase
       .from("brand_voice_samples")
       .select("id, title, content, content_type, notes, created_at")
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const supabase = getSupabaseAdmin();
+    const { supabase, tenantId } = await getTenantClient();
     const { data, error } = await supabase
       .from("brand_voice_samples")
       .insert({
@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
         content,
         content_type: contentType.trim(),
         notes: typeof notes === "string" && notes !== "" ? notes : null,
+        tenant_id: tenantId,
       })
       .select("id, title, content, content_type, notes, created_at")
       .single();
@@ -107,7 +108,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data, error } = await supabase
       .from("brand_voice_samples")
       .delete()

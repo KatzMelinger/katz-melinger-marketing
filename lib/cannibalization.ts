@@ -13,6 +13,7 @@
 
 import { getDomainKeywords, SEMRUSH_DOMAIN, type SemrushKeywordRow } from "./semrush";
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import {
   evaluateCannibalizationAlerts,
   type CannibalizationIssue,
@@ -38,7 +39,9 @@ function classifySeverity(positions: number[]): "low" | "medium" | "high" {
 export async function detectCannibalization(
   domain: string = SEMRUSH_DOMAIN,
   prefetchedRows?: SemrushKeywordRow[],
+  tenantId?: string,
 ): Promise<{ snapshotId: string; issues: CannibalizationDetail[] }> {
+  const tid = tenantId ?? (await resolveTenantId());
   // Pull a wide enough slice that we can group meaningfully — 1000 rows
   // matches the keyword_research refresh budget and keeps Semrush units low.
   // Callers that already hold the firm's domain_organic report (e.g. the daily
@@ -91,6 +94,7 @@ export async function detectCannibalization(
       domain,
       issues,
       total_issues: issues.length,
+      tenant_id: tid,
     })
     .select("id")
     .single();
@@ -105,6 +109,7 @@ export async function detectCannibalization(
       .from("cannibalization_snapshots")
       .select("id")
       .eq("domain", domain)
+      .eq("tenant_id", tid)
       .order("created_at", { ascending: false })
       .limit(3);
     if (recent && recent.length === 3) {
@@ -113,6 +118,7 @@ export async function detectCannibalization(
         .from("cannibalization_snapshots")
         .delete()
         .eq("domain", domain)
+        .eq("tenant_id", tid)
         .not("id", "in", `(${keepIds.join(",")})`);
     }
   } catch (pruneErr) {
@@ -131,7 +137,7 @@ export async function detectCannibalization(
       severity: i.severity,
     }));
   if (alertIssues.length > 0) {
-    await evaluateCannibalizationAlerts(snapshot.id, alertIssues);
+    await evaluateCannibalizationAlerts(snapshot.id, alertIssues, tid);
   }
 
   return { snapshotId: snapshot.id, issues };

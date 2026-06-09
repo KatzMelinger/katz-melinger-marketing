@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { ensureGrantedEmail } from "@/lib/google-oauth";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,7 @@ async function gbpOAuthState(): Promise<GBPState> {
     const { data } = await supabase
       .from("google_oauth_tokens")
       .select("granted_email, expires_at")
+      .eq("tenant_id", await resolveTenantId())
       .eq("purpose", "gbp")
       .maybeSingle();
     if (!data) return { status: "needs_oauth", granted_email: null, expires_at: null };
@@ -84,6 +86,7 @@ async function constantContactStatus(): Promise<Status> {
     const { data } = await supabase
       .from("constant_contact_tokens")
       .select("access_token")
+      .eq("tenant_id", await resolveTenantId())
       .limit(1);
     return data && data.length > 0 ? "connected" : "needs_oauth";
   } catch {

@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getTechnicalSeoMonitoring } from "@/lib/seo-intelligence";
 import { SEMRUSH_DOMAIN } from "@/lib/semrush";
-import { getSupabaseServer } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,11 +22,8 @@ function defaultUrl(url: string | null): string {
 
 export async function GET(request: NextRequest) {
   const url = defaultUrl(request.nextUrl.searchParams.get("url"));
-  const supabase = getSupabaseServer();
-  if (!supabase) {
-    return NextResponse.json({ url, latest: null });
-  }
-  const { data } = await supabase
+  const db = await getTenantDb();
+  const { data } = await db
     .from("technical_seo_runs")
     .select("*")
     .eq("url", url)
@@ -38,19 +35,17 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const url = defaultUrl(request.nextUrl.searchParams.get("url"));
+  const db = await getTenantDb();
   try {
     const data = await getTechnicalSeoMonitoring(url);
-    const supabase = getSupabaseServer();
-    if (supabase) {
-      await supabase.from("technical_seo_runs").insert({
-        url,
-        mobile: data.mobile,
-        desktop: data.desktop,
-        schema_checks: data.schemaChecks,
-        crawl_errors: data.crawlErrors,
-        status: "success",
-      });
-    }
+    await db.insert("technical_seo_runs", {
+      url,
+      mobile: data.mobile,
+      desktop: data.desktop,
+      schema_checks: data.schemaChecks,
+      crawl_errors: data.crawlErrors,
+      status: "success",
+    });
     return NextResponse.json({
       url,
       latest: {
@@ -65,16 +60,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed technical seo scan";
-    const supabase = getSupabaseServer();
-    if (supabase) {
-      await supabase.from("technical_seo_runs").insert({
-        url,
-        mobile: [],
-        desktop: [],
-        status: "failed",
-        error: msg,
-      });
-    }
+    await db.insert("technical_seo_runs", {
+      url,
+      mobile: [],
+      desktop: [],
+      status: "failed",
+      error: msg,
+    });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

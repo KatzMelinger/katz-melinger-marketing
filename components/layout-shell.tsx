@@ -12,7 +12,7 @@ import { usePathname } from "next/navigation";
 import { MarketingSidebar } from "@/components/marketing-sidebar";
 import { HubSubNav } from "@/components/hub-subnav";
 
-const NO_CHROME_PATHS = ["/login"];
+const NO_CHROME_PATHS = ["/login", "/signup"];
 
 function isChromeless(pathname: string | null): boolean {
   if (!pathname) return false;

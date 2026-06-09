@@ -16,6 +16,7 @@ import { buildSkillsContext } from "@/lib/content-skills";
 import { languageDirective, normalizeLanguage } from "@/lib/content-language";
 import { getFirmContext } from "@/lib/firm-context";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -257,10 +258,12 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     ) {
       const supabase = getSupabaseServer();
       if (!supabase) return null;
+      const tid = await resolveTenantId();
       try {
         const { data } = await supabase
           .from("content_drafts")
           .insert({
+            tenant_id: tid,
             format,
             template: templateKey || null,
             topic,
@@ -345,6 +348,7 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Anthropic request failed";
+    console.error("[content/draft] failed:", message, e instanceof Error ? e.stack : "");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -16,8 +16,8 @@ import {
   type ImageSize,
 } from "@/lib/openai-images";
 import { saveImagePng } from "@/lib/image-store";
+import { composeStyleForGeneration } from "@/lib/image-style-store";
 import {
-  composeStyleForGeneration,
   isStyleScope,
   type StyleScope,
 } from "@/lib/image-style";
@@ -131,6 +131,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ image: saved });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Image generation failed";
+    console.error("[images/generate] failed:", msg, err instanceof Error ? err.stack : "");
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

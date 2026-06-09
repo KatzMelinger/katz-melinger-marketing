@@ -10,7 +10,7 @@
  * refresh recommendations whenever the user clicks "Generate."
  */
 
-import { getSupabaseAdmin } from "./supabase-server";
+import { getTenantClient } from "./tenant-db";
 import { getFirmContext } from "./firm-context";
 import {
   KEYWORD_RESEARCH_MODEL,
@@ -42,7 +42,7 @@ async function loadLatestAEOSnapshot(): Promise<{
   runDate: string | null;
   rows: SnapshotRow[];
 }> {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data: latest } = await supabase
     .from("aeo_runs")
     .select("id, completed_at")
@@ -94,7 +94,7 @@ async function loadLatestAEOSnapshot(): Promise<{
 }
 
 async function loadSEOContext() {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data: keywords } = await supabase
     .from("seo_keywords")
     .select("keyword, current_rank, previous_rank, search_volume, url, last_checked_at")

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data, error } = await supabase
     .from("aeo_runs")
     .select("id, status, providers, prompt_count, response_count, failure_count, started_at, completed_at, triggered_by, error, created_at")

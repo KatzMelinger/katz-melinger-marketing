@@ -15,6 +15,7 @@
 
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; KMSiteInventory/0.1; +https://katzmelinger.com)";
@@ -274,7 +275,9 @@ async function classifyPillars(
 export async function crawlSiteInventory(args?: {
   domain?: string;
   maxPages?: number;
+  tenantId?: string;
 }): Promise<{ crawled: number; classified: number; skipped: number }> {
+  const tid = args?.tenantId ?? (await resolveTenantId());
   const domain = (args?.domain ?? "katzmelinger.com").trim();
   const base = `https://${domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
   const host = new URL(base).host.replace(/^www\./, "");
@@ -301,7 +304,8 @@ export async function crawlSiteInventory(args?: {
   const sb = getSupabaseAdmin();
   const { data: existing } = await sb
     .from("site_pages")
-    .select("url, pillar, pillar_locked");
+    .select("url, pillar, pillar_locked")
+    .eq("tenant_id", tid);
   const locked = new Map<string, string | null>();
   for (const r of existing ?? []) {
     if (r.pillar_locked) locked.set(r.url as string, (r.pillar as string) ?? null);
@@ -320,6 +324,7 @@ export async function crawlSiteInventory(args?: {
       practice_area: cls?.practice_area ?? null,
       topics: cls?.topics ?? [],
       last_crawled_at: now,
+      tenant_id: tid,
     };
   });
 
@@ -329,7 +334,7 @@ export async function crawlSiteInventory(args?: {
     const chunk = rows.slice(i, i + 100);
     const { error } = await sb
       .from("site_pages")
-      .upsert(chunk, { onConflict: "url" });
+      .upsert(chunk, { onConflict: "tenant_id,url" });
     if (!error) classified += chunk.filter((c) => c.pillar).length;
   }
 
@@ -348,7 +353,9 @@ export async function crawlSiteInventory(args?: {
  */
 export async function ingestUrls(
   rawUrls: string[],
+  tenantId?: string,
 ): Promise<{ ingested: number; classified: number; skipped: number }> {
+  const tid = tenantId ?? (await resolveTenantId());
   const seen = new Set<string>();
   const urls: string[] = [];
   for (const u of rawUrls) {
@@ -386,6 +393,7 @@ export async function ingestUrls(
   const { data: existing } = await sb
     .from("site_pages")
     .select("url, pillar, pillar_locked")
+    .eq("tenant_id", tid)
     .in("url", usable.map((u) => u.url));
   const locked = new Map<string, string | null>();
   for (const r of existing ?? []) {
@@ -405,12 +413,13 @@ export async function ingestUrls(
       practice_area: cls?.practice_area ?? null,
       topics: cls?.topics ?? [],
       last_crawled_at: now,
+      tenant_id: tid,
     };
   });
 
   const { error } = await sb
     .from("site_pages")
-    .upsert(rows, { onConflict: "url" });
+    .upsert(rows, { onConflict: "tenant_id,url" });
   if (error) {
     throw new Error(`ingest upsert failed: ${error.message}`);
   }
@@ -430,6 +439,7 @@ export async function listSitePages(opts?: {
   let q = sb
     .from("site_pages")
     .select("*")
+    .eq("tenant_id", await resolveTenantId())
     .order("pillar", { ascending: true, nullsFirst: false })
     .order("title", { ascending: true })
     .limit(1000);
@@ -448,6 +458,7 @@ export async function setSitePagePillar(
   const { error } = await sb
     .from("site_pages")
     .update({ pillar, pillar_locked: true })
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id);
   if (error) throw new Error(error.message);
 }

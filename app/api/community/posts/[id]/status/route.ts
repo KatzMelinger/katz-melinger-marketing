@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase-route";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -36,7 +36,7 @@ export async function PATCH(
     return NextResponse.json({ error: "status required" }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { error } = await supabase.from("community_post_status").upsert(
     {
       platform,
@@ -45,8 +45,9 @@ export async function PATCH(
       notes,
       marked_by: me.id,
       marked_at: new Date().toISOString(),
+      tenant_id: tenantId,
     },
-    { onConflict: "platform,post_id" },
+    { onConflict: "tenant_id,platform,post_id" },
   );
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

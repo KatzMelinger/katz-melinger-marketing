@@ -18,6 +18,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 const CONFLICT_THRESHOLD = 0.7; // Jaccard similarity above which we drop
 
@@ -70,12 +71,14 @@ type ExistingItem = {
  */
 async function loadExisting(currentDraftId: string | null): Promise<ExistingItem[]> {
   const supabase = getSupabaseAdmin();
+  const tid = await resolveTenantId();
   const items: ExistingItem[] = [];
 
   try {
     const { data: pipeRows } = await supabase
       .from("content_pipeline")
       .select("title, url")
+      .eq("tenant_id", tid)
       .not("title", "is", null);
     for (const r of pipeRows ?? []) {
       if (typeof r.title === "string" && r.title.trim()) {
@@ -95,6 +98,7 @@ async function loadExisting(currentDraftId: string | null): Promise<ExistingItem
     const { data: draftRows } = await supabase
       .from("content_drafts")
       .select("id, title")
+      .eq("tenant_id", tid)
       .in("status", ["published", "approved", "review"])
       .not("title", "is", null);
     for (const r of draftRows ?? []) {

@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -24,7 +24,7 @@ export async function PATCH(
   if (status === "read") patch.read_at = new Date().toISOString();
   if (status === "dismissed") patch.dismissed_at = new Date().toISOString();
 
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data, error } = await supabase
     .from("marketing_alerts")
     .update(patch)

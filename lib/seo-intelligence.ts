@@ -12,6 +12,7 @@ import {
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
 import { listTargets } from "@/lib/seo-targets";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 type SemrushRecord = Record<string, string>;
 
@@ -208,17 +209,21 @@ function parseKeywordRow(row: SemrushRecord): KeywordRow {
  * /api/seo/keywords/targets). If the DB is unreachable we fall back to env
  * and then to the legacy hardcoded list so the page never returns empty.
  */
-export async function getTargetKeywords(): Promise<string[]> {
+export async function getTargetKeywords(tenantId?: string): Promise<string[]> {
   // Unified source of truth: the seo_keywords tracker table (the same list the
   // KM Agent reads and the rank-refresh cron updates). This makes every
   // intelligence feature that calls getTargetKeywords() — gap analysis,
   // topical maps, alerts, recommendations, briefs, correlation — read the same
   // list as the agent. Falls back to the legacy seo_target_keywords list, then
   // env / defaults, so nothing breaks before/after migration.
+  const tid = tenantId ?? (await resolveTenantId());
   try {
     const sb = getSupabaseServer();
     if (sb) {
-      const { data } = await sb.from("seo_keywords").select("keyword");
+      const { data } = await sb
+        .from("seo_keywords")
+        .select("keyword")
+        .eq("tenant_id", tid);
       const kws = (data ?? [])
         .map((r) => (typeof r.keyword === "string" ? r.keyword.trim() : ""))
         .filter(Boolean);
@@ -228,7 +233,7 @@ export async function getTargetKeywords(): Promise<string[]> {
     // fall through to legacy targets / env / defaults
   }
   try {
-    const fromDb = await listTargets();
+    const fromDb = await listTargets(tid);
     if (fromDb.length > 0) return fromDb;
   } catch {
     // fall through to env / defaults
@@ -388,13 +393,14 @@ export async function getLongTailSuggestions(
 
 export async function getTrackedKeywordPerformance(
   domain = SEMRUSH_DOMAIN,
+  tenantId?: string,
 ): Promise<{
   tracked: Array<KeywordRow & { isTargetKeyword: boolean }>;
   missingTargets: string[];
   trendingKeywords: Array<{ keyword: string; searchVolume: number; trendScore: number }>;
   longTailSuggestions: Array<{ keyword: string; searchVolume: number }>;
 }> {
-  const targets = await getTargetKeywords();
+  const targets = await getTargetKeywords(tenantId);
   // Pull up to 1000 keywords (Semrush per-request max) so targets that rank
   // outside the top-120-by-traffic still get picked up via exact match.
   const rows = await getDomainOrganicKeywords(domain, 1000);

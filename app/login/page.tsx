@@ -95,7 +95,7 @@ function LoginForm() {
         </form>
 
         <p className="text-xs text-slate-500 mt-6">
-          Don't have an account? Ask an admin to invite you.
+          New firm? <a href="/signup" className="text-[#185FA5] hover:underline">Create a firm account</a>. Otherwise, don't have an account? Ask an admin to invite you.
         </p>
       </div>
     </div>

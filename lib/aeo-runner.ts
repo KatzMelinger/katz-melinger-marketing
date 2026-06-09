@@ -15,6 +15,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import {
   getAvailableProviders,
   safeAsk,
@@ -32,8 +33,12 @@ export type StartRunOptions = {
   promptIds?: string[];
 };
 
-export async function startRun(opts: StartRunOptions = {}): Promise<string> {
+export async function startRun(
+  opts: StartRunOptions = {},
+  tenantId?: string,
+): Promise<string> {
   const supabase = getSupabaseAdmin();
+  const tid = tenantId ?? (await resolveTenantId());
   const providersAvailable = getAvailableProviders();
   const providerIds = (opts.providers ?? providersAvailable.map((p) => p.id)).filter(
     (id) => providersAvailable.some((p) => p.id === id),
@@ -46,7 +51,11 @@ export async function startRun(opts: StartRunOptions = {}): Promise<string> {
     );
   }
 
-  const promptQuery = supabase.from("aeo_prompts").select("id").eq("enabled", true);
+  const promptQuery = supabase
+    .from("aeo_prompts")
+    .select("id")
+    .eq("enabled", true)
+    .eq("tenant_id", tid);
   if (opts.promptIds && opts.promptIds.length > 0) {
     promptQuery.in("id", opts.promptIds);
   }
@@ -62,6 +71,7 @@ export async function startRun(opts: StartRunOptions = {}): Promise<string> {
       providers: providerIds,
       prompt_count: promptCount,
       triggered_by: opts.triggeredBy ?? "manual",
+      tenant_id: tid,
     })
     .select("id")
     .single();
@@ -81,10 +91,12 @@ export async function executeRun(runId: string): Promise<void> {
   try {
     const { data: runRow, error: runErr } = await supabase
       .from("aeo_runs")
-      .select("providers, prompt_count")
+      .select("providers, prompt_count, tenant_id")
       .eq("id", runId)
       .single();
     if (runErr) throw new Error(runErr.message);
+    // Everything this run reads/writes is scoped to the run's tenant.
+    const tid = runRow.tenant_id as string;
 
     const enabledIds = (runRow?.providers as AEOProviderId[]) ?? [];
     const activeProviders = providers.filter((p) => enabledIds.includes(p.id));
@@ -92,12 +104,14 @@ export async function executeRun(runId: string): Promise<void> {
     const { data: prompts, error: pErr } = await supabase
       .from("aeo_prompts")
       .select("id, prompt")
-      .eq("enabled", true);
+      .eq("enabled", true)
+      .eq("tenant_id", tid);
     if (pErr) throw new Error(pErr.message);
 
     const { data: targetRows, error: tErr } = await supabase
       .from("aeo_targets")
-      .select("id, name, type, domain, aliases");
+      .select("id, name, type, domain, aliases")
+      .eq("tenant_id", tid);
     if (tErr) throw new Error(tErr.message);
 
     const targets: AEOTarget[] = (targetRows ?? []).map((t) => ({
@@ -125,6 +139,7 @@ export async function executeRun(runId: string): Promise<void> {
               provider: provider.id,
               model: provider.defaultModel,
               error: result.error,
+              tenant_id: tid,
             });
             return;
           }
@@ -149,6 +164,7 @@ export async function executeRun(runId: string): Promise<void> {
             self_sentiment: analysis.selfSentiment,
             authority_sources: analysis.authoritySources,
             latency_ms: r.latencyMs,
+            tenant_id: tid,
           });
           responseCount++;
         }),
@@ -165,9 +181,9 @@ export async function executeRun(runId: string): Promise<void> {
       })
       .eq("id", runId);
 
-    // Diff against the previous done run and write any alerts.
+    // Diff against the previous done run and write any alerts (same tenant).
     try {
-      await evaluateAEOAlerts(runId);
+      await evaluateAEOAlerts(runId, tid);
     } catch (err) {
       logger.warn(
         { runId, error: err instanceof Error ? err.message : String(err) },

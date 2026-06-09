@@ -15,13 +15,14 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantConfig } from "@/lib/tenant-config";
+import { resolveTenantId } from "@/lib/tenant-context";
+import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
 import { detectCannibalization } from "@/lib/cannibalization";
 import {
   getDomainKeywords,
   getKeywordDifficulty,
   getPhraseMetrics,
-  SEMRUSH_DOMAIN,
   type SemrushKeywordRow,
 } from "@/lib/semrush";
 
@@ -44,32 +45,44 @@ export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return await refreshTrackedKeywords();
+  // Cron has no logged-in user — refresh every active firm explicitly.
+  const tenantIds = await listTenantIds();
+  const results = [];
+  for (const tenantId of tenantIds) {
+    results.push({ tenantId, ...(await refreshTrackedKeywords(tenantId)) });
+  }
+  return NextResponse.json({ tenants: results.length, results });
 }
 
 export async function POST() {
-  return await refreshTrackedKeywords();
+  // UI "Refresh" button — refresh just the caller's firm.
+  const tenantId = await resolveTenantId();
+  return NextResponse.json(await refreshTrackedKeywords(tenantId));
 }
 
-async function refreshTrackedKeywords() {
+async function refreshTrackedKeywords(tenantId: string) {
   try {
-    const supabase = getSupabaseAdmin();
+    const db = getTenantJobDb(tenantId);
+    const { semrushDomain } = await getTenantConfig(tenantId);
 
-    const { data: items, error: loadErr } = await supabase
-      .from("seo_keywords")
-      .select("*")
+    const { data: rawItems, error: loadErr } = await db
+      .select("seo_keywords")
       .order("created_at", { ascending: true });
 
     if (loadErr) {
       console.error("[seo/keywords/refresh] load error:", loadErr.message);
-      return NextResponse.json(
-        { error: "Failed to load tracked keywords" },
-        { status: 500 },
-      );
+      return { error: "Failed to load tracked keywords" };
     }
 
-    if (!items || items.length === 0) {
-      return NextResponse.json({ updated: 0, keywords: [] });
+    const items = (rawItems ?? []) as unknown as Array<{
+      id: string;
+      keyword: string;
+      current_rank: number | null;
+      search_volume: number | null;
+      difficulty: number | null;
+    }>;
+    if (items.length === 0) {
+      return { updated: 0, keywords: [] };
     }
 
     // Pull the firm's full domain_organic report once. 1000 lines covers
@@ -77,16 +90,13 @@ async function refreshTrackedKeywords() {
     // for the keywords likely to rank — adjust if the firm grows past this.
     let semrushRows: SemrushKeywordRow[];
     try {
-      semrushRows = await getDomainKeywords(undefined, undefined, 1000, 0, "traffic", "desc");
+      semrushRows = await getDomainKeywords(semrushDomain, undefined, 1000, 0, "traffic", "desc");
     } catch (err) {
       console.error(
         "[seo/keywords/refresh] Semrush failed:",
         err instanceof Error ? err.message : String(err),
       );
-      return NextResponse.json(
-        { error: "Could not reach Semrush API" },
-        { status: 502 },
-      );
+      return { error: "Could not reach Semrush API" };
     }
 
     // For each tracked keyword try to match it against the firm's organic
@@ -168,7 +178,7 @@ async function refreshTrackedKeywords() {
         url = null;
       }
 
-      const { error: updateErr } = await supabase
+      const { error: updateErr } = await db.raw
         .from("seo_keywords")
         .update({
           previous_rank: item.current_rank,
@@ -178,7 +188,8 @@ async function refreshTrackedKeywords() {
           url,
           last_checked_at: now,
         })
-        .eq("id", item.id);
+        .eq("id", item.id)
+        .eq("tenant_id", tenantId);
 
       if (updateErr) {
         console.error(
@@ -191,9 +202,8 @@ async function refreshTrackedKeywords() {
       updated++;
     }
 
-    const { data: refreshed } = await supabase
-      .from("seo_keywords")
-      .select("*")
+    const { data: refreshed } = await db
+      .select("seo_keywords")
       .order("created_at", { ascending: true });
 
     // Keep the cannibalization snapshot fresh on the same schedule as rankings,
@@ -201,7 +211,7 @@ async function refreshTrackedKeywords() {
     // spend. Non-fatal: a failure here must not fail the ranking refresh.
     let cannibalizationIssues: number | null = null;
     try {
-      const { issues } = await detectCannibalization(SEMRUSH_DOMAIN, semrushRows);
+      const { issues } = await detectCannibalization(semrushDomain, semrushRows, tenantId);
       cannibalizationIssues = issues.length;
     } catch (err) {
       console.error(
@@ -210,19 +220,16 @@ async function refreshTrackedKeywords() {
       );
     }
 
-    return NextResponse.json({
+    return {
       updated,
       keywords: refreshed ?? [],
       cannibalizationIssues,
-    });
+    };
   } catch (err) {
     console.error(
       "[seo/keywords/refresh] Failed:",
       err instanceof Error ? err.message : String(err),
     );
-    return NextResponse.json(
-      { error: "Failed to refresh keyword rankings" },
-      { status: 500 },
-    );
+    return { error: "Failed to refresh keyword rankings" };
   }
 }

@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
@@ -22,8 +22,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    const db = await getTenantDb();
+    const { data, error } = await db
       .from("seo_keywords")
       .delete()
       .eq("id", id)

@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantDb } from "@/lib/tenant-db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,8 +60,9 @@ export async function GET(req: NextRequest) {
     const showHandled = include.includes("handled");
     const showCovered = include.includes("covered");
 
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    // Authenticated, RLS-scoped: returns only the caller's tenant rows.
+    const db = await getTenantDb();
+    const { data, error } = await db
       .from("seo_opportunities")
       .select("*")
       .order("relevance_score", { ascending: false })

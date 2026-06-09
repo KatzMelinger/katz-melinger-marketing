@@ -12,7 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { normalizeLanguage } from "@/lib/content-language";
 import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
 
@@ -20,7 +20,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data: batches, error } = await supabase
     .from("content_batches")
     .select("*")
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
   // If sourceId provided, pull its content for repurposing.
   let sourceText: string | null = null;
   if (body?.sourceId) {
-    const supabase = getSupabaseAdmin();
+    const { supabase } = await getTenantClient();
     const { data } = await supabase
       .from("content_sources")
       .select("content")
@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Batch generation failed";
+    console.error("[content/batches] failed:", msg, err instanceof Error ? err.stack : "");
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

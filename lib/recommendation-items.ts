@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
 export type RecStatus = "active" | "done" | "hold" | "disregard";
 
@@ -82,6 +83,7 @@ export async function listRecommendationItems(
   let q = supabase
     .from("recommendation_items")
     .select("*")
+    .eq("tenant_id", await resolveTenantId())
     .order("created_at", { ascending: false });
   if (status) q = q.eq("status", status);
   const { data, error } = await q;
@@ -94,6 +96,7 @@ export async function listSuppressedTitles(): Promise<string[]> {
   const { data, error } = await supabase
     .from("recommendation_items")
     .select("title")
+    .eq("tenant_id", await resolveTenantId())
     .in("status", ["done", "disregard"]);
   if (error || !data) return [];
   return (data as { title: string }[]).map((r) => r.title);
@@ -113,6 +116,7 @@ export async function updateItemStatus(
   const { data, error } = await supabase
     .from("recommendation_items")
     .update(patch)
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id)
     .select()
     .single();
@@ -125,6 +129,7 @@ export async function deleteItem(id: string): Promise<boolean> {
   const { error } = await supabase
     .from("recommendation_items")
     .delete()
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", id);
   return !error;
 }
@@ -149,11 +154,13 @@ export async function persistGeneratedRecommendations(
   if (recs.length === 0) return { inserted: 0, skipped: 0 };
 
   const supabase = getSupabaseAdmin();
+  const tid = await resolveTenantId();
 
   // Pull existing titles once for dedup. Cheap — typical action list is <200 rows.
   const { data: existing } = await supabase
     .from("recommendation_items")
-    .select("title");
+    .select("title")
+    .eq("tenant_id", tid);
   const existingTitles = new Set(
     (existing ?? []).map((r) => (r as { title: string }).title.toLowerCase().trim()),
   );
@@ -176,6 +183,7 @@ export async function persistGeneratedRecommendations(
       evidence: r.evidence,
       status: "active",
       source_generation_id: sourceGenerationId,
+      tenant_id: tid,
     });
     if (!error) {
       inserted++;

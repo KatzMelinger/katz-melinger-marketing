@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 import {
   getVideoProvider,
   type RenderOptions,
@@ -21,6 +22,8 @@ import {
 } from "./video-providers";
 
 const BUCKET = "video-renders";
+const SIGNED_URL_TTL = 60 * 60 * 24 * 365; // private bucket → long-lived signed URLs
+// TODO(content batch): prefix video paths with tenant_id + flip video_renders RLS.
 
 export type VideoRender = {
   id: string;
@@ -58,6 +61,7 @@ export async function startRender(args: {
   const { data: draft, error: draftErr } = await sb
     .from("content_drafts")
     .select("id, body, title, format")
+    .eq("tenant_id", await resolveTenantId())
     .eq("id", args.draftId)
     .maybeSingle();
   if (draftErr) throw new RenderError(draftErr.message, 500);
@@ -95,6 +99,7 @@ export async function startRender(args: {
       status: job.status,
       options,
       cost_cents: job.estimatedCostCents ?? null,
+      tenant_id: await resolveTenantId(),
     })
     .select("*")
     .single();
@@ -110,6 +115,7 @@ export async function getRender(id: string): Promise<VideoRender | null> {
     .from("video_renders")
     .select("*")
     .eq("id", id)
+    .eq("tenant_id", await resolveTenantId())
     .maybeSingle();
   return (data as VideoRender) ?? null;
 }
@@ -120,6 +126,7 @@ export async function listRendersForDraft(draftId: string): Promise<VideoRender[
     .from("video_renders")
     .select("*")
     .eq("draft_id", draftId)
+    .eq("tenant_id", await resolveTenantId())
     .order("created_at", { ascending: false });
   return (data as VideoRender[]) ?? [];
 }
@@ -177,6 +184,7 @@ async function updateRender(
     .from("video_renders")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id)
+    .eq("tenant_id", await resolveTenantId())
     .select("*")
     .single();
   if (error || !data) {
@@ -200,13 +208,13 @@ async function persistToStorage(
     const bytes = new Uint8Array(await res.arrayBuffer());
     const sb = getSupabaseAdmin();
     const yyyymm = new Date().toISOString().slice(0, 7); // shardable path
-    const path = `${yyyymm}/${renderId}.mp4`;
+    const path = `${await resolveTenantId()}/${yyyymm}/${renderId}.mp4`;
     const { error } = await sb.storage
       .from(BUCKET)
       .upload(path, bytes, { contentType: "video/mp4", upsert: true });
     if (error) return null;
-    const { data } = sb.storage.from(BUCKET).getPublicUrl(path);
-    return { path, publicUrl: data.publicUrl };
+    const { data } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
+    return { path, publicUrl: data?.signedUrl ?? "" };
   } catch {
     return null;
   }
@@ -218,5 +226,9 @@ export async function deleteRender(id: string): Promise<void> {
   if (row?.storage_path) {
     await sb.storage.from(BUCKET).remove([row.storage_path]).catch(() => {});
   }
-  await sb.from("video_renders").delete().eq("id", id);
+  await sb
+    .from("video_renders")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", await resolveTenantId());
 }

@@ -10,7 +10,7 @@
  * /api/seo/backlinks/disavow route.
  */
 
-import { getSupabaseAdmin, getSupabaseServer } from "./supabase-server";
+import { getTenantClient } from "./tenant-db";
 
 export type DisavowStatus = "pending" | "disavowed" | "outreach_sent" | "safe";
 
@@ -27,8 +27,7 @@ function normalizeDomain(input: string): string {
 }
 
 export async function listDisavowActions(): Promise<DisavowAction[]> {
-  const sb = getSupabaseServer();
-  if (!sb) return [];
+  const { supabase: sb } = await getTenantClient();
   const { data, error } = await sb
     .from("seo_disavow_actions")
     .select("domain, status, notes, created_at, updated_at");
@@ -59,7 +58,7 @@ export async function setDisavowStatus(
   if (!domain || !domain.includes(".")) {
     return { ok: false, domain, reason: "Invalid domain" };
   }
-  const sb = getSupabaseAdmin();
+  const { supabase: sb, tenantId } = await getTenantClient();
   const { error } = await sb
     .from("seo_disavow_actions")
     .upsert(
@@ -68,8 +67,9 @@ export async function setDisavowStatus(
         status,
         notes: notes ?? null,
         updated_at: new Date().toISOString(),
+        tenant_id: tenantId,
       },
-      { onConflict: "domain" },
+      { onConflict: "tenant_id,domain" },
     );
   if (error) return { ok: false, domain, reason: error.message };
   return { ok: true, domain, status };
@@ -78,7 +78,7 @@ export async function setDisavowStatus(
 export async function clearDisavowAction(rawDomain: string): Promise<UpsertResult> {
   const domain = normalizeDomain(rawDomain);
   if (!domain) return { ok: false, domain, reason: "Invalid domain" };
-  const sb = getSupabaseAdmin();
+  const { supabase: sb } = await getTenantClient();
   const { error } = await sb
     .from("seo_disavow_actions")
     .delete()

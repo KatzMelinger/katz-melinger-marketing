@@ -13,9 +13,11 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { isStyleScope, type StyleScope } from "@/lib/image-style";
 
 const BUCKET = "generated-images";
+const SIGNED_URL_TTL = 60 * 60 * 24 * 365; // private bucket → long-lived signed URLs
 
 export type StyleAsset = {
   id: string;
@@ -57,9 +59,10 @@ export async function saveStyleAsset(opts: {
   }
 
   const sb = getSupabaseAdmin();
+  const { supabase: db, tenantId } = await getTenantClient();
   const id = crypto.randomUUID();
   const ext = EXT_BY_TYPE[opts.contentType] ?? "png";
-  const path = `style-references/${opts.channel}/${id}.${ext}`;
+  const path = `${tenantId}/style-references/${opts.channel}/${id}.${ext}`;
 
   const { error: uploadError } = await sb.storage
     .from(BUCKET)
@@ -71,10 +74,10 @@ export async function saveStyleAsset(opts: {
     throw new Error(`storage upload failed: ${uploadError.message}`);
   }
 
-  const { data: publicData } = sb.storage.from(BUCKET).getPublicUrl(path);
-  const publicUrl = publicData.publicUrl;
+  const { data: signed } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
+  const publicUrl = signed?.signedUrl ?? "";
 
-  const { data, error } = await sb
+  const { data, error } = await db
     .from("image_style_assets")
     .insert({
       id,
@@ -83,6 +86,7 @@ export async function saveStyleAsset(opts: {
       public_url: publicUrl,
       filename: opts.filename,
       content_type: opts.contentType,
+      tenant_id: tenantId,
     })
     .select("*")
     .maybeSingle();
@@ -99,7 +103,7 @@ export async function saveStyleAsset(opts: {
 export async function listStyleAssets(
   channel?: StyleScope,
 ): Promise<StyleAsset[]> {
-  const sb = getSupabaseAdmin();
+  const { supabase: sb } = await getTenantClient();
   let query = sb
     .from("image_style_assets")
     .select("*")
@@ -111,8 +115,8 @@ export async function listStyleAssets(
 }
 
 export async function deleteStyleAsset(id: string): Promise<void> {
-  const sb = getSupabaseAdmin();
-  const { data: row, error: readError } = await sb
+  const { supabase: db } = await getTenantClient();
+  const { data: row, error: readError } = await db
     .from("image_style_assets")
     .select("storage_path")
     .eq("id", id)
@@ -122,8 +126,8 @@ export async function deleteStyleAsset(id: string): Promise<void> {
   }
   if (!row) return;
 
-  await sb.storage.from(BUCKET).remove([row.storage_path as string]);
-  await sb.from("image_style_assets").delete().eq("id", id);
+  await getSupabaseAdmin().storage.from(BUCKET).remove([row.storage_path as string]);
+  await db.from("image_style_assets").delete().eq("id", id);
 }
 
 /**

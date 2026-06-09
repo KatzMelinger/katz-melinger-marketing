@@ -12,7 +12,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 import { ALL_PROVIDERS, getAvailableProviders } from "@/lib/aeo-providers";
 
 export const runtime = "nodejs";
@@ -34,7 +34,7 @@ type ResponseRow = {
 };
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
 
   // Latest done run.
   const { data: latest } = await supabase

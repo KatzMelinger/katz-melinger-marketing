@@ -13,7 +13,7 @@
  */
 
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { resolveTenantId } from "@/lib/tenant-context";
+import { resolveTenantId, DEFAULT_TENANT_ID } from "@/lib/tenant-context";
 import { SEMRUSH_DOMAIN, SEMRUSH_DATABASE } from "@/lib/semrush";
 import { getGscSiteUrl } from "@/lib/gsc-site-url";
 import {
@@ -111,4 +111,49 @@ export async function getTenantConfig(tenantId?: string): Promise<TenantConfig> 
         ? row.system_prompt
         : KM_SYSTEM_PROMPT,
   };
+}
+
+/** Lowercase + strip protocol/www/path so hosts compare cleanly. */
+function normalizeHost(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[/:].*$/, "");
+}
+
+/**
+ * Reverse lookup: which tenant owns a given site host? Used by session-less
+ * public endpoints (e.g. /api/ai-bots/ingest) that only know which domain was
+ * crawled. Matches the host against each tenant's semrush_domain / gsc_site_url
+ * / firm_website. Falls back to the default tenant when nothing matches, so
+ * single-tenant behavior is unchanged.
+ */
+export async function resolveTenantIdByDomain(
+  host: string | null | undefined,
+): Promise<string> {
+  if (!host) return DEFAULT_TENANT_ID;
+  const target = normalizeHost(host);
+  if (!target) return DEFAULT_TENANT_ID;
+  const sb = getSupabaseServer();
+  if (!sb) return DEFAULT_TENANT_ID;
+  try {
+    const { data } = await sb
+      .from("tenant_settings")
+      .select("tenant_id, semrush_domain, gsc_site_url, firm_website");
+    for (const row of data ?? []) {
+      const candidates = [
+        row.semrush_domain,
+        row.gsc_site_url,
+        row.firm_website,
+      ].filter((v): v is string => typeof v === "string" && v.length > 0);
+      if (candidates.some((c) => normalizeHost(c) === target)) {
+        return row.tenant_id as string;
+      }
+    }
+  } catch {
+    /* table missing / unreachable — fall back */
+  }
+  return DEFAULT_TENANT_ID;
 }

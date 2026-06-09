@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const CONSTANT_CONTACT_API_BASE = "https://api.cc.email/v3";
 const CONSTANT_CONTACT_AUTH_BASE =
@@ -111,6 +112,7 @@ export async function getLatestConstantContactTokens():
   const { data, error } = await sb
     .from("oauth_tokens")
     .select("access_token, refresh_token, expires_at")
+    .eq("tenant_id", await resolveTenantId())
     .eq("provider", "constant_contact")
     .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false })
@@ -179,9 +181,11 @@ export async function persistConstantContactTokens(
     throw new Error(writeError);
   };
 
+  const ccTid = await resolveTenantId();
   const { data: existing, error: existingError } = await sb
     .from("oauth_tokens")
     .select("id")
+    .eq("tenant_id", ccTid)
     .eq("provider", "constant_contact")
     .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false })
@@ -200,6 +204,7 @@ export async function persistConstantContactTokens(
         expires_at: expiresAt,
         updated_at: new Date().toISOString(),
       })
+      .eq("tenant_id", ccTid)
       .eq("id", existing.id);
     if (error) {
       return retryable(`Failed to update OAuth tokens: ${error.message}`);
@@ -209,6 +214,7 @@ export async function persistConstantContactTokens(
 
   const { error } = await sb.from("oauth_tokens").insert({
     provider: "constant_contact",
+    tenant_id: ccTid,
     access_token: tokens.access_token,
     refresh_token: refreshToken,
     expires_at: expiresAt,

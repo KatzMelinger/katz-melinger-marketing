@@ -5,12 +5,12 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const { supabase } = await getTenantClient();
   const { data, error } = await supabase
     .from("aeo_targets")
     .select("*")
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
   const aliases = Array.isArray(body.aliases) ? body.aliases : [];
-  const supabase = getSupabaseAdmin();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("aeo_targets")
     .insert({
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       type: body.type === "self" ? "self" : "competitor",
       domain: body.domain ?? null,
       aliases,
+      tenant_id: tenantId,
     })
     .select()
     .single();

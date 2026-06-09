@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("ai_search_scans")
       .select("*")
+      .eq("tenant_id", await resolveTenantId())
       .eq("id", id)
       .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -27,6 +29,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("ai_search_scans")
     .select("id, domain, base_url, overall_score, created_at")
+    .eq("tenant_id", await resolveTenantId())
     .order("created_at", { ascending: false })
     .limit(20);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

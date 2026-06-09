@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("ai_projects")
     .select("*")
+    .eq("tenant_id", await resolveTenantId())
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ projects: data ?? [] });
@@ -31,6 +33,7 @@ export async function POST(req: NextRequest) {
       name,
       description: body?.description ?? null,
       tags: Array.isArray(body?.tags) ? body.tags : [],
+      tenant_id: await resolveTenantId(),
     })
     .select()
     .single();
