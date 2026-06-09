@@ -12,7 +12,7 @@ import { readContentType } from "@/lib/content-types";
  */
 const TYPE_SCOPED_TABS = [
   { href: "/content", label: "Generate" },
-  { href: "/content/km", label: "KM brief generator" },
+  { href: "/content/km", label: "Content generator" },
   { href: "/content/batch", label: "Multi-format batch" },
   { href: "/content/intelligence", label: "Intelligence" },
   { href: "/content/pipeline", label: "Pipeline" },

@@ -196,6 +196,21 @@ export async function POST(req: Request) {
       planLines.join("\n");
   }
 
+  // Self-QA: bake the publishing checklist into the FIRST pass so the draft
+  // already incorporates the elements the analyzer would otherwise flag after
+  // the fact. This is the "integrate the fixes before the final draft" step —
+  // imported content still gets the separate post-hoc analysis pass.
+  userPrompt +=
+    `\n\n---\nBEFORE YOU FINALIZE — silently self-check the draft against this checklist and fix any miss before returning it (do NOT output the checklist itself):\n` +
+    `- The primary keyword "${brief.primaryKeyword}" appears in the H1, the first 100 words, and at least one H2.\n` +
+    `- Secondary keywords are woven in naturally where they fit (no stuffing).\n` +
+    `- The meta description is a single sentence of 155 characters or fewer.\n` +
+    `- Every approved internal link is actually placed in its section, and no other internal links exist.\n` +
+    `- Each section has a clear, scannable H2/H3 — no section is a wall of text.\n` +
+    `- An FAQ section answers real search questions in a featured-snippet-friendly format.\n` +
+    `- Statutes, deadlines, and figures are stated precisely or omitted — never guessed.\n` +
+    `- The piece reads in KM's brand voice and ends with a clear next step / CTA.`;
+
   // Per-tenant system prompt (Phase 2). Falls back to the code-defined
   // KM_SYSTEM_PROMPT for the default tenant via getTenantConfig.
   const tenantConfig = await getTenantConfig();

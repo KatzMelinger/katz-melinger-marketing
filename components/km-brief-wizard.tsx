@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { CONTENT_LANGUAGES, type ContentLanguage } from "@/lib/content-language";
+import { type ContentLanguage } from "@/lib/content-language";
 import {
   getKmStructure,
   pillarsForPracticeArea,
@@ -78,28 +78,45 @@ export function KmBriefWizard({
   onClose,
   onGenerated,
 }: {
-  opportunity: WizardOpportunity;
+  opportunity?: WizardOpportunity;
   onClose: () => void;
   onGenerated: (draftId: string | null) => void;
 }) {
-  const initialArea = (opportunity.practiceArea as KMPracticeArea) || "employment";
+  // The builder opens either seeded from an SEO opportunity or blank ("from
+  // scratch"). A blank seed just means every field starts empty and the
+  // Competitors step is skipped — everything after that is identical.
+  const fromScratch = !opportunity;
+  const opp: WizardOpportunity = opportunity ?? {
+    id: "",
+    keyword: "",
+    practiceArea: null,
+    recommendedContentType: null,
+    intent: null,
+    pillarId: null,
+    competitor: null,
+    searchVolume: null,
+  };
+  // From scratch we skip step 0 (Competitors) — there is no competitor.
+  const firstStep = fromScratch ? 1 : 0;
+
+  const initialArea = (opp.practiceArea as KMPracticeArea) || "employment";
   const initialPillar =
-    opportunity.pillarId || pillarsForPracticeArea(initialArea)[0]?.id || "";
+    opp.pillarId || pillarsForPracticeArea(initialArea)[0]?.id || "";
   const initialPillarUrl =
     pillarsForPracticeArea(initialArea).find((p) => p.id === initialPillar)?.url ?? "";
 
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(firstStep);
   const [language, setLanguage] = useState<ContentLanguage>("en");
 
   const [brief, setBrief] = useState<Partial<KMPerPageBrief>>({
-    contentType: (opportunity.recommendedContentType as KMContentType) || "blog_post",
+    contentType: (opp.recommendedContentType as KMContentType) || "blog_post",
     practiceArea: initialArea,
-    searchIntent: (opportunity.intent as KMSearchIntent) || "informational",
+    searchIntent: (opp.intent as KMSearchIntent) || "informational",
     pillarId: initialPillar,
-    primaryKeyword: opportunity.keyword,
-    h1: titleCase(opportunity.keyword),
-    urlSlug: slugify(opportunity.keyword),
-    metaTitle: `${titleCase(opportunity.keyword)} | Katz Melinger PLLC`,
+    primaryKeyword: opp.keyword,
+    h1: titleCase(opp.keyword),
+    urlSlug: slugify(opp.keyword),
+    metaTitle: opp.keyword ? `${titleCase(opp.keyword)} | Katz Melinger PLLC` : "",
     metaDescription: "",
     internalPillarLink: initialPillarUrl,
     secondaryKeywords: [],
@@ -117,6 +134,7 @@ export function KmBriefWizard({
 
   const [linkPlan, setLinkPlan] = useState<LinkPlan | null>(null);
   const [linkPlanLoading, setLinkPlanLoading] = useState(false);
+  const [metaBusy, setMetaBusy] = useState(false);
 
   const set = useCallback(
     (patch: Partial<KMPerPageBrief>) => setBrief((b) => ({ ...b, ...patch })),
@@ -135,15 +153,17 @@ export function KmBriefWizard({
     }
   }, [pillars, brief.pillarId, set]);
 
-  // Load secondary-keyword suggestions when reaching Step 3.
+  // Load secondary-keyword suggestions when reaching Step 3, based on the
+  // keyword the user is actually targeting (typed, or seeded from an opportunity).
+  const targetKeyword = brief.primaryKeyword || opp.keyword;
   useEffect(() => {
-    if (step !== 2 || secondary.length > 0) return;
+    if (step !== 2 || secondary.length > 0 || !targetKeyword) return;
     setSecLoading(true);
-    fetch(`/api/seo/briefs/secondary?keyword=${encodeURIComponent(opportunity.keyword)}`)
+    fetch(`/api/seo/briefs/secondary?keyword=${encodeURIComponent(targetKeyword)}`)
       .then((r) => r.json())
       .then((d) => setSecondary(Array.isArray(d?.suggestions) ? d.suggestions : []))
       .finally(() => setSecLoading(false));
-  }, [step, secondary.length, opportunity.keyword]);
+  }, [step, secondary.length, targetKeyword]);
 
   // Build the internal link plan when reaching the final (Meta) step. Asks the
   // Cluster Map which live pages relate to this brief, then pre-selects them all
@@ -172,6 +192,10 @@ export function KmBriefWizard({
         setLinkPlan(plan);
         // Default: include every confirmed link.
         set({ internalLinks: plan.links });
+        // Automatic cannibalization check: the link-plan builder flags any live
+        // page that already targets this exact primary keyword. No flag = safe,
+        // so we auto-confirm. A flag requires explicit reviewer acknowledgment.
+        set({ cannibalizationConfirmed: plan.flagged.length === 0 });
       })
       .catch(() => setLinkPlan({ links: [], flagged: [] }))
       .finally(() => setLinkPlanLoading(false));
@@ -202,6 +226,37 @@ export function KmBriefWizard({
     setManualKw("");
   };
 
+  // Auto-draft the meta title + description from the chosen keywords.
+  const draftMeta = async () => {
+    if (!brief.primaryKeyword) return;
+    setMetaBusy(true);
+    try {
+      const res = await fetch("/api/seo/briefs/meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primaryKeyword: brief.primaryKeyword,
+          secondaryKeywords: brief.secondaryKeywords ?? [],
+          practiceArea: brief.practiceArea,
+          contentType: brief.contentType,
+          h1: brief.h1,
+          language,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        set({
+          metaTitle:
+            typeof d?.metaTitle === "string" && d.metaTitle ? d.metaTitle : brief.metaTitle,
+          metaDescription:
+            typeof d?.metaDescription === "string" ? d.metaDescription : brief.metaDescription,
+        });
+      }
+    } finally {
+      setMetaBusy(false);
+    }
+  };
+
   const structure = getKmStructure(
     (brief.contentType as KMContentType) || "blog_post",
     (brief.practiceArea as KMPracticeArea) || "employment",
@@ -209,8 +264,9 @@ export function KmBriefWizard({
 
   const validationErrors = validateBrief(brief);
 
-  const generate = async () => {
+  const generate = async (lang: ContentLanguage) => {
     setError(null);
+    setLanguage(lang);
     const errs = validateBrief(brief);
     if (errs.length > 0) {
       setError(errs[0]);
@@ -222,23 +278,25 @@ export function KmBriefWizard({
       const briefRes = await fetch("/api/seo/briefs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief, language }),
+        body: JSON.stringify({ brief, language: lang }),
       });
       const briefJson = await briefRes.json();
       const briefId = briefJson?.id ?? null;
 
-      // 2. Mark the opportunity as briefed.
-      await fetch(`/api/seo/opportunities/${opportunity.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "brief", briefId }),
-      }).catch(() => {});
+      // 2. Mark the opportunity as briefed (only when seeded from one).
+      if (opp.id) {
+        await fetch(`/api/seo/opportunities/${opp.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "brief", briefId }),
+        }).catch(() => {});
+      }
 
-      // 3. Generate with the real KM rules.
+      // 3. Generate with the full content rules.
       const genRes = await fetch("/api/content/km-draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...brief, language }),
+        body: JSON.stringify({ ...brief, language: lang }),
       });
       const genJson = await genRes.json();
       if (!genRes.ok) {
@@ -250,12 +308,14 @@ export function KmBriefWizard({
       }
       const draftId = genJson?.draft_id ?? null;
 
-      // 4. Flip the opportunity to in-production with its draft.
-      await fetch(`/api/seo/opportunities/${opportunity.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "in_production", draftId }),
-      }).catch(() => {});
+      // 4. Flip the opportunity to in-production with its draft (if seeded).
+      if (opp.id) {
+        await fetch(`/api/seo/opportunities/${opp.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "in_production", draftId }),
+        }).catch(() => {});
+      }
 
       setDoneDraftId(draftId);
       onGenerated(draftId);
@@ -276,27 +336,34 @@ export function KmBriefWizard({
         <div className="border-b border-slate-200 px-5 py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">SEO content brief for</p>
-              <h3 className="mt-0.5 text-lg font-semibold text-slate-900">{opportunity.keyword}</h3>
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                {fromScratch ? "Content brief" : "SEO content brief for"}
+              </p>
+              <h3 className="mt-0.5 text-lg font-semibold text-slate-900">
+                {brief.primaryKeyword || opp.keyword || "New content brief"}
+              </h3>
             </div>
             <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close">×</button>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {STEPS.map((label, i) => (
-              <button
-                key={label}
-                onClick={() => doneDraftId === undefined && setStep(i)}
-                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                  i === step
-                    ? "bg-[#185FA5] text-white"
-                    : i < step
-                      ? "bg-[#185FA5]/10 text-[#185FA5]"
-                      : "bg-slate-100 text-slate-500"
-                }`}
-              >
-                {i + 1}. {label}
-              </button>
-            ))}
+            {STEPS.map((label, i) => {
+              if (i < firstStep) return null;
+              return (
+                <button
+                  key={label}
+                  onClick={() => doneDraftId === undefined && setStep(i)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    i === step
+                      ? "bg-[#185FA5] text-white"
+                      : i < step
+                        ? "bg-[#185FA5]/10 text-[#185FA5]"
+                        : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {i + 1 - firstStep}. {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -305,10 +372,10 @@ export function KmBriefWizard({
           {doneDraftId !== undefined ? (
             <div className="space-y-3 py-6 text-center">
               <div className="text-3xl">✓</div>
-              <h4 className="text-lg font-semibold text-slate-900">Draft generated with KM rules</h4>
+              <h4 className="text-lg font-semibold text-slate-900">Draft generated</h4>
               <p className="text-sm text-slate-600">
                 A {language === "es" ? "Spanish" : "English"} {brief.contentType?.replace("_", " ")} was
-                generated for &ldquo;{opportunity.keyword}&rdquo; and saved to your drafts.
+                generated for &ldquo;{brief.primaryKeyword || opp.keyword}&rdquo; and saved to your drafts.
               </p>
               <div className="flex justify-center gap-2 pt-2">
                 {doneDraftId && (
@@ -329,25 +396,43 @@ export function KmBriefWizard({
               {step === 0 && (
                 <div className="space-y-3">
                   <p className="text-sm text-slate-600">
-                    This brief targets a keyword where {opportunity.competitor ? <b>{opportunity.competitor}</b> : "a competitor"} outranks Katz Melinger.
+                    This brief targets a keyword where {opp.competitor ? <b>{opp.competitor}</b> : "a competitor"} outranks Katz Melinger.
                   </p>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                    <p><span className="text-slate-500">Primary keyword:</span> <b>{opportunity.keyword}</b></p>
-                    {opportunity.searchVolume != null && (
-                      <p className="mt-1"><span className="text-slate-500">Volume:</span> {opportunity.searchVolume.toLocaleString()}</p>
+                    <p><span className="text-slate-500">Primary keyword:</span> <b>{opp.keyword}</b></p>
+                    {opp.searchVolume != null && (
+                      <p className="mt-1"><span className="text-slate-500">Volume:</span> {opp.searchVolume.toLocaleString()}</p>
                     )}
-                    {opportunity.competitor && (
-                      <p className="mt-1"><span className="text-slate-500">Outranked by:</span> {opportunity.competitor}</p>
+                    {opp.competitor && (
+                      <p className="mt-1"><span className="text-slate-500">Outranked by:</span> {opp.competitor}</p>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500">Review and continue — the next steps build the KM brief.</p>
+                  <p className="text-xs text-slate-500">Review and continue — the next steps build the brief.</p>
                 </div>
               )}
 
               {step === 1 && (
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Primary keyword" full>
-                    <input className="inp" value={brief.primaryKeyword ?? ""} onChange={(e) => set({ primaryKeyword: e.target.value })} />
+                    <input
+                      className="inp"
+                      value={brief.primaryKeyword ?? ""}
+                      onChange={(e) => {
+                        const kw = e.target.value;
+                        // From scratch, seed H1 / slug / meta title from the
+                        // keyword as the user types (these are editable below).
+                        set(
+                          fromScratch
+                            ? {
+                                primaryKeyword: kw,
+                                h1: titleCase(kw),
+                                urlSlug: slugify(kw),
+                                metaTitle: kw ? `${titleCase(kw)} | Katz Melinger PLLC` : "",
+                              }
+                            : { primaryKeyword: kw },
+                        );
+                      }}
+                    />
                   </Field>
                   <Field label="Practice area">
                     <select className="inp" value={brief.practiceArea} onChange={(e) => set({ practiceArea: e.target.value as KMPracticeArea })}>
@@ -374,11 +459,6 @@ export function KmBriefWizard({
                       }}
                     >
                       {pillars.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Language">
-                    <select className="inp" value={language} onChange={(e) => setLanguage(e.target.value as ContentLanguage)}>
-                      {CONTENT_LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
                     </select>
                   </Field>
                   <Field label="H1" full>
@@ -436,7 +516,7 @@ export function KmBriefWizard({
               {step === 3 && (
                 <div className="space-y-3">
                   <p className="text-sm text-slate-600">
-                    KM structure for a <b>{brief.contentType?.replace("_", " ")}</b> ({structure.length} sections). The
+                    Content structure for a <b>{brief.contentType?.replace("_", " ")}</b> ({structure.length} sections). The
                     generator enforces this skeleton — not a generic outline.
                   </p>
                   <ol className="rounded-lg border border-slate-200 divide-y divide-slate-100">
@@ -460,6 +540,17 @@ export function KmBriefWizard({
 
               {step === 4 && (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-600">Meta title &amp; description</span>
+                    <button
+                      type="button"
+                      onClick={draftMeta}
+                      disabled={metaBusy || !brief.primaryKeyword}
+                      className="rounded-md border border-[#185FA5] px-2.5 py-1 text-xs font-medium text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+                    >
+                      {metaBusy ? "Drafting…" : "✨ Draft with AI"}
+                    </button>
+                  </div>
                   <Field label="Meta title" full>
                     <input className="inp" value={brief.metaTitle ?? ""} onChange={(e) => set({ metaTitle: e.target.value })} />
                   </Field>
@@ -533,10 +624,36 @@ export function KmBriefWizard({
                     </div>
                   </div>
 
-                  <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                    <input type="checkbox" className="mt-0.5" checked={!!brief.cannibalizationConfirmed} onChange={(e) => set({ cannibalizationConfirmed: e.target.checked })} />
-                    <span className="text-slate-700">I confirmed this keyword isn&apos;t already covered by an existing KM page (cannibalization check).</span>
-                  </label>
+                  {/* Cannibalization — checked automatically against the Cluster Map. */}
+                  {linkPlanLoading ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                      Checking for keyword cannibalization…
+                    </div>
+                  ) : linkPlan && linkPlan.flagged.length === 0 ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                      ✓ No existing KM page targets &ldquo;{brief.primaryKeyword}&rdquo; — no cannibalization detected.
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+                      <p className="font-medium text-red-800">
+                        ⚠ Possible cannibalization — an existing page already targets this keyword:
+                      </p>
+                      <ul className="mt-1 list-disc pl-5 text-red-700">
+                        {(linkPlan?.flagged ?? []).map((f) => (
+                          <li key={f.url}>{f.title ?? f.url}</li>
+                        ))}
+                      </ul>
+                      <label className="mt-2 flex items-start gap-2 text-red-800">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={!!brief.cannibalizationConfirmed}
+                          onChange={(e) => set({ cannibalizationConfirmed: e.target.checked })}
+                        />
+                        <span>I&apos;ve reviewed this and want to target the keyword anyway.</span>
+                      </label>
+                    </div>
+                  )}
                   {validationErrors.length > 0 && (
                     <p className="text-xs text-amber-600">Before generating: {validationErrors[0]}</p>
                   )}
@@ -550,8 +667,8 @@ export function KmBriefWizard({
         {doneDraftId === undefined && (
           <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3">
             <button
-              onClick={() => setStep((s) => Math.max(0, s - 1))}
-              disabled={step === 0 || generating}
+              onClick={() => setStep((s) => Math.max(firstStep, s - 1))}
+              disabled={step === firstStep || generating}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
             >
               Previous
@@ -565,13 +682,22 @@ export function KmBriefWizard({
                 Continue
               </button>
             ) : (
-              <button
-                onClick={generate}
-                disabled={generating || validationErrors.length > 0}
-                className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {generating ? "Generating…" : `Generate (${language === "es" ? "Spanish" : "English"})`}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => generate("en")}
+                  disabled={generating || validationErrors.length > 0}
+                  className="rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {generating && language === "en" ? "Generating…" : "Generate (English)"}
+                </button>
+                <button
+                  onClick={() => generate("es")}
+                  disabled={generating || validationErrors.length > 0}
+                  className="rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {generating && language === "es" ? "Generando…" : "Generar (Español)"}
+                </button>
+              </div>
             )}
           </div>
         )}

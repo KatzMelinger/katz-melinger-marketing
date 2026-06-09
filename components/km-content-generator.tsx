@@ -219,7 +219,7 @@ export function KMContentGenerator() {
           <h2 className="font-semibold">Per-Page Content Brief</h2>
           <p className="text-xs opacity-70 mt-1">
             Every field below is required before the AI will generate.
-            Content runs against the KM AI System Prompt — voice, structure,
+            Content runs against the content system prompt — voice, structure,
             and AEO rules are enforced server-side.
           </p>
         </div>
@@ -305,7 +305,7 @@ export function KMContentGenerator() {
 
         {loading && (
           <div className="border border-dashed border-black/15 dark:border-white/15 rounded-md p-6 text-sm opacity-70 text-center">
-            Running KM system prompt against Anthropic… long-form content
+            Running the content system prompt against Anthropic… long-form content
             takes 20–60 seconds.
           </div>
         )}

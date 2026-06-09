@@ -109,8 +109,8 @@ export default function ResearchPage() {
         </h1>
         <p className="mt-1 text-sm text-slate-600">
           Curate trusted legal sources and real audience questions, then run
-          the Research Layer to assemble a packet that feeds the KM Brief
-          Generator.
+          the Research Layer to assemble a packet that feeds the Content
+          generator.
         </p>
       </header>
 
@@ -779,7 +779,7 @@ function PacketView({ packet }: { packet: Packet }) {
           href={`/seo/generator?packetId=${packet.id}`}
           className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
         >
-          Use in KM Brief →
+          Use in Content generator →
         </Link>
       </div>
 

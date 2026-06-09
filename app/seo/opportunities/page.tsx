@@ -87,6 +87,7 @@ export default function SeoOpportunitiesPage() {
   const [showCovered, setShowCovered] = useState(false);
   const [showHandled, setShowHandled] = useState(false);
   const [wizardOpp, setWizardOpp] = useState<Opportunity | null>(null);
+  const [scratchOpen, setScratchOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [listFilter, setListFilter] = useState<string>("all");
 
@@ -209,6 +210,12 @@ export default function SeoOpportunitiesPage() {
               ? `Synced ${new Date(data.lastSyncedAt).toLocaleString()}`
               : "Never synced"}
           </span>
+          <button
+            onClick={() => setScratchOpen(true)}
+            className="rounded-md border border-[#185FA5] px-3 py-1.5 font-medium text-[#185FA5] hover:bg-[#185FA5]/5"
+          >
+            New brief from scratch
+          </button>
           <button
             onClick={() => setShowImport(true)}
             className="rounded-md border border-[#185FA5] px-3 py-1.5 font-medium text-[#185FA5] hover:bg-[#185FA5]/5"
@@ -355,10 +362,13 @@ export default function SeoOpportunitiesPage() {
         </div>
       </section>
 
-      {wizardOpp && (
+      {(wizardOpp || scratchOpen) && (
         <KmBriefWizard
-          opportunity={wizardOpp}
-          onClose={() => setWizardOpp(null)}
+          opportunity={wizardOpp ?? undefined}
+          onClose={() => {
+            setWizardOpp(null);
+            setScratchOpen(false);
+          }}
           onGenerated={() => {
             fetchData();
           }}

@@ -758,9 +758,30 @@ function LinkVerificationCard({
     }
   };
 
-  // Reset when switching drafts.
+  // Auto-verify on load / when switching drafts so the reviewer sees link
+  // status without clicking. Read-only — stripping invented links stays the
+  // deliberate one-click action below (we never silently delete from a draft).
   useEffect(() => {
     setResult(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/content/drafts/${draftId}/verify-links`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strip: false }),
+        });
+        const data = await res.json();
+        if (!cancelled && res.ok) {
+          setResult({ links: data.links ?? [], counts: data.counts });
+        }
+      } catch {
+        /* leave unverified — the manual "Verify links" button still works */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [draftId]);
 
   const toneFor = (s: VerifiedLink["status"]): "emerald" | "red" | "neutral" =>
