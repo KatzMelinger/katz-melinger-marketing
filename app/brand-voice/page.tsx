@@ -17,6 +17,11 @@
 
 import { useEffect, useState } from "react";
 
+import {
+  AvatarsWizard,
+  BrandVoiceWizard,
+  DirectionsWizard,
+} from "@/components/brand-voice-wizard";
 import { PRACTICE_AREAS } from "@/lib/practice-areas";
 import { ContentPillarsManager } from "@/components/content-pillars-manager";
 
@@ -338,7 +343,7 @@ export default function BrandVoicePage() {
         <p className="text-sm opacity-70 mt-1">
           One dashboard for the firm context that drives every AI feature in
           MarketOS — keyword research, content drafting, multi-format batches,
-          and review responses.
+          and review responses. Each section has its own ✨ AI wizard.
         </p>
       </div>
 
@@ -388,20 +393,23 @@ function SettingsSection() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+
+  const load = async () => {
+    try {
+      const res = await fetch("/api/brand-voice/settings");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load");
+      setValues(data.settings || {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/brand-voice/settings");
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load");
-        setValues(data.settings || {});
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed");
-      } finally {
-        setLoading(false);
-      }
-    })();
+    load();
   }, []);
 
   const handleSave = async () => {
@@ -428,10 +436,20 @@ function SettingsSection() {
 
   return (
     <Card className="p-5 space-y-5">
-      <div className="flex items-center gap-2">
-        <span aria-hidden>🎙</span>
-        <h2 className="font-medium">Firm settings</h2>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span aria-hidden>🎙</span>
+          <h2 className="font-medium">Firm settings</h2>
+        </div>
+        <Button variant="outline" onClick={() => setWizardOpen(true)}>
+          <span aria-hidden>✨</span>
+          Draft with AI
+        </Button>
       </div>
+
+      {wizardOpen && (
+        <BrandVoiceWizard onClose={() => setWizardOpen(false)} onSaved={load} />
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm opacity-70 py-4">
@@ -515,6 +533,7 @@ function AvatarsSection({
 }) {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const EMPTY_DRAFT = {
     name: "",
     role: "",
@@ -614,15 +633,25 @@ function AvatarsSection({
 
   return (
     <Card className="p-5 space-y-5">
-      <div className="flex items-center gap-2">
-        <span aria-hidden>👤</span>
-        <h2 className="font-medium">Audience avatars</h2>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span aria-hidden>👤</span>
+          <h2 className="font-medium">Audience avatars</h2>
+        </div>
+        <Button variant="outline" onClick={() => setWizardOpen(true)}>
+          <span aria-hidden>✨</span>
+          Suggest with AI
+        </Button>
       </div>
       <p className="text-xs opacity-70 -mt-3">
         Personas representing the kinds of clients the firm wants to attract. The
         AI uses these to tailor keyword suggestions and content. Content
         directions below can also be scoped to a specific avatar.
       </p>
+
+      {wizardOpen && (
+        <AvatarsWizard onClose={() => setWizardOpen(false)} onSaved={reload} />
+      )}
 
       {displayError && (
         <div className="text-red-700 dark:text-red-400 text-sm bg-red-500/10 p-3 rounded-md">
@@ -866,6 +895,7 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
   const [draft, setDraft] = useState<DirectionDraft>(EMPTY_DIRECTION);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   // Callback-ref via useState so we can scroll the form into view on edit
   // without pulling useRef into this otherwise hook-light component.
   const [formEl, setFormEl] = useState<HTMLDivElement | null>(null);
@@ -1028,9 +1058,15 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
 
   return (
     <Card className="p-5 space-y-5">
-      <div className="flex items-center gap-2">
-        <span aria-hidden>🧭</span>
-        <h2 className="font-medium">Content directions</h2>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span aria-hidden>🧭</span>
+          <h2 className="font-medium">Content directions</h2>
+        </div>
+        <Button variant="outline" onClick={() => setWizardOpen(true)}>
+          <span aria-hidden>✨</span>
+          Suggest with AI
+        </Button>
       </div>
       <p className="text-xs opacity-70 -mt-3">
         Skills, prompts, structure rules, and general direction injected into
@@ -1038,6 +1074,10 @@ function DirectionsSection({ avatars }: { avatars: Avatar[] }) {
         content types, audiences, or practice areas to keep it from firing on
         content where it doesn&apos;t belong. Empty scope = applies everywhere.
       </p>
+
+      {wizardOpen && (
+        <DirectionsWizard onClose={() => setWizardOpen(false)} onSaved={refresh} />
+      )}
 
       {error && (
         <div className="text-red-700 dark:text-red-400 text-sm bg-red-500/10 p-3 rounded-md">
