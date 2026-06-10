@@ -22,9 +22,10 @@ import { detectCannibalization } from "@/lib/cannibalization";
 import {
   getDomainKeywords,
   getKeywordDifficulty,
+  getLiveRank,
   getPhraseMetrics,
-  type SemrushKeywordRow,
-} from "@/lib/semrush";
+  type DataForSeoKeywordRow,
+} from "@/lib/dataforseo";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -85,35 +86,35 @@ async function refreshTrackedKeywords(tenantId: string) {
       return { updated: 0, keywords: [] };
     }
 
-    // Pull the firm's full domain_organic report once. 1000 lines covers
-    // katzmelinger.com (currently ~3,595 organic keywords on the SEO Overview)
-    // for the keywords likely to rank — adjust if the firm grows past this.
-    let semrushRows: SemrushKeywordRow[];
+    // Pull the firm's full ranked-keywords snapshot once (DataForSEO Labs).
+    // 1000 rows covers the keywords likely to rank for matching purposes;
+    // keywords missing from the snapshot get a live-SERP rank fallback below.
+    let rankedRows: DataForSeoKeywordRow[];
     try {
-      semrushRows = await getDomainKeywords(semrushDomain, undefined, 1000, 0, "traffic", "desc");
+      rankedRows = await getDomainKeywords(semrushDomain, undefined, 1000, 0, "traffic", "desc");
     } catch (err) {
       console.error(
-        "[seo/keywords/refresh] Semrush failed:",
+        "[seo/keywords/refresh] DataForSEO failed:",
         err instanceof Error ? err.message : String(err),
       );
-      return { error: "Could not reach Semrush API" };
+      return { error: "Could not reach DataForSEO API" };
     }
 
     // For each tracked keyword try to match it against the firm's organic
     // report. If we have no match we still want volume + difficulty in the UI
     // — pull those via phrase_these / phrase_kdi for the unmatched set.
-    const matchByKeyword = new Map<string, SemrushKeywordRow | null>();
+    const matchByKeyword = new Map<string, DataForSeoKeywordRow | null>();
     const unmatchedPhrases: string[] = [];
     const phrasesNeedingKd: string[] = [];
 
     for (const item of items) {
       const target = item.keyword.toLowerCase().trim();
-      const exact = semrushRows.find(
+      const exact = rankedRows.find(
         (r) => r.keyword.toLowerCase().trim() === target,
       );
       const partial =
         exact ??
-        semrushRows.find(
+        rankedRows.find(
           (r) =>
             r.keyword.toLowerCase().includes(target) ||
             target.includes(r.keyword.toLowerCase()),
@@ -146,6 +147,27 @@ async function refreshTrackedKeywords(tenantId: string) {
           ),
     ]);
 
+    // Live-SERP rank fallback. DataForSEO's Labs snapshot can lag live SERPs
+    // and omit keywords the firm actually ranks for (verified in the migration
+    // parity check). For tracked keywords missing from the snapshot, do a
+    // bounded set of real-time SERP lookups so the rank column is accurate —
+    // this makes us MORE accurate than the old Semrush snapshot-only refresh.
+    const LIVE_RANK_CAP = 50;
+    const liveRankMap = new Map<string, number | null>();
+    const toLookup = unmatchedPhrases.slice(0, LIVE_RANK_CAP);
+    if (unmatchedPhrases.length > LIVE_RANK_CAP) {
+      console.warn(
+        `[seo/keywords/refresh] ${unmatchedPhrases.length} keywords missing from snapshot; ` +
+          `live-SERP rank fallback capped at ${LIVE_RANK_CAP} this run.`,
+      );
+    }
+    await Promise.all(
+      toLookup.map(async (kw) => {
+        const rank = await getLiveRank(kw, semrushDomain).catch(() => null);
+        liveRankMap.set(kw.toLowerCase().trim(), rank);
+      }),
+    );
+
     // Apply updates row by row. Could be batched with .upsert, but per-row
     // gives us cleaner error handling and the volume here is small (typically
     // <100 tracked keywords).
@@ -170,9 +192,10 @@ async function refreshTrackedKeywords(tenantId: string) {
           null;
         url = match.url;
       } else {
-        // Not ranked — surface what we can from phrase-level Semrush data.
+        // Not in the snapshot — use the live-SERP rank if we found one, and
+        // surface volume/difficulty from phrase-level data.
         const metrics = metricsMap.get(target);
-        newRank = null;
+        newRank = liveRankMap.get(target) ?? null;
         searchVolume = metrics ? metrics.volume : item.search_volume ?? null;
         difficulty = kdMap.get(target) ?? item.difficulty ?? null;
         url = null;
@@ -207,11 +230,11 @@ async function refreshTrackedKeywords(tenantId: string) {
       .order("created_at", { ascending: true });
 
     // Keep the cannibalization snapshot fresh on the same schedule as rankings,
-    // reusing the domain_organic rows we already pulled above — no extra Semrush
+    // reusing the ranked-keyword rows we already pulled above — no extra API
     // spend. Non-fatal: a failure here must not fail the ranking refresh.
     let cannibalizationIssues: number | null = null;
     try {
-      const { issues } = await detectCannibalization(semrushDomain, semrushRows, tenantId);
+      const { issues } = await detectCannibalization(semrushDomain, rankedRows, tenantId);
       cannibalizationIssues = issues.length;
     } catch (err) {
       console.error(

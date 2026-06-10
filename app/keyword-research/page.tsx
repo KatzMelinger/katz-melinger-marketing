@@ -282,6 +282,17 @@ function Spinner({ className = "" }: { className?: string }) {
 
 export default function KeywordResearchPage() {
   const [activeTab, setActiveTab] = useState<Tab>("discover");
+  // Deep-link support: /keyword-research?seed=<keyword> lands on Discover with
+  // the seed prefilled (e.g. from a Competitor Gaps row). Read from the URL on
+  // mount — no useSearchParams, so no Suspense boundary needed on this page.
+  const [initialSeed, setInitialSeed] = useState("");
+  useEffect(() => {
+    const seed = new URLSearchParams(window.location.search).get("seed");
+    if (seed) {
+      setInitialSeed(seed);
+      setActiveTab("discover");
+    }
+  }, []);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "discover", label: "Discover", icon: "⌕" },
@@ -317,7 +328,7 @@ export default function KeywordResearchPage() {
         ))}
       </div>
 
-      {activeTab === "discover" && <DiscoverTab />}
+      {activeTab === "discover" && <DiscoverTab initialSeed={initialSeed} />}
       {activeTab === "expand" && <ExpandTab />}
       {activeTab === "gaps" && <GapsTab />}
       {activeTab === "tracked" && <TrackedTab />}
@@ -327,8 +338,15 @@ export default function KeywordResearchPage() {
 
 // ---------- Discover tab ---------------------------------------------------
 
-function DiscoverTab() {
-  const [seedKeyword, setSeedKeyword] = useState("");
+function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
+  const [seedKeyword, setSeedKeyword] = useState(initialSeed);
+  // The parent resolves the ?seed= param in a mount effect, after this tab has
+  // already mounted with "", so adopt the seed when it arrives. Deliberately
+  // does NOT auto-run discovery — the user clicks Discover when ready, so a
+  // click-through from another page never kicks off a surprise AI job.
+  useEffect(() => {
+    if (initialSeed) setSeedKeyword(initialSeed);
+  }, [initialSeed]);
   const [practiceArea, setPracticeArea] = useState("All");
   const [intent, setIntent] = useState("all");
   const [loading, setLoading] = useState(false);

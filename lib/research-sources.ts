@@ -14,7 +14,7 @@
  *   - YouTube                    (needs YOUTUBE_API_KEY)
  */
 
-import { getPhraseMetrics } from "@/lib/semrush";
+import { getPhraseMetrics } from "@/lib/dataforseo";
 import { getGoogleAccessToken } from "@/lib/google-access-token";
 import { gscSiteUrlEncoded } from "@/lib/gsc-site-url";
 import type { PeopleAskSourceType } from "@/lib/research-libraries";

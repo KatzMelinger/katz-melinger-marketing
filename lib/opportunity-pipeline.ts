@@ -21,7 +21,8 @@ import {
   getKeywordGapVsCompetitors,
   getTrackedKeywordPerformance,
 } from "./seo-intelligence";
-import { getKeywordTrend, SEMRUSH_DOMAIN } from "./semrush";
+import { SEMRUSH_DOMAIN } from "./semrush";
+import { getKeywordTrend } from "./dataforseo";
 import { generateResearchPacket } from "./research-packet";
 
 export type OpportunitySource = "competitor_gap" | "missing_target" | "long_tail";
