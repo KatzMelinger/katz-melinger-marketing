@@ -1036,10 +1036,28 @@ function ComplianceTab() {
   const [copy, setCopy] = useState("");
   const [platform, setPlatform] = useState("google_search");
   const [practiceArea, setPracticeArea] = useState("All");
-  const [jurisdiction, setJurisdiction] = useState<"NY" | "NJ" | "NY,NJ">("NY,NJ");
+  const [jurisdiction, setJurisdiction] = useState<string>("NY,NJ");
+  const [jurisdictionOpts, setJurisdictionOpts] = useState<
+    { value: string; label: string }[]
+  >([{ value: "NY,NJ", label: "NY + NJ" }]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ComplianceResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Build the jurisdiction picker from the seeded State Rules (Content
+    // Standards → State Rules). Falls back to the NY + NJ combo.
+    fetch("/api/compliance/state-rules?enabledOnly=1", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { rules: [] }))
+      .then((d: { rules?: { jurisdiction_code: string; jurisdiction_name: string }[] }) => {
+        const states = (d.rules ?? []).map((s) => ({
+          value: s.jurisdiction_code,
+          label: `${s.jurisdiction_name} (${s.jurisdiction_code})`,
+        }));
+        setJurisdictionOpts([{ value: "NY,NJ", label: "NY + NJ" }, ...states]);
+      })
+      .catch(() => {});
+  }, []);
 
   const run = async () => {
     if (!copy.trim()) return;
@@ -1066,8 +1084,9 @@ function ComplianceTab() {
       <Card className="p-4 space-y-3">
         <div className="text-sm font-semibold">Ad copy compliance review</div>
         <p className="text-xs opacity-70">
-          Reviewed against NY 22 NYCRR Part 1200 (RPC 7.1-7.5) and NJ RPC 7.1-7.5.
-          Catches superlatives, result guarantees, missing disclaimers, and
+          Reviewed against the selected jurisdiction&rsquo;s attorney-advertising
+          rules (managed under Content Standards → State Rules). Catches
+          superlatives, result guarantees, missing disclaimers, and
           uncertified-specialist claims.
         </p>
 
@@ -1084,12 +1103,8 @@ function ComplianceTab() {
           />
           <Select
             value={jurisdiction}
-            onChange={(v) => setJurisdiction(v as "NY" | "NJ" | "NY,NJ")}
-            options={[
-              { value: "NY,NJ", label: "NY + NJ" },
-              { value: "NY", label: "NY only" },
-              { value: "NJ", label: "NJ only" },
-            ]}
+            onChange={setJurisdiction}
+            options={jurisdictionOpts}
           />
         </div>
 

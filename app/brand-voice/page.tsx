@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Brand Voice & Content Directions — the unified dashboard.
+ * Content Standards — the unified dashboard (brand voice + compliance).
  *
  * Three sections, all driving the AI system-prompt used in keyword research
  * and content generation:
@@ -24,8 +24,19 @@ import {
 } from "@/components/brand-voice-wizard";
 import { PRACTICE_AREAS } from "@/lib/practice-areas";
 import { ContentPillarsManager } from "@/components/content-pillars-manager";
+import LegalLibrary from "@/components/legal-library";
+import StateRulesManager from "@/components/state-rules-manager";
+import DisclaimerLibrary from "@/components/disclaimer-library";
 
-type TabKey = "settings" | "avatars" | "directions" | "samples" | "pillars";
+type TabKey =
+  | "settings"
+  | "avatars"
+  | "directions"
+  | "samples"
+  | "pillars"
+  | "legal"
+  | "stateRules"
+  | "disclaimers";
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "settings", label: "Brand settings", icon: "🎙" },
@@ -33,6 +44,9 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "directions", label: "Content directions", icon: "🧭" },
   { key: "pillars", label: "Content pillars", icon: "🏛" },
   { key: "samples", label: "Writing samples", icon: "📄" },
+  { key: "legal", label: "Legal Authority", icon: "⚖" },
+  { key: "stateRules", label: "State Rules", icon: "🏛" },
+  { key: "disclaimers", label: "Disclaimers", icon: "📎" },
 ];
 
 type Avatar = {
@@ -338,12 +352,13 @@ export default function BrandVoicePage() {
     <div className="p-6 space-y-8 max-w-4xl">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          Brand Voice & Content Directions
+          Content Standards
         </h1>
         <p className="text-sm opacity-70 mt-1">
-          One dashboard for the firm context that drives every AI feature in
-          MarketOS — keyword research, content drafting, multi-format batches,
-          and review responses. Each section has its own ✨ AI wizard.
+          One home for the firm standards that drive every AI feature in
+          MarketOS — brand voice, audience avatars, and content directions, plus
+          the legal authority, state advertising rules, and disclaimers that
+          keep output compliant. Each section has its own ✨ AI wizard.
         </p>
       </div>
 
@@ -381,6 +396,9 @@ export default function BrandVoicePage() {
       {tab === "directions" && <DirectionsSection avatars={avatars} />}
       {tab === "pillars" && <ContentPillarsManager />}
       {tab === "samples" && <WritingSamplesSection />}
+      {tab === "legal" && <LegalLibrary />}
+      {tab === "stateRules" && <StateRulesManager />}
+      {tab === "disclaimers" && <DisclaimerLibrary />}
     </div>
   );
 }
