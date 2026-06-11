@@ -30,8 +30,10 @@ import {
   getKeywordGapVsCompetitors,
   getTrackedKeywordPerformance,
 } from "@/lib/seo-intelligence";
-import { inferIntent, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
+import { inferIntentWithConfidence, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
 import { getPillars } from "@/lib/pillars-store";
+import { deriveActionLabel } from "@/lib/action-label";
+import { assignPriorityLabels, scoreOpportunity } from "@/lib/opportunity-scoring";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
@@ -58,9 +60,35 @@ type Candidate = {
   competitorPosition: number | null;
   opportunityScore: number | null;
   competitor: string | null;
+  competitorsBeatingUs: number | null;
 };
 
 const normalize = (k: string) => k.trim().toLowerCase();
+
+/**
+ * Append a pipeline run record. Logging must never break or mask the pipeline
+ * result, so all failures here are swallowed.
+ */
+async function logPipeline(
+  db: ReturnType<typeof getTenantJobDb>,
+  step: string,
+  status: "success" | "failed",
+  error: string | null,
+  counts: Record<string, number>,
+  startedAt: number,
+): Promise<void> {
+  try {
+    await db.insert("pipeline_logs", {
+      step_reached: step,
+      status,
+      error_message: error,
+      counts,
+      duration_ms: Date.now() - startedAt,
+    });
+  } catch {
+    /* swallow */
+  }
+}
 
 /**
  * Vercel Cron auth — Vercel injects `Authorization: Bearer ${CRON_SECRET}` on
@@ -94,6 +122,11 @@ export async function POST() {
 }
 
 async function runSyncForTenant(tenantId: string) {
+  const startedAt = Date.now();
+  const db = getTenantJobDb(tenantId);
+  const counts: Record<string, number> = {};
+  // Tracks how far the pipeline got, so a failure log says where it stopped.
+  let step = "source";
   try {
     // Firm-specific config (Semrush domain etc.) instead of a hardcoded constant.
     const { semrushDomain } = await getTenantConfig(tenantId);
@@ -112,8 +145,10 @@ async function runSyncForTenant(tenantId: string) {
         longTailSuggestions: [] as Array<{ keyword: string; searchVolume: number }>,
       })),
     ]);
+    counts.gaps = gaps.length;
 
     // Merge candidates, dedupe by normalized keyword (quickwin > missing > longtail).
+    step = "classify";
     const byKeyword = new Map<string, Candidate>();
     for (const g of gaps) {
       const key = normalize(g.keyword);
@@ -126,6 +161,7 @@ async function runSyncForTenant(tenantId: string) {
           competitorPosition: g.competitorPosition ?? null,
           opportunityScore: g.opportunityScore ?? null,
           competitor: g.domain ?? null,
+          competitorsBeatingUs: g.competitorsBeatingUs ?? null,
         });
       }
     }
@@ -140,6 +176,7 @@ async function runSyncForTenant(tenantId: string) {
           competitorPosition: null,
           opportunityScore: null,
           competitor: null,
+          competitorsBeatingUs: null,
         });
       }
     }
@@ -154,16 +191,17 @@ async function runSyncForTenant(tenantId: string) {
           competitorPosition: null,
           opportunityScore: null,
           competitor: null,
+          competitorsBeatingUs: null,
         });
       }
     }
 
     const candidates = Array.from(byKeyword.values()).slice(0, MAX_KEYWORDS);
+    counts.candidates = candidates.length;
     if (candidates.length === 0) {
+      await logPipeline(db, "done", "success", null, counts, startedAt);
       return { synced: 0, message: "No candidates returned from SEMrush." };
     }
-
-    const db = getTenantJobDb(tenantId);
 
     // Preserve user-acted statuses: fetch this tenant's existing rows.
     const keys = candidates.map((c) => c.keyword);
@@ -185,8 +223,12 @@ async function runSyncForTenant(tenantId: string) {
       if (top) coveredByKeyword.set(m.term.trim().toLowerCase(), top.url);
     }
 
+    // Build + classify + score every row (Steps 1 & 5). action_label is left
+    // null here — Step 3 (cannibalization) fills it on its own pass, and the
+    // action-type weight then folds into the score on the next sync.
+    step = "score";
     const now = new Date().toISOString();
-    const rows = candidates.map((c) => {
+    const built = candidates.map((c) => {
       const quality = scoreKeyword(
         c.keyword,
         { searchVolume: c.searchVolume },
@@ -203,8 +245,27 @@ async function runSyncForTenant(tenantId: string) {
         currentRank: c.ourPosition,
       };
       const practiceArea = inferPracticeArea(clusterInput);
-      const intent = inferIntent(clusterInput);
+      const { intent, labeledByDefault } = inferIntentWithConfidence(clusterInput);
       const pillarId = inferPillar(clusterInput, practiceArea, pillars);
+
+      // Step 3 (cannibalization): Create / Optimize / Update. GSC position +
+      // WordPress content-age plug in here once wired; for now this falls back
+      // to the SEMrush rank (our_position) so labels are populated immediately.
+      const existingUrl = coveredByKeyword.get(c.keyword) ?? null;
+      const actionLabel = deriveActionLabel({
+        existingUrl,
+        ourPosition: c.ourPosition,
+        gscPosition: null,
+        existingUrlModifiedAt: null,
+      });
+
+      const opportunityScore = scoreOpportunity({
+        searchVolume: c.searchVolume,
+        ourPosition: c.ourPosition,
+        competitorPosition: c.competitorPosition,
+        competitorsBeatingUs: c.competitorsBeatingUs,
+        actionLabel,
+      });
 
       return {
         keyword: c.keyword,
@@ -218,16 +279,20 @@ async function runSyncForTenant(tenantId: string) {
         exclude_reason: quality.excludeReason ?? null,
         flags: quality.flags,
         intent,
+        labeled_by_default: labeledByDefault,
         practice_area: practiceArea,
         pillar_id: pillarId,
         recommended_content_type: contentTypeFromIntent(intent),
-        existing_url: coveredByKeyword.get(c.keyword) ?? null,
+        existing_url: existingUrl,
+        action_label: actionLabel,
+        opportunity_score: opportunityScore,
         status,
         metrics: {
           searchVolume: c.searchVolume,
           ourPosition: c.ourPosition,
           competitorPosition: c.competitorPosition,
           opportunityScore: c.opportunityScore,
+          competitorsBeatingUs: c.competitorsBeatingUs,
           competitor: c.competitor,
         },
         last_synced_at: now,
@@ -235,21 +300,59 @@ async function runSyncForTenant(tenantId: string) {
       };
     });
 
+    // Priority bucket (high/medium/low) by percentile across this batch.
+    const labels = assignPriorityLabels(built.map((b) => b.opportunity_score));
+    const rows = built.map((b, i) => ({ ...b, priority_label: labels[i] }));
+
     // upsert stamps tenant_id; conflict key is (tenant_id, keyword).
+    step = "persist";
     const { error } = await db.upsert("seo_opportunities", rows, {
       onConflict: "tenant_id,keyword",
     });
-    if (error) {
-      return { error: error.message };
+    if (error) throw new Error(error.message);
+
+    // Step 4: persist competitor gaps — one row per keyword × best competitor.
+    // A gap is "confirmed" when the competitor ranks 1-20 and we don't rank or
+    // rank 21+. Powers the deduplicated page-decision count and the confirmed-
+    // gap scorecard without a live SEMrush call on read.
+    step = "gaps";
+    const gapRows = gaps
+      .filter((g) => (g.domain ?? "").length > 0)
+      .map((g) => {
+        const cp = g.competitorPosition ?? 0;
+        const op = g.ourPosition ?? 0;
+        const confirmed = cp > 0 && cp <= 20 && (op <= 0 || op > 20);
+        return {
+          keyword: normalize(g.keyword),
+          competitor_domain: g.domain as string,
+          competitor_position: g.competitorPosition ?? null,
+          our_position: g.ourPosition ?? null,
+          search_volume: g.searchVolume ?? null,
+          confirmed_gap: confirmed,
+          updated_at: now,
+        };
+      });
+    if (gapRows.length > 0) {
+      const { error: gapError } = await db.upsert("competitor_gaps", gapRows, {
+        onConflict: "tenant_id,keyword,competitor_domain",
+      });
+      if (gapError) throw new Error(gapError.message);
     }
+    counts.competitor_gaps = gapRows.length;
 
     const excluded = rows.filter((r) => r.excluded).length;
+    counts.synced = rows.length;
+    counts.excluded = excluded;
+    await logPipeline(db, "done", "success", null, counts, startedAt);
     return {
       synced: rows.length,
       excluded,
       kept: rows.length - excluded,
+      competitorGaps: gapRows.length,
     };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Sync failed" };
+    const msg = e instanceof Error ? e.message : "Sync failed";
+    await logPipeline(db, step, "failed", msg, counts, startedAt);
+    return { error: msg };
   }
 }
