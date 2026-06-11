@@ -9,19 +9,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getTechnicalSeoMonitoring } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 import { getTenantDb } from "@/lib/tenant-db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function defaultUrl(url: string | null): string {
-  return url && url.trim() ? url : `https://${SEMRUSH_DOMAIN}`;
+function defaultUrl(url: string | null, domain: string): string {
+  return url && url.trim() ? url : `https://${domain}`;
 }
 
 export async function GET(request: NextRequest) {
-  const url = defaultUrl(request.nextUrl.searchParams.get("url"));
+  const { semrushDomain } = await getTenantConfig();
+  const url = defaultUrl(request.nextUrl.searchParams.get("url"), semrushDomain);
   const db = await getTenantDb();
   const { data } = await db
     .from("technical_seo_runs")
@@ -34,7 +35,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const url = defaultUrl(request.nextUrl.searchParams.get("url"));
+  const { semrushDomain } = await getTenantConfig();
+  const url = defaultUrl(request.nextUrl.searchParams.get("url"), semrushDomain);
   const db = await getTenantDb();
   try {
     const data = await getTechnicalSeoMonitoring(url);

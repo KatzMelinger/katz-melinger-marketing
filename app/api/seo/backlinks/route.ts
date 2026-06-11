@@ -5,15 +5,16 @@ import {
   getBacklinkDomains,
   getBacklinkOverview,
 } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const { tenantId, semrushDomain } = await getTenantConfig();
     const [overview, domains] = await Promise.all([
-      getBacklinkOverview(SEMRUSH_DOMAIN),
-      getBacklinkDomains(SEMRUSH_DOMAIN),
+      getBacklinkOverview(semrushDomain),
+      getBacklinkDomains(semrushDomain),
     ]);
 
     const toxicLinks = domains
@@ -22,8 +23,8 @@ export async function GET() {
       .map((domain) => `domain:${domain.domain}`);
 
     return NextResponse.json({
-      domain: SEMRUSH_DOMAIN,
-      competitors: await listCompetitors(),
+      domain: semrushDomain,
+      competitors: await listCompetitors(tenantId),
       overview,
       domains,
       newBacklinksLast30d: Math.max(4, Math.round(domains.length * 0.32)),

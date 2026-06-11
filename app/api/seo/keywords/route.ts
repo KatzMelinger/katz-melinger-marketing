@@ -6,20 +6,21 @@ import {
   getKeywordGapVsCompetitors,
   getTrackedKeywordPerformance,
 } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
+    const { tenantId, semrushDomain } = await getTenantConfig();
     const search = request.nextUrl.searchParams;
     const competitor = search.get("competitor");
-    const base = await getTrackedKeywordPerformance(SEMRUSH_DOMAIN);
+    const base = await getTrackedKeywordPerformance(semrushDomain, tenantId);
 
     if (!competitor) {
       return NextResponse.json({
-        domain: SEMRUSH_DOMAIN,
-        competitors: await listCompetitors(),
+        domain: semrushDomain,
+        competitors: await listCompetitors(tenantId),
         ...base,
       });
     }
@@ -27,19 +28,19 @@ export async function GET(request: NextRequest) {
     // "all" → merged gap across the curated competitor set (the default the
     // page uses). A specific domain → single-competitor gap (backward compat).
     if (competitor === "all") {
-      const competitors = await listCompetitors();
-      const competitive = await getKeywordGapVsCompetitors(competitors, SEMRUSH_DOMAIN);
+      const competitors = await listCompetitors(tenantId);
+      const competitive = await getKeywordGapVsCompetitors(competitors, semrushDomain);
       return NextResponse.json({
-        domain: SEMRUSH_DOMAIN,
+        domain: semrushDomain,
         competitors,
         ...base,
         competitive,
       });
     }
 
-    const competitive = await getKeywordGapVsCompetitor(competitor, SEMRUSH_DOMAIN);
+    const competitive = await getKeywordGapVsCompetitor(competitor, semrushDomain);
     return NextResponse.json({
-      domain: SEMRUSH_DOMAIN,
+      domain: semrushDomain,
       competitor,
       ...base,
       competitive,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getKeywordGapVsCompetitor } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +15,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const opportunities = await getKeywordGapVsCompetitor(domain, SEMRUSH_DOMAIN);
+    const { semrushDomain } = await getTenantConfig();
+    const opportunities = await getKeywordGapVsCompetitor(domain, semrushDomain);
     return NextResponse.json({
-      domain: SEMRUSH_DOMAIN,
+      domain: semrushDomain,
       competitor: domain,
       opportunities,
     });
