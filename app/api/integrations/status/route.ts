@@ -257,6 +257,16 @@ export async function GET() {
     hint: "Required for FB / IG / X / LinkedIn metrics on the Social page. Find tokens in Metricool → Settings → API.",
     feature_pages: ["/social"],
   });
+  items.push({
+    id: "ayrshare",
+    label: "Ayrshare",
+    category: "Social",
+    ...envCheck(["AYRSHARE_API_KEY"]),
+    status: present("AYRSHARE_API_KEY") ? "connected" : "missing_env",
+    hint:
+      "Publishes / schedules posts to LinkedIn, Facebook, Instagram, X, and more from one API. Get the key from the Ayrshare dashboard → API Key. For multiple connected accounts (Business plan), set a per-tenant Profile-Key in tenant_settings.ayrshare_profile_key.",
+    feature_pages: ["/social", "/content"],
+  });
 
   // ---- Google Business Profile (OAuth user-consent) ----
   items.push({
