@@ -34,6 +34,8 @@ import { inferIntentWithConfidence, inferPillar, inferPracticeArea } from "@/lib
 import { getPillars } from "@/lib/pillars-store";
 import { deriveActionLabel } from "@/lib/action-label";
 import { assignPriorityLabels, scoreOpportunity } from "@/lib/opportunity-scoring";
+import { fetchWordPressModifiedMap, normalizeUrlForMatch } from "@/lib/wordpress";
+import { fetchGscPositionMap } from "@/lib/gsc-positions";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
@@ -129,7 +131,7 @@ async function runSyncForTenant(tenantId: string) {
   let step = "source";
   try {
     // Firm-specific config (Semrush domain etc.) instead of a hardcoded constant.
-    const { semrushDomain } = await getTenantConfig(tenantId);
+    const { semrushDomain, gscSiteUrl } = await getTenantConfig(tenantId);
     const competitors = await listCompetitors(tenantId);
     const ctx = {
       brandTokens: KM_BRAND_TOKENS,
@@ -223,9 +225,17 @@ async function runSyncForTenant(tenantId: string) {
       if (top) coveredByKeyword.set(m.term.trim().toLowerCase(), top.url);
     }
 
-    // Build + classify + score every row (Steps 1 & 5). action_label is left
-    // null here — Step 3 (cannibalization) fills it on its own pass, and the
-    // action-type weight then folds into the score on the next sync.
+    // Step 3 inputs: live content-age (WordPress REST) + real positions (GSC).
+    // Both are best-effort — a site without /wp-json or an unconnected GSC just
+    // yields an empty map, and labels fall back to the SEMrush rank.
+    step = "cannibalize";
+    const [wpModified, gscPositions] = await Promise.all([
+      fetchWordPressModifiedMap(semrushDomain).catch(() => new Map<string, string>()),
+      fetchGscPositionMap(tenantId, gscSiteUrl).catch(() => new Map<string, number>()),
+    ]);
+    counts.gsc_positions = gscPositions.size;
+
+    // Build + classify + score every row (Steps 1, 3 & 5).
     step = "score";
     const now = new Date().toISOString();
     const built = candidates.map((c) => {
@@ -248,15 +258,18 @@ async function runSyncForTenant(tenantId: string) {
       const { intent, labeledByDefault } = inferIntentWithConfidence(clusterInput);
       const pillarId = inferPillar(clusterInput, practiceArea, pillars);
 
-      // Step 3 (cannibalization): Create / Optimize / Update. GSC position +
-      // WordPress content-age plug in here once wired; for now this falls back
-      // to the SEMrush rank (our_position) so labels are populated immediately.
+      // Step 3 (cannibalization): Create / Optimize / Update. Prefers the real
+      // GSC position + WordPress content-age (matched by normalized URL);
+      // deriveActionLabel falls back to the SEMrush rank when either is absent.
       const existingUrl = coveredByKeyword.get(c.keyword) ?? null;
+      const normUrl = existingUrl ? normalizeUrlForMatch(existingUrl) : null;
+      const gscPosition = normUrl ? gscPositions.get(normUrl) ?? null : null;
+      const existingUrlModifiedAt = normUrl ? wpModified.get(normUrl) ?? null : null;
       const actionLabel = deriveActionLabel({
         existingUrl,
         ourPosition: c.ourPosition,
-        gscPosition: null,
-        existingUrlModifiedAt: null,
+        gscPosition,
+        existingUrlModifiedAt,
       });
 
       const opportunityScore = scoreOpportunity({
@@ -284,6 +297,8 @@ async function runSyncForTenant(tenantId: string) {
         pillar_id: pillarId,
         recommended_content_type: contentTypeFromIntent(intent),
         existing_url: existingUrl,
+        existing_url_position: gscPosition,
+        existing_url_modified_at: existingUrlModifiedAt,
         action_label: actionLabel,
         opportunity_score: opportunityScore,
         status,
