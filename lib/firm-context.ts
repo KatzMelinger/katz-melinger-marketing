@@ -16,7 +16,7 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { getTenantConfig } from "./tenant-config";
-import { resolveTenantId } from "./tenant-context";
+import { resolveTenantId, DEFAULT_TENANT_ID } from "./tenant-context";
 import { getPracticeAreas } from "./practice-areas-store";
 
 /**
@@ -68,10 +68,26 @@ const FALLBACK_CONTEXT =
   `- Email: ${DEFAULT_CONTACT.firmEmail}\n` +
   `- Website: ${DEFAULT_CONTACT.firmWebsite}\n`;
 
+/**
+ * Last-resort context when the DB / config is unreachable. Only the default
+ * Katz Melinger tenant gets the KM-specific contact details; any other tenant
+ * gets a neutral context that never injects another firm's address/phone/email
+ * (the system prompt forbids fabrication, so contact details are simply
+ * omitted rather than borrowed from KM).
+ */
+function buildFallbackContext(tid: string): string {
+  if (tid === DEFAULT_TENANT_ID) return FALLBACK_CONTEXT;
+  return (
+    `This is a professional services firm.\n\n` +
+    `CONTACT INFO: not available — do not state a specific address, phone ` +
+    `number, email, or website; omit contact details rather than inventing them.\n`
+  );
+}
+
 export async function getFirmContext(tenantId?: string): Promise<string> {
+  const tid = tenantId ?? (await resolveTenantId());
   try {
     const supabase = getSupabaseAdmin();
-    const tid = tenantId ?? (await resolveTenantId());
 
     // Per-tenant config provides the contact/geography fallback (Phase 2).
     // brand_voice_settings still wins when a value is set there (that's where
@@ -195,6 +211,6 @@ export async function getFirmContext(tenantId?: string): Promise<string> {
   } catch {
     // Table missing, network error, or env var problem — fall back gracefully
     // so the AI routes still produce useful output before brand voice is set up.
-    return FALLBACK_CONTEXT;
+    return buildFallbackContext(tid);
   }
 }
