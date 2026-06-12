@@ -68,6 +68,8 @@ export async function GET() {
       promptCoverage: { total: 0, covered: 0, pct: 0 },
       providerCoverage: [],
       shareOfVoice: [],
+      shareOfVoiceOverall: [],
+      selfMentionRatePct: 0,
       topCitationDomains: [],
       authoritySources: [],
       promptDetail: [],
@@ -150,6 +152,33 @@ export async function GET() {
     };
   });
 
+  // Share of voice (B) — the headline metric: across ALL providers, what share
+  // of AI answers mention each brand. Counted as a mention RATE (de-duped per
+  // response) so it reads as "appeared in X% of AI answers", us vs competitors.
+  const answeredRows = rows.filter((r) => !r.error);
+  const totalAnswers = answeredRows.length;
+  const brandHits = new Map<string, { count: number; type: "self" | "competitor" }>();
+  for (const r of answeredRows) {
+    const seen = new Set<string>();
+    for (const m of r.brand_mentions ?? []) {
+      if (seen.has(m.name)) continue; // count each brand once per answer
+      seen.add(m.name);
+      const cur = brandHits.get(m.name) ?? { count: 0, type: m.type };
+      cur.count += 1;
+      brandHits.set(m.name, cur);
+    }
+  }
+  const shareOfVoiceOverall = Array.from(brandHits.entries())
+    .map(([name, v]) => ({
+      name,
+      type: v.type,
+      answers: v.count,
+      mentionRatePct: totalAnswers > 0 ? Math.round((v.count / totalAnswers) * 100) : 0,
+    }))
+    .sort((a, b) => b.answers - a.answers);
+  const selfMentionRatePct =
+    shareOfVoiceOverall.find((b) => b.type === "self")?.mentionRatePct ?? 0;
+
   // Top citation domains, weighted by frequency.
   const domainCount = new Map<string, number>();
   for (const r of rows) {
@@ -225,6 +254,8 @@ export async function GET() {
     promptCoverage,
     providerCoverage,
     shareOfVoice,
+    shareOfVoiceOverall,
+    selfMentionRatePct,
     topCitationDomains,
     authoritySources,
     promptDetail,

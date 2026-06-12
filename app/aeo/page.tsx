@@ -48,6 +48,13 @@ type Dashboard = {
     total: number;
     brands: { name: string; count: number; type: "self" | "competitor"; sharePct: number }[];
   }[];
+  shareOfVoiceOverall: {
+    name: string;
+    type: "self" | "competitor";
+    answers: number;
+    mentionRatePct: number;
+  }[];
+  selfMentionRatePct: number;
   topCitationDomains: { domain: string; count: number }[];
   authoritySources: { domain: string; count: number }[];
   sentimentDistribution: Record<string, number>;
@@ -474,6 +481,33 @@ function OverviewTab({ dashboard, actions }: { dashboard: Dashboard; actions: Co
           </div>
         </Card>
       </div>
+
+      <Card className="p-5">
+        <div className="text-xs uppercase tracking-wider opacity-70 mb-1">
+          Share of Voice — overall
+        </div>
+        <div className="text-sm opacity-70 mb-4">
+          How often each brand appears across all AI answers in the last sweep. You
+          were mentioned in{" "}
+          <span className="font-semibold opacity-100">{dashboard.selfMentionRatePct}%</span>{" "}
+          of answers.
+        </div>
+        <div className="space-y-2">
+          {dashboard.shareOfVoiceOverall.length === 0 && (
+            <p className="text-xs opacity-60">No brand mentions in the last sweep.</p>
+          )}
+          {dashboard.shareOfVoiceOverall.slice(0, 12).map((b) => (
+            <div key={b.name} className="flex items-center gap-3 text-sm">
+              <span className="w-48 truncate opacity-90 flex items-center gap-2">
+                {b.type === "self" && <Pill tone="emerald">us</Pill>}
+                <span className="truncate">{b.name}</span>
+              </span>
+              <div className="flex-1"><Bar pct={b.mentionRatePct} tone={b.type} /></div>
+              <span className="w-24 text-right opacity-80">{b.mentionRatePct}% ({b.answers})</span>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <Card className="p-5">
         <div className="text-xs uppercase tracking-wider opacity-70 mb-3">
