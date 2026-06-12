@@ -145,8 +145,11 @@ export function inferPillar(
 export function inferIntent(input: ClusterInput): KMSearchIntent {
   if (input.intent) return input.intent;
   const text = `${input.primaryKeyword} ${input.clusterName}`.toLowerCase();
-  // Commercial intent: explicit hiring language
-  if (/(lawyer|attorney|near me|hire|consultation|firm|cost|fees?)\b/.test(text)) {
+  // Commercial intent: explicit hiring language.
+  // Note the `s?` on the noun terms — a bare `lawyer\b` fails to match the
+  // plural "lawyers" (the trailing "s" cancels the word boundary), which used
+  // to misclassify "wrongful termination lawyers" as informational → Blog.
+  if (/(lawyers?|attorneys?|near me|hire|consultation|firms?|cost|fees?)\b/.test(text)) {
     return "commercial";
   }
   // Proof intent: results-oriented

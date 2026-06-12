@@ -114,7 +114,8 @@ export default function DecisionsPage() {
           <p className="mt-1 text-sm text-slate-600">
             The go/no-go gate. The Strategy Engine recommends what each keyword
             cluster should become — approve to turn it into a brief, hold, or
-            reject.
+            reject. Approving also confirms the cannibalization check, so the
+            brief is ready to draft in one click from the Production Board.
           </p>
         </div>
         <DashButton onClick={() => setShowNew((v) => !v)}>

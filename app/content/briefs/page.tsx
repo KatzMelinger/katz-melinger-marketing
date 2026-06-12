@@ -30,12 +30,16 @@ import {
   formatRelative,
   type Suggestion,
 } from "@/lib/brief-suggestions";
+import { validateBrief, type KMPerPageBrief } from "@/lib/km-content-system";
 
 export default function BriefsPage() {
   const [rows, setRows] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [sent, setSent] = useState<Record<string, boolean>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<
+    Record<string, { tone: "ok" | "warn"; msg: string }>
+  >({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,13 +59,20 @@ export default function BriefsPage() {
   }, [load]);
 
   async function sendToProduction(s: Suggestion) {
-    const brief = s.suggested_brief ?? {};
+    const brief = (s.suggested_brief ?? {}) as Partial<KMPerPageBrief>;
     const title = brief.h1 || brief.primaryKeyword || s.primary_keyword;
     const keywords = [brief.primaryKeyword || s.primary_keyword, ...(brief.secondaryKeywords ?? [])]
       .filter(Boolean)
       .join(", ");
     setBusyId(s.id);
+    setNotice((m) => {
+      const next = { ...m };
+      delete next[s.id];
+      return next;
+    });
     try {
+      // 1. Create (or find) the Production Board row, linked back to this
+      //    suggestion so draft generation can advance the right row later.
       const res = await fetch("/api/content/pipeline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -72,9 +83,72 @@ export default function BriefsPage() {
           bucket: bucketForContentType(s.content_type),
           contentType: "website",
           notes: brief.specialInstructions || s.reasoning || null,
+          suggestionId: s.id,
         }),
       });
-      if (res.ok) setSent((m) => ({ ...m, [s.id]: true }));
+      // 409 = an item with this title already exists; treat as "already there".
+      if (!res.ok && res.status !== 409) {
+        const j = await res.json().catch(() => ({}));
+        setNotice((m) => ({
+          ...m,
+          [s.id]: { tone: "warn", msg: j?.error || "Could not send to Production." },
+        }));
+        return;
+      }
+      setSent((m) => ({ ...m, [s.id]: true }));
+
+      // 2. One-click draft: generate now ONLY if the brief is already complete,
+      //    including the cannibalization confirmation. We never auto-confirm
+      //    that gate for Diana — if anything's missing, the row stays at Brief
+      //    and she finishes it in the generator (Generate draft button).
+      const missing = validateBrief(brief);
+      if (missing.length > 0) {
+        setNotice((m) => ({
+          ...m,
+          [s.id]: {
+            tone: "warn",
+            msg: `Sent to Production. Finish the brief to auto-draft (${
+              missing.length === 1 ? missing[0].toLowerCase() : `${missing.length} fields missing`
+            }).`,
+          },
+        }));
+        return;
+      }
+
+      setNotice((m) => ({ ...m, [s.id]: { tone: "ok", msg: "Generating draft…" } }));
+      const gen = await fetch("/api/content/km-draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...brief, language: "en", suggestionId: s.id }),
+      });
+      const gj = await gen.json().catch(() => ({}));
+      if (!gen.ok) {
+        setNotice((m) => ({
+          ...m,
+          [s.id]: {
+            tone: "warn",
+            msg: `Sent to Production, but draft generation failed: ${
+              gj?.error || gen.status
+            }. Use Generate draft to retry.`,
+          },
+        }));
+        return;
+      }
+
+      // Draft saved + board auto-advanced to Draft via the km-draft write-back.
+      // Mark the suggestion approved + linked, mirroring the generator flow.
+      if (typeof gj.draft_id === "string") {
+        fetch(`/api/seo/suggestions/${s.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "approved", approvedDraftId: gj.draft_id }),
+        }).catch(() => {});
+      }
+      setNotice((m) => ({
+        ...m,
+        [s.id]: { tone: "ok", msg: "Draft generated — item is now at Draft on the board." },
+      }));
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -148,6 +222,7 @@ export default function BriefsPage() {
               s={s}
               sent={!!sent[s.id]}
               busy={busyId === s.id}
+              notice={notice[s.id]}
               onSend={() => sendToProduction(s)}
               onBack={() => backToDecisions(s.id)}
               onDelete={() => remove(s.id)}
@@ -163,6 +238,7 @@ function BriefCard({
   s,
   sent,
   busy,
+  notice,
   onSend,
   onBack,
   onDelete,
@@ -170,6 +246,7 @@ function BriefCard({
   s: Suggestion;
   sent: boolean;
   busy: boolean;
+  notice?: { tone: "ok" | "warn"; msg: string };
   onSend: () => void;
   onBack: () => void;
   onDelete: () => void;
@@ -269,6 +346,18 @@ function BriefCard({
           Delete
         </DashButton>
       </div>
+
+      {notice && (
+        <p
+          className={`rounded-md border p-2 text-xs ${
+            notice.tone === "ok"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-amber-200 bg-amber-50 text-amber-800"
+          }`}
+        >
+          {notice.msg}
+        </p>
+      )}
     </DashCard>
   );
 }

@@ -31,6 +31,7 @@ type PipelineRow = {
   notes: string | null;
   url: string | null;
   draft_id: string | null;
+  suggestion_id: string | null;
   owner_user_id: string | null;
   status_updated_at: string;
   created_at: string;
@@ -128,7 +129,37 @@ export async function POST(req: NextRequest) {
       ? body.ownerUserId.trim()
       : null;
 
+  // Originating brief_suggestion, if this row was created from one. Lets draft
+  // generation find this row later and advance it (draft_id + status→draft).
+  const suggestionId =
+    typeof body?.suggestionId === "string" && body.suggestionId.trim()
+      ? body.suggestionId.trim()
+      : null;
+
   const { supabase, tenantId } = await getTenantClient();
+
+  // Dedup: block creating a second Production Board item with the same title.
+  // Diana saw "Wrongful Termination Lawyer" appear twice after repeated
+  // Send-to-Production clicks; this is the guard against that.
+  const { data: existing } = await supabase
+    .from("content_pipeline")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .ilike("title", title)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    return NextResponse.json(
+      {
+        error: `A Production Board item titled "${title}" already exists.`,
+        duplicate: true,
+        existingId: (existing as { id: number }).id,
+      },
+      { status: 409 },
+    );
+  }
+
   const { data, error } = await supabase
     .from("content_pipeline")
     .insert({
@@ -141,6 +172,7 @@ export async function POST(req: NextRequest) {
       notes: body?.notes?.trim() || null,
       url: body?.url?.trim() || null,
       draft_id: body?.draftId ?? null,
+      suggestion_id: suggestionId,
       owner_user_id: ownerUserId,
       tenant_id: tenantId,
     })

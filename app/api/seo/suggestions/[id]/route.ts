@@ -78,15 +78,44 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (typeof o.priority === "string") patch.priority = o.priority;
   if (typeof o.recommendedAction === "string") patch.recommended_action = o.recommendedAction;
 
+  const supabase = getSupabaseAdmin();
+  const tenantId = await resolveTenantId();
+
+  // One-click-at-approval: approving a decision is Diana's human sign-off on the
+  // cannibalization check ("link, don't redefine"), so flip that gate in the
+  // stored brief. Every other required field is already auto-filled by the
+  // strategy engine, so the approved brief becomes one-click-generatable on the
+  // Production Board. Generation still runs the live content-overlap check
+  // server-side, so this relaxes the UI gate only — not the actual protection.
+  if (o.status === "approved") {
+    let base: Record<string, unknown>;
+    if (o.suggestedBrief && typeof o.suggestedBrief === "object") {
+      base = { ...(o.suggestedBrief as Record<string, unknown>) };
+    } else {
+      const { data: cur } = await supabase
+        .from("brief_suggestions")
+        .select("suggested_brief")
+        .eq("tenant_id", tenantId)
+        .eq("id", id)
+        .maybeSingle();
+      const existing = cur?.suggested_brief;
+      base =
+        existing && typeof existing === "object"
+          ? { ...(existing as Record<string, unknown>) }
+          : {};
+    }
+    base.cannibalizationConfirmed = true;
+    patch.suggested_brief = base;
+  }
+
   if (Object.keys(patch).length === 1) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("brief_suggestions")
     .update(patch)
-    .eq("tenant_id", await resolveTenantId())
+    .eq("tenant_id", tenantId)
     .eq("id", id)
     .select()
     .maybeSingle();
