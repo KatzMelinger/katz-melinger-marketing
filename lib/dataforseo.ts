@@ -448,3 +448,111 @@ export async function getAIOverviewForKeyword(
     return empty;
   }
 }
+
+// ============================================================================
+// Competitor + related-keyword wrappers (replace Semrush domain_organic_organic
+// / phrase_related / phrase_questions). Field paths follow DataForSEO Labs'
+// documented shapes; parsing is defensive. Validate with
+// scripts/dfs-schema-probe.mjs from a DataForSEO-reachable network.
+// ============================================================================
+
+/** 0-100 trend score from a monthly_searches array (most-recent first). */
+function monthlyTrendScore(monthly: unknown): number {
+  const arr = Array.isArray(monthly) ? monthly : [];
+  const series = arr
+    .slice()
+    .reverse()
+    .map((m) => toNum((m as { search_volume?: unknown })?.search_volume))
+    .filter((n): n is number => n !== null);
+  if (series.length < 4) return 50;
+  const mid = Math.floor(series.length / 2);
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const front = avg(series.slice(0, mid)) || 0.01;
+  const back = avg(series.slice(mid));
+  const growth = (back - front) / front;
+  return Math.round(Math.min(100, Math.max(0, 50 + growth * 40)));
+}
+
+/**
+ * Organic competitors for a domain. Replacement for Semrush
+ * domain_organic_organic. `intersections` = number of shared ranking keywords.
+ */
+export async function getOrganicCompetitors(
+  domain: string | undefined,
+  limit: number = 20,
+): Promise<Array<{ domain: string; commonKeywords: number; estimatedTraffic: number }>> {
+  const json = await cachedDataForSeoPost(
+    "dataforseo_labs/google/competitors_domain/live",
+    {
+      target: domain ?? DATAFORSEO_DOMAIN,
+      location_code: DATAFORSEO_LOCATION_CODE,
+      language_code: DATAFORSEO_LANGUAGE_CODE,
+      limit: Math.min(Math.max(limit, 1), 1000),
+      item_types: ["organic"],
+    },
+  );
+  return extractItems(json)
+    .map((it) => {
+      const organic = it?.metrics?.organic ?? it?.full_domain_metrics?.organic ?? {};
+      return {
+        domain: String(it?.domain ?? "").replace(/^www\./, "").toLowerCase(),
+        commonKeywords: toNum(it?.intersections) ?? 0,
+        estimatedTraffic: Math.round(toNum(organic?.etv) ?? 0),
+      };
+    })
+    .filter((c) => c.domain);
+}
+
+/** Related keywords for a seed (with a trend score). Replaces phrase_related. */
+export async function getRelatedKeywords(
+  seed: string,
+  limit: number = 30,
+): Promise<Array<{ keyword: string; searchVolume: number; trendScore: number }>> {
+  const json = await cachedDataForSeoPost(
+    "dataforseo_labs/google/related_keywords/live",
+    {
+      keyword: seed,
+      location_code: DATAFORSEO_LOCATION_CODE,
+      language_code: DATAFORSEO_LANGUAGE_CODE,
+      limit: Math.min(Math.max(limit, 1), 1000),
+      depth: 1,
+    },
+  );
+  return extractItems(json)
+    .map((it) => {
+      const kd = it?.keyword_data ?? it;
+      const info = kd?.keyword_info ?? {};
+      return {
+        keyword: String(kd?.keyword ?? "").trim(),
+        searchVolume: toNum(info?.search_volume) ?? 0,
+        trendScore: monthlyTrendScore(info?.monthly_searches),
+      };
+    })
+    .filter((k) => k.keyword);
+}
+
+/** Long-tail keyword suggestions for a seed. Replaces phrase_questions. */
+export async function getKeywordSuggestions(
+  seed: string,
+  limit: number = 30,
+): Promise<Array<{ keyword: string; searchVolume: number }>> {
+  const json = await cachedDataForSeoPost(
+    "dataforseo_labs/google/keyword_suggestions/live",
+    {
+      keyword: seed,
+      location_code: DATAFORSEO_LOCATION_CODE,
+      language_code: DATAFORSEO_LANGUAGE_CODE,
+      limit: Math.min(Math.max(limit, 1), 1000),
+    },
+  );
+  return extractItems(json)
+    .map((it) => {
+      const kd = it?.keyword_data ?? it;
+      const info = kd?.keyword_info ?? it?.keyword_info ?? {};
+      return {
+        keyword: String(kd?.keyword ?? it?.keyword ?? "").trim(),
+        searchVolume: toNum(info?.search_volume) ?? 0,
+      };
+    })
+    .filter((k) => k.keyword);
+}

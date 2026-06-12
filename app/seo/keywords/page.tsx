@@ -129,6 +129,11 @@ export default function SeoKeywordsPage() {
   // /api/seo/keywords/targets. The tracker table below shows one row per
   // target, populated with Semrush position/volume/KD data.
   const [targets, setTargets] = useState<string[]>([]);
+  // AI Overview presence per tracked keyword (from seo_keywords.ai_overview_*),
+  // keyed by lowercased keyword. Populated by the keyword refresh (Goal C).
+  const [aiOverview, setAiOverview] = useState<Map<string, { present: boolean; cited: boolean }>>(
+    new Map(),
+  );
   const [newTarget, setNewTarget] = useState("");
   const [targetBusy, setTargetBusy] = useState<string | null>(null);
   const [targetError, setTargetError] = useState<string | null>(null);
@@ -174,6 +179,22 @@ export default function SeoKeywordsPage() {
           Array.isArray(t)
             ? t.map((row: { keyword?: string }) => row.keyword ?? "").filter(Boolean)
             : [],
+        );
+        setAiOverview(
+          new Map(
+            (Array.isArray(t) ? t : [])
+              .filter((row: { keyword?: string }) => Boolean(row?.keyword))
+              .map(
+                (row: {
+                  keyword: string;
+                  ai_overview_present?: boolean | null;
+                  ai_overview_cited?: boolean | null;
+                }) => [
+                  row.keyword.toLowerCase().trim(),
+                  { present: row.ai_overview_present === true, cited: row.ai_overview_cited === true },
+                ],
+              ),
+          ),
         );
         setCompetitors(Array.isArray(comp?.trackedDomains) ? comp.trackedDomains : []);
         const suggestions: Array<{ domain: string; tracked?: boolean }> = Array.isArray(
@@ -678,6 +699,7 @@ export default function SeoKeywordsPage() {
                 <ThButton onClick={() => setSort("trafficCost")}>
                   Value{sortIndicator("trafficCost")}
                 </ThButton>
+                <th className="pb-2 pr-3 font-medium">AI Overview</th>
                 <th className="pb-2 pr-3 font-medium">URL</th>
                 <th className="pb-2 font-medium text-right">Actions</th>
               </tr>
@@ -685,7 +707,7 @@ export default function SeoKeywordsPage() {
             <tbody>
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="py-6 text-center text-slate-500">
+                  <td colSpan={11} className="py-6 text-center text-slate-500">
                     No keywords match these filters.
                   </td>
                 </tr>
@@ -705,6 +727,7 @@ export default function SeoKeywordsPage() {
                   geo.state === "other_state"
                     ? "bg-amber-50 text-amber-700 border-amber-200"
                     : "bg-emerald-50 text-emerald-700 border-emerald-200";
+                const ao = aiOverview.get(item.keyword.toLowerCase().trim());
                 return (
                 <tr
                   key={item.keyword}
@@ -738,6 +761,22 @@ export default function SeoKeywordsPage() {
                   <td className="py-2 pr-3 tabular-nums">{formatNumber(item.estimatedTraffic)}</td>
                   <td className="py-2 pr-3 tabular-nums">
                     {item.trafficCost > 0 ? `$${Math.round(item.trafficCost)}` : "—"}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {ao?.present ? (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                          ao.cited
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-amber-50 text-amber-700 border-amber-200"
+                        }`}
+                        title={ao.cited ? "Our domain is cited in Google's AI Overview" : "AI Overview shown, our domain not cited"}
+                      >
+                        {ao.cited ? "AI · cited" : "AI · not cited"}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="py-2 pr-3">
                     {item.url ? (

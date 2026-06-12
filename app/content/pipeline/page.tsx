@@ -16,6 +16,7 @@ import { useSearchParams } from "next/navigation";
 
 import { ContentNav } from "@/components/content-nav";
 import { ContentTypeTabs } from "@/components/content-type-tabs";
+import { DraftDrawer } from "@/components/draft-drawer";
 import {
   DashCard,
   DashButton,
@@ -111,6 +112,11 @@ export default function PipelinePage() {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
+  // The item currently open in the inline Review draft view (read/edit/approve
+  // without leaving the board). Null = closed.
+  const [reviewItem, setReviewItem] = useState<Item | null>(null);
+  // Pipeline row currently generating a draft (so we can show "Generating…").
+  const [generatingId, setGeneratingId] = useState<number | null>(null);
 
   // Fetch the team list once — used by the owner picker in each row + the
   // ContentModal. Failing silently is fine: the picker just shows "Unassigned".
@@ -187,6 +193,51 @@ export default function PipelinePage() {
     if (!confirm("Delete this content item?")) return;
     await fetch(`/api/content/pipeline/${id}`, { method: "DELETE" });
     refresh();
+  };
+
+  // Open the full Review draft view inline. Any item with a draft uses this.
+  const openDraft = (item: Item) => {
+    if (!item.draft_id) return;
+    setReviewItem(item);
+  };
+
+  // A Draft-status item with no draft yet: generate one (with the same
+  // internal-link + auto-readability pipeline as every other generation),
+  // link it to this row, then open it inline. This is what guarantees every
+  // Draft item has a working draft to view — "no exceptions".
+  const generateDraft = async (item: Item) => {
+    setGeneratingId(item.id);
+    try {
+      const draftContentType =
+        contentType === "website" ? "blog" : contentType; // social | email pass through
+      const res = await fetch("/api/content/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content_type: draftContentType,
+          topic: item.title,
+          target_keywords: item.keywords
+            ? item.keywords.split(",").map((k) => k.trim()).filter(Boolean)
+            : [],
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.draft_id) {
+        await fetch(`/api/content/pipeline/${item.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draftId: data.draft_id }),
+        });
+        setReviewItem({ ...item, draft_id: data.draft_id });
+        refresh();
+      } else {
+        alert(data?.error ?? "Draft generation failed.");
+      }
+    } catch {
+      alert("Draft generation failed.");
+    } finally {
+      setGeneratingId(null);
+    }
   };
 
   return (
@@ -330,15 +381,24 @@ export default function PipelinePage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-700">{BUCKET_LABEL[item.bucket]}</td>
                   <td className="px-4 py-3 text-right space-x-1">
-                    {item.draft_id && (
-                      <a
-                        href={`/content/drafts?id=${item.draft_id}`}
+                    {item.draft_id ? (
+                      <button
+                        onClick={() => openDraft(item)}
                         className="text-xs px-2 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                        title="Open the actual draft content to read, edit, and approve"
+                        title="Open the full review page — metadata, draft, internal links, QA, and approve — right here on the board"
                       >
-                        View draft
-                      </a>
-                    )}
+                        Review draft
+                      </button>
+                    ) : item.status === "draft" ? (
+                      <button
+                        onClick={() => generateDraft(item)}
+                        disabled={generatingId === item.id}
+                        className="text-xs px-2 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                        title="This item is at Draft but has no draft yet — generate one and open it"
+                      >
+                        {generatingId === item.id ? "Generating…" : "Generate draft"}
+                      </button>
+                    ) : null}
                     <button
                       onClick={() => {
                         setEditingItem(item);
@@ -362,6 +422,20 @@ export default function PipelinePage() {
         </DashCard>
       )}
 
+      {reviewItem && (
+        <DraftDrawer
+          item={reviewItem}
+          onClose={() => setReviewItem(null)}
+          onChanged={refresh}
+          onEditMeta={() => {
+            setEditingItem(reviewItem);
+            setShowModal(true);
+          }}
+        />
+      )}
+
+      {/* Rendered last so the metadata form layers above the review view when
+          "Edit all fields" is used. */}
       {showModal && (
         <ContentModal
           item={editingItem}

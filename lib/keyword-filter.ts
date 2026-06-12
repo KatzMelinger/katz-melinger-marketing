@@ -37,6 +37,12 @@ export type FilterContext = {
   brandTokens: string[];
   /** Lower-cased competitor brand tokens (excluded). */
   competitorTokens: string[];
+  /**
+   * Diana-managed exclusion terms (normalized, lower-cased). A keyword
+   * containing any of these is excluded. Curated in the Opportunities UI and
+   * stored in seo_keyword_exclusions — the editable layer over the built-ins.
+   */
+  customExclusions?: string[];
 };
 
 /**
@@ -74,6 +80,18 @@ const NAVIGATIONAL_PATTERNS: RegExp[] = [
   /\bunemployment\b.*\b(login|portal|claim|benefits?|weekly)\b/,
   /\bnys?\s?dol\b/,
   /\bdepartment of labor\b.*\b(login|portal|number|hours)\b/,
+];
+
+/**
+ * Off-domain topics. These are real searches, but for subjects the firm does
+ * not practice — unemployment insurance / benefits and tax-form questions are
+ * not employment-litigation content. Excluding them keeps irrelevant keywords
+ * (e.g. "1099 NYS unemployment", "file for unemployment") out of Opportunities.
+ */
+const OFF_DOMAIN_PATTERNS: RegExp[] = [
+  /\bunemployment\b/,
+  /\b1099\b/,
+  /\bw-?2\b/,
 ];
 
 function normalize(keyword: string): string {
@@ -115,6 +133,15 @@ export function scoreKeyword(
   }
   if (NAVIGATIONAL_PATTERNS.some((re) => re.test(lc))) {
     return { relevanceScore: 0, excluded: true, excludeReason: "Navigational / account query", flags: ["navigational"] };
+  }
+  if (OFF_DOMAIN_PATTERNS.some((re) => re.test(lc))) {
+    return { relevanceScore: 0, excluded: true, excludeReason: "Off-domain (unemployment / tax)", flags: ["off_domain"] };
+  }
+  if (ctx.customExclusions?.length) {
+    const hit = ctx.customExclusions.find((t) => t && lc.includes(t));
+    if (hit) {
+      return { relevanceScore: 0, excluded: true, excludeReason: `Custom: ${hit}`, flags: ["custom_exclusion"] };
+    }
   }
 
   // --- Relevance scoring --------------------------------------------------

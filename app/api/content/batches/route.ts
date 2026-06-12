@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantClient } from "@/lib/tenant-db";
 import { normalizeLanguage } from "@/lib/content-language";
 import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
+import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -108,6 +109,22 @@ export async function POST(req: NextRequest) {
           : null,
       language: normalizeLanguage(body?.language),
     });
+
+    // Auto-readability check for the prose formats in the batch (blog/email),
+    // where a reading-grade score is meaningful. Runs after the response.
+    for (const d of result.drafts) {
+      if (d.format === "blog" || d.format === "email") {
+        scheduleDraftAnalysis({
+          draftId: d.id,
+          body: d.body,
+          title: d.title,
+          topic: body.topic,
+          format: d.format,
+          targetKeywords: Array.isArray(body.targetKeywords) ? body.targetKeywords : [],
+        });
+      }
+    }
+
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Batch generation failed";

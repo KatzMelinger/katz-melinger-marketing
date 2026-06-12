@@ -41,6 +41,8 @@ type Opportunity = {
   status: string;
 };
 
+type KeywordExclusion = { id: string; term: string; reason: string | null };
+
 type Payload = {
   opportunities: Opportunity[];
   counts: { total: number; actionable: number; excluded: number; covered: number; handled: number };
@@ -90,6 +92,8 @@ export default function SeoOpportunitiesPage() {
   const [scratchOpen, setScratchOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [listFilter, setListFilter] = useState<string>("all");
+  const [exclusionsOpen, setExclusionsOpen] = useState(false);
+  const [exclusions, setExclusions] = useState<KeywordExclusion[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -115,6 +119,47 @@ export default function SeoOpportunitiesPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const loadExclusions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/seo/keyword-exclusions", { cache: "no-store" });
+      const json = await res.json();
+      setExclusions(json.exclusions ?? []);
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadExclusions();
+  }, [loadExclusions]);
+
+  // Add a custom exclusion term. The API also flips matching existing rows to
+  // excluded, so we refetch the list to reflect them leaving the actionable view.
+  const addExclusion = async (term: string, reason?: string) => {
+    const res = await fetch("/api/seo/keyword-exclusions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ term, reason }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.error || "Could not add term");
+    setExclusions(json.exclusions ?? []);
+    await fetchData();
+    return json.excludedCount as number;
+  };
+
+  const removeExclusion = async (term: string) => {
+    const res = await fetch(
+      `/api/seo/keyword-exclusions?term=${encodeURIComponent(term)}`,
+      { method: "DELETE" },
+    );
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.error || "Could not remove term");
+    setExclusions(json.exclusions ?? []);
+    await fetchData();
+    return json.restoredCount as number;
+  };
 
   const refresh = async () => {
     setSyncing(true);
@@ -188,6 +233,21 @@ export default function SeoOpportunitiesPage() {
             <input type="checkbox" checked={showHandled} onChange={(e) => setShowHandled(e.target.checked)} />
             <span className="text-slate-700">Show handled</span>
           </label>
+          <button
+            onClick={() => setExclusionsOpen((o) => !o)}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-medium ${
+              exclusionsOpen
+                ? "border-[#185FA5] text-[#185FA5] bg-[#185FA5]/5"
+                : "border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+            }`}
+          >
+            Manage exclusions
+            {exclusions.length > 0 && (
+              <span className="rounded-full bg-slate-200 px-1.5 text-[10px] text-slate-700">
+                {exclusions.length}
+              </span>
+            )}
+          </button>
           {listNames.length > 0 && (
             <label className="inline-flex items-center gap-2">
               <span className="text-slate-500">List:</span>
@@ -231,6 +291,14 @@ export default function SeoOpportunitiesPage() {
           </button>
         </div>
       </div>
+
+      {exclusionsOpen && (
+        <ExclusionsPanel
+          exclusions={exclusions}
+          onAdd={addExclusion}
+          onRemove={removeExclusion}
+        />
+      )}
 
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
         <div className="overflow-x-auto">
@@ -515,6 +583,122 @@ function ImportModal({
         )}
       </div>
     </div>
+  );
+}
+
+function ExclusionsPanel({
+  exclusions,
+  onAdd,
+  onRemove,
+}: {
+  exclusions: KeywordExclusion[];
+  onAdd: (term: string, reason?: string) => Promise<number>;
+  onRemove: (term: string) => Promise<number>;
+}) {
+  const [term, setTerm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const add = async () => {
+    const t = term.trim();
+    if (!t) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const n = await onAdd(t);
+      setTerm("");
+      setMessage(
+        `Added “${t.toLowerCase()}”${n > 0 ? ` — ${n} keyword${n === 1 ? "" : "s"} hidden` : ""}.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add term");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (t: string) => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const n = await onRemove(t);
+      setMessage(
+        `Removed “${t}”${n > 0 ? ` — ${n} keyword${n === 1 ? "" : "s"} restored` : ""}.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove term");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-[#e2e8f0] bg-white p-4 text-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-slate-900">Exclusion list</h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Any keyword that contains one of these terms is hidden from the Radar.
+            Adding a term also hides matching keywords already on the list; removing it brings them back.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {exclusions.length === 0 ? (
+          <span className="text-xs text-slate-400 italic">
+            No custom terms yet. Add one below.
+          </span>
+        ) : (
+          exclusions.map((ex) => (
+            <span
+              key={ex.id}
+              className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700"
+              title={ex.reason ?? undefined}
+            >
+              {ex.term}
+              <button
+                onClick={() => remove(ex.term)}
+                disabled={busy}
+                aria-label={`Remove ${ex.term}`}
+                className="text-slate-400 hover:text-red-600 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+          }}
+          placeholder="e.g. unemployment, workers comp, osha"
+          className="w-64 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+        />
+        <button
+          onClick={add}
+          disabled={busy || !term.trim()}
+          className="rounded-md bg-[#185FA5] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+        >
+          Add term
+        </button>
+        {message && <span className="text-xs text-emerald-700">{message}</span>}
+        {error && <span className="text-xs text-red-700">{error}</span>}
+      </div>
+
+      <p className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-slate-400">
+        Always filtered automatically (built-in): the firm’s own brand, competitor brands,
+        login / portal / account queries, and unemployment / 1099 / tax terms.
+      </p>
+    </section>
   );
 }
 
