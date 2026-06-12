@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchAllFormSubmissions } from "@/lib/callrail-forms";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -75,6 +76,8 @@ async function runFormsSync(supabase: SupabaseClient, tenantId: string): Promise
 }
 
 export async function POST() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });

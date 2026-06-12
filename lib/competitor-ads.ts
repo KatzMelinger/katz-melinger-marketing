@@ -24,14 +24,15 @@ import {
   extractJSON,
   getAnthropic,
 } from "@/lib/anthropic";
-import { cachedDataForSeoPost } from "@/lib/dataforseo-cache";
+import { cachedDataForSeoPost, isDataForSeoOk } from "@/lib/dataforseo-cache";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { getTenantJobDb } from "@/lib/tenant-db";
 import {
   Meter,
   QuotaExceededError,
-  assertWithinQuota,
-  recordUsage,
+  consumeUsageUnit,
+  markReservationCacheHit,
+  releaseUsageUnit,
 } from "@/lib/usage-meter";
 
 export const COMPETITOR_LOOKUP_METER: Meter = "competitor_lookup";
@@ -47,6 +48,19 @@ export class DataForSeoNotConfiguredError extends Error {
       "DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD are not set. Add them to enable competitor ad lookups.",
     );
     this.name = "DataForSeoNotConfiguredError";
+  }
+}
+
+/**
+ * Thrown when DataForSEO returns HTTP 200 but a task-level error
+ * (status_code != 20000). The response carries no usable items, so we must not
+ * meter it as a billable lookup nor let an empty result masquerade as a genuine
+ * "no ads found" signal. The route skips this competitor (transient-failure path).
+ */
+export class DataForSeoTaskError extends Error {
+  constructor(domain: string) {
+    super(`DataForSEO returned a task-level error for ${domain}.`);
+    this.name = "DataForSeoTaskError";
   }
 }
 
@@ -119,8 +133,12 @@ function extractItems(json: any): any[] {
 /**
  * Pull a single competitor's live ads. Quota-gated and metered.
  * Throws QuotaExceededError (caller decides how to surface) or
- * DataForSeoNotConfiguredError (no credentials) — both before any billable
- * work, so neither records usage.
+ * DataForSeoNotConfiguredError (no credentials) before any billable work.
+ *
+ * Metering uses a reserve-then-settle pattern: a unit is atomically reserved
+ * up front (the race-free cap), then refunded if the call turns out free (cache
+ * hit → downgraded to a units=0 trace) or failed (task error → released). Only
+ * a genuine live success keeps the reserved unit.
  */
 export async function fetchLiveCompetitorAds(input: {
   tenantId: string;
@@ -129,26 +147,48 @@ export async function fetchLiveCompetitorAds(input: {
 }): Promise<CompetitorAdResult> {
   const domain = input.competitorDomain.trim().toLowerCase();
   if (!dataForSeoConfigured()) throw new DataForSeoNotConfiguredError();
-  await assertWithinQuota(input.tenantId, COMPETITOR_LOOKUP_METER);
 
-  const json = await cachedDataForSeoPost("serp/google/ads_search/live/advanced", {
-    target: domain,
-    location_code: input.locationCode ?? DEFAULT_LOCATION_CODE,
-    language_code: "en",
-    platform: "all",
-  });
-
-  const cacheHit = Boolean((json as { __cacheHit?: boolean }).__cacheHit);
-  await recordUsage({
+  // Atomically reserve a billable unit BEFORE the call. This is the hard cap:
+  // concurrent callers serialize on the limit row, so they can't both overshoot.
+  const reservation = await consumeUsageUnit({
     tenantId: input.tenantId,
+    meter: COMPETITOR_LOOKUP_METER,
     provider: "dataforseo",
     endpoint: "serp/google/ads_search",
-    meter: COMPETITOR_LOOKUP_METER,
-    units: cacheHit ? 0 : 1,
-    estCostCents: cacheHit ? 0 : EST_COST_CENTS_PER_SEARCH,
-    cacheHit,
+    estCostCents: EST_COST_CENTS_PER_SEARCH,
     detail: domain,
   });
+  if (!reservation.allowed) {
+    throw new QuotaExceededError(COMPETITOR_LOOKUP_METER, reservation.used, reservation.cap);
+  }
+
+  let json: unknown;
+  try {
+    json = await cachedDataForSeoPost("serp/google/ads_search/live/advanced", {
+      target: domain,
+      location_code: input.locationCode ?? DEFAULT_LOCATION_CODE,
+      language_code: "en",
+      platform: "all",
+    });
+  } catch (err) {
+    // Transient/HTTP failure — nothing billable happened; refund and rethrow
+    // (the route skips this competitor).
+    await releaseUsageUnit(reservation.usageId);
+    throw err;
+  }
+
+  const cacheHit = Boolean((json as { __cacheHit?: boolean }).__cacheHit);
+  if (cacheHit) {
+    // Served from the shared cache: free. Keep a units=0 trace, don't bill.
+    await markReservationCacheHit(reservation.usageId);
+  } else if (!isDataForSeoOk(json)) {
+    // Task-level error (HTTP 200, status_code != 20000): DataForSEO doesn't bill
+    // it, and the empty result must not read as a real "no ads found". Refund
+    // and throw so the route skips this competitor.
+    await releaseUsageUnit(reservation.usageId);
+    throw new DataForSeoTaskError(domain);
+  }
+  // Genuine live success keeps the reserved unit as-is.
 
   const items = extractItems(json);
   const ads: CompetitorAd[] = items.slice(0, MAX_ADS_PER_COMPETITOR).map((c) => ({

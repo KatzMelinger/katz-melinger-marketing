@@ -103,11 +103,97 @@ export async function getUsageSummary(tenantId: string, meter: Meter): Promise<U
 
 /**
  * Hard gate: throw QuotaExceededError when this tenant has hit its cap for the
- * month. Call this BEFORE every billable external request.
+ * month.
+ *
+ * NOTE: this is a non-atomic check (SELECT + compare). For a BILLABLE request,
+ * prefer consumeUsageUnit, which reserves a unit under a DB row-lock so
+ * concurrent callers can't both pass the gate and overshoot the cap. Keep using
+ * this only for a cheap advisory pre-check.
  */
 export async function assertWithinQuota(tenantId: string, meter: Meter): Promise<void> {
   const { used, cap } = await getUsageSummary(tenantId, meter);
   if (used >= cap) throw new QuotaExceededError(meter, used, cap);
+}
+
+export type ConsumeResult = {
+  allowed: boolean;
+  used: number;
+  cap: number;
+  /** Ledger row id of the reserved unit; pass to release/markCacheHit to undo. */
+  usageId: string | null;
+};
+
+/**
+ * Atomically reserve ONE billable unit if the tenant is within its monthly cap,
+ * via the consume_api_unit SQL function (row-locked count + insert). Use this
+ * BEFORE firing a billable external request: it both gates and records in one
+ * race-free step, replacing the old assertWithinQuota-then-recordUsage pattern.
+ *
+ * If the request then turns out free (cache hit) or fails, undo the reservation
+ * with markReservationCacheHit / releaseUsageUnit so it doesn't burn quota.
+ *
+ * Fails CLOSED: if the meter RPC errors, this throws rather than silently
+ * allowing the spend (the meter is a cost gate, not best-effort like recording).
+ */
+export async function consumeUsageUnit(input: {
+  tenantId: string;
+  meter: Meter;
+  provider: string;
+  endpoint: string;
+  estCostCents?: number;
+  detail?: string;
+}): Promise<ConsumeResult> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("consume_api_unit", {
+    p_tenant: input.tenantId,
+    p_meter: input.meter,
+    p_default_cap: DEFAULT_MONTHLY_CAP[input.meter] ?? 0,
+    p_provider: input.provider,
+    p_endpoint: input.endpoint,
+    p_units: 1,
+    p_est_cost_cents: input.estCostCents ?? 0,
+    p_detail: input.detail ?? null,
+  });
+  if (error) throw new Error(`usage meter unavailable: ${error.message}`);
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { allowed: boolean; used: number; cap: number; usage_id: string | null }
+    | undefined;
+  return {
+    allowed: Boolean(row?.allowed),
+    used: Number(row?.used ?? 0),
+    cap: Number(row?.cap ?? (DEFAULT_MONTHLY_CAP[input.meter] ?? 0)),
+    usageId: row?.usage_id ?? null,
+  };
+}
+
+/**
+ * Refund a reserved unit entirely (best-effort). Use when the reserved call was
+ * never billable — e.g. it threw before producing a result.
+ */
+export async function releaseUsageUnit(usageId: string | null): Promise<void> {
+  if (!usageId) return;
+  try {
+    await getSupabaseAdmin().from("external_api_usage").delete().eq("id", usageId);
+  } catch (err) {
+    console.warn("[usage-meter] unit release failed:", err);
+  }
+}
+
+/**
+ * Downgrade a reserved unit to a non-billable cache-hit trace (units→0). Use
+ * when the reserved call was served from cache: keep the ledger row for
+ * visibility, but don't let it count against the cap.
+ */
+export async function markReservationCacheHit(usageId: string | null): Promise<void> {
+  if (!usageId) return;
+  try {
+    await getSupabaseAdmin()
+      .from("external_api_usage")
+      .update({ units: 0, est_cost_cents: 0, cache_hit: true })
+      .eq("id", usageId);
+  } catch (err) {
+    console.warn("[usage-meter] cache-hit downgrade failed:", err);
+  }
 }
 
 /**

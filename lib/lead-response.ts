@@ -13,7 +13,7 @@
  * Pure functions only (no I/O) so this is unit-testable and reusable.
  */
 
-const DEFAULT_TZ = "America/New_York"; // firm is NY/NJ; bucket hours in firm-local time
+export const DEFAULT_TZ = "America/New_York"; // firm is NY/NJ; bucket hours in firm-local time
 const BUSINESS_START_HOUR = 8;
 const BUSINESS_END_HOUR = 18; // 6pm
 const CONNECT_MIN_SECONDS = 0; // answered && !voicemail counts as a connection

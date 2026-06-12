@@ -60,6 +60,23 @@ export type ReviewRequest = {
 
 const SMS_MAX_CHARS = 320;
 
+/**
+ * Guarantee an SMS body fits within SMS_MAX_CHARS while keeping exactly one
+ * copy of the review link intact. The model is told to stay under the cap, but
+ * if it runs long (or inlines the link), we strip any model-produced copies,
+ * truncate the prose to make room, and re-append a single link at the end.
+ */
+function enforceSmsLimit(body: string, reviewLink: string): string {
+  // Remove every copy of the link the model may have inserted; we add one back.
+  let text = body.split(reviewLink).join(" ").replace(/\s+/g, " ").trim();
+  const sep = "\n\n";
+  const room = SMS_MAX_CHARS - reviewLink.length - sep.length;
+  // Degenerate case: the link alone meets/exceeds the cap — send just the link.
+  if (room <= 0) return reviewLink.slice(0, SMS_MAX_CHARS);
+  if (text.length > room) text = text.slice(0, room).trimEnd();
+  return text ? `${text}${sep}${reviewLink}` : reviewLink;
+}
+
 /** A URL-safe, unguessable token for the tracked redirect (/r/<token>). */
 function newToken(): string {
   return randomUUID().replace(/-/g, "");
@@ -162,7 +179,11 @@ Draft the ${isSms ? "SMS" : "email"}.`;
 
   // Safety net: if the model dropped the link, append it so the ask is never
   // a dead end. (The compliance pass and staff preview still apply.)
-  if (!body.includes(input.reviewLink)) {
+  if (isSms) {
+    // Hard-cap SMS so Twilio bills/sends a single segment and the body never
+    // ends up with a duplicated link from the append below.
+    body = enforceSmsLimit(body, input.reviewLink);
+  } else if (!body.includes(input.reviewLink)) {
     body = `${body}\n\n${input.reviewLink}`;
   }
 
@@ -359,9 +380,10 @@ export async function recordReviewRequestClick(
     .maybeSingle();
   if (!data) return { destination, found: false };
 
-  // Only advance the funnel forward (queued/sent → clicked); never downgrade
-  // a request already marked posted.
-  if (data.status !== "posted") {
+  // Only advance the funnel forward from an actually-delivered request
+  // (queued/sent → clicked). Never resurrect a `failed` send into the click
+  // funnel, and never downgrade an already-`posted`/`clicked` request.
+  if (data.status === "queued" || data.status === "sent") {
     await supabase
       .from("review_requests")
       .update({ status: "clicked", clicked_at: new Date().toISOString() })

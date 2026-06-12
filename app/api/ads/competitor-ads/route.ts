@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { listCompetitors } from "@/lib/seo-competitors";
+import { guardUser } from "@/lib/supabase-route";
 import { resolveTenantId } from "@/lib/tenant-context";
 import {
   COMPETITOR_LOOKUP_METER,
@@ -33,6 +34,8 @@ export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const tenantId = await resolveTenantId();
     const usage = await getUsageSummary(tenantId, COMPETITOR_LOOKUP_METER);
@@ -44,6 +47,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const tenantId = await resolveTenantId();
     const body = await req.json().catch(() => ({}));

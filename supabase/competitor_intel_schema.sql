@@ -106,3 +106,69 @@ begin
   execute 'drop trigger if exists tenant_usage_limits_touch on public.tenant_usage_limits';
   execute 'create trigger tenant_usage_limits_touch before update on public.tenant_usage_limits for each row execute function public.touch_updated_at()';
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- consume_api_unit — ATOMIC "reserve one billable unit if within the monthly
+-- cap". Replaces the old check-then-act (SELECT sum, compare in app code, then
+-- INSERT later): two concurrent callers could both read used == cap-1, both
+-- pass, and both fire billable calls. Here the tenant_usage_limits row is
+-- SELECT ... FOR UPDATE-locked, so callers for the same (tenant, meter)
+-- serialize: the count and the reserving INSERT happen under one lock, making
+-- the cap a hard gate. The caller refunds the reserved row (units→0 or delete)
+-- if the call turns out free (cache hit) or failed. Service-role only (bypasses
+-- RLS); the app never exposes this to the anon/authenticated client.
+-- Returns one row: (allowed, used, cap, usage_id).
+-- ---------------------------------------------------------------------------
+create or replace function public.consume_api_unit(
+  p_tenant         uuid,
+  p_meter          text,
+  p_default_cap    integer,
+  p_provider       text,
+  p_endpoint       text,
+  p_units          integer default 1,
+  p_est_cost_cents integer default 0,
+  p_detail         text default null
+)
+returns table (allowed boolean, used integer, cap integer, usage_id uuid)
+language plpgsql
+as $$
+declare
+  v_cap         integer;
+  v_used        integer;
+  v_id          uuid;
+  -- UTC first-of-month, matching lib/usage-meter.ts monthStartISO().
+  v_month_start timestamptz := date_trunc('month', timezone('utc', now())) at time zone 'utc';
+begin
+  -- Seed the limit row if absent, then lock it so concurrent consumers for this
+  -- (tenant, meter) serialize here. This lock is what makes the cap atomic.
+  insert into public.tenant_usage_limits (tenant_id, meter, monthly_cap)
+  values (p_tenant, p_meter, p_default_cap)
+  on conflict (tenant_id, meter) do nothing;
+
+  select monthly_cap into v_cap
+  from public.tenant_usage_limits
+  where tenant_id = p_tenant and meter = p_meter
+  for update;
+
+  v_cap := coalesce(v_cap, p_default_cap);
+
+  select coalesce(sum(units), 0)::integer into v_used
+  from public.external_api_usage
+  where tenant_id = p_tenant
+    and meter = p_meter
+    and created_at >= v_month_start;
+
+  if v_used >= v_cap then
+    return query select false, v_used, v_cap, null::uuid;
+    return;
+  end if;
+
+  insert into public.external_api_usage
+    (tenant_id, provider, endpoint, meter, units, est_cost_cents, cache_hit, detail)
+  values
+    (p_tenant, p_provider, p_endpoint, p_meter, p_units, p_est_cost_cents, false, p_detail)
+  returning id into v_id;
+
+  return query select true, v_used + p_units, v_cap, v_id;
+end;
+$$;

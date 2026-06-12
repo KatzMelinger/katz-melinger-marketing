@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 
 import { normalizePhone } from "@/lib/lead-response";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -20,6 +21,8 @@ const STATUSES = new Set(["new", "called_back", "reached", "dead"]);
 type Json = Record<string, unknown>;
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ rows: [] });
   const tid = await resolveTenantId();
@@ -32,6 +35,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });

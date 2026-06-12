@@ -20,6 +20,7 @@ import {
   type ReviewRequest,
   type ReviewRequestStatus,
 } from "@/lib/review-requests";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,8 @@ function funnelOf(requests: ReviewRequest[]) {
 }
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const requests = await listReviewRequests();
     return NextResponse.json({
@@ -59,6 +62,8 @@ export async function GET() {
 const VALID_CHANNELS = new Set(["email", "sms"]);
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;

@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { computeLeadResponse } from "@/lib/lead-response-server";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -34,6 +35,8 @@ function parseNum(raw: string | null): number | null {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });

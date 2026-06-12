@@ -5,12 +5,15 @@
 
 import { NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ snapshots: [] });
   const tid = await resolveTenantId();
