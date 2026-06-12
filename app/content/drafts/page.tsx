@@ -14,6 +14,14 @@
 import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { diffWords, type Change } from "diff";
+import { marked } from "marked";
+
+/**
+ * Prose styling for rendered markdown previews — kept identical to the Content
+ * Studio preview (app/content/page.tsx) so a draft looks the same everywhere.
+ */
+const PROSE_CLASS =
+  "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-[#185FA5] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_table]:my-2 [&_table]:w-full [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1";
 
 import { ContentNav } from "@/components/content-nav";
 import { ContentTypeTabs } from "@/components/content-type-tabs";
@@ -31,6 +39,11 @@ import {
   readContentType,
 } from "@/lib/content-types";
 import { DEFAULT_PRACTICE_AREAS } from "@/lib/practice-areas";
+import { ALL_KM_PILLARS } from "@/lib/km-content-system";
+
+const PILLAR_LABEL: Record<string, string> = Object.fromEntries(
+  ALL_KM_PILLARS.map((p) => [p.id, p.label]),
+);
 
 type Draft = {
   id: string;
@@ -108,7 +121,78 @@ const FORMAT_LABEL: Record<string, string> = {
   podcast: "Podcast script",
   video_short: "Short video script",
   video_long: "YouTube video script",
+  // KM-generated website formats (km_${contentType} from /api/content/km-draft).
+  km_practice_page: "Service / web page",
+  km_blog_post: "Blog post",
+  km_case_result: "Case result",
 };
+
+/**
+ * Website drafts come in three editorial kinds that don't map 1:1 to the raw
+ * `format` column: imports are all format "blog" distinguished by `template`
+ * (webpage / case_study / blog_general), while KM-generated drafts use km_*
+ * formats. This classifier collapses both into the kind Diana filters by.
+ */
+type WebsiteKind = "service_page" | "case_result" | "blog";
+
+function websiteKind(d: Draft): WebsiteKind {
+  const meta = (d.metadata ?? {}) as Record<string, unknown>;
+  const ctx =
+    meta.origin_context && typeof meta.origin_context === "object"
+      ? (meta.origin_context as Record<string, unknown>)
+      : null;
+  const pageType = (
+    ctx && typeof ctx.page_type === "string" ? ctx.page_type : ""
+  ).toLowerCase();
+  const fmt = d.format;
+  const tmpl = d.template ?? "";
+  if (
+    fmt === "km_practice_page" ||
+    tmpl === "webpage" ||
+    /service|web page|location|practice area/.test(pageType)
+  ) {
+    return "service_page";
+  }
+  if (fmt === "km_case_result" || tmpl === "case_study" || /case result|case study/.test(pageType)) {
+    return "case_result";
+  }
+  return "blog";
+}
+
+const WEBSITE_FILTERS: { key: string; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "blog", label: "Blog post" },
+  { key: "service_page", label: "Service / web page" },
+  { key: "case_result", label: "Case result" },
+];
+
+/** Friendly label for a filter chip — website kinds, then formats, then raw. */
+function filterLabel(f: string): string {
+  const w = WEBSITE_FILTERS.find((x) => x.key === f);
+  if (w) return w.label;
+  if (f === "all") return "All";
+  return FORMAT_LABEL[f] ?? f;
+}
+
+/**
+ * Diana's "which pillar + keyword is this draft for" label, replacing the
+ * unhelpful raw origin source (e.g. MARKETING_ALERT_ANALYSIS). Derived from the
+ * KM brief / SEO brief stored on the draft. Falls back to the keyword alone.
+ */
+function readPillarKeyword(d: Draft): string | null {
+  const meta = (d.metadata ?? {}) as Record<string, unknown>;
+  const brief =
+    meta.km_brief && typeof meta.km_brief === "object"
+      ? (meta.km_brief as Record<string, unknown>)
+      : null;
+  const seo = (d.seo_brief ?? null) as Record<string, unknown> | null;
+  const primary = String(brief?.primaryKeyword ?? seo?.primaryKeyword ?? "").trim();
+  const pillarId = String(brief?.pillarId ?? seo?.pillarId ?? "").trim();
+  const pillarLabel = pillarId ? PILLAR_LABEL[pillarId] ?? "" : "";
+  if (pillarLabel && primary) return `${pillarLabel} — ${primary}`;
+  if (primary) return primary;
+  return null;
+}
 
 /**
  * Display label for a draft's "what kind of content is this" pill. Prefers:
@@ -165,6 +249,19 @@ type Analysis = {
   linkability_score: number | null;
   linkability_findings?: string[];
   outreach_angles?: { audience: string; pitch: string }[];
+  // Attorney-advertising compliance (advisory). Optional so older analyses
+  // loaded from the DB before the migration don't fail the type check.
+  compliance_score?: number | null;
+  compliance_status?: "compliant" | "needs_changes" | "non_compliant" | null;
+  compliance_violations?: {
+    rule: string;
+    severity: "high" | "medium" | "low";
+    excerpt: string;
+    reason: string;
+    fix: string;
+  }[];
+  compliance_required_disclaimers?: string[];
+  compliance_summary?: string;
   suggested_titles?: string[];
   // Live-only fields (stripped before persistence). Optional so older
   // analyses loaded from DB don't fail the type check.
@@ -237,11 +334,19 @@ export default function DraftsPage() {
   const [applyingFindings, setApplyingFindings] = useState<string[] | null>(
     null,
   );
+  const [approveMsg, setApproveMsg] = useState<string | null>(null);
+  const [bodyView, setBodyView] = useState<"write" | "preview">("write");
 
   // Format filter buttons are restricted to the active type's formats.
   // "all" means all formats for the current type, not literally every draft.
   const typeFormats = CONTENT_TYPE_FORMATS[contentType];
-  const formatFilters = useMemo(() => ["all", ...typeFormats], [typeFormats]);
+  const formatFilters = useMemo(
+    () =>
+      contentType === "website"
+        ? WEBSITE_FILTERS.map((f) => f.key)
+        : ["all", ...typeFormats],
+    [contentType, typeFormats],
+  );
 
   // Reset the format filter when the user switches the top-level type tab
   // so we don't leave a stale "linkedin" filter active when switching to
@@ -273,6 +378,7 @@ export default function DraftsPage() {
   }, []);
 
   useEffect(() => {
+    setApproveMsg(null);
     if (!selectedId) {
       setSelectedDraft(null);
       setAnalysis(null);
@@ -289,20 +395,37 @@ export default function DraftsPage() {
   }, [selectedId]);
 
   const filtered = useMemo(() => {
-    const byType = drafts.filter((d) =>
-      (typeFormats as readonly string[]).includes(d.format),
-    );
-    const byFormat =
-      filter === "all" ? byType : byType.filter((d) => d.format === filter);
-    if (!search.trim()) return byFormat;
+    // Website = imported "blog"-format drafts + KM-generated km_* formats,
+    // filtered by editorial kind. Social/email keep simple format filters.
+    const byType =
+      contentType === "website"
+        ? drafts.filter((d) => d.format === "blog" || d.format.startsWith("km_"))
+        : drafts.filter((d) => (typeFormats as readonly string[]).includes(d.format));
+    const byFilter =
+      filter === "all"
+        ? byType
+        : contentType === "website"
+          ? byType.filter((d) => websiteKind(d) === filter)
+          : byType.filter((d) => d.format === filter);
+    if (!search.trim()) return byFilter;
     const lc = search.toLowerCase();
-    return byFormat.filter(
+    return byFilter.filter(
       (d) =>
         d.topic.toLowerCase().includes(lc) ||
         (d.title ?? "").toLowerCase().includes(lc) ||
         d.body.toLowerCase().includes(lc),
     );
-  }, [drafts, search, filter, typeFormats]);
+  }, [drafts, search, filter, typeFormats, contentType]);
+
+  // Rendered HTML for the Body "Preview" tab. marked.parse is sync here (no
+  // async extensions configured), matching the Content Studio preview.
+  const renderedBody = useMemo(
+    () =>
+      editBody.trim()
+        ? (marked.parse(editBody, { async: false }) as string)
+        : "<p class='text-slate-400'>Nothing to preview yet.</p>",
+    [editBody],
+  );
 
   const save = async () => {
     if (!selectedDraft) return;
@@ -348,6 +471,15 @@ export default function DraftsPage() {
     fetch(`/api/content/drafts/${selectedDraft.id}`)
       .then((r) => r.json())
       .then((data) => setSelectedDraft(data.draft));
+  };
+
+  // Approve → QA. Setting the draft status to "review" is synced by the
+  // drafts [id] PATCH route to the linked Production Board row (and creates one
+  // if none exists), which the Publishing QA stage reads (?status=review).
+  const approveToQA = async () => {
+    if (!selectedDraft) return;
+    await updateStatus("review");
+    setApproveMsg("Approved — moved to QA. The Production Board item is now at Review (Publishing QA).");
   };
 
   const remove = async () => {
@@ -455,7 +587,7 @@ export default function DraftsPage() {
                       : "border-slate-200 text-slate-600 hover:border-slate-400"
                   }`}
                 >
-                  {f}
+                  {filterLabel(f)}
                 </button>
               ))}
             </div>
@@ -467,7 +599,7 @@ export default function DraftsPage() {
               <p className="text-xs text-slate-500">No drafts.</p>
             )}
             {filtered.map((d) => {
-              const { label: originLabel } = readOrigin(d);
+              const sourceLabel = readPillarKeyword(d) ?? readOrigin(d).label;
               return (
               <button
                 key={d.id}
@@ -491,9 +623,9 @@ export default function DraftsPage() {
                 <div className="text-sm font-medium mt-1 line-clamp-2">
                   {d.title || d.topic}
                 </div>
-                {originLabel && (
+                {sourceLabel && (
                   <div className="text-[10px] uppercase tracking-wider text-violet-700 mt-1">
-                    from: {originLabel}
+                    from: {sourceLabel}
                   </div>
                 )}
                 <div className="text-[11px] text-slate-500 mt-1">
@@ -521,6 +653,16 @@ export default function DraftsPage() {
                     {new Date(selectedDraft.created_at).toLocaleString()}
                   </span>
                   <div className="ml-auto flex items-center gap-2">
+                    {selectedDraft.status !== "review" &&
+                      selectedDraft.status !== "published" && (
+                        <button
+                          onClick={approveToQA}
+                          className="text-xs px-2 py-1 rounded bg-emerald-600 text-white font-medium hover:bg-emerald-700"
+                          title="Approve this draft and move the Production Board item to QA"
+                        >
+                          ✓ Approve → QA
+                        </button>
+                      )}
                     <DraftStatusDropdown
                       current={selectedDraft.status}
                       onChange={updateStatus}
@@ -539,6 +681,11 @@ export default function DraftsPage() {
                     </button>
                   </div>
                 </div>
+                {approveMsg && (
+                  <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+                    {approveMsg}
+                  </p>
+                )}
                 <div className="mt-3 text-xs text-slate-500">Topic: {selectedDraft.topic}</div>
                 <DraftOriginPanel draft={selectedDraft} />
               </DashCard>
@@ -550,13 +697,46 @@ export default function DraftsPage() {
                   onChange={(e) => setEditTitle(e.target.value)}
                   className="w-full mt-1 mb-3"
                 />
-                <label className="text-xs font-medium text-slate-700">Body</label>
-                <textarea
-                  value={editBody}
-                  onChange={(e) => setEditBody(e.target.value)}
-                  rows={20}
-                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm font-mono mt-1 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
-                />
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-700">Body</label>
+                  <div className="inline-flex rounded-md border border-slate-200 p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setBodyView("write")}
+                      className={`px-2 py-0.5 rounded ${
+                        bodyView === "write"
+                          ? "bg-[#185FA5] text-white"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Write
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBodyView("preview")}
+                      className={`px-2 py-0.5 rounded ${
+                        bodyView === "preview"
+                          ? "bg-[#185FA5] text-white"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Preview
+                    </button>
+                  </div>
+                </div>
+                {bodyView === "write" ? (
+                  <textarea
+                    value={editBody}
+                    onChange={(e) => setEditBody(e.target.value)}
+                    rows={20}
+                    className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm font-mono mt-1 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                  />
+                ) : (
+                  <div
+                    className={`w-full min-h-[20rem] max-h-[60vh] overflow-y-auto px-4 py-3 rounded-md border border-slate-300 bg-white text-sm text-slate-800 mt-1 ${PROSE_CLASS}`}
+                    dangerouslySetInnerHTML={{ __html: renderedBody }}
+                  />
+                )}
                 <div className="mt-3 flex items-center gap-2">
                   <DashButton onClick={save} disabled={saving}>
                     {saving ? <DashSpinner /> : "Save"}
@@ -603,7 +783,8 @@ export default function DraftsPage() {
 }
 
 function DraftOriginPanel({ draft }: { draft: Draft }) {
-  const { label, context } = readOrigin(draft);
+  const { label: originLabel, context } = readOrigin(draft);
+  const label = readPillarKeyword(draft) ?? originLabel;
   const targetKeywords = readTargetKeywords(draft);
 
   if (!label && targetKeywords.length === 0) return null;
@@ -897,7 +1078,8 @@ function AnalysisCard({
   const hasMissingScores =
     analysis.brand_voice_score === null ||
     analysis.cash_score === null ||
-    analysis.linkability_score === null;
+    analysis.linkability_score === null ||
+    analysis.compliance_score === null;
   const selectedCount = selectedFindings.size;
 
   return (
@@ -951,7 +1133,7 @@ function AnalysisCard({
           )}
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
         <ScoreTile label="Readability" value={analysis.readability_score} />
         <ScoreTile
           label="SEO"
@@ -969,6 +1151,11 @@ function AnalysisCard({
           label="Linkability"
           value={analysis.linkability_score}
           hint="How earnable backlinks to this piece are"
+        />
+        <ScoreTile
+          label="Compliance"
+          value={analysis.compliance_score ?? null}
+          hint="NY/NJ attorney-advertising review (advisory)"
         />
       </div>
       <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
@@ -999,6 +1186,16 @@ function AnalysisCard({
             <CashPillar label="Human" letter="H" value={cash.humanAttribution} />
           </div>
         </div>
+      )}
+      {(analysis.compliance_status ||
+        (analysis.compliance_violations?.length ?? 0) > 0 ||
+        (analysis.compliance_required_disclaimers?.length ?? 0) > 0) && (
+        <CompliancePanel
+          status={analysis.compliance_status ?? null}
+          summary={analysis.compliance_summary ?? ""}
+          violations={analysis.compliance_violations ?? []}
+          requiredDisclaimers={analysis.compliance_required_disclaimers ?? []}
+        />
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
         {analysis.seo_findings && analysis.seo_findings.length > 0 && (
@@ -1708,6 +1905,110 @@ function Tile({ label, value }: { label: string; value: number | string }) {
     <div className="rounded-lg border border-slate-200 p-3">
       <div className="text-2xl font-bold">{value}</div>
       <div className="text-xs text-slate-500 mt-1">{label}</div>
+    </div>
+  );
+}
+
+type ComplianceViolationView = {
+  rule: string;
+  severity: "high" | "medium" | "low";
+  excerpt: string;
+  reason: string;
+  fix: string;
+};
+
+/**
+ * Attorney-advertising compliance detail. Advisory — it never blocks
+ * publishing; it surfaces the status, the rule violations, and the disclaimers
+ * the firm needs to add before this content goes out.
+ */
+function CompliancePanel({
+  status,
+  summary,
+  violations,
+  requiredDisclaimers,
+}: {
+  status: "compliant" | "needs_changes" | "non_compliant" | null;
+  summary: string;
+  violations: ComplianceViolationView[];
+  requiredDisclaimers: string[];
+}) {
+  const statusMeta: Record<
+    "compliant" | "needs_changes" | "non_compliant",
+    { label: string; cls: string }
+  > = {
+    compliant: { label: "Compliant", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    needs_changes: { label: "Needs changes", cls: "bg-amber-50 text-amber-800 border-amber-200" },
+    non_compliant: { label: "Non-compliant", cls: "bg-red-50 text-red-700 border-red-200" },
+  };
+  const sevCls: Record<"high" | "medium" | "low", string> = {
+    high: "bg-red-100 text-red-700",
+    medium: "bg-amber-100 text-amber-800",
+    low: "bg-slate-100 text-slate-600",
+  };
+  const meta = status ? statusMeta[status] : null;
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 p-4">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span aria-hidden>⚖</span>
+        <div className="text-sm font-medium">Attorney-advertising compliance</div>
+        {meta && (
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${meta.cls}`}>
+            {meta.label}
+          </span>
+        )}
+        <span className="text-[10px] text-slate-400 italic ml-auto">
+          advisory — review before publishing
+        </span>
+      </div>
+      {summary && <p className="text-xs text-slate-600 mb-3">{summary}</p>}
+
+      {requiredDisclaimers.length > 0 && (
+        <div className="mb-3">
+          <div className="text-xs font-medium text-slate-700 mb-1.5">
+            Required disclaimers
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {requiredDisclaimers.map((d, i) => (
+              <span
+                key={i}
+                className="text-[11px] px-2 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-800"
+              >
+                {d}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {violations.length > 0 ? (
+        <ul className="space-y-2">
+          {violations.map((v, i) => (
+            <li key={i} className="rounded border border-slate-200 p-2.5 text-xs">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${sevCls[v.severity]}`}>
+                  {v.severity}
+                </span>
+                <span className="font-medium text-slate-700">{v.rule}</span>
+              </div>
+              {v.excerpt && (
+                <div className="text-slate-500 italic mb-1">“{v.excerpt}”</div>
+              )}
+              <div className="text-slate-600">{v.reason}</div>
+              {v.fix && (
+                <div className="mt-1 text-emerald-700">
+                  <span className="font-medium">Fix:</span> {v.fix}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-xs text-slate-500">
+          No specific violations flagged{requiredDisclaimers.length > 0 ? " — add the disclaimers above." : "."}
+        </div>
+      )}
     </div>
   );
 }

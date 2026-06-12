@@ -330,6 +330,15 @@ export default function PipelinePage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-700">{BUCKET_LABEL[item.bucket]}</td>
                   <td className="px-4 py-3 text-right space-x-1">
+                    {item.draft_id && (
+                      <a
+                        href={`/content/drafts?id=${item.draft_id}`}
+                        className="text-xs px-2 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        title="Open the actual draft content to read, edit, and approve"
+                      >
+                        View draft
+                      </a>
+                    )}
                     <button
                       onClick={() => {
                         setEditingItem(item);

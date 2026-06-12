@@ -150,6 +150,13 @@ export async function POST(req: Request) {
   const brief = partial as KMPerPageBrief;
   const language = normalizeLanguage((body as Record<string, unknown>).language);
 
+  // If this draft is being generated from a brief_suggestion, we'll advance the
+  // matching Production Board row once the draft is saved (see linkPipelineDraft).
+  const suggestionId =
+    typeof (body as Record<string, unknown>).suggestionId === "string"
+      ? ((body as Record<string, unknown>).suggestionId as string).trim()
+      : "";
+
   // Practice Page = up to 2,500 words ≈ 3,500 tokens output. Case Result
   // ≈ 1,200 words ≈ 1,700 tokens. 8,192 max gives headroom for either.
   const maxTokens = brief.contentType === "case_result" ? 4096 : 8192;
@@ -228,6 +235,13 @@ export async function POST(req: Request) {
 
     const draftId = await autosave(brief, text, language);
 
+    // Connection: advance the Production Board row this draft belongs to.
+    // Without this, the board never learns a draft was created (draft_id stays
+    // null, status stuck at 'brief') and Diana can't open the draft from there.
+    if (draftId && suggestionId) {
+      await linkPipelineDraft(suggestionId, draftId);
+    }
+
     return NextResponse.json({
       draft_id: draftId,
       content: text,
@@ -238,6 +252,28 @@ export async function POST(req: Request) {
   } catch (e) {
     const message = e instanceof Error ? e.message : "Anthropic request failed";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/**
+ * Advance the Production Board (content_pipeline) row created from this
+ * suggestion: link the draft and flip status brief→draft. Non-fatal — the
+ * draft is already saved, so a failure here just means the board didn't move.
+ * We never pull a 'published' item backwards.
+ */
+async function linkPipelineDraft(suggestionId: string, draftId: string): Promise<void> {
+  const supabase = getSupabaseServer();
+  if (!supabase) return;
+  try {
+    const tid = await resolveTenantId();
+    await supabase
+      .from("content_pipeline")
+      .update({ draft_id: draftId, status: "draft" })
+      .eq("tenant_id", tid)
+      .eq("suggestion_id", suggestionId)
+      .neq("status", "published");
+  } catch {
+    /* non-fatal — draft is saved regardless of board state */
   }
 }
 

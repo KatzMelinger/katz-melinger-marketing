@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { classifyKeywordGeo } from "@/lib/keyword-geo";
 import { suggestForCluster, type ClusterInput } from "@/lib/strategy-engine";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
@@ -63,8 +64,13 @@ export async function POST(req: NextRequest) {
     const cluster: ClusterInput = {
       clusterName: (typeof o.clusterName === "string" ? o.clusterName.trim() : "") || primaryKeyword,
       primaryKeyword,
+      // Drop secondary keywords that name a non-NY/NJ location (california,
+      // los angeles, houston, …). KM only serves NY/NJ, so out-of-state terms
+      // are noise that used to leak into briefs.
       secondaryKeywords: Array.isArray(o.secondaryKeywords)
-        ? (o.secondaryKeywords as unknown[]).filter((x): x is string => typeof x === "string")
+        ? (o.secondaryKeywords as unknown[])
+            .filter((x): x is string => typeof x === "string")
+            .filter((kw) => classifyKeywordGeo(kw).state !== "other_state")
         : [],
       volume: typeof o.volume === "number" ? o.volume : null,
       kd: typeof o.kd === "number" ? o.kd : null,
@@ -81,9 +87,34 @@ export async function POST(req: NextRequest) {
           : null,
     };
 
+    const supabase = getSupabaseAdmin();
+    const tenantId = await resolveTenantId();
+
+    // Dedup: block creating a second decision for a primary keyword that
+    // already has a live suggestion (any status except rejected). Prevents the
+    // duplicate Decisions/Production rows Diana saw from repeated syncs/clicks.
+    const { data: existing } = await supabase
+      .from("brief_suggestions")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .ilike("primary_keyword", primaryKeyword)
+      .neq("status", "rejected")
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json(
+        {
+          error: `A decision for "${primaryKeyword}" already exists.`,
+          duplicate: true,
+          existingId: existing.id,
+        },
+        { status: 409 },
+      );
+    }
+
     const decision = await suggestForCluster(cluster);
 
-    const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("brief_suggestions")
       .insert({
@@ -109,7 +140,7 @@ export async function POST(req: NextRequest) {
         existing_url: cluster.existingUrl ?? null,
         source: typeof o.source === "string" ? o.source : "manual",
         source_ref: typeof o.sourceRef === "string" ? o.sourceRef : null,
-        tenant_id: await resolveTenantId(),
+        tenant_id: tenantId,
       })
       .select()
       .single();
