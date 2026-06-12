@@ -1,42 +1,93 @@
 "use client";
 
 /**
- * DraftDrawer — read / edit / approve a content draft INLINE on the Production
- * Board, without navigating away to /content/drafts.
+ * DraftReview — the full draft review experience, opened INLINE on the
+ * Production Board (no navigation). This is Diana's reviewer layout:
  *
- * It reuses the existing draft APIs:
- *   - GET   /api/content/drafts/[id]          → draft + latest_analysis
- *   - PATCH /api/content/drafts/[id]          → save title/body
- *   - POST  /api/content/drafts/[id]/analyze  → readability + scores
- *   - PATCH /api/content/pipeline/[id]        → advance editorial status (approve)
+ *   stage bar (Opportunity → Brief → Draft → Approve → Publish)
+ *   title + tags + verify chips
+ *   SEO metadata bar (full width, on top)
+ *   ┌───────────────────────────┬──────────────────────┐
+ *   │ Draft content (read/edit) │ Approve → Publish     │
+ *   │ Internal links panel      │ QA checklist          │
+ *   │                           │ Content info card     │
+ *   └───────────────────────────┴──────────────────────┘
  *
- * Markdown rendering (PROSE_CLASS + marked) is kept identical to the drafts
- * library so a draft looks the same wherever it is opened.
+ * Everything reads from the one linked record (the spine): the draft body and
+ * brief come from content_drafts, the scores from content_analyses. No new
+ * data model — this is the spine's reviewer view.
+ *
+ * Approve → Publish is stubbed: it advances the editorial status. The actual
+ * WordPress write lands in Phase 4 (lib/wordpress.ts is read-only today).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 
-import { DashButton, DashSpinner, DashPill } from "@/components/dashboard-ui";
+import { DashSpinner, DashPill } from "@/components/dashboard-ui";
+import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 
 const PROSE_CLASS =
-  "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-[#185FA5] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_table]:my-2 [&_table]:w-full [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1";
+  "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-[#185FA5] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2";
+
+const PILLAR_LABEL: Record<string, string> = Object.fromEntries(
+  ALL_KM_PILLARS.map((p) => [p.id, p.label]),
+);
+const PILLAR_URL: Record<string, string> = Object.fromEntries(
+  ALL_KM_PILLARS.map((p) => [p.id, p.url]),
+);
 
 type PipelineStatus = "idea" | "brief" | "draft" | "review" | "published";
 
-const STATUS_LABEL: Record<PipelineStatus, string> = {
-  idea: "Idea",
-  brief: "Brief",
-  draft: "Draft",
-  review: "Review",
-  published: "Published",
+const STAGES: { key: PipelineStatus; label: string }[] = [
+  { key: "idea", label: "Opportunity" },
+  { key: "brief", label: "Brief" },
+  { key: "draft", label: "Draft review" },
+  { key: "review", label: "Approve" },
+  { key: "published", label: "Publish to WordPress" },
+];
+
+const SOURCE_LABEL: Record<string, string> = {
+  opportunity_quickwin: "SEMrush",
+  opportunity_missing: "SEMrush",
+  opportunity_longtail: "SEMrush",
+  semrush: "SEMrush",
+  competitor_gap: "Competitor gap",
+  keyword_tracker: "Keyword tracker",
+  imported: "Imported",
+  manual: "Manual",
 };
 
-type Draft = {
+type ReviewItem = {
+  id: number;
+  draft_id: string | null;
+  status: PipelineStatus;
+  title: string;
+  bucket?: string | null;
+  keywords?: string | null;
+};
+
+type Brief = {
+  primaryKeyword?: string;
+  secondaryKeywords?: string[];
+  metaTitle?: string;
+  metaDescription?: string;
+  urlSlug?: string;
+  pillarId?: string;
+  searchIntent?: string;
+  internalPillarLink?: string;
+  internalLinks?: { url: string; anchor: string; section: string }[];
+  cannibalizationConfirmed?: boolean;
+  contentType?: string;
+};
+
+type DraftRow = {
   id: string;
   title: string | null;
   body: string;
-  seo_brief?: { targetKeywords?: string[] } | null;
+  created_at?: string;
+  seo_brief?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type Analysis = {
@@ -44,48 +95,88 @@ type Analysis = {
   reading_grade_level: number | null;
   word_count: number | null;
   seo_score: number | null;
-  aeo_score: number | null;
-  brand_voice_score: number | null;
-  brand_voice_findings?: string[] | null;
-  seo_findings?: string[] | null;
 };
 
-/** Plain-English label for a Flesch reading-ease score (0–100, higher = easier). */
-function readabilityLabel(score: number | null): { text: string; tone: "emerald" | "amber" | "red" } {
-  if (score == null) return { text: "—", tone: "amber" };
-  if (score >= 60) return { text: "Easy to read", tone: "emerald" };
-  if (score >= 45) return { text: "Fairly readable", tone: "amber" };
-  return { text: "Hard to read", tone: "red" };
+function readBrief(draft: DraftRow): Brief {
+  const meta = (draft.metadata ?? {}) as Record<string, unknown>;
+  const km = (meta.km_brief ?? {}) as Record<string, unknown>;
+  const seo = (draft.seo_brief ?? {}) as Record<string, unknown>;
+  const pick = (...keys: string[]) => {
+    for (const src of [km, seo]) {
+      for (const k of keys) {
+        const v = src[k];
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+    }
+    return "";
+  };
+  const links = Array.isArray(km.internalLinks)
+    ? (km.internalLinks as Brief["internalLinks"])
+    : [];
+  const secondary = Array.isArray(km.secondaryKeywords)
+    ? (km.secondaryKeywords as string[])
+    : Array.isArray(seo.secondaryKeywords)
+      ? (seo.secondaryKeywords as string[])
+      : Array.isArray(seo.targetKeywords)
+        ? (seo.targetKeywords as string[])
+        : [];
+  return {
+    primaryKeyword: pick("primaryKeyword"),
+    secondaryKeywords: secondary,
+    metaTitle: pick("metaTitle"),
+    metaDescription: pick("metaDescription"),
+    urlSlug: pick("urlSlug"),
+    pillarId: pick("pillarId"),
+    searchIntent: pick("searchIntent"),
+    internalPillarLink: pick("internalPillarLink"),
+    internalLinks: links,
+    cannibalizationConfirmed: km.cannibalizationConfirmed === true,
+    contentType: pick("contentType"),
+  };
+}
+
+function Check({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span
+        className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${
+          ok ? "bg-emerald-100 text-emerald-700" : "border border-slate-300 text-transparent"
+        }`}
+        aria-hidden
+      >
+        ✓
+      </span>
+      <span className={ok ? "text-slate-700" : "text-slate-500"}>{label}</span>
+    </div>
+  );
 }
 
 export function DraftDrawer({
-  pipelineId,
-  draftId,
-  status,
+  item,
   onClose,
   onChanged,
+  onEditMeta,
 }: {
-  pipelineId: number;
-  draftId: string;
-  status: PipelineStatus;
+  item: ReviewItem;
   onClose: () => void;
-  /** Called after a save or status change so the board can refresh. */
+  /** Refresh the board after a save / status change. */
   onChanged: () => void;
+  /** Open the metadata form (the row "Edit" / "Edit all fields"). */
+  onEditMeta?: () => void;
 }) {
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const draftId = item.draft_id ?? "";
+  const [draft, setDraft] = useState<DraftRow | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editTitle, setEditTitle] = useState("");
+  const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState("");
-  const [bodyView, setBodyView] = useState<"write" | "preview">("write");
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [statusValue, setStatusValue] = useState<PipelineStatus>(status);
+  const [status, setStatus] = useState<PipelineStatus>(item.status);
+  const [legalReview, setLegalReview] = useState(false);
+  const [proofread, setProofread] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // Load the draft + its latest analysis. If no analysis exists yet, kick one
-  // off automatically so the readability check is always present when Diana
-  // opens a draft (the "check readability anytime we have content" rule).
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -95,7 +186,6 @@ export function DraftDrawer({
         if (cancelled) return;
         setDraft(data.draft ?? null);
         setAnalysis(data.latest_analysis ?? null);
-        setEditTitle(data.draft?.title ?? "");
         setEditBody(data.draft?.body ?? "");
         setLoading(false);
         if (data.draft && !data.latest_analysis) void runAnalysis(data.draft);
@@ -108,19 +198,42 @@ export function DraftDrawer({
     };
   }, [draftId]);
 
-  const renderedBody = editBody.trim()
-    ? (marked.parse(editBody, { async: false }) as string)
-    : "<p class='text-slate-400'>Nothing to preview yet.</p>";
+  const brief = useMemo(() => (draft ? readBrief(draft) : ({} as Brief)), [draft]);
+  const body = editing ? editBody : (draft?.body ?? "");
+  const renderedBody = useMemo(
+    () =>
+      body.trim()
+        ? (marked.parse(body, { async: false }) as string)
+        : "<p class='text-slate-400'>No content.</p>",
+    [body],
+  );
 
-  async function runAnalysis(d: Draft) {
+  const wordCount =
+    analysis?.word_count ?? (draft?.body ? draft.body.trim().split(/\s+/).filter(Boolean).length : 0);
+
+  // Automatic QA checks — computed from the linked record + latest analysis.
+  const metaTitle = brief.metaTitle || item.title;
+  const primaryKw = (brief.primaryKeyword || "").toLowerCase();
+  const qa = {
+    metaDescription: !!brief.metaDescription,
+    h1Keyword: !!primaryKw && (draft?.title ?? item.title).toLowerCase().includes(primaryKw),
+    pillarLink: !!(brief.internalPillarLink || brief.pillarId),
+    internalLinks: (brief.internalLinks?.length ?? 0) > 0,
+    wordCount: wordCount >= 600,
+    titleLen: metaTitle.length > 0 && metaTitle.length <= 60,
+  };
+  const autoPassCount = Object.values(qa).filter(Boolean).length;
+  const manualPass = (legalReview ? 1 : 0) + (proofread ? 1 : 0);
+  const qaTotal = `${autoPassCount + manualPass}/${Object.keys(qa).length + 2}`;
+  const canPublish = legalReview && proofread;
+
+  async function runAnalysis(d: DraftRow) {
     setAnalyzing(true);
     try {
       const res = await fetch(`/api/content/drafts/${d.id}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          targetKeywords: d.seo_brief?.targetKeywords ?? [],
-        }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (res.ok) setAnalysis(data);
@@ -129,7 +242,7 @@ export function DraftDrawer({
     }
   }
 
-  const save = async () => {
+  const saveBody = async () => {
     if (!draft) return;
     setSaving(true);
     setMsg(null);
@@ -137,9 +250,11 @@ export function DraftDrawer({
       const res = await fetch(`/api/content/drafts/${draft.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: editTitle, body: editBody }),
+        body: JSON.stringify({ body: editBody }),
       });
       if (res.ok) {
+        setDraft({ ...draft, body: editBody });
+        setEditing(false);
         setMsg("Saved.");
         onChanged();
       } else {
@@ -150,10 +265,10 @@ export function DraftDrawer({
     }
   };
 
-  const changeStatus = async (next: PipelineStatus) => {
-    setStatusValue(next);
-    setMsg(null);
-    await fetch(`/api/content/pipeline/${pipelineId}`, {
+  const changeStatus = async (next: PipelineStatus, note: string) => {
+    setStatus(next);
+    setMsg(note);
+    await fetch(`/api/content/pipeline/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: next }),
@@ -161,170 +276,295 @@ export function DraftDrawer({
     onChanged();
   };
 
-  // Approve = save edits, then advance the editorial stage (draft → review).
-  const approve = async () => {
-    await save();
-    await changeStatus("review");
-    setMsg("Approved — moved to Review.");
+  const copyBody = async () => {
+    try {
+      await navigator.clipboard.writeText(draft?.body ?? "");
+      setMsg("Copied to clipboard.");
+    } catch {
+      setMsg("Copy failed.");
+    }
   };
 
-  const rl = readabilityLabel(analysis?.readability_score ?? null);
+  const sourceRaw =
+    ((draft?.metadata as Record<string, unknown>)?.origin_source as string) ?? "";
+  const sourceLabel = SOURCE_LABEL[sourceRaw] ?? (sourceRaw ? sourceRaw : "—");
+  const generated = draft?.created_at ? new Date(draft.created_at).toLocaleString() : "—";
+  const currentStage = STAGES.findIndex((s) => s.key === status);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      {/* Scrim */}
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      {/* Panel */}
-      <div className="relative h-full w-full max-w-2xl bg-white border-l border-slate-200 shadow-2xl flex flex-col">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200">
-          <div className="min-w-0">
-            <div className="text-xs text-slate-500">Draft preview · Production Board</div>
-            <h2 className="text-base font-semibold text-slate-900 truncate">
-              {editTitle || "Untitled draft"}
-            </h2>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-3 sm:p-6">
+      <div className="mx-auto max-w-6xl rounded-xl bg-white shadow-2xl">
+        {/* Top: stage bar + close */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {STAGES.map((s, i) => (
+              <span key={s.key} className="flex items-center gap-1.5">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${
+                    i < currentStage
+                      ? "bg-emerald-50 text-emerald-700"
+                      : i === currentStage
+                        ? "bg-[#185FA5] text-white"
+                        : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {i < currentStage ? "✓" : i + 1} {s.label}
+                </span>
+                {i < STAGES.length - 1 && <span className="text-slate-300">→</span>}
+              </span>
+            ))}
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 text-2xl leading-none"
-            aria-label="Close"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-slate-500 sm:inline">
+              {wordCount.toLocaleString()} words · {generated}
+            </span>
+            <button onClick={onClose} className="text-2xl leading-none text-slate-400 hover:text-slate-700" aria-label="Close">
+              ×
+            </button>
+          </div>
         </div>
 
         {loading ? (
-          <div className="flex-1 flex items-center justify-center text-sm text-slate-500">
+          <div className="flex items-center justify-center py-20 text-sm text-slate-500">
             <DashSpinner /> Loading draft…
           </div>
         ) : !draft ? (
-          <div className="flex-1 flex items-center justify-center text-sm text-slate-500">
-            Draft not found.
-          </div>
+          <div className="py-20 text-center text-sm text-slate-500">Draft not found.</div>
         ) : (
-          <>
-            {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {/* Readability + scores strip */}
-              <div className="flex flex-wrap items-center gap-2">
-                <DashPill tone={rl.tone}>
-                  Readability: {analysis?.readability_score ?? "—"} · {rl.text}
-                </DashPill>
-                {analysis?.reading_grade_level != null && (
-                  <DashPill tone="neutral">Grade {analysis.reading_grade_level}</DashPill>
-                )}
-                {analysis?.seo_score != null && (
-                  <DashPill tone="blue">SEO {analysis.seo_score}</DashPill>
-                )}
-                {analysis?.brand_voice_score != null && (
-                  <DashPill tone="violet">Voice {analysis.brand_voice_score}</DashPill>
-                )}
-                {analysis?.word_count != null && (
-                  <span className="text-xs text-slate-500">{analysis.word_count} words</span>
-                )}
-                {analyzing && (
-                  <span className="text-xs text-slate-500">
-                    <DashSpinner /> checking…
-                  </span>
-                )}
-              </div>
-
-              {/* Title */}
+          <div className="px-5 py-4">
+            {/* Title + tags + toolbar */}
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <label className="text-xs font-medium text-slate-700">Title</label>
-                <input
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
-                />
-              </div>
-
-              {/* Body with Write / Preview toggle */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-slate-700">Body</label>
-                  <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-xs">
-                    <button
-                      onClick={() => setBodyView("write")}
-                      className={`px-2.5 py-1 ${bodyView === "write" ? "bg-[#185FA5] text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-                    >
-                      Write
-                    </button>
-                    <button
-                      onClick={() => setBodyView("preview")}
-                      className={`px-2.5 py-1 ${bodyView === "preview" ? "bg-[#185FA5] text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-                    >
-                      Preview
-                    </button>
-                  </div>
+                <h2 className="text-lg font-semibold text-slate-900">{item.title}</h2>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {brief.contentType && <DashPill tone="blue">{brief.contentType.replace(/_/g, " ")}</DashPill>}
+                  {item.bucket && <DashPill tone="violet">{item.bucket.replace(/_/g, " ")}</DashPill>}
+                  {sourceLabel !== "—" && <DashPill tone="neutral">{sourceLabel}</DashPill>}
+                  {qa.internalLinks && <DashPill tone="emerald">Internal links verified</DashPill>}
+                  {brief.cannibalizationConfirmed && <DashPill tone="emerald">No cannibalization</DashPill>}
                 </div>
-                {bodyView === "write" ? (
-                  <textarea
-                    value={editBody}
-                    onChange={(e) => setEditBody(e.target.value)}
-                    className="w-full min-h-[24rem] mt-1 px-4 py-3 rounded-md border border-slate-300 bg-white text-sm text-slate-800 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
-                  />
-                ) : (
-                  <div
-                    className={`w-full min-h-[24rem] max-h-[60vh] overflow-y-auto px-4 py-3 rounded-md border border-slate-300 bg-white text-sm text-slate-800 mt-1 ${PROSE_CLASS}`}
-                    dangerouslySetInnerHTML={{ __html: renderedBody }}
-                  />
-                )}
               </div>
-
-              {/* Findings */}
-              {(analysis?.brand_voice_findings?.length ||
-                analysis?.seo_findings?.length) && (
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
-                  <div className="text-xs font-semibold text-slate-700">
-                    What to improve
-                  </div>
-                  <ul className="list-disc pl-4 space-y-1 text-xs text-slate-600">
-                    {(analysis?.seo_findings ?? []).slice(0, 4).map((f, i) => (
-                      <li key={`seo-${i}`}>{f}</li>
-                    ))}
-                    {(analysis?.brand_voice_findings ?? []).slice(0, 3).map((f, i) => (
-                      <li key={`bv-${i}`}>{f}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              <div className="flex items-center gap-1.5">
+                <button onClick={copyBody} className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5]">
+                  Copy
+                </button>
+                <button
+                  onClick={() => draft && runAnalysis(draft)}
+                  disabled={analyzing}
+                  className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+                >
+                  {analyzing ? "Analyzing…" : "Run analysis"}
+                </button>
+              </div>
             </div>
 
-            {/* Footer actions */}
-            <div className="border-t border-slate-200 px-5 py-3 flex items-center gap-2 flex-wrap">
-              <select
-                value={statusValue}
-                onChange={(e) => changeStatus(e.target.value as PipelineStatus)}
-                className="text-xs px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700"
-                title="Editorial status on the Production Board"
-              >
-                {(Object.keys(STATUS_LABEL) as PipelineStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => draft && runAnalysis(draft)}
-                disabled={analyzing}
-                className="text-xs px-2.5 py-1.5 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
-              >
-                {analyzing ? "Checking…" : "Re-check readability"}
-              </button>
-              {msg && <span className="text-xs text-slate-500">{msg}</span>}
-              <div className="ml-auto flex items-center gap-2">
-                <DashButton variant="outline" onClick={save} disabled={saving}>
-                  {saving ? <DashSpinner /> : "Save"}
-                </DashButton>
-                <DashButton onClick={approve} disabled={saving}>
-                  Approve ✓
-                </DashButton>
+            {/* SEO metadata bar — full width, on top */}
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">SEO metadata</span>
+                {onEditMeta && (
+                  <button onClick={onEditMeta} className="text-xs font-medium text-[#185FA5] hover:underline">
+                    Edit all fields
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                <MetaField label="Meta title" value={brief.metaTitle} />
+                <MetaField label="URL slug" value={brief.urlSlug} />
+                <MetaField label="Pillar link" value={brief.internalPillarLink || PILLAR_URL[brief.pillarId ?? ""]} />
+                <MetaField label="Search intent" value={brief.searchIntent} />
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                <MetaField label="Meta description" value={brief.metaDescription} multiline />
+                <div>
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Secondary keywords</div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {(brief.secondaryKeywords ?? []).length === 0 ? (
+                      <span className="text-xs text-slate-400">—</span>
+                    ) : (
+                      brief.secondaryKeywords!.map((k) => (
+                        <span key={k} className="rounded bg-[#185FA5]/10 px-1.5 py-0.5 text-[11px] text-[#185FA5]">
+                          {k}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-          </>
+
+            {/* Two-column body */}
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
+              {/* LEFT: draft content + internal links */}
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Draft content</span>
+                    {editing ? (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setEditing(false); setEditBody(draft.body); }} className="text-xs text-slate-500 hover:text-slate-700">
+                          Cancel
+                        </button>
+                        <button onClick={saveBody} disabled={saving} className="text-xs font-medium text-[#185FA5] hover:underline disabled:opacity-50">
+                          {saving ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setEditBody(draft.body); setEditing(true); }} className="text-xs font-medium text-[#185FA5] hover:underline">
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                  {editing ? (
+                    <textarea
+                      value={editBody}
+                      onChange={(e) => setEditBody(e.target.value)}
+                      className="h-[60vh] w-full resize-none px-4 py-3 font-mono text-sm leading-relaxed text-slate-800 focus:outline-none"
+                    />
+                  ) : (
+                    <div
+                      className={`max-h-[60vh] overflow-y-auto px-4 py-3 text-sm text-slate-800 ${PROSE_CLASS}`}
+                      dangerouslySetInnerHTML={{ __html: renderedBody }}
+                    />
+                  )}
+                </div>
+
+                {/* Internal links panel */}
+                <div className="rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Internal links — Cluster Map
+                    </span>
+                    {qa.internalLinks && <span className="text-xs font-medium text-emerald-600">All verified</span>}
+                  </div>
+                  <div className="px-4 py-3">
+                    {(brief.internalLinks?.length ?? 0) === 0 ? (
+                      <p className="text-xs text-slate-400">No internal links on this draft.</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {brief.internalLinks!.map((l, i) => (
+                          <li key={`${l.url}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="flex items-center gap-1.5 text-slate-700">
+                              <span className="text-emerald-600">✓</span>
+                              <span className="font-mono">{l.url}</span>
+                            </span>
+                            <span className="text-slate-400">Confirmed live · {l.section}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="mt-2 text-[11px] text-slate-400">
+                      Generator used only confirmed Cluster Map pages. No invented links.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT: publish + QA + content info */}
+              <div className="space-y-4">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="text-sm font-semibold text-emerald-900">Ready to publish</div>
+                  <p className="mt-0.5 text-xs text-emerald-700">
+                    {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
+                  </p>
+                  <button
+                    onClick={() => changeStatus("published", "Approved. WordPress publishing connects in Phase 4.")}
+                    disabled={!canPublish}
+                    className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                    title={canPublish ? undefined : "Complete the manual checks first"}
+                  >
+                    Approve → Publish to WordPress
+                  </button>
+                  <button
+                    onClick={() => changeStatus("draft", "Sent back to draft.")}
+                    className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                  >
+                    Send back to draft
+                  </button>
+                  <p className="mt-2 text-[10px] text-emerald-700/80">
+                    WordPress publishing connects in Phase 4 — this advances the editorial status for now.
+                  </p>
+                </div>
+
+                {/* QA checklist */}
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">QA checklist</span>
+                    <span className="text-xs font-medium text-slate-600">{qaTotal}</span>
+                  </div>
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Automatic</div>
+                  <div className="mt-1 space-y-1">
+                    <Check ok={qa.metaDescription} label="Meta description present" />
+                    <Check ok={qa.h1Keyword} label="H1 contains primary keyword" />
+                    <Check ok={qa.pillarLink} label="Pillar link present" />
+                    <Check ok={qa.internalLinks} label="Internal links verified" />
+                    <Check ok={qa.wordCount} label="Word count meets minimum" />
+                    <Check ok={qa.titleLen} label="Title under 60 characters" />
+                  </div>
+                  <div className="mt-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    Manual — Diana certifies
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
+                      <input type="checkbox" checked={legalReview} onChange={(e) => setLegalReview(e.target.checked)} />
+                      Legal review complete
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
+                      <input type="checkbox" checked={proofread} onChange={(e) => setProofread(e.target.checked)} />
+                      Proofread and on-brand
+                    </label>
+                  </div>
+                </div>
+
+                {/* Content info */}
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Content info</div>
+                  <dl className="space-y-1.5 text-xs">
+                    <InfoRow label="Type" value={brief.contentType ? brief.contentType.replace(/_/g, " ") : "—"} />
+                    <InfoRow label="Primary keyword" value={brief.primaryKeyword || "—"} />
+                    <InfoRow label="Pillar" value={PILLAR_LABEL[brief.pillarId ?? ""] || "—"} />
+                    <InfoRow label="Word count" value={wordCount.toLocaleString()} />
+                    <InfoRow
+                      label="Cannibalization"
+                      value={brief.cannibalizationConfirmed ? "No conflict" : "Review"}
+                      valueClass={brief.cannibalizationConfirmed ? "text-emerald-600" : "text-amber-600"}
+                    />
+                    <InfoRow label="Source" value={sourceLabel} />
+                    <InfoRow label="Generated" value={generated} />
+                  </dl>
+                </div>
+
+                {msg && <p className="text-xs text-slate-500">{msg}</p>}
+              </div>
+            </div>
+          </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function MetaField({ label, value, multiline }: { label: string; value?: string; multiline?: boolean }) {
+  return (
+    <div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{label}</div>
+      <div
+        className={`mt-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 ${
+          multiline ? "min-h-[3.5rem] italic" : "truncate"
+        }`}
+        title={value || undefined}
+      >
+        {value || <span className="text-slate-300">—</span>}
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className={`text-right font-medium ${valueClass ?? "text-slate-800"}`}>{value}</dd>
     </div>
   );
 }

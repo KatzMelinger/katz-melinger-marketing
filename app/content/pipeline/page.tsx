@@ -112,13 +112,9 @@ export default function PipelinePage() {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
-  // The draft currently open in the inline drawer (read/edit/approve without
-  // leaving the board). Null = drawer closed.
-  const [drawer, setDrawer] = useState<{
-    pipelineId: number;
-    draftId: string;
-    status: Status;
-  } | null>(null);
+  // The item currently open in the inline Review draft view (read/edit/approve
+  // without leaving the board). Null = closed.
+  const [reviewItem, setReviewItem] = useState<Item | null>(null);
   // Pipeline row currently generating a draft (so we can show "Generating…").
   const [generatingId, setGeneratingId] = useState<number | null>(null);
 
@@ -199,10 +195,10 @@ export default function PipelinePage() {
     refresh();
   };
 
-  // Open the draft inline. Every item that already has a draft uses this.
+  // Open the full Review draft view inline. Any item with a draft uses this.
   const openDraft = (item: Item) => {
     if (!item.draft_id) return;
-    setDrawer({ pipelineId: item.id, draftId: item.draft_id, status: item.status });
+    setReviewItem(item);
   };
 
   // A Draft-status item with no draft yet: generate one (with the same
@@ -232,7 +228,7 @@ export default function PipelinePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ draftId: data.draft_id }),
         });
-        setDrawer({ pipelineId: item.id, draftId: data.draft_id, status: item.status });
+        setReviewItem({ ...item, draft_id: data.draft_id });
         refresh();
       } else {
         alert(data?.error ?? "Draft generation failed.");
@@ -389,9 +385,9 @@ export default function PipelinePage() {
                       <button
                         onClick={() => openDraft(item)}
                         className="text-xs px-2 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                        title="Read, edit, and approve the draft right here on the board"
+                        title="Open the full review page — metadata, draft, internal links, QA, and approve — right here on the board"
                       >
-                        View draft
+                        Review draft
                       </button>
                     ) : item.status === "draft" ? (
                       <button
@@ -426,6 +422,20 @@ export default function PipelinePage() {
         </DashCard>
       )}
 
+      {reviewItem && (
+        <DraftDrawer
+          item={reviewItem}
+          onClose={() => setReviewItem(null)}
+          onChanged={refresh}
+          onEditMeta={() => {
+            setEditingItem(reviewItem);
+            setShowModal(true);
+          }}
+        />
+      )}
+
+      {/* Rendered last so the metadata form layers above the review view when
+          "Edit all fields" is used. */}
       {showModal && (
         <ContentModal
           item={editingItem}
@@ -440,16 +450,6 @@ export default function PipelinePage() {
             setEditingItem(null);
             refresh();
           }}
-        />
-      )}
-
-      {drawer && (
-        <DraftDrawer
-          pipelineId={drawer.pipelineId}
-          draftId={drawer.draftId}
-          status={drawer.status}
-          onClose={() => setDrawer(null)}
-          onChanged={refresh}
         />
       )}
     </div>
