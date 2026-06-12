@@ -125,3 +125,21 @@ export async function buildLinkPlan(input: LinkPlanInput): Promise<LinkPlan> {
 
   return { links, flagged };
 }
+
+/**
+ * Render an approved link plan as a generator-prompt block. Shared by every
+ * content generator so the wording (and the "ONLY these links" constraint) is
+ * identical everywhere. Returns "" when there are no links so callers can
+ * append unconditionally.
+ */
+export function approvedLinkPlanBlock(links: KMInternalLink[]): string {
+  if (!links.length) return "";
+  const lines = links.map((l) => `- ${l.anchor} → ${l.url}  (place in: ${l.section})`);
+  return (
+    `APPROVED INTERNAL LINK PLAN — these are the ONLY internal links you may use. ` +
+    `Each is a confirmed live page on the firm's site. Use the given anchor text and place each link in the indicated section, woven naturally into the prose. ` +
+    `Do NOT invent, guess, or add any other internal link (no other relative or katzmelinger.com URLs). ` +
+    `You may still cite external authorities (statutes, courts, government sites) in prose.\n` +
+    lines.join("\n")
+  );
+}

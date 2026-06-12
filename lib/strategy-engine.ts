@@ -128,6 +128,39 @@ export function inferPillar(
     "domestication": ["domesticate", "domestication", "out-of-state judgment", "sister state"],
   };
 
+  // Spanish→English semantic equivalence. The hint scoring below is English-only,
+  // so a Spanish keyword (e.g. "abogado de despido injustificado") would fall
+  // through to the first pillar in the pool — which mismapped it to wage-theft.
+  // A direct phrase match here wins outright (highest confidence). Ordered most-
+  // specific first so "acoso sexual" beats "acoso" and "despido injustificado"
+  // beats bare "despido".
+  const SPANISH_TO_PILLAR: Array<[string, string]> = [
+    ["despido injustificado", "wrongful-termination"],
+    ["despido sin causa", "wrongful-termination"],
+    ["despido", "wrongful-termination"],
+    ["acoso sexual", "sexual-harassment"],
+    ["acoso laboral", "hostile"],
+    ["discriminacion", "discrimination"],
+    ["discriminación", "discrimination"],
+    ["represalias", "retaliation"],
+    ["represalia", "retaliation"],
+    ["denunciante", "whistleblower"],
+    ["salarios no pagados", "wage-theft"],
+    ["horas extras", "wage-theft"],
+    ["robo de salario", "wage-theft"],
+    ["salario", "wage-theft"],
+    ["indemnizacion por despido", "severance"],
+    ["indemnización por despido", "severance"],
+    ["licencia familiar", "leave"],
+    ["licencia medica", "leave"],
+    ["licencia médica", "leave"],
+  ];
+  for (const [phrase, pid] of SPANISH_TO_PILLAR) {
+    if (text.includes(phrase) && pool.some((p) => p.id === pid)) {
+      return pid;
+    }
+  }
+
   let bestId = pool[0]?.id ?? "";
   let bestScore = 0;
   for (const p of pool) {

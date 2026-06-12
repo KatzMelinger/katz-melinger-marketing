@@ -10,13 +10,16 @@ import { readContentType } from "@/lib/content-types";
  * ContentTypeTabs at the top of the page. Navigating between them carries
  * the current Website / Social Media / Email selection along.
  */
+// Note: "Pipeline" and "Saved drafts" were removed here because they duplicate
+// the sidebar's "Production Board" (/content/pipeline) and "Drafts"
+// (/content/drafts) entries — the same route reached two ways was a top source
+// of Diana's "six screens" confusion. The sidebar links are now the single
+// entry point for each.
 const TYPE_SCOPED_TABS = [
   { href: "/content", label: "Marketing copy" },
   { href: "/content/km", label: "SEO content" },
   { href: "/content/batch", label: "Multi-format batch" },
   { href: "/content/intelligence", label: "Intelligence" },
-  { href: "/content/pipeline", label: "Pipeline" },
-  { href: "/content/drafts", label: "Saved drafts" },
 ];
 
 /**

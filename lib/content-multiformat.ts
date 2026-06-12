@@ -21,6 +21,7 @@ import { ANTI_AI_VOICE_RULES } from "./anti-ai-voice";
 import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
+import { approvedLinkPlanBlock, buildLinkPlan } from "./internal-links";
 import {
   cachedSystemPrompt,
   CONTENT_LONG_FORM_MODEL,
@@ -219,12 +220,32 @@ export async function generateMultiFormat(args: {
       formatDurations: args.formatDurations,
     });
 
+  // Internal links: when the batch includes the long-form blog, hand the
+  // generator an approved link plan from the Cluster Map (site_pages) so the
+  // article links out to related firm pages. Scoped to the blog body — the
+  // social/script formats don't need inline links. Fails soft if no inventory.
+  let linkBlock = "";
+  if (longForm.includes("blog")) {
+    try {
+      const plan = await buildLinkPlan({
+        primaryKeyword: args.topic,
+        secondaryKeywords: args.targetKeywords,
+      });
+      const block = approvedLinkPlanBlock(plan.links);
+      if (block) {
+        linkBlock = `\n\n---\n${block}\n(Apply these internal links in the blog/article body only; the other formats don't need them.)`;
+      }
+    } catch {
+      /* no inventory / non-fatal */
+    }
+  }
+
   const [longResult, shortResult] = await Promise.all([
     longForm.length > 0
       ? callClaudeForFormats({
           model: CONTENT_LONG_FORM_MODEL,
           system,
-          user: buildUserFor(longForm),
+          user: buildUserFor(longForm) + linkBlock,
         })
       : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
     shortForm.length > 0

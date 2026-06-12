@@ -271,6 +271,18 @@ export function KmBriefWizard({
     }
   };
 
+  // Auto-fill the meta description when Diana first reaches Step 5 (Meta). She
+  // should see a pre-generated description, not a blank field she has to write.
+  // Only fires when the field is still empty, so it never clobbers an edit.
+  useEffect(() => {
+    if (step !== 4) return;
+    if (metaBusy) return;
+    if ((brief.metaDescription ?? "").trim()) return;
+    if (!brief.primaryKeyword) return;
+    void draftMeta();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   const structure = getKmStructure(
     (brief.contentType as KMContentType) || "blog_post",
     (brief.practiceArea as KMPracticeArea) || "employment",

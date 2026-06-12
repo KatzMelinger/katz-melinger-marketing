@@ -31,6 +31,7 @@ import {
   scoreKeyword,
 } from "@/lib/keyword-filter";
 import { listCompetitors } from "@/lib/seo-competitors";
+import { listExclusionTerms } from "@/lib/keyword-exclusions";
 import { inferIntent, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
 import { getPillars } from "@/lib/pillars-store";
 import { getTenantDb } from "@/lib/tenant-db";
@@ -133,9 +134,11 @@ export async function POST(req: Request) {
 
   try {
     const competitors = await listCompetitors().catch(() => [] as string[]);
+    const customExclusions = await listExclusionTerms().catch(() => [] as string[]);
     const ctx = {
       brandTokens: KM_BRAND_TOKENS,
       competitorTokens: competitorTokensFromDomains(competitors),
+      customExclusions,
     };
 
     const db = await getTenantDb();
