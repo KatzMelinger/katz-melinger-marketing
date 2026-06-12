@@ -21,7 +21,7 @@ import {
   getKeywordGapVsCompetitors,
   getTrackedKeywordPerformance,
 } from "./seo-intelligence";
-import { getKeywordTrend } from "./semrush";
+import { getKeywordTrend } from "./dataforseo";
 import { generateResearchPacket } from "./research-packet";
 import { getTenantConfig } from "./tenant-config";
 

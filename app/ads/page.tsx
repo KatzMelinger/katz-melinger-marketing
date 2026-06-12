@@ -15,7 +15,16 @@
 
 import { useEffect, useState } from "react";
 
-type Tab = "overview" | "compliance" | "creatives" | "keywords" | "connections";
+type Tab = "overview" | "audit" | "roi" | "compliance" | "creatives" | "keywords" | "connections";
+
+const REPORT_TYPES = [
+  { value: "search_terms", label: "Search-terms report" },
+  { value: "campaigns", label: "Campaign report" },
+  { value: "keywords", label: "Keyword report" },
+  { value: "ads", label: "Ad / asset report" },
+  { value: "audience_placement", label: "Audience / placement (social)" },
+  { value: "other", label: "Other export" },
+];
 
 const PRACTICE_AREAS = [
   "All",
@@ -224,6 +233,8 @@ export default function AdsPage() {
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "overview", label: "Overview", icon: "▣" },
+    { id: "audit", label: "Account Audit", icon: "🔍" },
+    { id: "roi", label: "ROI Calculator", icon: "🧮" },
     { id: "compliance", label: "Compliance Checker", icon: "⚖" },
     { id: "creatives", label: "Creative Library", icon: "✎" },
     { id: "keywords", label: "Negative Keywords", icon: "⊘" },
@@ -258,6 +269,8 @@ export default function AdsPage() {
       </div>
 
       {tab === "overview" && <OverviewTab />}
+      {tab === "audit" && <AuditTab />}
+      {tab === "roi" && <RoiTab />}
       {tab === "compliance" && <ComplianceTab />}
       {tab === "creatives" && <CreativesTab />}
       {tab === "keywords" && <KeywordsTab />}
@@ -329,6 +342,674 @@ function OverviewTab() {
           ))}
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ---------- Account Audit tab -----------------------------------------------
+
+type AuditIssue = {
+  title: string;
+  severity: "high" | "medium" | "low";
+  category: string;
+  finding: string;
+  impact: string;
+  fix: string;
+  platformNote: string | null;
+};
+
+type NegSuggestion = {
+  keyword: string;
+  match_type: "exact" | "phrase" | "broad";
+  level: "account" | "campaign";
+  reason: string;
+};
+
+type AuditResult = {
+  summary: string;
+  healthScore: number;
+  issues: AuditIssue[];
+  negativeKeywordSuggestions: NegSuggestion[];
+  dataGaps: string[];
+};
+
+type AuditHistoryRow = {
+  id: string;
+  platform: string;
+  report_type: string | null;
+  health_score: number | null;
+  issue_count: number;
+  neg_count: number;
+  summary: string | null;
+  result: AuditResult;
+  created_at: string;
+};
+
+const SEARCH_PLATFORM_IDS = ["google_search", "google_lsa", "microsoft"];
+
+function AuditTab() {
+  const [platform, setPlatform] = useState("google_search");
+  const [reportType, setReportType] = useState("search_terms");
+  const [context, setContext] = useState("");
+  const [report, setReport] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AuditResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // track which suggested negatives have been queued for approval
+  const [queued, setQueued] = useState<Record<string, "queued" | "queuing" | "error">>({});
+  const [queuingAll, setQueuingAll] = useState(false);
+  const [history, setHistory] = useState<AuditHistoryRow[]>([]);
+
+  const isSearch = SEARCH_PLATFORM_IDS.includes(platform);
+
+  const loadHistory = async () => {
+    try {
+      const res = await fetch("/api/ads/audit/history");
+      const data = await res.json();
+      setHistory(data.audits || []);
+    } catch {
+      /* history is best-effort */
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const onFile = (file: File | undefined) => {
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => setReport(String(reader.result || ""));
+    reader.readAsText(file);
+  };
+
+  const run = async () => {
+    if (!report.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setQueued({});
+    try {
+      const res = await fetch("/api/ads/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report, platform, reportType, context }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Audit failed");
+      setResult(data.result);
+      loadHistory();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Audit failed");
+    }
+    setLoading(false);
+  };
+
+  const negKey = (s: NegSuggestion) => `${s.keyword}|${s.match_type}`;
+
+  const queueOne = async (s: NegSuggestion) => {
+    const key = negKey(s);
+    setQueued((p) => ({ ...p, [key]: "queuing" }));
+    try {
+      const res = await fetch("/api/ads/keyword-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestions: [s] }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "Failed to queue");
+      }
+      setQueued((p) => ({ ...p, [key]: "queued" }));
+    } catch {
+      setQueued((p) => ({ ...p, [key]: "error" }));
+    }
+  };
+
+  const queueAll = async () => {
+    if (!result) return;
+    const pending = result.negativeKeywordSuggestions.filter(
+      (s) => queued[negKey(s)] !== "queued",
+    );
+    if (pending.length === 0) return;
+    setQueuingAll(true);
+    try {
+      const res = await fetch("/api/ads/keyword-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestions: pending }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "Failed to queue");
+      }
+      setQueued((p) => {
+        const next = { ...p };
+        for (const s of pending) next[negKey(s)] = "queued";
+        return next;
+      });
+    } catch {
+      /* per-row retry still available */
+    }
+    setQueuingAll(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4 space-y-3">
+        <div className="text-sm font-semibold">Audit an account export</div>
+        <p className="text-xs opacity-70">
+          No API connection needed. Export a report from the platform&rsquo;s own
+          UI (e.g. Google Ads → Insights &amp; reports → Search terms → download
+          CSV) and paste or upload it below. Claude reads the raw export and
+          returns the highest-impact problems and fixes — plus suggested
+          negative keywords for search platforms.
+        </p>
+
+        <div className="grid sm:grid-cols-2 gap-2">
+          <Select
+            value={platform}
+            onChange={setPlatform}
+            options={PLATFORMS.map((p) => ({ value: p.id, label: p.label }))}
+          />
+          <Select value={reportType} onChange={setReportType} options={REPORT_TYPES} />
+        </div>
+
+        <Input
+          value={context}
+          onChange={setContext}
+          placeholder="Firm context (optional) — e.g. 'B2B employment law, NY/NJ, we represent employees; do NOT want consumer/divorce or job-seeker leads'"
+        />
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-black/15 dark:border-white/15 text-sm cursor-pointer hover:bg-black/5 dark:hover:bg-white/10">
+            <span aria-hidden>⤓</span> Upload CSV
+            <input
+              type="file"
+              accept=".csv,.tsv,.txt,text/csv,text/plain"
+              className="hidden"
+              onChange={(e) => onFile(e.target.files?.[0])}
+            />
+          </label>
+          {fileName && <span className="text-xs opacity-70">{fileName}</span>}
+          {report && (
+            <span className="text-xs opacity-50">
+              {report.length.toLocaleString()} chars loaded
+            </span>
+          )}
+        </div>
+
+        <TextArea
+          value={report}
+          onChange={(v) => {
+            setReport(v);
+            setFileName(null);
+          }}
+          placeholder={`Paste the report here, or upload a CSV above.\n\nExample (search-terms report):\nSearch term, Campaign, Clicks, Cost, Conversions\n"business divorce attorney", Business, 14, 92.40, 1\n"how to divorce my spouse", Business, 9, 61.10, 0\n"free legal advice employee", Employment, 22, 140.00, 0`}
+          rows={8}
+        />
+
+        <div className="flex gap-2">
+          <Button onClick={run} disabled={loading || !report.trim()}>
+            {loading ? <Spinner /> : <span aria-hidden>🔍</span>}
+            {loading ? "Auditing…" : "Run audit"}
+          </Button>
+          {(result || error) && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResult(null);
+                setError(null);
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+      </Card>
+
+      {result && (
+        <div className="space-y-3">
+          <Card className="p-5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="text-3xl font-bold">
+                <ScoreText score={result.healthScore} />
+                <span className="text-sm opacity-50 ml-1">/ 100</span>
+              </div>
+              <span className="text-xs opacity-70 ml-auto">
+                {result.issues.length} issue{result.issues.length === 1 ? "" : "s"}
+                {isSearch
+                  ? ` • ${result.negativeKeywordSuggestions.length} negative suggestion${
+                      result.negativeKeywordSuggestions.length === 1 ? "" : "s"
+                    }`
+                  : ""}
+              </span>
+            </div>
+            <p className="text-sm mt-3 opacity-90">{result.summary}</p>
+          </Card>
+
+          {result.issues.length > 0 && (
+            <Card className="p-4">
+              <div className="text-sm font-semibold mb-3">
+                Prioritized issues (highest impact first)
+              </div>
+              <div className="space-y-2">
+                {result.issues.map((it, i) => (
+                  <div
+                    key={i}
+                    className="border border-black/10 dark:border-white/10 rounded p-3"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase ${
+                          it.severity === "high"
+                            ? "bg-red-500/15 text-red-700 dark:text-red-400"
+                            : it.severity === "medium"
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            : "bg-blue-500/15 text-blue-700 dark:text-blue-400"
+                        }`}
+                      >
+                        {it.severity}
+                      </span>
+                      <span className="text-xs opacity-60">{it.category}</span>
+                      <span className="text-sm font-medium">{it.title}</span>
+                    </div>
+                    <p className="text-sm mt-2 opacity-90">{it.finding}</p>
+                    <p className="text-xs opacity-70 mt-1">
+                      <span className="opacity-60">Impact:</span> {it.impact}
+                    </p>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">
+                      → {it.fix}
+                    </p>
+                    {it.platformNote && (
+                      <p className="text-xs opacity-60 mt-1 italic">{it.platformNote}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {result.negativeKeywordSuggestions.length > 0 && (
+            <Card className="p-4">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="text-sm font-semibold">
+                  Suggested negative keywords
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={queueAll}
+                  disabled={queuingAll}
+                  className="shrink-0"
+                >
+                  {queuingAll ? <Spinner /> : <span aria-hidden>⇪</span>}
+                  Queue all for approval
+                </Button>
+              </div>
+              <p className="text-xs opacity-60 mb-3">
+                These don&rsquo;t go live immediately. Queue the ones you want,
+                then approve them in the <strong>Negative Keywords</strong> tab —
+                approve-before-publish, so nothing changes your account without a
+                human OK.
+              </p>
+              <ul className="divide-y divide-black/5 dark:divide-white/5">
+                {result.negativeKeywordSuggestions.map((s, i) => {
+                  const state = queued[negKey(s)];
+                  return (
+                    <li key={i} className="py-2 flex items-center gap-2">
+                      <span className="text-xs opacity-60 w-14 shrink-0 capitalize">
+                        {s.match_type}
+                      </span>
+                      <span className="text-xs opacity-50 w-16 shrink-0 capitalize">
+                        {s.level}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-sm font-mono">{s.keyword}</span>
+                        {s.reason && (
+                          <span className="text-xs opacity-60 ml-2">— {s.reason}</span>
+                        )}
+                      </div>
+                      <Button
+                        variant={state === "queued" ? "ghost" : "outline"}
+                        disabled={state === "queued" || state === "queuing"}
+                        onClick={() => queueOne(s)}
+                        className="shrink-0"
+                      >
+                        {state === "queued"
+                          ? "✓ Queued"
+                          : state === "queuing"
+                          ? <Spinner />
+                          : state === "error"
+                          ? "Retry"
+                          : "+ Queue"}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
+
+          {result.dataGaps.length > 0 && (
+            <Card className="p-4">
+              <div className="text-sm font-semibold mb-2">
+                What this report couldn&rsquo;t tell us
+              </div>
+              <ul className="space-y-1">
+                {result.dataGaps.map((g, i) => (
+                  <li key={i} className="text-sm flex gap-2 opacity-80">
+                    <span aria-hidden>·</span>
+                    <span>{g}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <Card className="p-4">
+          <div className="text-sm font-semibold mb-1">Past audits</div>
+          <p className="text-xs opacity-60 mb-3">
+            Health-score trend over time. Click one to reopen it.
+          </p>
+          <ul className="divide-y divide-black/5 dark:divide-white/5">
+            {history.map((h) => {
+              const label =
+                PLATFORMS.find((p) => p.id === h.platform)?.label || h.platform;
+              return (
+                <li key={h.id}>
+                  <button
+                    onClick={() => {
+                      setResult(h.result);
+                      setQueued({});
+                      setError(null);
+                    }}
+                    className="w-full py-2 flex items-center gap-3 text-left hover:bg-black/5 dark:hover:bg-white/10 rounded px-1"
+                  >
+                    <span className="shrink-0">
+                      {typeof h.health_score === "number" ? (
+                        <ScoreText score={h.health_score} />
+                      ) : (
+                        <span className="opacity-40">—</span>
+                      )}
+                    </span>
+                    <span className="text-xs opacity-70 w-28 shrink-0">{label}</span>
+                    <span className="text-xs opacity-60 shrink-0">
+                      {h.issue_count} issue{h.issue_count === 1 ? "" : "s"}
+                    </span>
+                    <span className="text-sm opacity-90 truncate flex-1">
+                      {h.summary || "(no summary)"}
+                    </span>
+                    <span className="text-xs opacity-50 shrink-0">
+                      {new Date(h.created_at).toLocaleDateString()}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ---------- ROI Calculator tab ----------------------------------------------
+
+type EconomicsRow = {
+  id: string;
+  practice_area: string;
+  avg_case_value: number;
+  close_rate: number;
+  notes: string | null;
+  updated_at: string;
+};
+
+const fmtUSD = (n: number) =>
+  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+function RoiTab() {
+  const [practiceArea, setPracticeArea] = useState("All");
+  const [avgCaseValue, setAvgCaseValue] = useState("");
+  const [closeRatePct, setCloseRatePct] = useState(""); // displayed as %
+  const [spend, setSpend] = useState("");
+  const [leads, setLeads] = useState("");
+  const [signed, setSigned] = useState("");
+  const [econ, setEcon] = useState<EconomicsRow[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [spendLoading, setSpendLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load saved economics, then hydrate the inputs from the selected area.
+  const loadEcon = async () => {
+    try {
+      const res = await fetch("/api/ads/economics");
+      const data = await res.json();
+      if (res.ok) setEcon(data.rows || []);
+    } catch {
+      /* best-effort */
+    }
+  };
+
+  useEffect(() => {
+    loadEcon();
+  }, []);
+
+  // When the practice area (or loaded data) changes, fill in its saved numbers.
+  useEffect(() => {
+    const row = econ.find((e) => e.practice_area === practiceArea);
+    if (row) {
+      setAvgCaseValue(String(row.avg_case_value));
+      setCloseRatePct(String(Math.round(row.close_rate * 1000) / 10));
+    }
+  }, [practiceArea, econ]);
+
+  const pullSpend = async () => {
+    setSpendLoading(true);
+    try {
+      const res = await fetch("/api/marketing/spend");
+      const data = await res.json();
+      const rows: { amount: number }[] = data.rows || [];
+      const total = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+      if (total > 0) setSpend(String(Math.round(total)));
+    } catch {
+      /* manual entry still works */
+    }
+    setSpendLoading(false);
+  };
+
+  const saveEcon = async () => {
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const res = await fetch("/api/ads/economics", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          practice_area: practiceArea,
+          avg_case_value: Number(avgCaseValue) || 0,
+          close_rate: (Number(closeRatePct) || 0) / 100,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to save");
+      setSaved(true);
+      await loadEcon();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    }
+    setSaving(false);
+  };
+
+  // ---- derived numbers ----
+  const cv = Number(avgCaseValue) || 0;
+  const cr = (Number(closeRatePct) || 0) / 100;
+  const sp = Number(spend) || 0;
+  const ld = Number(leads) || 0;
+  // signed: use the entered value, else estimate leads x close rate
+  const sg = signed !== "" ? Number(signed) || 0 : ld * cr;
+
+  const valuePerLead = cv * cr; // max you can pay per lead and break even
+  const actualCPL = ld > 0 ? sp / ld : null;
+  const costPerCase = sg > 0 ? sp / sg : null;
+  const revenue = sg * cv;
+  const roas = sp > 0 ? revenue / sp : null;
+  const profit = revenue - sp;
+
+  const hasInputs = cv > 0 && cr > 0;
+  const verdict =
+    !hasInputs || actualCPL === null
+      ? null
+      : actualCPL <= valuePerLead
+      ? "worth"
+      : "not";
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4 space-y-3">
+        <div className="text-sm font-semibold">
+          Should you run ads? — case value &amp; breakeven
+        </div>
+        <p className="text-xs opacity-70">
+          The &ldquo;homework zero&rdquo; numbers: your average case value and
+          lead&rarr;signed close rate set the most you can profitably pay per
+          lead. Save them per practice area; the calculator compares that
+          breakeven against your actual cost per lead.
+        </p>
+
+        <div className="grid sm:grid-cols-3 gap-2">
+          <div>
+            <label className="text-xs opacity-60">Practice area</label>
+            <Select
+              value={practiceArea}
+              onChange={setPracticeArea}
+              options={PRACTICE_AREAS.map((p) => ({ value: p, label: p }))}
+              className="w-full mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs opacity-60">Avg case value ($)</label>
+            <Input
+              value={avgCaseValue}
+              onChange={setAvgCaseValue}
+              placeholder="3400"
+              type="number"
+              className="w-full mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs opacity-60">Close rate — lead → signed (%)</label>
+            <Input
+              value={closeRatePct}
+              onChange={setCloseRatePct}
+              placeholder="15"
+              type="number"
+              className="w-full mt-1"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 items-center">
+          <Button onClick={saveEcon} disabled={saving}>
+            {saving ? <Spinner /> : null}
+            Save for {practiceArea}
+          </Button>
+          {saved && (
+            <span className="text-xs text-emerald-600 dark:text-emerald-400">Saved ✓</span>
+          )}
+          {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+        </div>
+      </Card>
+
+      <Card className="p-4 space-y-3">
+        <div className="text-sm font-semibold">Your actuals (this period)</div>
+        <div className="grid sm:grid-cols-3 gap-2">
+          <div>
+            <label className="text-xs opacity-60">Ad spend ($)</label>
+            <div className="flex gap-1 mt-1">
+              <Input value={spend} onChange={setSpend} placeholder="1600" type="number" className="w-full" />
+              <Button variant="outline" onClick={pullSpend} disabled={spendLoading} title="Pull total from Marketing Spend">
+                {spendLoading ? <Spinner /> : "⤓"}
+              </Button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs opacity-60">Leads</label>
+            <Input value={leads} onChange={setLeads} placeholder="40" type="number" className="w-full mt-1" />
+          </div>
+          <div>
+            <label className="text-xs opacity-60">Signed cases (optional)</label>
+            <Input value={signed} onChange={setSigned} placeholder="auto = leads × close rate" type="number" className="w-full mt-1" />
+          </div>
+        </div>
+      </Card>
+
+      {hasInputs && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="p-4">
+            <div className="text-2xl font-bold">{fmtUSD(valuePerLead)}</div>
+            <div className="text-xs opacity-70 mt-1">Max profitable cost / lead</div>
+            <div className="text-[10px] opacity-50 mt-1 italic">case value × close rate</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-2xl font-bold">
+              {actualCPL === null ? "—" : fmtUSD(actualCPL)}
+            </div>
+            <div className="text-xs opacity-70 mt-1">Your actual cost / lead</div>
+            <div className="text-[10px] opacity-50 mt-1 italic">spend ÷ leads</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-2xl font-bold">
+              {roas === null ? "—" : `${roas.toFixed(1)}×`}
+            </div>
+            <div className="text-xs opacity-70 mt-1">ROAS</div>
+            <div className="text-[10px] opacity-50 mt-1 italic">revenue ÷ spend</div>
+          </Card>
+          <Card className="p-4">
+            <div className={`text-2xl font-bold ${profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+              {fmtUSD(profit)}
+            </div>
+            <div className="text-xs opacity-70 mt-1">Net (period)</div>
+            <div className="text-[10px] opacity-50 mt-1 italic">
+              {costPerCase !== null ? `${fmtUSD(costPerCase)} / signed case` : "revenue − spend"}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {verdict && (
+        <Card className={`p-4 ${verdict === "worth" ? "border-emerald-500/40" : "border-red-500/40"}`}>
+          <div className="text-sm font-semibold mb-1">
+            {verdict === "worth" ? "✓ Worth running" : "✕ Not breaking even yet"}
+          </div>
+          <p className="text-sm opacity-90">
+            {verdict === "worth" ? (
+              <>
+                Your cost per lead ({fmtUSD(actualCPL!)}) is below the{" "}
+                {fmtUSD(valuePerLead)} you can profitably pay, so each lead is net
+                positive on average. Scaling spend should grow signed cases
+                proportionally — watch that lead quality holds as you do.
+              </>
+            ) : (
+              <>
+                Your cost per lead ({fmtUSD(actualCPL!)}) is above the{" "}
+                {fmtUSD(valuePerLead)} breakeven. Before spending more, use the{" "}
+                <strong>Account Audit</strong> to cut wasted spend on wrong-intent
+                searches and lift your close rate — that&rsquo;s usually faster
+                than buying more leads.
+              </>
+            )}
+          </p>
+        </Card>
+      )}
     </div>
   );
 }
@@ -760,6 +1441,17 @@ type NegKeyword = {
   created_at: string;
 };
 
+type QueueItem = {
+  id: string;
+  keyword: string;
+  match_type: string;
+  level: string;
+  reason: string | null;
+  source: string;
+  status: string;
+  created_at: string;
+};
+
 function KeywordsTab() {
   const [items, setItems] = useState<NegKeyword[]>([]);
   const [loading, setLoading] = useState(true);
@@ -768,6 +1460,8 @@ function KeywordsTab() {
   const [keyword, setKeyword] = useState("");
   const [matchType, setMatchType] = useState("phrase");
   const [reason, setReason] = useState("");
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [deciding, setDeciding] = useState<Record<string, boolean>>({});
 
   const load = async () => {
     setLoading(true);
@@ -782,8 +1476,39 @@ function KeywordsTab() {
     setLoading(false);
   };
 
+  const loadQueue = async () => {
+    try {
+      const res = await fetch("/api/ads/keyword-queue?status=pending");
+      const data = await res.json();
+      if (res.ok) setQueue(data.items || []);
+    } catch {
+      /* queue is best-effort */
+    }
+  };
+
+  const decide = async (id: string, decision: "approved" | "rejected") => {
+    setDeciding((p) => ({ ...p, [id]: true }));
+    try {
+      const res = await fetch(`/api/ads/keyword-queue/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "Failed");
+      }
+      setQueue((p) => p.filter((q) => q.id !== id));
+      if (decision === "approved") await load(); // surfaces the new live keyword
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update queue item");
+    }
+    setDeciding((p) => ({ ...p, [id]: false }));
+  };
+
   useEffect(() => {
     load();
+    loadQueue();
   }, []);
 
   const submit = async () => {
@@ -831,6 +1556,56 @@ function KeywordsTab() {
         these into the campaign-level negatives so you don't waste budget on
         wrong-intent searches.
       </p>
+
+      {queue.length > 0 && (
+        <Card className="p-4 border-amber-500/40">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-semibold">Pending approval</span>
+            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400">
+              {queue.length}
+            </span>
+          </div>
+          <p className="text-xs opacity-60 mb-3">
+            Negatives suggested by the Account Audit. Approve to add them to the
+            live list, or reject to discard. Nothing is applied until you decide.
+          </p>
+          <ul className="divide-y divide-black/5 dark:divide-white/5">
+            {queue.map((q) => (
+              <li key={q.id} className="py-2 flex items-center gap-2">
+                <span className="text-xs opacity-60 w-14 shrink-0 capitalize">
+                  {q.match_type}
+                </span>
+                <span className="text-xs opacity-50 w-16 shrink-0 capitalize">
+                  {q.level}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-mono">{q.keyword}</span>
+                  {q.reason && (
+                    <span className="text-xs opacity-60 ml-2 truncate">— {q.reason}</span>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  disabled={!!deciding[q.id]}
+                  onClick={() => decide(q.id, "approved")}
+                  className="shrink-0"
+                >
+                  {deciding[q.id] ? <Spinner /> : "✓ Approve"}
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={!!deciding[q.id]}
+                  onClick={() => decide(q.id, "rejected")}
+                  className="shrink-0"
+                  title="Reject"
+                >
+                  ✕
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="p-4 space-y-3">
         <div className="grid sm:grid-cols-[1fr_auto_auto] gap-2">

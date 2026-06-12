@@ -11,11 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantDb } from "@/lib/tenant-db";
-import { lookupKeywordRanking } from "@/lib/semrush";
-import {
-  isSemrushPushEnabled,
-  pushKeywordsToCampaign,
-} from "@/lib/semrush-position-tracking";
+import { lookupKeywordRanking } from "@/lib/dataforseo";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -143,18 +139,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to add keyword" }, { status: 500 });
     }
 
-    // Two-way sync: mirror the new keyword into the Semrush Position Tracking
-    // campaign so Semrush's dashboards/reports stay in sync. Best-effort and
-    // only when explicitly enabled (it spends 100 API units/keyword) — never
-    // fails the add.
-    let semrushPush: Awaited<ReturnType<typeof pushKeywordsToCampaign>> | undefined;
-    if (isSemrushPushEnabled()) {
-      semrushPush = await pushKeywordsToCampaign([parsed.value.keyword]).catch(
-        () => undefined,
-      );
-    }
+    // Note: DataForSEO is read-only (no campaign-management API), so the old
+    // Semrush Position Tracking two-way push is dropped. Rank tracking is
+    // pull-only — the daily refresh cron reads ranks via ranked_keywords +
+    // a live-SERP fallback.
 
-    return NextResponse.json({ ...data, semrushPush }, { status: 201 });
+    return NextResponse.json(data, { status: 201 });
   } catch (err: any) {
     console.error("[seo/tracked-keywords POST] Failed:", err?.message);
     return NextResponse.json({ error: "Failed to add keyword" }, { status: 500 });

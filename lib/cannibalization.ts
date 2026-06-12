@@ -11,7 +11,8 @@
  * detection.
  */
 
-import { getDomainKeywords, SEMRUSH_DOMAIN, type SemrushKeywordRow } from "./semrush";
+import { SEMRUSH_DOMAIN, type SemrushKeywordRow } from "./semrush";
+import { getDomainKeywords } from "./dataforseo";
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
 import {

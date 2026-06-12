@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getKeywordTrend } from "@/lib/semrush";
+import { getKeywordTrend } from "@/lib/dataforseo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
