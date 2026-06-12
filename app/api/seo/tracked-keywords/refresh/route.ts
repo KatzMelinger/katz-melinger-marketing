@@ -20,6 +20,7 @@ import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
 import { detectCannibalization } from "@/lib/cannibalization";
 import {
+  getAIOverviewForKeyword,
   getDomainKeywords,
   getKeywordDifficulty,
   getLiveRank,
@@ -168,6 +169,29 @@ async function refreshTrackedKeywords(tenantId: string) {
       }),
     );
 
+    // AI Overview check (C) — does this keyword trigger a Google AI Overview,
+    // and is our domain cited in it? Each is a live SERP-advanced call, so this
+    // is bounded like the live-rank fallback. Non-fatal + best-effort.
+    const AI_OVERVIEW_CAP = 50;
+    const aiOverviewMap = new Map<
+      string,
+      { present: boolean; cited: boolean; sources: string[] }
+    >();
+    const aoTargets = items.slice(0, AI_OVERVIEW_CAP);
+    if (items.length > AI_OVERVIEW_CAP) {
+      console.warn(
+        `[seo/keywords/refresh] AI-Overview check capped at ${AI_OVERVIEW_CAP} of ${items.length} keywords this run.`,
+      );
+    }
+    await Promise.all(
+      aoTargets.map(async (it) => {
+        const ao = await getAIOverviewForKeyword(it.keyword, semrushDomain).catch(
+          () => null,
+        );
+        if (ao) aiOverviewMap.set(it.id, ao);
+      }),
+    );
+
     // Apply updates row by row. Could be batched with .upsert, but per-row
     // gives us cleaner error handling and the volume here is small (typically
     // <100 tracked keywords).
@@ -201,6 +225,10 @@ async function refreshTrackedKeywords(tenantId: string) {
         url = null;
       }
 
+      // AI Overview columns only for keywords we checked this run (conditional
+      // spread so capped keywords keep their prior values rather than reset).
+      const ao = aiOverviewMap.get(item.id);
+
       const { error: updateErr } = await db.raw
         .from("seo_keywords")
         .update({
@@ -210,6 +238,14 @@ async function refreshTrackedKeywords(tenantId: string) {
           difficulty,
           url,
           last_checked_at: now,
+          ...(ao
+            ? {
+                ai_overview_present: ao.present,
+                ai_overview_cited: ao.cited,
+                ai_overview_sources: ao.sources,
+                ai_overview_checked_at: now,
+              }
+            : {}),
         })
         .eq("id", item.id)
         .eq("tenant_id", tenantId);

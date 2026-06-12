@@ -56,6 +56,7 @@ export type DataForSeoKeywordRow = {
 // ============================================================================
 
 /** Pull tasks[0].result[0].items[] defensively from a DataForSEO response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractItems(json: any): any[] {
   const result = json?.tasks?.[0]?.result;
   if (!Array.isArray(result) || result.length === 0) return [];
@@ -383,5 +384,67 @@ export async function lookupKeywordRanking(
     };
   } catch {
     return { currentRank: null, searchVolume: null, difficulty: null, url: null };
+  }
+}
+
+/**
+ * Detect a Google AI Overview for a keyword and whether our domain is cited in
+ * it. Uses the SERP advanced endpoint, whose items[] include an `ai_overview`
+ * element with reference links.
+ *
+ * SCHEMA NOTE: field paths follow DataForSEO's documented SERP-advanced shape
+ * but couldn't be verified against a live response (this environment can't reach
+ * the API). Parsing is defensive — unknown shapes yield present:false. Validate
+ * the ai_overview element via scripts/dfs-schema-probe.mjs from a reachable
+ * network, then adjust if needed.
+ */
+export async function getAIOverviewForKeyword(
+  keyword: string,
+  ourDomain: string = DATAFORSEO_DOMAIN,
+): Promise<{ present: boolean; cited: boolean; sources: string[] }> {
+  const ours = ourDomain
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase();
+  const empty = { present: false, cited: false, sources: [] as string[] };
+  try {
+    const json = await cachedDataForSeoPost("serp/google/organic/live/advanced", {
+      keyword,
+      location_code: DATAFORSEO_LOCATION_CODE,
+      language_code: DATAFORSEO_LANGUAGE_CODE,
+      depth: 20,
+    });
+    const ao = extractItems(json).find((it) => it?.type === "ai_overview");
+    if (!ao) return empty;
+
+    // References can be a flat `references[]` or nested under `items[].references`.
+    const refs = Array.isArray(ao.references)
+      ? ao.references
+      : Array.isArray(ao.items)
+        ? ao.items.flatMap((s: { references?: unknown }) =>
+            Array.isArray(s?.references) ? s.references : [],
+          )
+        : [];
+
+    const sources = Array.from(
+      new Set(
+        refs
+          .map((r: { url?: unknown; domain?: unknown }) => {
+            const raw = String(r?.url ?? r?.domain ?? "");
+            try {
+              return new URL(raw).host.replace(/^www\./, "").toLowerCase();
+            } catch {
+              return String(r?.domain ?? "").replace(/^www\./, "").toLowerCase();
+            }
+          })
+          .filter((d: string) => d.length > 0),
+      ),
+    ) as string[];
+
+    const cited = sources.some((d) => d === ours || d.endsWith(`.${ours}`));
+    return { present: true, cited, sources };
+  } catch {
+    return empty;
   }
 }
