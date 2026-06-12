@@ -38,6 +38,11 @@ const TTL_HOURS: Record<string, number> = {
   domain_intersection: 24,
   serp_competitors: 24,
 
+  // Paid-ad intelligence (Ads Transparency Center via SERP API). Advertiser ad
+  // lists change slowly — keep a day so re-scans across tenants are free.
+  ads_search: 24,
+  ads_advertisers: 24,
+
   // Keyword volume / difficulty / ideas — essentially stable, keep a week.
   bulk_keyword_difficulty: 168,
   keyword_overview: 168,
@@ -104,6 +109,18 @@ export async function cachedDataForSeoPost(
   const ttlHours = TTL_HOURS[reportType] ?? TTL_HOURS.default;
   const cacheKey = createHash("sha256").update(`${path}::${body}`).digest("hex");
 
+  // Tag the returned JSON with a non-enumerable cache-hit marker so cost-aware
+  // callers (lib/usage-meter.ts) can tell whether a billable request fired.
+  // Non-enumerable ⇒ JSON.stringify and every existing caller are unaffected.
+  const mark = (json: any, hit: boolean) => {
+    try {
+      Object.defineProperty(json, "__cacheHit", { value: hit, enumerable: false, configurable: true });
+    } catch {
+      /* primitive / frozen — caller falls back to assuming a live call */
+    }
+    return json;
+  };
+
   // ----- 1) Try cache --------------------------------------------------------
   try {
     const supabase = getSupabaseAdmin();
@@ -113,7 +130,7 @@ export async function cachedDataForSeoPost(
       .eq("cache_key", cacheKey)
       .maybeSingle();
     if (cached && new Date(cached.expires_at as string) > new Date()) {
-      return JSON.parse(cached.response_body as string);
+      return mark(JSON.parse(cached.response_body as string), true);
     }
   } catch {
     // Cache table missing / Supabase unavailable — fall through to live.
@@ -153,5 +170,5 @@ export async function cachedDataForSeoPost(
     }
   }
 
-  return json;
+  return mark(json, false);
 }

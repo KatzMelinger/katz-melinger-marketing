@@ -119,8 +119,8 @@ export async function listSkills(tenantId?: string): Promise<ContentSkill[]> {
   return (data as SkillRow[]).map(rowToSkill);
 }
 
-export async function listEnabledSkills(): Promise<ContentSkill[]> {
-  const all = await listSkills();
+export async function listEnabledSkills(tenantId?: string): Promise<ContentSkill[]> {
+  const all = await listSkills(tenantId);
   return all.filter((s) => s.enabled);
 }
 
@@ -198,9 +198,16 @@ function formatStructureSkill(s: ContentSkill): string {
  *
  * Structure skills are emitted first as a hard-enforcement block; everything
  * else follows under the existing "Skills the firm has trained you on" header.
+ *
+ * Pass `tenantId` to scope the skill read to a specific firm — required when
+ * generating from a background/agent context with no session; defaults to the
+ * caller's resolved tenant otherwise.
  */
-export async function buildSkillsContext(scope: SkillScope = {}): Promise<string> {
-  const skills = await listEnabledSkills();
+export async function buildSkillsContext(
+  scope: SkillScope = {},
+  tenantId?: string,
+): Promise<string> {
+  const skills = await listEnabledSkills(tenantId);
   const applicable = skills.filter((s) => skillMatchesScope(s, scope));
   if (applicable.length === 0) return "";
 

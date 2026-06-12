@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from "react";
 
-type Tab = "overview" | "audit" | "roi" | "compliance" | "creatives" | "keywords" | "connections";
+type Tab = "overview" | "audit" | "competitor-intel" | "roi" | "compliance" | "creatives" | "keywords" | "connections";
 
 const REPORT_TYPES = [
   { value: "search_terms", label: "Search-terms report" },
@@ -234,6 +234,7 @@ export default function AdsPage() {
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "overview", label: "Overview", icon: "▣" },
     { id: "audit", label: "Account Audit", icon: "🔍" },
+    { id: "competitor-intel", label: "Competitor Intel", icon: "🎯" },
     { id: "roi", label: "ROI Calculator", icon: "🧮" },
     { id: "compliance", label: "Compliance Checker", icon: "⚖" },
     { id: "creatives", label: "Creative Library", icon: "✎" },
@@ -270,6 +271,7 @@ export default function AdsPage() {
 
       {tab === "overview" && <OverviewTab />}
       {tab === "audit" && <AuditTab />}
+      {tab === "competitor-intel" && <CompetitorIntelTab />}
       {tab === "roi" && <RoiTab />}
       {tab === "compliance" && <ComplianceTab />}
       {tab === "creatives" && <CreativesTab />}
@@ -773,6 +775,266 @@ type EconomicsRow = {
 
 const fmtUSD = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+// ---------- Competitor Intel tab --------------------------------------------
+
+type CompetitorAd = {
+  format: string | null;
+  text: string | null;
+  advertiser: string | null;
+  firstShown: string | null;
+  lastShown: string | null;
+  imageUrl: string | null;
+  detailsUrl: string | null;
+};
+
+type CompetitorAdResult = {
+  domain: string;
+  advertiserId: string | null;
+  ads: CompetitorAd[];
+  noAdsFound: boolean;
+};
+
+type CompetitorStrategy = {
+  summary: string;
+  competitors: { domain: string; posture: string; angles: string[] }[];
+  opportunities: string[];
+  recommendations: { action: string; rationale: string; priority: "high" | "medium" | "low" }[];
+};
+
+type Usage = { used: number; cap: number; remaining: number };
+
+type CompetitorScanResponse = {
+  results: CompetitorAdResult[];
+  strategy: CompetitorStrategy | null;
+  usage: Usage;
+  quotaExceeded: boolean;
+  providerNotConfigured: boolean;
+  message?: string;
+};
+
+const PRIORITY_STYLES: Record<string, string> = {
+  high: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
+  medium: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  low: "bg-black/5 dark:bg-white/10 opacity-80 border-black/10 dark:border-white/15",
+};
+
+function CompetitorIntelTab() {
+  const [usage, setUsage] = useState<Usage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<CompetitorScanResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadUsage = async () => {
+    try {
+      const res = await fetch("/api/ads/competitor-ads");
+      const json = await res.json();
+      if (json?.usage) setUsage(json.usage);
+    } catch {
+      /* meter is best-effort */
+    }
+  };
+
+  useEffect(() => {
+    loadUsage();
+  }, []);
+
+  const run = async () => {
+    setLoading(true);
+    setError(null);
+    setData(null);
+    try {
+      const res = await fetch("/api/ads/competitor-ads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json: CompetitorScanResponse = await res.json();
+      if (!res.ok) throw new Error((json as { error?: string })?.error || "Scan failed");
+      setData(json);
+      if (json.usage) setUsage(json.usage);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Scan failed");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <h2 className="text-lg font-semibold">Competitor Intel — live ads</h2>
+          <p className="text-sm opacity-70 mt-1">
+            Pulls the ads your tracked competitors are running <em>right now</em> from
+            Google&apos;s Ads Transparency Center, then has Claude read the paid landscape and
+            recommend counter-moves. Competitors come from your SEO tracked-competitor list.
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          {usage && (
+            <div className="text-xs opacity-70 mb-2">
+              <span className="font-medium opacity-100">{usage.used}</span> / {usage.cap} lookups
+              used this month
+            </div>
+          )}
+          <Button onClick={run} disabled={loading}>
+            {loading ? <Spinner /> : "🎯"} {loading ? "Scanning…" : "Run competitor scan"}
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <Card className="p-4 border-red-500/40 bg-red-500/5 text-sm text-red-700 dark:text-red-400">
+          {error}
+        </Card>
+      )}
+
+      {data?.providerNotConfigured && (
+        <Card className="p-4 border-amber-500/40 bg-amber-500/5 text-sm">
+          {data.message ||
+            "Ad-data provider is not configured. Set DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD to enable live competitor ad lookups."}
+        </Card>
+      )}
+
+      {data?.message && !data.providerNotConfigured && data.results.length === 0 && (
+        <Card className="p-4 text-sm opacity-80">{data.message}</Card>
+      )}
+
+      {data?.quotaExceeded && (
+        <Card className="p-4 border-amber-500/40 bg-amber-500/5 text-sm">
+          Monthly limit reached — the scan stopped early to protect your usage cap. Results below
+          cover the competitors scanned before the limit.
+        </Card>
+      )}
+
+      {/* Claude synthesis */}
+      {data?.strategy && (
+        <Card className="p-4 space-y-4">
+          <div>
+            <div className="text-xs uppercase tracking-wide opacity-60 mb-1">Landscape</div>
+            <p className="text-sm">{data.strategy.summary}</p>
+          </div>
+
+          {data.strategy.opportunities.length > 0 && (
+            <div>
+              <div className="text-xs uppercase tracking-wide opacity-60 mb-1">Openings</div>
+              <ul className="list-disc list-inside text-sm space-y-1">
+                {data.strategy.opportunities.map((o, i) => (
+                  <li key={i}>{o}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {data.strategy.recommendations.length > 0 && (
+            <div>
+              <div className="text-xs uppercase tracking-wide opacity-60 mb-2">
+                What we should do
+              </div>
+              <div className="space-y-2">
+                {data.strategy.recommendations.map((r, i) => (
+                  <div
+                    key={i}
+                    className={`border rounded-md p-3 text-sm ${
+                      PRIORITY_STYLES[r.priority] ?? PRIORITY_STYLES.low
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded border border-current/30">
+                        {r.priority}
+                      </span>
+                      <span className="font-medium">{r.action}</span>
+                    </div>
+                    <p className="opacity-80 mt-1">{r.rationale}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Per-competitor live ads */}
+      {data?.results.map((r) => (
+        <Card key={r.domain} className="p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h3 className="font-semibold">{r.domain}</h3>
+            <span className="text-xs opacity-60">
+              {r.noAdsFound ? "No live ads found" : `${r.ads.length} live ad(s)`}
+            </span>
+          </div>
+
+          {r.noAdsFound ? (
+            <p className="text-sm opacity-60">
+              Not currently advertising on Google (or not disclosed in the Transparency Center).
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {r.ads.map((a, i) => (
+                <div
+                  key={i}
+                  className="border border-black/10 dark:border-white/10 rounded-md p-3 text-sm space-y-2"
+                >
+                  <div className="flex items-center gap-2 text-xs opacity-60">
+                    <span className="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10">
+                      {a.format ?? "ad"}
+                    </span>
+                    {(a.firstShown || a.lastShown) && (
+                      <span>
+                        {a.firstShown ?? "?"} → {a.lastShown ?? "?"}
+                      </span>
+                    )}
+                  </div>
+                  {a.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={a.imageUrl}
+                      alt={`${r.domain} ad creative`}
+                      className="max-h-32 w-auto rounded border border-black/10 dark:border-white/10"
+                    />
+                  )}
+                  {a.text && <p>{a.text}</p>}
+                  {a.advertiser && (
+                    <p className="text-xs opacity-60">Payer: {a.advertiser}</p>
+                  )}
+                  {a.detailsUrl && (
+                    <a
+                      href={a.detailsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs underline opacity-70 hover:opacity-100"
+                    >
+                      View in Transparency Center →
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      ))}
+
+      {!loading && !data && !error && (
+        <Card className="p-6 text-sm opacity-60 text-center">
+          Run a scan to see which competitors are advertising and what they&apos;re running.
+        </Card>
+      )}
+
+      {!loading &&
+        data &&
+        data.results.length === 0 &&
+        !data.providerNotConfigured &&
+        !data.quotaExceeded &&
+        !data.message && (
+          <Card className="p-6 text-sm opacity-70 text-center">
+            Scan completed, but no competitor ads were returned. Either your tracked competitors
+            aren&apos;t currently advertising on Google, or the ad-data provider couldn&apos;t be
+            reached — check the server logs if you expected results.
+          </Card>
+        )}
+    </div>
+  );
+}
 
 function RoiTab() {
   const [practiceArea, setPracticeArea] = useState("All");

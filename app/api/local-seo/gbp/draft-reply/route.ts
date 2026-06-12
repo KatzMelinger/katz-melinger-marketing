@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    const { reply, usedModel } = await draftReply(review);
-    return NextResponse.json({ reply, usedModel });
+    const { reply, usedModel, compliance } = await draftReply(review);
+    return NextResponse.json({ reply, usedModel, compliance });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "draft failed";
     return NextResponse.json({ error: msg }, { status: 500 });

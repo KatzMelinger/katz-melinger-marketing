@@ -20,31 +20,44 @@ function str(r: FormRow, ...keys: string[]): string {
 export default function FormsPage() {
   const [rows, setRows] = useState<FormRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
 
-  useEffect(() => {
-    let c = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/callrail/forms", { cache: "no-store" });
-        const j = await res.json();
-        if (c) return;
-        if (!res.ok) {
-          setError(j.error ?? "Failed to load");
-          return;
-        }
-        setRows(Array.isArray(j.submissions) ? j.submissions : []);
-        if (j.error) setError(j.error);
-      } catch {
-        if (!c) setError("Network error");
+  async function load() {
+    try {
+      const res = await fetch("/api/forms", { cache: "no-store" });
+      const j = await res.json();
+      if (!res.ok) {
+        setError(j.error ?? "Failed to load");
+        return;
       }
-    })();
-    return () => {
-      c = true;
-    };
+      setRows(Array.isArray(j.submissions) ? j.submissions : []);
+      setHint(typeof j.hint === "string" ? j.hint : null);
+      setError(j.error ?? null);
+    } catch {
+      setError("Network error");
+    }
+  }
+
+  useEffect(() => {
+    void load();
   }, []);
+
+  async function runSync() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/forms/sync", { method: "POST" });
+      const j = (await res.json()) as { synced?: number; error?: string };
+      if (!res.ok) setError(j.error ?? "Sync failed");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const sources = useMemo(() => {
     const m = new Map<string, number>();
@@ -98,14 +111,28 @@ export default function FormsPage() {
     >
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Form submissions</h1>
-          <p className="mt-1 text-sm text-slate-500">CallRail forms</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Form submissions</h1>
+            <p className="mt-1 text-sm text-slate-500">CallRail forms · web-form leads</p>
+          </div>
+          <button
+            onClick={() => void runSync()}
+            disabled={busy}
+            className="rounded-lg bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
+          >
+            {busy ? "Working…" : "Sync from CallRail"}
+          </button>
         </div>
 
         {error ? (
           <div className="rounded-lg border border-amber-800/50 p-4 text-sm text-amber-800" style={{ backgroundColor: CARD }}>
             {error}
+          </div>
+        ) : null}
+        {hint ? (
+          <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-700">
+            {hint}
           </div>
         ) : null}
 

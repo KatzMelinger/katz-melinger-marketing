@@ -7,8 +7,7 @@
  *
  * The three daily-driver departments (SEO Content, On-Page SEO, Off-Page SEO)
  * are expanded by default; the rest start collapsed. Each group carries the
- * department's accent color. `phase2` items render dimmed and non-clickable
- * with a "Soon" pill.
+ * department's accent color.
  *
  * State (sidebar collapsed + per-department open) is persisted in localStorage
  * so the user's preference survives navigation and reload. On first load the
@@ -221,32 +220,6 @@ function SidebarItem({
   collapsed: boolean;
   active: boolean;
 }) {
-  // Phase 2 items have no page yet — show them dimmed and non-clickable so the
-  // roadmap is visible without producing dead links.
-  if (item.status === "phase2") {
-    return (
-      <div
-        title={`${item.label} — coming soon`}
-        aria-disabled
-        className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-400 cursor-default ${
-          collapsed ? "justify-center" : ""
-        }`}
-      >
-        <span aria-hidden className="text-base leading-none shrink-0 opacity-60">
-          {item.icon}
-        </span>
-        {!collapsed && (
-          <>
-            <span className="truncate">{item.label}</span>
-            <span className="ml-auto rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
-              Soon
-            </span>
-          </>
-        )}
-      </div>
-    );
-  }
-
   return (
     <Link
       href={item.href}

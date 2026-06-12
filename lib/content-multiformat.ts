@@ -187,14 +187,27 @@ export async function generateMultiFormat(args: {
   originContext?: Record<string, unknown> | null;
   formatDurations?: Partial<Record<FormatKey, string>>;
   language?: ContentLanguage;
+  /**
+   * Firm to generate for. Defaults to the caller's resolved tenant (request
+   * context). Pass explicitly when generating from a background/agent context
+   * with no session, so brand voice, skills, and the saved rows all belong to
+   * the same firm.
+   */
+  tenantId?: string;
 }): Promise<MultiFormatResult> {
   const supabase = getSupabaseAdmin();
+  // Resolve the tenant once so brand voice, skills, and the persisted batch/
+  // drafts are guaranteed to come from (and be stamped to) the same firm.
+  const tid = args.tenantId ?? (await resolveTenantId());
   const [firm, skillsContext] = await Promise.all([
-    getFirmContext(),
-    buildSkillsContext({
-      platforms: args.formats,
-      practiceArea: args.practiceArea,
-    }),
+    getFirmContext(tid),
+    buildSkillsContext(
+      {
+        platforms: args.formats,
+        practiceArea: args.practiceArea,
+      },
+      tid,
+    ),
   ]);
 
   const system = buildSystemPrompt({
@@ -240,7 +253,6 @@ export async function generateMultiFormat(args: {
     formats: { ...longResult.formats, ...shortResult.formats },
   };
 
-  const tid = await resolveTenantId();
   const { data: batchRow, error: batchErr } = await supabase
     .from("content_batches")
     .insert({

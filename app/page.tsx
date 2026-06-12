@@ -195,7 +195,7 @@ async function Board() {
 
 function DeptLinks({ deptKey }: { deptKey: string }) {
   const dept = DEPARTMENTS.find((d) => d.key === deptKey);
-  const items = (dept?.items ?? []).filter((it) => it.status === "active" && !it.adminOnly);
+  const items = (dept?.items ?? []).filter((it) => !it.adminOnly);
   return (
     <div className="flex flex-wrap gap-2">
       {items.map((it) => (

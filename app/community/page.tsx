@@ -17,6 +17,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  ComplianceNotice,
+  type ComplianceNoticeData,
+} from "@/components/compliance-notice";
+import {
   DashCard,
   DashButton,
   DashSpinner,
@@ -333,7 +337,11 @@ function PostCard({
   onStatusChange: (s: PostStatus) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState<{ text: string; warning: string } | null>(null);
+  const [draft, setDraft] = useState<{
+    text: string;
+    warning: string;
+    compliance?: ComplianceNoticeData | null;
+  } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [showDraft, setShowDraft] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -352,7 +360,7 @@ function PostCard({
       });
       const data = await res.json();
       if (res.ok) {
-        setDraft({ text: data.text, warning: data.warning });
+        setDraft({ text: data.text, warning: data.warning, compliance: data.compliance });
         setShowDraft(true);
       }
     } finally {
@@ -501,6 +509,7 @@ function PostCard({
           <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
             ⚠ {draft.warning}
           </div>
+          <ComplianceNotice compliance={draft.compliance} className="mt-2" />
         </div>
       )}
     </DashCard>
@@ -800,7 +809,11 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
   const [links, setLinks] = useState<{ label: string; url: string }[]>([]);
   const [text, setText] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [response, setResponse] = useState<{ text: string; warning: string } | null>(null);
+  const [response, setResponse] = useState<{
+    text: string;
+    warning: string;
+    compliance?: ComplianceNoticeData | null;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -824,7 +837,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Generate failed");
-      setResponse({ text: data.text, warning: data.warning });
+      setResponse({ text: data.text, warning: data.warning, compliance: data.compliance });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generate failed");
     } finally {
@@ -918,6 +931,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
           <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
             ⚠ {response.warning}
           </div>
+          <ComplianceNotice compliance={response.compliance} className="mt-3" />
         </DashCard>
       )}
     </div>
