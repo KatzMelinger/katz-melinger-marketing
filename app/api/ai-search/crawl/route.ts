@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { runAICrawl } from "@/lib/ai-crawler";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,7 +18,9 @@ export const maxDuration = 300;
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const url = typeof body?.url === "string" ? body.url : undefined;
+    const explicit = typeof body?.url === "string" && body.url.trim() ? body.url.trim() : null;
+    // No URL given → crawl THIS tenant's own site, not a hardcoded default.
+    const url = explicit ?? (await getTenantConfig()).semrushDomain;
 
     const result = await runAICrawl(url);
     return NextResponse.json(result);

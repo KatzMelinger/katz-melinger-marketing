@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getRecentBacklinks } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
   const limitParam = Number(req.nextUrl.searchParams.get("limit") ?? 50);
   const sort = sortParam === "lost" ? "last_seen_asc" : "first_seen_desc";
   try {
-    const backlinks = await getRecentBacklinks(SEMRUSH_DOMAIN, { sort, limit: limitParam });
+    const { semrushDomain } = await getTenantConfig();
+    const backlinks = await getRecentBacklinks(semrushDomain, { sort, limit: limitParam });
     return NextResponse.json({ sort: sortParam, backlinks });
   } catch (e) {
     return NextResponse.json(

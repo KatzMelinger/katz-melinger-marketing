@@ -41,6 +41,9 @@ export type TenantConfig = {
   pillars: KMPillar[];
   /** Always resolved: tenant value or the code-defined KM_SYSTEM_PROMPT. */
   systemPrompt: string;
+  /** Ayrshare per-profile key (Business multi-account); null = use the
+   *  account-level key alone. */
+  ayrshareProfileKey: string | null;
 };
 
 // Hardcoded fallbacks for the firm-contact fields (mirror DEFAULT_CONTACT in
@@ -68,6 +71,7 @@ type SettingsRow = {
   practice_areas: PracticeAreaOption[] | null;
   pillars: KMPillar[] | null;
   system_prompt: string | null;
+  ayrshare_profile_key: string | null;
 };
 
 export async function getTenantConfig(tenantId?: string): Promise<TenantConfig> {
@@ -110,6 +114,10 @@ export async function getTenantConfig(tenantId?: string): Promise<TenantConfig> 
       typeof row?.system_prompt === "string" && row.system_prompt.trim()
         ? row.system_prompt
         : KM_SYSTEM_PROMPT,
+    ayrshareProfileKey:
+      typeof row?.ayrshare_profile_key === "string" && row.ayrshare_profile_key.trim()
+        ? row.ayrshare_profile_key
+        : null,
   };
 }
 

@@ -6,10 +6,9 @@ import {
   rowToRecord,
   semrushAnalyticsUrl,
   semrushSeoUrl,
-  SEMRUSH_DATABASE,
-  SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +30,12 @@ export async function GET() {
   }
 
   try {
+    const { semrushDomain, semrushDatabase } = await getTenantConfig();
     const ranksUrl = semrushSeoUrl({
       key,
       type: "domain_ranks",
-      domain: SEMRUSH_DOMAIN,
-      database: SEMRUSH_DATABASE,
+      domain: semrushDomain,
+      database: semrushDatabase,
       export_columns: "Dn,Rk,Or,Ot",
       export_decode: "1",
     });
@@ -43,7 +43,7 @@ export async function GET() {
     const backlinksUrl = semrushAnalyticsUrl({
       key,
       type: "backlinks_overview",
-      target: SEMRUSH_DOMAIN,
+      target: semrushDomain,
       target_type: "root_domain",
       export_columns: "ascore,total",
       export_decode: "1",

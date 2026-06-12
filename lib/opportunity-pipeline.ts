@@ -21,9 +21,9 @@ import {
   getKeywordGapVsCompetitors,
   getTrackedKeywordPerformance,
 } from "./seo-intelligence";
-import { SEMRUSH_DOMAIN } from "./semrush";
 import { getKeywordTrend } from "./dataforseo";
 import { generateResearchPacket } from "./research-packet";
+import { getTenantConfig } from "./tenant-config";
 
 export type OpportunitySource = "competitor_gap" | "missing_target" | "long_tail";
 
@@ -121,16 +121,20 @@ export async function runOpportunityPipeline(args: {
   const deep = args.deep !== false;
   const practiceArea = args.practiceArea ?? null;
 
+  // Resolve the tenant's own Semrush domain (per-tenant, not the global
+  // katzmelinger.com constant) so the pipeline is correct under multi-tenancy.
+  const { tenantId, semrushDomain } = await getTenantConfig();
+
   // 1. SOURCE -----------------------------------------------------------------
   const competitors = args.competitor
     ? [args.competitor]
-    : await listCompetitors().catch(() => []);
+    : await listCompetitors(tenantId).catch(() => []);
 
   const [gaps, tracked] = await Promise.all([
     competitors.length > 0
-      ? getKeywordGapVsCompetitors(competitors, SEMRUSH_DOMAIN).catch(() => [])
+      ? getKeywordGapVsCompetitors(competitors, semrushDomain).catch(() => [])
       : Promise.resolve([]),
-    getTrackedKeywordPerformance(SEMRUSH_DOMAIN).catch(() => ({
+    getTrackedKeywordPerformance(semrushDomain, tenantId).catch(() => ({
       tracked: [],
       missingTargets: [] as string[],
       trendingKeywords: [],
