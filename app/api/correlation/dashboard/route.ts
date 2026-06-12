@@ -14,7 +14,7 @@
 
 import { NextResponse } from "next/server";
 import { getTenantDb } from "@/lib/tenant-db";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 
@@ -34,6 +34,7 @@ function normalize(url: string | null): string | null {
 }
 
 export async function GET() {
+  const { semrushDomain } = await getTenantConfig();
   const supabase = await getTenantDb();
 
   const { data: keywords } = await supabase
@@ -59,7 +60,7 @@ export async function GET() {
       const cites = (r.citations as { url?: string }[] | null) ?? [];
       for (const c of cites) {
         if (!c.url) continue;
-        if (!c.url.includes(SEMRUSH_DOMAIN)) continue; // we care about our own URLs here
+        if (!c.url.includes(semrushDomain)) continue; // we care about our own URLs here
         const norm = normalize(c.url);
         if (!norm) continue;
         const cur =

@@ -6,7 +6,7 @@ import {
   getKeywordGapVsCompetitor,
   getTechnicalSeoMonitoring,
 } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +26,10 @@ export async function GET(_request: Request, context: Context) {
   }
 
   try {
+    const { semrushDomain } = await getTenantConfig();
     const [keywords, gaps, backlinks, technical] = await Promise.all([
       getDomainOrganicKeywords(domain, 60),
-      getKeywordGapVsCompetitor(domain, SEMRUSH_DOMAIN),
+      getKeywordGapVsCompetitor(domain, semrushDomain),
       getBacklinkOverview(domain),
       getTechnicalSeoMonitoring(`https://${domain}`),
     ]);

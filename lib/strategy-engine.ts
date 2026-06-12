@@ -142,18 +142,40 @@ export function inferPillar(
   return bestId;
 }
 
-export function inferIntent(input: ClusterInput): KMSearchIntent {
-  if (input.intent) return input.intent;
+/**
+ * Classify intent AND report whether the label was earned by an explicit
+ * modifier or fell through to the default. Default-labeled keywords (no
+ * recognizable modifier at all) are flagged so Diana can review/override them
+ * in a queue, per the intelligence-layer spec (Step 1).
+ *
+ * Order matters and first match wins: commercial → proof → informational
+ * question words → default. The first three are confident; only the final
+ * fallthrough sets labeledByDefault.
+ */
+export function inferIntentWithConfidence(input: ClusterInput): {
+  intent: KMSearchIntent;
+  labeledByDefault: boolean;
+} {
+  if (input.intent) return { intent: input.intent, labeledByDefault: false };
   const text = `${input.primaryKeyword} ${input.clusterName}`.toLowerCase();
   // Commercial intent: explicit hiring language
   if (/(lawyer|attorney|near me|hire|consultation|firm|cost|fees?)\b/.test(text)) {
-    return "commercial";
+    return { intent: "commercial", labeledByDefault: false };
   }
   // Proof intent: results-oriented
   if (/(result|outcome|verdict|won|settlement|case study|won my case)\b/.test(text)) {
-    return "proof";
+    return { intent: "proof", labeledByDefault: false };
   }
-  return "informational";
+  // Informational intent: explicit question / definition language
+  if (/(how|what|can i|do i|is it|should i|when|why|definition|meaning|rights|guide)\b/.test(text)) {
+    return { intent: "informational", labeledByDefault: false };
+  }
+  // No modifier matched — default to informational (blog_post) and flag it.
+  return { intent: "informational", labeledByDefault: true };
+}
+
+export function inferIntent(input: ClusterInput): KMSearchIntent {
+  return inferIntentWithConfidence(input).intent;
 }
 
 type EdgeCaseReason = null | "ambiguous_intent" | "possible_cannibalization" | "borderline_kd" | "missing_data";

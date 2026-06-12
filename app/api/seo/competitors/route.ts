@@ -8,15 +8,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { addCompetitor, listCompetitors, removeCompetitor } from "@/lib/seo-competitors";
 import { getOrganicCompetitors } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const { tenantId, semrushDomain } = await getTenantConfig();
     const [semrushCompetitors, trackedDomains] = await Promise.all([
-      getOrganicCompetitors(SEMRUSH_DOMAIN, 20),
-      listCompetitors(),
+      getOrganicCompetitors(semrushDomain, 20),
+      listCompetitors(tenantId),
     ]);
 
     const trackedSet = new Set(trackedDomains);

@@ -5,9 +5,9 @@ import {
   parseSemrushCsv,
   rowToRecord,
   semrushAnalyticsUrl,
-  SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +23,11 @@ export async function GET() {
   }
 
   try {
+    const { semrushDomain } = await getTenantConfig();
     const url = semrushAnalyticsUrl({
       key,
       type: "backlinks_overview",
-      target: SEMRUSH_DOMAIN,
+      target: semrushDomain,
       target_type: "root_domain",
       export_columns: "ascore,total,domains_num",
       export_decode: "1",

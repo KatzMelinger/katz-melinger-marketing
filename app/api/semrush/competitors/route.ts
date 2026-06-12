@@ -5,10 +5,9 @@ import {
   parseSemrushCsv,
   rowToRecord,
   semrushSeoUrl,
-  SEMRUSH_DATABASE,
-  SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +22,12 @@ export async function GET() {
   }
 
   try {
+    const { semrushDomain, semrushDatabase } = await getTenantConfig();
     const url = semrushSeoUrl({
       key,
       type: "domain_organic_organic",
-      domain: SEMRUSH_DOMAIN,
-      database: SEMRUSH_DATABASE,
+      domain: semrushDomain,
+      database: semrushDatabase,
       display_limit: "5",
       display_sort: "np_desc",
       export_columns: "Dn,Np",

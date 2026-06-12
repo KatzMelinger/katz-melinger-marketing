@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getBacklinksForDomain } from "@/lib/seo-intelligence";
-import { SEMRUSH_DOMAIN } from "@/lib/semrush";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "domain query param required" }, { status: 400 });
   }
   try {
-    const backlinks = await getBacklinksForDomain(domain, SEMRUSH_DOMAIN);
+    const { semrushDomain } = await getTenantConfig();
+    const backlinks = await getBacklinksForDomain(domain, semrushDomain);
     return NextResponse.json({ domain, backlinks });
   } catch (e) {
     return NextResponse.json(
