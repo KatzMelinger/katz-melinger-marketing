@@ -26,6 +26,7 @@ import {
   scoreKeyword,
 } from "@/lib/keyword-filter";
 import { listCompetitors } from "@/lib/seo-competitors";
+import { listExclusionTerms } from "@/lib/keyword-exclusions";
 import {
   getKeywordGapVsCompetitors,
   getTrackedKeywordPerformance,
@@ -133,9 +134,11 @@ async function runSyncForTenant(tenantId: string) {
     // Firm-specific config (Semrush domain etc.) instead of a hardcoded constant.
     const { semrushDomain, gscSiteUrl } = await getTenantConfig(tenantId);
     const competitors = await listCompetitors(tenantId);
+    const customExclusions = await listExclusionTerms(tenantId);
     const ctx = {
       brandTokens: KM_BRAND_TOKENS,
       competitorTokens: competitorTokensFromDomains(competitors),
+      customExclusions,
     };
     // Live, DB-driven pillar list so the grouper routes to current pillars.
     const pillars = await getPillars(tenantId);

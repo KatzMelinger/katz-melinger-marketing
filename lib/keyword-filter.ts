@@ -37,6 +37,12 @@ export type FilterContext = {
   brandTokens: string[];
   /** Lower-cased competitor brand tokens (excluded). */
   competitorTokens: string[];
+  /**
+   * Diana-managed exclusion terms (normalized, lower-cased). A keyword
+   * containing any of these is excluded. Curated in the Opportunities UI and
+   * stored in seo_keyword_exclusions — the editable layer over the built-ins.
+   */
+  customExclusions?: string[];
 };
 
 /**
@@ -130,6 +136,12 @@ export function scoreKeyword(
   }
   if (OFF_DOMAIN_PATTERNS.some((re) => re.test(lc))) {
     return { relevanceScore: 0, excluded: true, excludeReason: "Off-domain (unemployment / tax)", flags: ["off_domain"] };
+  }
+  if (ctx.customExclusions?.length) {
+    const hit = ctx.customExclusions.find((t) => t && lc.includes(t));
+    if (hit) {
+      return { relevanceScore: 0, excluded: true, excludeReason: `Custom: ${hit}`, flags: ["custom_exclusion"] };
+    }
   }
 
   // --- Relevance scoring --------------------------------------------------
