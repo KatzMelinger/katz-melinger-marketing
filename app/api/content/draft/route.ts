@@ -17,6 +17,8 @@ import { languageDirective, normalizeLanguage } from "@/lib/content-language";
 import { getFirmContext } from "@/lib/firm-context";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
+import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 
 export const dynamic = "force-dynamic";
 
@@ -231,6 +233,23 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     userPrompt += `\n\n${langBlock}`;
   }
 
+  // Internal links: for long-form web content, ask the Cluster Map (site_pages)
+  // which existing firm pages relate to this topic and hand the generator an
+  // approved link plan so the draft links out to related blogs/pages. Mirrors
+  // the KM-draft generator. Fails soft when the site inventory is empty.
+  if (contentType === "blog") {
+    try {
+      const plan = await buildLinkPlan({
+        primaryKeyword: topic,
+        secondaryKeywords: targetKeywords,
+      });
+      const block = approvedLinkPlanBlock(plan.links);
+      if (block) userPrompt += `\n\n---\n${block}`;
+    } catch {
+      /* no inventory / non-fatal */
+    }
+  }
+
   try {
     // Social posts (linkedin, twitter, facebook, instagram) are short-form —
     // Haiku is plenty and ~4× cheaper than Sonnet on output. Blog and email
@@ -309,6 +328,15 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       // The subject line is the email's title in the drafts library.
       const title = subject || deriveTitle(bodyText, topic);
       const draftId = await autosave("email", bodyText, title, { subject });
+      scheduleDraftAnalysis({
+        draftId,
+        body: bodyText,
+        title,
+        topic,
+        format: "email",
+        template: templateKey || null,
+        targetKeywords,
+      });
       return NextResponse.json({
         draft_id: draftId,
         subject,
@@ -334,11 +362,17 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     }
     title = title || deriveTitle(body, topic);
 
-    const draftId = await autosave(
-      contentType === "social" ? "social" : "blog",
+    const draftFormat = contentType === "social" ? "social" : "blog";
+    const draftId = await autosave(draftFormat, body, title);
+    scheduleDraftAnalysis({
+      draftId,
       body,
       title,
-    );
+      topic,
+      format: draftFormat,
+      template: templateKey || null,
+      targetKeywords,
+    });
     return NextResponse.json({
       draft_id: draftId,
       title,

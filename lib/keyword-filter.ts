@@ -76,6 +76,18 @@ const NAVIGATIONAL_PATTERNS: RegExp[] = [
   /\bdepartment of labor\b.*\b(login|portal|number|hours)\b/,
 ];
 
+/**
+ * Off-domain topics. These are real searches, but for subjects the firm does
+ * not practice — unemployment insurance / benefits and tax-form questions are
+ * not employment-litigation content. Excluding them keeps irrelevant keywords
+ * (e.g. "1099 NYS unemployment", "file for unemployment") out of Opportunities.
+ */
+const OFF_DOMAIN_PATTERNS: RegExp[] = [
+  /\bunemployment\b/,
+  /\b1099\b/,
+  /\bw-?2\b/,
+];
+
 function normalize(keyword: string): string {
   return ` ${keyword.toLowerCase().trim()} `;
 }
@@ -115,6 +127,9 @@ export function scoreKeyword(
   }
   if (NAVIGATIONAL_PATTERNS.some((re) => re.test(lc))) {
     return { relevanceScore: 0, excluded: true, excludeReason: "Navigational / account query", flags: ["navigational"] };
+  }
+  if (OFF_DOMAIN_PATTERNS.some((re) => re.test(lc))) {
+    return { relevanceScore: 0, excluded: true, excludeReason: "Off-domain (unemployment / tax)", flags: ["off_domain"] };
   }
 
   // --- Relevance scoring --------------------------------------------------

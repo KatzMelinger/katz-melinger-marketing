@@ -42,6 +42,7 @@ import {
   type ContentLanguage,
 } from "@/lib/content-language";
 import { getTenantConfig } from "@/lib/tenant-config";
+import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -241,6 +242,17 @@ export async function POST(req: Request) {
     if (draftId && suggestionId) {
       await linkPipelineDraft(suggestionId, draftId);
     }
+
+    // Auto-readability check (runs after the response via after()).
+    scheduleDraftAnalysis({
+      draftId,
+      body: text,
+      title: brief.h1 || brief.metaTitle || brief.primaryKeyword,
+      topic: brief.primaryKeyword,
+      format: `km_${brief.contentType}`,
+      template: `km_${brief.contentType}`,
+      targetKeywords: [brief.primaryKeyword, ...(brief.secondaryKeywords ?? [])],
+    });
 
     return NextResponse.json({
       draft_id: draftId,
