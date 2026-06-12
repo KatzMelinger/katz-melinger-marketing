@@ -1,6 +1,4 @@
 import {
-  getKeywordDifficulty,
-  getPhraseMetrics,
   parseIntSafe,
   parseSemrushCsv,
   rowToRecord,
@@ -10,6 +8,20 @@ import {
   SEMRUSH_DOMAIN,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import {
+  getDomainKeywords as getDataForSeoDomainKeywords,
+  getOrganicCompetitors as getDfsOrganicCompetitors,
+  getRelatedKeywords as getDfsRelatedKeywords,
+  getKeywordSuggestions as getDfsKeywordSuggestions,
+  getKeywordDifficulty,
+  getPhraseMetrics,
+} from "@/lib/dataforseo";
+import {
+  getBacklinkSummary,
+  getReferringDomains,
+  getBacklinksList,
+  rankToScore,
+} from "@/lib/dataforseo-backlinks";
 import { listTargets } from "@/lib/seo-targets";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
@@ -252,15 +264,44 @@ export async function getDomainOrganicKeywords(
   domain: string,
   limit = 100,
 ): Promise<KeywordRow[]> {
-  const rows = await fetchSemrushRowsFromSeo({
-    type: "domain_organic",
-    domain: safeDomain(domain),
-    display_limit: String(limit),
-    display_sort: "tr_desc",
-    export_decode: "1",
-    export_columns: "Ph,Po,Pp,Pd,Nq,Kd,Cp,Co,Tr,Tc,Ur",
-  });
-  return rows.map(parseKeywordRow).filter((row) => row.keyword);
+  // Migrated off Semrush: reuses the already-validated DataForSEO
+  // ranked_keywords wrapper (same one cannibalization + the refresh cron use),
+  // mapped to the KeywordRow shape. This single repoint also moves
+  // getKeywordGapVsCompetitor(s), getTrackedKeywordPerformance, and the
+  // opportunities sync onto DataForSEO, since they all build on this function.
+  const rows = await getDataForSeoDomainKeywords(
+    safeDomain(domain),
+    undefined,
+    limit,
+    0,
+    "traffic",
+    "desc",
+  );
+  return rows
+    .filter((row) => row.keyword)
+    .map((row) => {
+      const volume = row.volume ?? 0;
+      const kd = row.difficulty ?? 0;
+      return {
+        keyword: row.keyword,
+        position: row.position ?? 0,
+        previousPosition: row.previousPosition ?? 0,
+        positionDelta: row.positionDifference ?? 0,
+        searchVolume: volume,
+        keywordDifficulty: Math.round(kd),
+        // Same heuristic trend score parseKeywordRow used (DataForSEO doesn't
+        // return Semrush's Td series here; the monthly-searches trend lives on
+        // getKeywordTrend for individual keywords).
+        trendScore: toPercent(
+          Math.max(10, Math.min(100, (volume / 200) * 20 + (100 - kd) * 0.8)),
+        ),
+        estimatedTraffic: 0,
+        cpc: row.cpc ?? 0,
+        trafficCost: 0,
+        competition: row.competition ?? 0,
+        url: row.url ?? "",
+      };
+    });
 }
 
 /**
@@ -304,34 +345,26 @@ export async function getTrendingKeywords(
   const seedPhrases = seeds.slice(0, 4).filter(Boolean);
   if (seedPhrases.length === 0) return [];
 
+  // DataForSEO Labs related_keywords (replaces Semrush phrase_related). The
+  // trend score is derived from each keyword's monthly_searches series.
   const perSeed = await Promise.all(
-    seedPhrases.map((seed) =>
-      fetchSemrushRowsFromSeo({
-        type: "phrase_related",
-        phrase: seed,
-        display_limit: "30",
-        display_sort: "nq_desc",
-        export_decode: "1",
-        export_columns: "Ph,Nq,Kd,Td",
-      }).catch(() => [] as SemrushRecord[]),
-    ),
+    seedPhrases.map((seed) => getDfsRelatedKeywords(seed, 30).catch(() => [])),
   );
 
   const seen = new Set(seedPhrases.map((s) => s.toLowerCase()));
   const out: Array<{ keyword: string; searchVolume: number; trendScore: number }> = [];
   for (const rows of perSeed) {
     for (const row of rows) {
-      const keyword = (row["Keyword"] ?? row["Ph"] ?? "").trim();
+      const keyword = row.keyword.trim();
       if (!keyword) continue;
       const key = keyword.toLowerCase();
       if (seen.has(key)) continue;
-      const volume = parseIntSafe(row["Search Volume"] ?? row["Nq"] ?? "");
-      if (volume < 50) continue; // drop near-zero-demand noise
+      if (row.searchVolume < 50) continue; // drop near-zero-demand noise
       seen.add(key);
       out.push({
         keyword,
-        searchVolume: volume,
-        trendScore: trendScoreFromTd(row["Trends"] ?? row["Td"], volume),
+        searchVolume: row.searchVolume,
+        trendScore: row.trendScore,
       });
     }
   }
@@ -352,24 +385,14 @@ export async function getLongTailSuggestions(
   const seedPhrases = seeds.slice(0, 3).filter(Boolean);
   if (seedPhrases.length === 0) return [];
 
+  // DataForSEO Labs keyword_suggestions (long-tail expansions, replaces
+  // phrase_questions) + related_keywords (replaces phrase_related).
   const reports = await Promise.all(
     seedPhrases.flatMap((seed) => [
-      fetchSemrushRowsFromSeo({
-        type: "phrase_questions",
-        phrase: seed,
-        display_limit: "20",
-        display_sort: "nq_desc",
-        export_decode: "1",
-        export_columns: "Ph,Nq",
-      }).catch(() => [] as SemrushRecord[]),
-      fetchSemrushRowsFromSeo({
-        type: "phrase_related",
-        phrase: seed,
-        display_limit: "20",
-        display_sort: "nq_desc",
-        export_decode: "1",
-        export_columns: "Ph,Nq",
-      }).catch(() => [] as SemrushRecord[]),
+      getDfsKeywordSuggestions(seed, 20).catch(() => []),
+      getDfsRelatedKeywords(seed, 20)
+        .then((rows) => rows.map((r) => ({ keyword: r.keyword, searchVolume: r.searchVolume })))
+        .catch(() => []),
     ]),
   );
 
@@ -377,14 +400,13 @@ export async function getLongTailSuggestions(
   const out: Array<{ keyword: string; searchVolume: number }> = [];
   for (const rows of reports) {
     for (const row of rows) {
-      const keyword = (row["Keyword"] ?? row["Ph"] ?? "").trim();
+      const keyword = row.keyword.trim();
       const key = keyword.toLowerCase();
       // Long-tail = 3+ words; skip head terms and dupes.
       if (!keyword || key.split(/\s+/).length < 3 || seen.has(key)) continue;
-      const volume = parseIntSafe(row["Search Volume"] ?? row["Nq"] ?? "");
-      if (volume < 20) continue;
+      if (row.searchVolume < 20) continue;
       seen.add(key);
-      out.push({ keyword, searchVolume: volume });
+      out.push({ keyword, searchVolume: row.searchVolume });
     }
   }
 
@@ -559,52 +581,32 @@ export async function getBacklinkOverview(domain = SEMRUSH_DOMAIN): Promise<{
   referringDomains: number;
   followRatio: number;
 }> {
-  // Semrush's backlinks_overview column is `follows_num` (dofollow count), not
-  // `follow`. The old name made every call fail with a 400 Validation Error and
-  // the whole route returned 500, which is what broke /seo/backlinks.
-  const rows = await fetchSemrushRowsFromAnalytics({
-    type: "backlinks_overview",
-    target: safeDomain(domain),
-    target_type: "root_domain",
-    export_columns: "ascore,total,domains_num,follows_num,nofollows_num",
-    export_decode: "1",
-  });
-  const first = rows[0] ?? {};
-  const total = parseIntSafe(first.total ?? first.Total ?? "");
-  const follows = parseIntSafe(first.follows_num ?? first.Follows_num ?? "");
+  // DataForSEO Backlinks summary (replaces Semrush backlinks_overview). Its
+  // 0-1000 "rank" is scaled to a 0-100 authority-style score; follow ratio is
+  // derived from the referring-domain follow/nofollow split.
+  const s = await getBacklinkSummary(safeDomain(domain));
+  const rd = s.referringDomains;
   return {
-    authorityScore: parseIntSafe(first.ascore ?? first.Ascore ?? ""),
-    totalBacklinks: total,
-    referringDomains: parseIntSafe(first.domains_num ?? first.Domains_num ?? ""),
-    followRatio: total > 0 ? toPercent((follows / total) * 100) : 0,
+    authorityScore: rankToScore(s.rank),
+    totalBacklinks: s.backlinks,
+    referringDomains: rd,
+    followRatio: rd > 0 ? toPercent(((rd - s.referringDomainsNofollow) / rd) * 100) : 0,
   };
 }
 
 export async function getBacklinkDomains(domain = SEMRUSH_DOMAIN): Promise<BacklinkDomain[]> {
-  // backlinks_refdomains uses `domain_ascore` (not `ascore`) and does not
-  // expose a follow/nofollow split. Old code requested `ascore,follow_num`
-  // and the call 400'd, which made the whole backlinks page show zeros.
-  const rows = await fetchSemrushRowsFromAnalytics({
-    type: "backlinks_refdomains",
-    target: safeDomain(domain),
-    target_type: "root_domain",
-    display_limit: "30",
-    export_columns: "domain,backlinks_num,domain_ascore",
-    export_decode: "1",
-  });
-
+  // DataForSEO referring_domains (replaces Semrush backlinks_refdomains).
+  // Toxicity is read from DataForSEO's backlinks_spam_score (0-100) when
+  // present; authority is the 0-1000 rank scaled to 0-100.
+  const rows = await getReferringDomains(safeDomain(domain), 30);
   return rows
     .map((row) => {
-      const backlinks = parseIntSafe(row.backlinks_num ?? row.Backlinks_num ?? "");
-      const authorityScore = parseIntSafe(
-        row.domain_ascore ?? row.Domain_ascore ?? row.ascore ?? "",
-      );
       const toxicityRisk: "low" | "medium" | "high" =
-        authorityScore >= 40 ? "low" : authorityScore >= 20 ? "medium" : "high";
+        row.spamScore >= 30 ? "high" : row.spamScore >= 10 ? "medium" : "low";
       return {
-        domain: row.domain ?? row.Domain ?? "",
-        backlinks,
-        authorityScore,
+        domain: row.domain,
+        backlinks: row.backlinks,
+        authorityScore: rankToScore(row.rank),
         toxicityRisk,
         followRatio: 0,
       };
@@ -653,28 +655,22 @@ export async function getRecentBacklinks(
 ): Promise<RecentBacklink[]> {
   const sort = options.sort ?? "first_seen_desc";
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
-  const rows = await fetchSemrushRowsFromAnalytics({
-    type: "backlinks",
-    target: safeDomain(domain),
-    target_type: "root_domain",
-    display_limit: String(limit),
-    display_sort: sort,
-    export_columns: "source_url,source_title,first_seen,last_seen,page_ascore,nofollow",
-    export_decode: "1",
+  // DataForSEO backlinks list (replaces Semrush backlinks). one_per_domain so
+  // the New/Lost panels show distinct referring sources.
+  const rows = await getBacklinksList(safeDomain(domain), {
+    limit,
+    order: sort === "last_seen_asc" ? "last_seen,asc" : "first_seen,desc",
   });
   return rows
-    .map((row) => {
-      const sourceUrl = row.source_url ?? row.Source_url ?? "";
-      return {
-        sourceUrl,
-        sourceTitle: row.source_title ?? row.Source_title ?? "",
-        sourceDomain: domainOf(sourceUrl),
-        pageAuthorityScore: parseIntSafe(row.page_ascore ?? row.Page_ascore ?? ""),
-        firstSeenIso: unixToIso(row.first_seen ?? row.First_seen),
-        lastSeenIso: unixToIso(row.last_seen ?? row.Last_seen),
-        nofollow: (row.nofollow ?? row.Nofollow ?? "").toString().toLowerCase() === "true",
-      };
-    })
+    .map((row) => ({
+      sourceUrl: row.urlFrom,
+      sourceTitle: row.title,
+      sourceDomain: row.domainFrom || domainOf(row.urlFrom),
+      pageAuthorityScore: rankToScore(row.pageRank),
+      firstSeenIso: row.firstSeen,
+      lastSeenIso: row.lastSeen,
+      nofollow: !row.dofollow,
+    }))
     .filter((b) => b.sourceUrl);
 }
 
@@ -703,22 +699,16 @@ export async function getOrganicCompetitors(
     estimatedTraffic: number;
   }>
 > {
-  const rows = await fetchSemrushRowsFromSeo({
-    type: "domain_organic_organic",
-    domain: safeDomain(domain),
-    display_limit: String(limit),
-    display_sort: "np_desc",
-    export_decode: "1",
-    export_columns: "Dn,Np,Ot",
-  });
+  // DataForSEO Labs competitors_domain (replaces Semrush domain_organic_organic).
+  const rows = await getDfsOrganicCompetitors(safeDomain(domain), limit);
   return rows
-    .map((row) => ({
-      domain: row.Domain ?? row.Dn ?? "",
-      commonKeywords: parseIntSafe(row["Common Keywords"] ?? row.Np ?? ""),
-      estimatedTraffic: parseIntSafe(row["Organic Traffic"] ?? row.Ot ?? ""),
-    }))
     // Drop directories/aggregators/gov so suggestions are real firms only.
-    .filter((row) => row.domain && !isNonCompetitorDomain(row.domain));
+    .filter((row) => row.domain && !isNonCompetitorDomain(row.domain))
+    .map((row) => ({
+      domain: row.domain,
+      commonKeywords: row.commonKeywords,
+      estimatedTraffic: row.estimatedTraffic,
+    }));
 }
 
 async function fetchPageSpeed(
