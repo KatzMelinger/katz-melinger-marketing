@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { computeLeadResponse } from "@/lib/lead-response-server";
 import { guardUser } from "@/lib/supabase-route";
-import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -74,7 +74,11 @@ export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return writeSnapshot(getSupabaseAdmin(), DEFAULT_TENANT_ID);
+  const supabase = getSupabaseServer();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
+  }
+  return writeSnapshot(supabase, DEFAULT_TENANT_ID);
 }
 
 export async function POST() {

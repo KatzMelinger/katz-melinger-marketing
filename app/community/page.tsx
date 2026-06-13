@@ -178,9 +178,16 @@ function ScannerTab({
   const [error, setError] = useState<string | null>(null);
 
   const refreshStatuses = async () => {
-    const res = await fetch(`/api/community/statuses?platform=${platform}`);
-    const data = await res.json();
-    setStatuses(data.statuses ?? {});
+    // Best-effort overlay: a failed/non-JSON response must not reject unhandled
+    // (this runs from a mount effect) or crash the tab — just skip the update.
+    try {
+      const res = await fetch(`/api/community/statuses?platform=${platform}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setStatuses(data.statuses ?? {});
+    } catch (e) {
+      console.warn("[community] status refresh failed:", e);
+    }
   };
 
   useEffect(() => {
@@ -345,9 +352,11 @@ function PostCard({
   const [generating, setGenerating] = useState(false);
   const [showDraft, setShowDraft] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
 
   const generate = async () => {
     setGenerating(true);
+    setDraftError(null);
     try {
       const res = await fetch("/api/community/suggest", {
         method: "POST",
@@ -358,11 +367,15 @@ function PostCard({
           body: post.snippet,
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
         setDraft({ text: data.text, warning: data.warning, compliance: data.compliance });
         setShowDraft(true);
+      } else {
+        setDraftError(data?.error || "Couldn't draft a response. Try again.");
       }
+    } catch {
+      setDraftError("Couldn't reach the drafting service. Try again.");
     } finally {
       setGenerating(false);
     }
@@ -491,6 +504,12 @@ function PostCard({
           )}
         </div>
       </div>
+
+      {draftError && (
+        <div className="mt-2 text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded-md px-2 py-1">
+          ⚠ {draftError}
+        </div>
+      )}
 
       {showDraft && draft && (
         <div className="mt-3 border-t border-slate-200 pt-3">

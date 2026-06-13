@@ -44,7 +44,14 @@ function monthStartISO(): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
-/** Billable units this tenant has consumed for `meter` so far this month. */
+/**
+ * Billable units this tenant has consumed for `meter` so far this month.
+ *
+ * Returns 0 on read failure so the usage DISPLAY degrades gracefully — but logs
+ * it, since a silent 0 is misleading. This is NOT the hard cost gate: the
+ * authoritative, fail-closed gate is consumeUsageUnit (consume_api_unit), which
+ * counts under a row lock and throws rather than reporting a false 0.
+ */
 export async function getMonthlyUsage(tenantId: string, meter: Meter): Promise<number> {
   try {
     const supabase = getSupabaseAdmin();
@@ -54,9 +61,13 @@ export async function getMonthlyUsage(tenantId: string, meter: Meter): Promise<n
       .eq("tenant_id", tenantId)
       .eq("meter", meter)
       .gte("created_at", monthStartISO());
-    if (error || !data) return 0;
+    if (error || !data) {
+      if (error) console.warn("[usage-meter] usage read failed; reporting 0:", error.message);
+      return 0;
+    }
     return data.reduce((sum, r) => sum + (Number((r as { units: number }).units) || 0), 0);
-  } catch {
+  } catch (err) {
+    console.warn("[usage-meter] usage read threw; reporting 0:", err);
     return 0;
   }
 }

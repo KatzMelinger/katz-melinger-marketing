@@ -265,7 +265,15 @@ Analyze the competitive paid landscape and return ONLY the JSON object.`;
   });
 
   const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-  const result = extractJSON<CompetitorStrategy>(text);
+  let result: CompetitorStrategy;
+  try {
+    result = extractJSON<CompetitorStrategy>(text);
+  } catch (err) {
+    // Malformed model output shouldn't 500 the whole scan — return an empty but
+    // valid strategy so the UI still renders the pulled ads.
+    console.warn("[competitor-ads] strategy JSON parse failed:", err);
+    result = { summary: "", competitors: [], opportunities: [], recommendations: [] };
+  }
 
   // Defensive normalization — the UI relies on these always being arrays.
   result.competitors = Array.isArray(result.competitors) ? result.competitors : [];

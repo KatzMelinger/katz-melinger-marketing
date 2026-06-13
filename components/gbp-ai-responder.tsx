@@ -147,9 +147,9 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-900">
                     <span className="text-amber-500 mr-1">
-                      {"★".repeat(r.rating)}
+                      {"★".repeat(Math.max(0, Math.min(5, r.rating)))}
                       <span className="text-slate-300">
-                        {"★".repeat(5 - r.rating)}
+                        {"★".repeat(5 - Math.max(0, Math.min(5, r.rating)))}
                       </span>
                     </span>
                     {r.author}

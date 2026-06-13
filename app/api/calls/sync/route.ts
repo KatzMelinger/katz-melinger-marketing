@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { fetchAllCallRailCallsDetailed } from "@/lib/callrail-fetch";
 import { guardUser } from "@/lib/supabase-route";
-import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -143,7 +143,10 @@ export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseServer();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
+  }
   const sinceParam = req.nextUrl.searchParams.get("since");
   const since = sinceParam && sinceParam.trim() ? sinceParam.trim() : undefined;
   // Cron has no user session — stamp the default tenant.
