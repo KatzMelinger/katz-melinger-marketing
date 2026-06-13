@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Collapsible sidebar that mirrors the nine-department structure defined in
+ * Collapsible sidebar that mirrors the department structure defined in
  * `lib/departments.ts` (the same source of truth that drives the executive
  * board on the home page).
  *

@@ -24,15 +24,17 @@ import {
 } from "@/components/brand-voice-wizard";
 import { PRACTICE_AREAS } from "@/lib/practice-areas";
 import { ContentPillarsManager } from "@/components/content-pillars-manager";
+import { ResearchLibraries } from "@/components/research-libraries";
 
-type TabKey = "settings" | "avatars" | "directions" | "samples" | "pillars";
+type TabKey = "settings" | "avatars" | "directions" | "samples" | "pillars" | "research";
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: "settings", label: "Brand settings", icon: "🎙" },
-  { key: "avatars", label: "Audience avatars", icon: "👤" },
-  { key: "directions", label: "Content directions", icon: "🧭" },
-  { key: "pillars", label: "Content pillars", icon: "🏛" },
-  { key: "samples", label: "Writing samples", icon: "📄" },
+  { key: "settings", label: "Settings", icon: "🎙" },
+  { key: "avatars", label: "Avatars", icon: "👤" },
+  { key: "directions", label: "Directions", icon: "🧭" },
+  { key: "pillars", label: "Pillars", icon: "🏛" },
+  { key: "samples", label: "Samples", icon: "📄" },
+  { key: "research", label: "Research", icon: "📚" },
 ];
 
 type Avatar = {
@@ -347,14 +349,14 @@ export default function BrandVoicePage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-1 border-b border-black/10 dark:border-white/10">
+      <div className="flex flex-nowrap gap-1 overflow-x-auto border-b border-black/10 dark:border-white/10">
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2 ${
+              className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2 ${
                 active
                   ? "border-foreground text-foreground"
                   : "border-transparent opacity-60 hover:opacity-100"
@@ -381,6 +383,7 @@ export default function BrandVoicePage() {
       {tab === "directions" && <DirectionsSection avatars={avatars} />}
       {tab === "pillars" && <ContentPillarsManager />}
       {tab === "samples" && <WritingSamplesSection />}
+      {tab === "research" && <ResearchLibraries showHeader={false} />}
     </div>
   );
 }
