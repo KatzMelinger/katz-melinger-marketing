@@ -25,6 +25,12 @@ import {
   YAxis,
 } from "recharts";
 
+import {
+  classifyKeywordCluster,
+  CLUSTER_FILTER_OPTIONS,
+  type ClusterFilter,
+} from "@/lib/keyword-cluster";
+
 type RankHistory = {
   ownDomain: string;
   domains: string[];
@@ -63,12 +69,91 @@ function shortDate(d: string): string {
   return `${months[m - 1]} ${day}`;
 }
 
+type ComparisonRow = { keyword: string; ranks: Record<string, Record<string, number | null>> };
+
+/** Numeric Δ for sorting: positive = improved (moved up). NEW/LOST get large
+ *  magnitudes so they sort to the extremes; both-unranked → null (sinks). */
+function diffScore(a: number | null, b: number | null): number | null {
+  if (a === null && b === null) return null;
+  if (a === null) return 1000; // entered the rankings — biggest improvement
+  if (b === null) return -1000; // dropped out — biggest decline
+  return a - b;
+}
+
+/** Sort value for a comparison row given the active column. Null = unranked,
+ *  which the comparator always sinks to the bottom (like the tracker). */
+function sortValueFor(
+  row: ComparisonRow,
+  col: string,
+  dateA: string,
+  dateB: string,
+): string | number | null {
+  if (col === "keyword") return row.keyword;
+  const sep = col.lastIndexOf("::");
+  const domain = col.slice(0, sep);
+  const which = col.slice(sep + 2);
+  const a = row.ranks[domain]?.[dateA] ?? null;
+  const b = row.ranks[domain]?.[dateB] ?? null;
+  if (which === "A") return a;
+  if (which === "B") return b;
+  return diffScore(a, b);
+}
+
+/** Compare two sort values, always sinking nulls to the bottom regardless of
+ *  direction (an unranked keyword is the "worst", not the "best"). */
+function compareSortValues(
+  av: string | number | null,
+  bv: string | number | null,
+  dir: "asc" | "desc",
+): number {
+  const an = av === null;
+  const bn = bv === null;
+  if (an && bn) return 0;
+  if (an) return 1;
+  if (bn) return -1;
+  if (typeof av === "string" && typeof bv === "string") {
+    return dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+  }
+  return dir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
+}
+
 export function RankHistoryPanel() {
   const [data, setData] = useState<RankHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [dateA, setDateA] = useState<string>("");
   const [dateB, setDateB] = useState<string>("");
   const [search, setSearch] = useState("");
+  // Comparison-table sort. `col` is "keyword" or `${domain}::A|B|diff`.
+  const [sortCol, setSortCol] = useState<string>("keyword");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  // Practice-area cluster filter for the comparison table (lib/keyword-cluster).
+  const [clusterFilter, setClusterFilter] = useState<ClusterFilter>("all");
+  // Competitors toggled OFF the chart + comparison table. The firm's own domain
+  // is never hidden (it's the baseline every comparison is read against).
+  const [hiddenDomains, setHiddenDomains] = useState<Set<string>>(new Set());
+  // Comparison-table pagination: 20 per page by default, matching the tracker.
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
+  const ALL_SIZE = 1_000_000; // sentinel for "show all" (finite so math stays safe)
+
+  const toggleDomain = (domain: string) => {
+    setHiddenDomains((prev) => {
+      const next = new Set(prev);
+      if (next.has(domain)) next.delete(domain);
+      else next.add(domain);
+      return next;
+    });
+  };
+
+  const setSort = (col: string) => {
+    if (col === sortCol) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      // Keyword reads best A→Z; rank / Δ columns default high→low like the tracker.
+      setSortDir(col === "keyword" ? "asc" : "desc");
+    }
+  };
 
   useEffect(() => {
     fetch("/api/seo/rank-history", { cache: "no-store" })
@@ -103,6 +188,16 @@ export function RankHistoryPanel() {
     [data],
   );
 
+  // Domains actually rendered (chart lines + table columns): everything except
+  // the competitors the user toggled off. The own domain is always shown.
+  const shownDomains = useMemo(
+    () =>
+      data
+        ? data.domains.filter((d) => d === data.ownDomain || !hiddenDomains.has(d))
+        : [],
+    [data, hiddenDomains],
+  );
+
   // Recharts wants one row per date with a key per domain: { date, [domain]: vis }.
   const chartData = useMemo(() => {
     if (!data) return [];
@@ -118,8 +213,46 @@ export function RankHistoryPanel() {
   const comparisonRows = useMemo(() => {
     if (!data) return [];
     const lc = search.trim().toLowerCase();
-    return data.keywords.filter((k) => !lc || k.keyword.toLowerCase().includes(lc));
-  }, [data, search]);
+    const rows = data.keywords.filter((k) => {
+      if (lc && !k.keyword.toLowerCase().includes(lc)) return false;
+      if (clusterFilter !== "all" && classifyKeywordCluster(k.keyword).key !== clusterFilter)
+        return false;
+      return true;
+    });
+    return rows
+      .slice()
+      .sort((ra, rb) =>
+        compareSortValues(
+          sortValueFor(ra, sortCol, dateA, dateB),
+          sortValueFor(rb, sortCol, dateA, dateB),
+          sortDir,
+        ),
+      );
+  }, [data, search, clusterFilter, sortCol, sortDir, dateA, dateB]);
+
+  // Reset to the first page whenever the filtered/sorted set shifts underneath us.
+  useEffect(() => {
+    setPage(0);
+  }, [search, clusterFilter, sortCol, sortDir, dateA, dateB]);
+
+  // If the column we're sorting by belongs to a competitor that just got toggled
+  // off, fall back to the keyword sort so the indicator isn't stranded.
+  useEffect(() => {
+    if (sortCol === "keyword") return;
+    const domain = sortCol.slice(0, sortCol.lastIndexOf("::"));
+    if (data && !shownDomains.includes(domain)) {
+      setSortCol("keyword");
+      setSortDir("asc");
+    }
+  }, [shownDomains, sortCol, data]);
+
+  // Comparison-table pagination math (mirrors the tracker on the keywords page).
+  const totalRows = comparisonRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * pageSize;
+  const pageRows = comparisonRows.slice(pageStart, pageStart + pageSize);
+  const pageSizeValue = pageSize >= ALL_SIZE ? "all" : String(pageSize);
 
   if (loading) {
     return (
@@ -152,6 +285,47 @@ export function RankHistoryPanel() {
         </div>
       ) : (
         <>
+          {/* Domain toggles — add / remove competitors from both the chart and
+              the comparison table below. The firm's own domain is locked on. */}
+          {competitors.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">Show:</span>
+              {data!.domains.map((domain) => {
+                const isOwn = domain === data!.ownDomain;
+                const shown = isOwn || !hiddenDomains.has(domain);
+                const color = colorForDomain(domain, data!.ownDomain, competitors);
+                return (
+                  <button
+                    key={domain}
+                    type="button"
+                    onClick={() => !isOwn && toggleDomain(domain)}
+                    disabled={isOwn}
+                    aria-pressed={shown}
+                    title={
+                      isOwn
+                        ? "Your domain is always shown"
+                        : shown
+                          ? `Hide ${domain}`
+                          : `Show ${domain}`
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      shown
+                        ? "border-[#e2e8f0] bg-white text-slate-700"
+                        : "border-dashed border-[#e2e8f0] bg-slate-50 text-slate-400"
+                    } ${isOwn ? "cursor-default" : "hover:border-[#185FA5] cursor-pointer"}`}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: shown ? color : "#cbd5e1" }}
+                    />
+                    {domain}
+                    {isOwn ? " (you)" : ""}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Visibility trend chart */}
           <div className="mt-4 h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -168,7 +342,7 @@ export function RankHistoryPanel() {
                   contentStyle={{ fontSize: 12, borderColor: "#e2e8f0" }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                {data!.domains.map((domain) => (
+                {shownDomains.map((domain) => (
                   <Line
                     key={domain}
                     type="monotone"
@@ -204,7 +378,13 @@ export function RankHistoryPanel() {
               <thead className="text-slate-500 text-xs">
                 <tr className="border-b border-[#e2e8f0]">
                   <th rowSpan={2} className="pb-2 pr-3 font-medium align-bottom">
-                    Keyword
+                    <button
+                      type="button"
+                      onClick={() => setSort("keyword")}
+                      className="inline-flex items-center hover:text-[#185FA5]"
+                    >
+                      Keyword{sortCol === "keyword" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                    </button>
                   </th>
                   {data!.domains.map((domain) => (
                     <th
@@ -220,7 +400,15 @@ export function RankHistoryPanel() {
                 </tr>
                 <tr className="border-b border-[#e2e8f0] text-[11px]">
                   {data!.domains.map((domain) => (
-                    <DomainSubHead key={domain} dateA={dateA} dateB={dateB} />
+                    <DomainSubHead
+                      key={domain}
+                      domain={domain}
+                      dateA={dateA}
+                      dateB={dateB}
+                      sortCol={sortCol}
+                      sortDir={sortDir}
+                      onSort={setSort}
+                    />
                   ))}
                 </tr>
               </thead>
@@ -285,14 +473,40 @@ function DateSelect({
   );
 }
 
-function DomainSubHead({ dateA, dateB }: { dateA: string; dateB: string }) {
+function DomainSubHead({
+  domain,
+  dateA,
+  dateB,
+  sortCol,
+  sortDir,
+  onSort,
+}: {
+  domain: string;
+  dateA: string;
+  dateB: string;
+  sortCol: string;
+  sortDir: "asc" | "desc";
+  onSort: (col: string) => void;
+}) {
+  const indicator = (col: string) =>
+    sortCol === col ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+  const cell = (col: string, label: string, extra = "") => (
+    <th className={`pb-2 pr-3 font-medium text-center tabular-nums ${extra}`}>
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className="inline-flex items-center hover:text-[#185FA5]"
+      >
+        {label}
+        {indicator(col)}
+      </button>
+    </th>
+  );
   return (
     <>
-      <th className="pb-2 pr-3 font-medium text-center border-l border-[#e2e8f0] tabular-nums">
-        {shortDate(dateA)}
-      </th>
-      <th className="pb-2 pr-3 font-medium text-center tabular-nums">{shortDate(dateB)}</th>
-      <th className="pb-2 pr-3 font-medium text-center">Δ</th>
+      {cell(`${domain}::A`, shortDate(dateA), "border-l border-[#e2e8f0]")}
+      {cell(`${domain}::B`, shortDate(dateB))}
+      {cell(`${domain}::diff`, "Δ")}
     </>
   );
 }
