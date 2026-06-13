@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
@@ -30,6 +31,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   if (!body?.format || !body?.topic || !body?.body) {
     return NextResponse.json({ error: "format, topic, body required" }, { status: 400 });

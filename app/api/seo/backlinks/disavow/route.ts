@@ -18,6 +18,7 @@ import {
   setDisavowStatus,
   type DisavowStatus,
 } from "@/lib/seo-disavow";
+import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await req.json();
@@ -58,6 +61,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const domain = req.nextUrl.searchParams.get("domain") ?? "";
   const result = await clearDisavowAction(domain);
   if (!result.ok) {

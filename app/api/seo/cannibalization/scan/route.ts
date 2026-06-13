@@ -8,11 +8,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { detectCannibalization } from "@/lib/cannibalization";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const domain = (body?.domain as string | undefined) ?? undefined;

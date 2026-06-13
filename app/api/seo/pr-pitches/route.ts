@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -34,6 +35,8 @@ type PitchResponse = {
 };
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const query = typeof body?.query === "string" ? body.query.trim() : "";
   const journalistName = typeof body?.journalistName === "string" ? body.journalistName.trim() : "";

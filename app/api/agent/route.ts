@@ -22,6 +22,7 @@ import {
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { dispatchTool, TOOLS } from "@/lib/agent-tools";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -43,6 +44,8 @@ function asString(v: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as {
     messages?: IncomingMessage[];
   };

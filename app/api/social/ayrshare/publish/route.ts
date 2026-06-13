@@ -23,6 +23,7 @@ import {
   postToAyrshare,
   type AyrsharePlatform,
 } from "@/lib/ayrshare";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { getTenantDb } from "@/lib/tenant-db";
 
@@ -32,6 +33,8 @@ export const runtime = "nodejs";
 const ALLOWED = new Set<string>(AYRSHARE_PLATFORMS);
 
 export async function POST(request: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const apiKey = getAyrshareApiKey();
   if (!apiKey) {
     return NextResponse.json(

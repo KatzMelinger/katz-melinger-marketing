@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createJob, runAnthropicJob } from "@/lib/keyword-research-jobs";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,6 +18,8 @@ const MAX_COMPETITORS = 10;
 const MAX_COMPETITOR_LENGTH = 100;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const { competitors } = body || {};

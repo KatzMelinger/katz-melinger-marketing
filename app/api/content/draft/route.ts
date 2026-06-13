@@ -15,6 +15,7 @@ import {
 import { buildSkillsContext } from "@/lib/content-skills";
 import { languageDirective, normalizeLanguage } from "@/lib/content-language";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -83,6 +84,8 @@ function deriveTitle(content: string, fallbackTopic: string): string {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },

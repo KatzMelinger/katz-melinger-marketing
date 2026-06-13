@@ -39,6 +39,7 @@ import { fetchGscPositionMap } from "@/lib/gsc-positions";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
+import { guardUser } from "@/lib/supabase-route";
 
 /** Intent → KM content type (Practice Page / Blog / Case Result). */
 function contentTypeFromIntent(intent: KMSearchIntent): KMContentType {
@@ -118,6 +119,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST() {
+  const denied = await guardUser();
+  if (denied) return denied;
   // UI "Refresh" button — sync only the caller's firm.
   const tenantId = await resolveTenantId();
   return NextResponse.json(await runSyncForTenant(tenantId));

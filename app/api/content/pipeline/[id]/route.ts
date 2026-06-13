@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
@@ -16,6 +17,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const { id } = await params;
   const numericId = Number(id);
   if (!Number.isFinite(numericId)) {
@@ -91,6 +94,8 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const { id } = await params;
   const numericId = Number(id);
   if (!Number.isFinite(numericId)) {

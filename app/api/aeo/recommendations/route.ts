@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { extractJSON, getAnthropic } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +38,8 @@ type Recommendation = {
 };
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt : "";

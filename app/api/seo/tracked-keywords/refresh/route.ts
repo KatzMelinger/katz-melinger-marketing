@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
+import { guardUser } from "@/lib/supabase-route";
 import { detectCannibalization } from "@/lib/cannibalization";
 import {
   getDomainKeywords,
@@ -56,6 +57,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST() {
+  const denied = await guardUser();
+  if (denied) return denied;
   // UI "Refresh" button — refresh just the caller's firm.
   const tenantId = await resolveTenantId();
   return NextResponse.json(await refreshTrackedKeywords(tenantId));

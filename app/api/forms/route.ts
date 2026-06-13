@@ -8,12 +8,15 @@
 import { NextResponse } from "next/server";
 
 import { fetchAllFormSubmissions } from "@/lib/callrail-forms";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (supabase) {
     const tid = await resolveTenantId();

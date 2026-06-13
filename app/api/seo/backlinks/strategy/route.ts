@@ -15,6 +15,7 @@ import {
   getAnthropic,
   KEYWORD_RESEARCH_MODEL,
 } from "@/lib/anthropic";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -31,6 +32,8 @@ const PRACTICE_AREAS = [
 ];
 
 export async function POST() {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const profile = await analyzeOutboundLinkProfile();
 

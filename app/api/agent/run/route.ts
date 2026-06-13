@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { listTenantIds } from "@/lib/tenant-db";
 import { runContentAgent } from "@/lib/agent/content-agent";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 // Research + draft + analyze + compliance per item is Claude-heavy; give the
@@ -53,6 +54,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const tenantId = await resolveTenantId();
 

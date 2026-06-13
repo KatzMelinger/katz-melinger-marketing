@@ -11,11 +11,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runAICrawl } from "@/lib/ai-crawler";
 import { getTenantConfig } from "@/lib/tenant-config";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const explicit = typeof body?.url === "string" && body.url.trim() ? body.url.trim() : null;

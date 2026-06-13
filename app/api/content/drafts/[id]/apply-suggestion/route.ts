@@ -24,6 +24,7 @@ import {
   getAnthropic,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
@@ -33,6 +34,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },

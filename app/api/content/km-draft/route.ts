@@ -32,6 +32,7 @@ import {
   type KMPracticeArea,
   type KMSearchIntent,
 } from "@/lib/km-content-system";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getPillars } from "@/lib/pillars-store";
@@ -113,6 +114,8 @@ function parseBrief(o: Record<string, unknown>): Partial<KMPerPageBrief> {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },

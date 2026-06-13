@@ -24,6 +24,7 @@ import {
 } from "@/lib/document-extract";
 import { ALL_RUBRICS, loadRubric } from "@/lib/sales-coach-rubric";
 import { ALL_SOPS } from "@/lib/sales-coach-sops";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +87,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 
@@ -192,6 +195,8 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 

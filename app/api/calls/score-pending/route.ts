@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { scoreCall } from "@/lib/sales-coach";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -55,6 +56,8 @@ function clampDuration(raw: unknown): number {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 
