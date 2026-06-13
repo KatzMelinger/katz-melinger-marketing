@@ -53,9 +53,11 @@ Only ~22 of 232 route files gate themselves. Routes that use `getTenantClient()`
 
 ---
 
-## 🟡 MEDIUM — non-sensitive reads / minor (not yet gated)
+## 🟡 MEDIUM — non-sensitive reads / minor
 
-`reviews` GET, `semrush/{overview,keywords,backlinks,competitors}` GET, `metrics/overview`, `correlation/dashboard`, `constant-contact/lists`, `email/constant-contact` GET, `community/*/scan` GET, `ai-bots/ingest` POST (sessionless telemetry write, no shared secret).
+**Gated with `guardUser` (done):** `reviews` GET, `semrush/{overview,keywords,backlinks,competitors}` GET, `metrics/overview`, `correlation/dashboard`, `constant-contact/lists`, `email/constant-contact` GET, `community/{reddit,hackernews,youtube,news}/scan` GET.
+
+**Deliberately NOT gated:** `ai-bots/ingest` POST is **public by design** — the bot-traffic page hands out WordPress / Cloudflare-worker / curl snippets that external sites POST to it with no session, so `guardUser` would break ingestion. It writes only non-sensitive bot-crawl telemetry and derives its tenant from the request host. The correct hardening is an **HMAC shared-secret header** (already noted as a TODO in the route), not a user-session gate — tracked as a separate follow-up.
 
 ---
 

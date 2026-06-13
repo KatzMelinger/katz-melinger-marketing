@@ -7,12 +7,15 @@ import {
   semrushSeoUrl,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
 /** Semrush report: domain organic search keywords (often referred to as phrase_organic in older docs). */
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const key = process.env.SEMRUSH_API_KEY;
   if (!key) {
     return NextResponse.json({ keywords: [], error: "Missing SEMRUSH_API_KEY" });

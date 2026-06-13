@@ -13,6 +13,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
 
@@ -34,6 +35,8 @@ function normalize(url: string | null): string | null {
 }
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const { semrushDomain } = await getTenantConfig();
   const supabase = await getTenantDb();
 

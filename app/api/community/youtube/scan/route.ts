@@ -10,12 +10,15 @@
  */
 
 import { NextResponse } from "next/server";
+import { guardUser } from "@/lib/supabase-route";
 import { scanYouTube } from "@/lib/youtube-scanner";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const result = await scanYouTube();
     return NextResponse.json(result);
