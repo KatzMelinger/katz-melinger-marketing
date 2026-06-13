@@ -358,86 +358,147 @@ export function RankHistoryPanel() {
             </ResponsiveContainer>
           </div>
 
-          {/* Date-over-date comparison table */}
-          <div className="mt-6 flex items-center justify-between gap-3 flex-wrap">
-            <h3 className="text-sm font-semibold text-slate-700">Compare positions</h3>
-            <div className="flex items-center gap-2 flex-wrap">
+          {/* Date-over-date comparison table — collapsible like the tracker. */}
+          <details open className="mt-6 group">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-700 marker:text-slate-400">
+              Compare positions
+            </summary>
+
+            <div className="mt-3 flex items-center justify-end gap-2 flex-wrap">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search keywords…"
                 className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
               />
+              <select
+                value={clusterFilter}
+                onChange={(e) => setClusterFilter(e.target.value as ClusterFilter)}
+                className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0]"
+                title="Filter keywords by practice-area cluster"
+              >
+                {CLUSTER_FILTER_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
               <DateSelect label="From" value={dateA} dates={data!.dates} onChange={setDateA} />
               <DateSelect label="To" value={dateB} dates={data!.dates} onChange={setDateB} />
             </div>
-          </div>
 
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-left text-sm" style={{ minWidth: 320 + data!.domains.length * 220 }}>
-              <thead className="text-slate-500 text-xs">
-                <tr className="border-b border-[#e2e8f0]">
-                  <th rowSpan={2} className="pb-2 pr-3 font-medium align-bottom">
-                    <button
-                      type="button"
-                      onClick={() => setSort("keyword")}
-                      className="inline-flex items-center hover:text-[#185FA5]"
-                    >
-                      Keyword{sortCol === "keyword" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
-                    </button>
-                  </th>
-                  {data!.domains.map((domain) => (
-                    <th
-                      key={domain}
-                      colSpan={3}
-                      className="pb-1 px-3 font-medium text-center border-l border-[#e2e8f0]"
-                      style={{ color: colorForDomain(domain, data!.ownDomain, competitors) }}
-                    >
-                      {domain}
-                      {domain === data!.ownDomain ? " (you)" : ""}
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-left text-sm" style={{ minWidth: 320 + shownDomains.length * 220 }}>
+                <thead className="text-slate-500 text-xs">
+                  <tr className="border-b border-[#e2e8f0]">
+                    <th rowSpan={2} className="pb-2 pr-3 font-medium align-bottom">
+                      <button
+                        type="button"
+                        onClick={() => setSort("keyword")}
+                        className="inline-flex items-center hover:text-[#185FA5]"
+                      >
+                        Keyword{sortCol === "keyword" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                      </button>
                     </th>
-                  ))}
-                </tr>
-                <tr className="border-b border-[#e2e8f0] text-[11px]">
-                  {data!.domains.map((domain) => (
-                    <DomainSubHead
-                      key={domain}
-                      domain={domain}
-                      dateA={dateA}
-                      dateB={dateB}
-                      sortCol={sortCol}
-                      sortDir={sortDir}
-                      onSort={setSort}
-                    />
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {comparisonRows.length === 0 && (
-                  <tr>
-                    <td colSpan={1 + data!.domains.length * 3} className="py-6 text-center text-slate-500">
-                      No keywords match.
-                    </td>
+                    {shownDomains.map((domain) => (
+                      <th
+                        key={domain}
+                        colSpan={3}
+                        className="pb-1 px-3 font-medium text-center border-l border-[#e2e8f0]"
+                        style={{ color: colorForDomain(domain, data!.ownDomain, competitors) }}
+                      >
+                        {domain}
+                        {domain === data!.ownDomain ? " (you)" : ""}
+                      </th>
+                    ))}
                   </tr>
-                )}
-                {comparisonRows.map((row) => (
-                  <tr
-                    key={row.keyword}
-                    className="border-b border-[#e2e8f0]/60 text-slate-700 last:border-0 hover:bg-slate-50"
+                  <tr className="border-b border-[#e2e8f0] text-[11px]">
+                    {shownDomains.map((domain) => (
+                      <DomainSubHead
+                        key={domain}
+                        domain={domain}
+                        dateA={dateA}
+                        dateB={dateB}
+                        sortCol={sortCol}
+                        sortDir={sortDir}
+                        onSort={setSort}
+                      />
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {totalRows === 0 && (
+                    <tr>
+                      <td colSpan={1 + shownDomains.length * 3} className="py-6 text-center text-slate-500">
+                        No keywords match.
+                      </td>
+                    </tr>
+                  )}
+                  {pageRows.map((row) => (
+                    <tr
+                      key={row.keyword}
+                      className="border-b border-[#e2e8f0]/60 text-slate-700 last:border-0 hover:bg-slate-50"
+                    >
+                      <td className="py-2 pr-3 text-slate-900 font-medium">{row.keyword}</td>
+                      {shownDomains.map((domain) => {
+                        const a = row.ranks[domain]?.[dateA] ?? null;
+                        const b = row.ranks[domain]?.[dateB] ?? null;
+                        return (
+                          <RankCells key={domain} a={a} b={b} />
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                {totalRows === 0
+                  ? "No keywords match."
+                  : `Showing ${pageStart + 1}–${Math.min(pageStart + pageSize, totalRows)} of ${totalRows}. Click any column header to sort.`}
+              </p>
+              {totalRows > 20 && (
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-xs text-slate-500">
+                    Per page:
+                    <select
+                      value={pageSizeValue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setPageSize(v === "all" ? ALL_SIZE : Number(v));
+                        setPage(0);
+                      }}
+                      className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs text-slate-700"
+                    >
+                      <option value="20">20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                      <option value="all">All</option>
+                    </select>
+                  </label>
+                  <button
+                    onClick={() => setPage(Math.max(0, safePage - 1))}
+                    disabled={safePage <= 0}
+                    className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                   >
-                    <td className="py-2 pr-3 text-slate-900 font-medium">{row.keyword}</td>
-                    {data!.domains.map((domain) => {
-                      const a = row.ranks[domain]?.[dateA] ?? null;
-                      const b = row.ranks[domain]?.[dateB] ?? null;
-                      return (
-                        <RankCells key={domain} a={a} b={b} />
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    ◀ Prev
+                  </button>
+                  <span className="text-xs text-slate-500 tabular-nums">
+                    Page {safePage + 1} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
+                    disabled={safePage >= totalPages - 1}
+                    className="rounded-md border border-[#e2e8f0] px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              )}
+            </div>
+          </details>
         </>
       )}
     </section>
