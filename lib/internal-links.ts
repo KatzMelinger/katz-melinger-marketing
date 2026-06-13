@@ -22,6 +22,7 @@ import {
   type KMPracticeArea,
 } from "@/lib/km-content-system";
 import { getPillars } from "@/lib/pillars-store";
+import { listSitePages, type SitePage } from "@/lib/site-inventory";
 
 export type LinkPlanInput = {
   primaryKeyword: string;
@@ -142,4 +143,124 @@ export function approvedLinkPlanBlock(links: KMInternalLink[]): string {
     `You may still cite external authorities (statutes, courts, government sites) in prose.\n` +
     lines.join("\n")
   );
+}
+
+// ---------------------------------------------------------------------------
+// Orphan fix — "which existing pages should link TO this orphan?"
+//
+// The internal-link audit (lib/internal-link-audit.ts) flags orphan pages: live
+// pages that no other crawled page links to. This is the inverse of buildLinkPlan:
+// instead of picking outbound targets for a page being written, it finds existing
+// pages that already cover the orphan's topic and are therefore the natural place
+// to add an inbound link, with a suggested anchor that describes the orphan.
+// ---------------------------------------------------------------------------
+
+export type OrphanLinkerSource = {
+  url: string;
+  title: string | null;
+  page_type: string;
+  /** The orphan-topic term this source page matched on. */
+  matchedTerm: string;
+};
+
+export type OrphanLinkerSuggestion = {
+  orphanUrl: string;
+  orphanTitle: string | null;
+  /** Suggested anchor text for the inbound link (describes the orphan). */
+  anchor: string;
+  /** Existing pages that cover the orphan's topic and should link to it. */
+  sources: OrphanLinkerSource[];
+};
+
+/**
+ * Turn a scraped <title> into usable anchor text: drop the "| Site Name" suffix
+ * CMSes append, and decode the few HTML entities that show up in raw titles.
+ */
+function cleanAnchorText(t: string): string {
+  const base = t.split(/\s+[|–—]\s+/)[0].trim() || t.trim();
+  return base
+    .replace(/&#0?39;|&rsquo;|&lsquo;/g, "'")
+    .replace(/&quot;|&ldquo;|&rdquo;/g, '"')
+    .replace(/&amp;/g, "&");
+}
+
+/** Derive a topic phrase from a URL's last path segment (slug). */
+function slugToPhrase(u: string): string {
+  try {
+    const { pathname } = new URL(u);
+    const seg = pathname.replace(/\/+$/, "").split("/").filter(Boolean).pop() ?? "";
+    return seg
+      .replace(/[-_]+/g, " ")
+      .replace(/[^a-z0-9\s]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
+export async function suggestOrphanLinkers(
+  orphanUrl: string,
+  opts?: { limit?: number },
+): Promise<OrphanLinkerSuggestion> {
+  const limit = opts?.limit ?? 5;
+  const orphanPath = normalizePath(orphanUrl);
+
+  let pages: SitePage[] = [];
+  try {
+    pages = await listSitePages();
+  } catch {
+    pages = [];
+  }
+  const orphan = pages.find((p) => normalizePath(p.url) === orphanPath) ?? null;
+
+  const slugPhrase = slugToPhrase(orphanUrl);
+
+  // Terms describing what the orphan is about — these drive the topical match.
+  const terms = Array.from(
+    new Set(
+      [
+        ...(orphan?.topics ?? []),
+        orphan?.title ?? "",
+        orphan?.h1 ?? "",
+        slugPhrase,
+      ]
+        .map((t) => (t ?? "").trim())
+        .filter((t) => t.length >= 4),
+    ),
+  );
+
+  const anchor = cleanAnchorText(
+    orphan?.title?.trim() ||
+      orphan?.h1?.trim() ||
+      (slugPhrase ? titleCase(slugPhrase) : "this page"),
+  );
+
+  if (terms.length === 0) {
+    return { orphanUrl, orphanTitle: orphan?.title ?? null, anchor, sources: [] };
+  }
+
+  const overlap = await detectContentOverlap(terms, {
+    excludeUrl: orphanUrl,
+  }).catch(() => null);
+
+  const sources: OrphanLinkerSource[] = [];
+  const seen = new Set<string>();
+  for (const match of overlap?.matches ?? []) {
+    for (const page of match.pages) {
+      const path = normalizePath(page.url);
+      if (path === orphanPath || seen.has(path)) continue;
+      seen.add(path);
+      sources.push({
+        url: page.url,
+        title: page.title,
+        page_type: page.page_type,
+        matchedTerm: match.term,
+      });
+      if (sources.length >= limit) break;
+    }
+    if (sources.length >= limit) break;
+  }
+
+  return { orphanUrl, orphanTitle: orphan?.title ?? null, anchor, sources };
 }
