@@ -22,6 +22,8 @@ import { NextRequest, NextResponse } from "next/server";
 const PUBLIC_PATHS = [
   "/login",
   "/signup", // self-serve firm signup — must be reachable without a session
+  "/reset-password", // set-password form; gated on a session client-side
+  "/auth/confirm", // recovery-link handler; visitor has no session yet
   "/r", // tracked review-request short links — recipients have no session
   "/api/auth",
   "/api/google/oauth",
