@@ -21,6 +21,8 @@ export type ClusterKey =
   | "severance_contract"
   | "class_action"
   | "workers_comp"
+  | "judgment_enforcement"
+  | "commercial_collections"
   | "general"
   | "other";
 
@@ -145,6 +147,42 @@ const CLUSTERS: ClusterDef[] = [
       "injured at work",
       "osha",
       "workplace safety",
+    ],
+  },
+  {
+    key: "judgment_enforcement",
+    label: "Judgment Enforcement",
+    matches: [
+      "judgment",
+      "judgement",
+      "restraining notice",
+      "levy",
+      "garnish",
+      "turnover",
+      "cplr",
+      "domesticat",
+      "sister state",
+      "fraudulent transfer",
+      "enforce a judgment",
+      "collect a judgment",
+      "post-judgment",
+    ],
+  },
+  {
+    key: "commercial_collections",
+    label: "Commercial Collections",
+    matches: [
+      "debt collection",
+      "commercial collection",
+      "collections lawyer",
+      "collections attorney",
+      "collection agency",
+      "creditor",
+      "debtor",
+      "unpaid invoice",
+      "accounts receivable",
+      "demand letter",
+      "promissory note",
     ],
   },
   {

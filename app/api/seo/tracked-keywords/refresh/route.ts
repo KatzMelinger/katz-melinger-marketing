@@ -19,6 +19,8 @@ import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
 import { detectCannibalization } from "@/lib/cannibalization";
+import { listCompetitors, normalizeDomain } from "@/lib/seo-competitors";
+import { writeRankSnapshots } from "@/lib/rank-history";
 import {
   getAIOverviewForKeyword,
   getDomainKeywords,
@@ -197,6 +199,10 @@ async function refreshTrackedKeywords(tenantId: string) {
     // <100 tracked keywords).
     let updated = 0;
     const now = new Date().toISOString();
+    // Today's date (UTC) — daily granularity key for the rank-history snapshot.
+    const capturedOn = now.slice(0, 10);
+    // Per-keyword final rank for OUR domain, fed into the history snapshot below.
+    const ourSnapshot: Array<{ keyword: string; rank: number | null; url: string | null }> = [];
     for (const item of items) {
       const match = matchByKeyword.get(item.id);
       const target = item.keyword.toLowerCase().trim();
@@ -224,6 +230,8 @@ async function refreshTrackedKeywords(tenantId: string) {
         difficulty = kdMap.get(target) ?? item.difficulty ?? null;
         url = null;
       }
+
+      ourSnapshot.push({ keyword: item.keyword, rank: newRank, url });
 
       // AI Overview columns only for keywords we checked this run (conditional
       // spread so capped keywords keep their prior values rather than reset).
@@ -279,10 +287,37 @@ async function refreshTrackedKeywords(tenantId: string) {
       );
     }
 
+    // Append today's rank snapshot for the firm domain AND every tracked
+    // competitor, building the position-history time-series (Semrush-style
+    // trend chart + date-over-date columns). Non-fatal: a failure here must
+    // not fail the ranking refresh. Competitor ranks reuse their cached
+    // ranked-keywords snapshot (no live-SERP spend) — exact/partial match per
+    // tracked keyword, null when the competitor isn't in the top 100.
+    let snapshotRows: number | null = null;
+    try {
+      const competitors = await listCompetitors(tenantId);
+      const trackedKeywords = items.map((it) => it.keyword);
+      snapshotRows = await writeRankSnapshots({
+        db,
+        tenantId,
+        capturedOn,
+        ownDomain: normalizeDomain(semrushDomain),
+        ownSnapshot: ourSnapshot,
+        competitors,
+        trackedKeywords,
+      });
+    } catch (err) {
+      console.error(
+        "[seo/keywords/refresh] rank-history snapshot failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
     return {
       updated,
       keywords: refreshed ?? [],
       cannibalizationIssues,
+      snapshotRows,
     };
   } catch (err) {
     console.error(

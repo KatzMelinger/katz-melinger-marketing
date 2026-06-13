@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ContentActionsRow, useContentActions } from "@/components/content-actions";
+import { RankHistoryPanel } from "@/components/rank-history-panel";
 import { RecentSearchesStrip } from "@/components/recent-searches-strip";
 import { SeoShell, formatNumber } from "@/components/seo-shell";
 import {
@@ -88,6 +89,7 @@ export default function SeoKeywordsPage() {
   const [data, setData] = useState<KeywordResponse | null>(null);
   const [competitive, setCompetitive] = useState<KeywordResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
 
   // Debounced recent-search log. Records once the user pauses typing for 1.2s
@@ -137,8 +139,6 @@ export default function SeoKeywordsPage() {
   const [newTarget, setNewTarget] = useState("");
   const [targetBusy, setTargetBusy] = useState<string | null>(null);
   const [targetError, setTargetError] = useState<string | null>(null);
-  const [pushBusy, setPushBusy] = useState(false);
-  const [pushResult, setPushResult] = useState<string | null>(null);
 
   // Tracked-competitor management — persisted in Supabase via
   // /api/seo/competitors. `suggested` is the Semrush auto-detected list
@@ -213,6 +213,19 @@ export default function SeoKeywordsPage() {
     loadData();
   }, []);
 
+  // Re-pull live rankings + movement + AI Overview status from DataForSEO for
+  // every tracked keyword, then reload. Bounded server-side; can take a bit for
+  // a large keyword set.
+  const refreshRankings = async () => {
+    setRefreshing(true);
+    try {
+      await fetch("/api/seo/tracked-keywords/refresh", { method: "POST" });
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const addTarget = async (keyword: string) => {
     const trimmed = keyword.trim();
     if (!trimmed) return;
@@ -256,41 +269,9 @@ export default function SeoKeywordsPage() {
     }
   };
 
-  // One-time bulk push of every tracked keyword into the Semrush Position
-  // Tracking campaign. Spends ~100 API units/keyword, so we confirm first.
-  const pushToSemrush = async () => {
-    if (
-      !confirm(
-        `Push all ${targets.length} tracked keywords into your Semrush Position Tracking campaign?\n\nThis spends ~100 Semrush API units per keyword (about ${(
-          targets.length * 100
-        ).toLocaleString()} total). Run this once.`,
-      )
-    )
-      return;
-    setPushBusy(true);
-    setPushResult(null);
-    try {
-      const res = await fetch("/api/seo/tracked-keywords/push-to-semrush", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: true }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setPushResult(`❌ ${json?.error ?? "Push failed"}`);
-        return;
-      }
-      setPushResult(
-        `✓ Pushed ${json.pushed ?? 0} of ${json.attempted ?? 0} keywords (${(
-          json.unitsSpent ?? 0
-        ).toLocaleString()} API units).`,
-      );
-    } catch (e) {
-      setPushResult(`❌ ${e instanceof Error ? e.message : "Push failed"}`);
-    } finally {
-      setPushBusy(false);
-    }
-  };
+  // (Removed) "Push to Semrush" — DataForSEO is a read-only data API with no
+  // campaign/position-tracking product to push keywords into, so the two-way
+  // Semrush sync no longer applies. Rank tracking is pull-only via the refresh.
 
   const addCompetitor = async (domain: string, source: "manual" | "suggested" = "manual") => {
     const trimmed = domain.trim();
@@ -364,6 +345,16 @@ export default function SeoKeywordsPage() {
     );
   };
 
+  // Stat-card quick filters: set the ranking filter and scroll to the tracker.
+  const focusTracker = (r: "all" | "top10" | "missing") => {
+    setShowRanking(r);
+    if (typeof document !== "undefined") {
+      document
+        .getElementById("tracker")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   const sorted = useMemo(() => {
     const rows = (data?.tracked ?? []).slice();
     const lc = search.trim().toLowerCase();
@@ -383,8 +374,14 @@ export default function SeoKeywordsPage() {
       if (typeof av === "string" && typeof bv === "string") {
         return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
       }
-      const aNum = typeof av === "number" ? av : 0;
-      const bNum = typeof bv === "number" ? bv : 0;
+      let aNum = typeof av === "number" ? av : 0;
+      let bNum = typeof bv === "number" ? bv : 0;
+      // Unranked (position 0) is the WORST rank, not the best — push it to the
+      // bottom so "sort by Pos" reads like every other column (best first).
+      if (sortKey === "position") {
+        if (aNum <= 0) aNum = Number.MAX_SAFE_INTEGER;
+        if (bNum <= 0) bNum = Number.MAX_SAFE_INTEGER;
+      }
       return sortDir === "asc" ? aNum - bNum : bNum - aNum;
     });
     return filtered;
@@ -515,9 +512,24 @@ export default function SeoKeywordsPage() {
       subtitle="Target rankings, position movement, CPC value, competition, and competitor opportunity gaps."
     >
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Tracked keywords" value={formatNumber(totalTracked)} />
-        <Stat label="Top 10 rankings" value={formatNumber(top10Count)} />
-        <Stat label="Missing targets" value={formatNumber(data?.missingTargets?.length ?? 0)} />
+        <Stat
+          label="Tracked keywords"
+          value={formatNumber(totalTracked)}
+          active={showRanking === "all"}
+          onClick={() => focusTracker("all")}
+        />
+        <Stat
+          label="Top 10 rankings"
+          value={formatNumber(top10Count)}
+          active={showRanking === "top10"}
+          onClick={() => focusTracker("top10")}
+        />
+        <Stat
+          label="Missing targets"
+          value={formatNumber(data?.missingTargets?.length ?? 0)}
+          active={showRanking === "missing"}
+          onClick={() => focusTracker("missing")}
+        />
         <Stat label="Est. monthly traffic" value={formatNumber(totalTraffic)} />
         <Stat
           label="Est. traffic value"
@@ -546,21 +558,7 @@ export default function SeoKeywordsPage() {
               </span>
             </span>
           </button>
-          <button
-            onClick={pushToSemrush}
-            disabled={pushBusy || targets.length === 0}
-            className="shrink-0 rounded-md border border-[#185FA5] px-3 py-2 text-xs font-medium text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
-            title="Add all tracked keywords to your Semrush Position Tracking campaign (spends ~100 API units each)"
-          >
-            {pushBusy ? "Pushing…" : "Push all to Semrush"}
-          </button>
         </div>
-
-        {pushResult && (
-          <div className="mt-2 rounded-md border border-[#e2e8f0] bg-slate-50 px-3 py-2 text-xs text-slate-700">
-            {pushResult}
-          </div>
-        )}
 
         {manageOpen && (
           <>
@@ -616,10 +614,20 @@ export default function SeoKeywordsPage() {
         )}
       </section>
 
-      <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+      <details id="tracker" open className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+        <summary className="mb-3 cursor-pointer text-lg font-semibold text-slate-900 marker:text-slate-400">
+          Target keyword tracker
+        </summary>
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-          <h2 className="text-lg font-semibold">Target keyword tracker</h2>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={refreshRankings}
+              disabled={refreshing}
+              className="rounded-md border border-[#185FA5] px-3 py-1.5 text-sm font-medium text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+              title="Re-pull rankings, movement, and AI Overview status from DataForSEO for all tracked keywords"
+            >
+              {refreshing ? "Refreshing…" : "↻ Refresh"}
+            </button>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -642,7 +650,7 @@ export default function SeoKeywordsPage() {
               value={stateFilter}
               onChange={(e) => setStateFilter(e.target.value as StateFilter)}
               className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0]"
-              title="State scope (Semrush returns US-wide data; default hides explicit out-of-state keywords)"
+              title="State scope (data is US-wide; default hides explicit out-of-state keywords)"
             >
               {STATE_FILTER_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -849,11 +857,15 @@ export default function SeoKeywordsPage() {
             </div>
           )}
         </div>
-      </section>
+      </details>
+
+      <RankHistoryPanel />
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-[#e2e8f0] bg-white p-5">
-          <h2 className="text-lg font-semibold">Legal industry trends</h2>
+        <details open className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+          <summary className="cursor-pointer text-lg font-semibold text-slate-900 marker:text-slate-400">
+            Legal industry trends
+          </summary>
           <ul className="mt-3 space-y-2 text-sm">
             {(data?.trendingKeywords ?? []).map((item) => (
               <li
@@ -868,11 +880,13 @@ export default function SeoKeywordsPage() {
               </li>
             ))}
           </ul>
-        </article>
-        <article className="rounded-xl border border-[#e2e8f0] bg-white p-5">
-          <h2 className="text-lg font-semibold">Long-tail opportunities</h2>
+        </details>
+        <details open className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+          <summary className="cursor-pointer text-lg font-semibold text-slate-900 marker:text-slate-400">
+            Long-tail opportunities
+          </summary>
           <p className="mt-1 text-xs text-slate-500">
-            Real question &amp; long-tail searches related to your targets (Semrush).
+            Real question &amp; long-tail searches related to your targets (DataForSEO).
           </p>
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
             {(data?.longTailSuggestions ?? []).length === 0 && !loading && (
@@ -893,15 +907,17 @@ export default function SeoKeywordsPage() {
               </li>
             ))}
           </ul>
-        </article>
+        </details>
       </section>
 
-      <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
-        <h2 className="text-lg font-semibold">Manage tracked competitors</h2>
+      <details open className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+        <summary className="cursor-pointer text-lg font-semibold text-slate-900 marker:text-slate-400">
+          Manage tracked competitors
+        </summary>
         <p className="mt-1 text-xs text-slate-500">
-          Firms to benchmark against. The gap table below runs across this whole set. Saved to
-          Supabase. Suggestions come from Semrush&apos;s organic-competitor detection (directories
-          &amp; aggregators already filtered out).
+          Firms to benchmark against — the gap table below runs across this whole set. Suggested
+          competitors are other firms that rank for the same keywords as you, found via
+          DataForSEO&apos;s organic-competitor analysis (directories &amp; aggregators filtered out).
         </p>
 
         {competitorError && (
@@ -955,7 +971,7 @@ export default function SeoKeywordsPage() {
 
         {suggestedCompetitors.length > 0 && (
           <div className="mt-4">
-            <p className="text-xs font-medium text-slate-500">Suggested by Semrush — click to track:</p>
+            <p className="text-xs font-medium text-slate-500">Suggested competitors — click to track:</p>
             <ul className="mt-2 flex flex-wrap gap-2">
               {suggestedCompetitors.map((s) => (
                 <li key={s}>
@@ -972,11 +988,13 @@ export default function SeoKeywordsPage() {
             </ul>
           </div>
         )}
-      </section>
+      </details>
 
-      <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+      <details open className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+        <summary className="mb-3 cursor-pointer text-lg font-semibold text-slate-900 marker:text-slate-400">
+          Competitor keyword opportunities
+        </summary>
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-lg font-semibold">Competitor keyword opportunities</h2>
           <div className="flex items-center gap-2 flex-wrap">
             <select
               value={compDomainFilter}
@@ -1094,7 +1112,7 @@ export default function SeoKeywordsPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </details>
 
       {contentActions.modal}
     </SeoShell>
@@ -1202,12 +1220,40 @@ function KdBadge({ kd }: { kd: number }) {
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <article className="rounded-xl border border-[#e2e8f0] bg-white p-4">
+function Stat({
+  label,
+  value,
+  hint,
+  onClick,
+  active,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const inner = (
+    <>
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
       {hint && <p className="text-[11px] text-slate-500 mt-1">{hint}</p>}
-    </article>
+    </>
   );
+  const base = `rounded-xl border bg-white p-4 ${
+    active ? "border-[#185FA5] ring-1 ring-[#185FA5]/30" : "border-[#e2e8f0]"
+  }`;
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className={`${base} text-left w-full hover:border-[#185FA5] transition-colors`}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <article className={base}>{inner}</article>;
 }
