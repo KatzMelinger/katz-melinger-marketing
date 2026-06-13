@@ -230,3 +230,24 @@ export const CLUSTER_FILTER_OPTIONS = [
 ];
 
 export type ClusterFilter = ClusterKey | "all";
+
+// Practice-area grouping — maps each keyword cluster to the firm "type" it
+// belongs to, so competitors can be split into Employment vs Collections.
+export type Practice = "employment" | "collections" | "other";
+
+const COLLECTIONS_CLUSTERS = new Set<ClusterKey>([
+  "judgment_enforcement",
+  "commercial_collections",
+]);
+
+export function clusterPractice(key: ClusterKey): Practice {
+  if (COLLECTIONS_CLUSTERS.has(key)) return "collections";
+  if (key === "other") return "other";
+  return "employment";
+}
+
+export const PRACTICE_LABEL: Record<Practice, string> = {
+  employment: "Employment",
+  collections: "Collections",
+  other: "Other",
+};

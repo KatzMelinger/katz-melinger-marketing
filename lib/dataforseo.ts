@@ -414,6 +414,10 @@ export async function getAIOverviewForKeyword(
       location_code: DATAFORSEO_LOCATION_CODE,
       language_code: DATAFORSEO_LANGUAGE_CODE,
       depth: 20,
+      // Google loads most AI Overviews asynchronously; without this flag they
+      // never appear in the SERP items, so ai_overview detection always misses.
+      // (Adds a small extra cost per call when an async overview is present.)
+      load_async_ai_overview: true,
     });
     const ao = extractItems(json).find((it) => it?.type === "ai_overview");
     if (!ao) return empty;

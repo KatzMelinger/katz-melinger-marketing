@@ -25,8 +25,11 @@ import {
 } from "@/lib/keyword-geo";
 import {
   classifyKeywordCluster,
+  clusterPractice,
   CLUSTER_FILTER_OPTIONS,
+  PRACTICE_LABEL,
   type ClusterFilter,
+  type Practice,
 } from "@/lib/keyword-cluster";
 import { recordSearch } from "@/lib/recent-searches";
 
@@ -113,6 +116,7 @@ export default function SeoKeywordsPage() {
   const [compSortDir, setCompSortDir] = useState<"asc" | "desc">("desc");
   const [compDomainFilter, setCompDomainFilter] = useState<string>("all");
   const [clusterFilter, setClusterFilter] = useState<ClusterFilter>("all");
+  const [practiceFilter, setPracticeFilter] = useState<Practice | "all">("all");
 
   // Latest cannibalization snapshot (keyword → the 2+ of OUR URLs competing for
   // it). Read-only from the persisted scan — no Semrush spend. Used to suggest a
@@ -456,6 +460,7 @@ export default function SeoKeywordsPage() {
     const filtered = rows.filter((r) => {
       if (compDomainFilter !== "all" && r.domain !== compDomainFilter) return false;
       if (clusterFilter !== "all" && r.cluster.key !== clusterFilter) return false;
+      if (practiceFilter !== "all" && clusterPractice(r.cluster.key) !== practiceFilter) return false;
       return true;
     });
     filtered.sort((a, b) => {
@@ -476,7 +481,7 @@ export default function SeoKeywordsPage() {
       return compSortDir === "asc" ? aNum - bNum : bNum - aNum;
     });
     return filtered;
-  }, [competitive, cannibalMap, compDomainFilter, clusterFilter, compSortKey, compSortDir]);
+  }, [competitive, cannibalMap, compDomainFilter, clusterFilter, practiceFilter, compSortKey, compSortDir]);
 
   // Distinct competitor domains present in the gap set, for the filter dropdown.
   const competitorDomains = useMemo(
@@ -486,6 +491,31 @@ export default function SeoKeywordsPage() {
       ),
     [competitive],
   );
+
+  // Classify each competitor (domain) by the dominant practice area of the
+  // keywords they outrank us on — Employment vs Collections (vs Other). Lets the
+  // competitor list + gap filter separate the two distinct competitor sets.
+  const competitorPractice = useMemo(() => {
+    const tally = new Map<string, Record<Practice, number>>();
+    for (const r of competitive?.competitive ?? []) {
+      const p = clusterPractice(classifyKeywordCluster(r.keyword).key);
+      const t = tally.get(r.domain) ?? { employment: 0, collections: 0, other: 0 };
+      t[p] += 1;
+      tally.set(r.domain, t);
+    }
+    const out = new Map<string, Practice>();
+    for (const [domain, t] of tally) {
+      out.set(
+        domain,
+        t.collections === 0 && t.employment === 0
+          ? "other"
+          : t.collections > t.employment
+            ? "collections"
+            : "employment",
+      );
+    }
+    return out;
+  }, [competitive]);
 
   const top10Count = (data?.tracked ?? []).filter(
     (i) => i.position > 0 && i.position <= 10,
@@ -956,6 +986,21 @@ export default function SeoKeywordsPage() {
               className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-slate-50 pl-3 pr-1 py-1 text-xs text-slate-700"
             >
               <span>{c}</span>
+              {(() => {
+                const p = competitorPractice.get(c);
+                return p && p !== "other" ? (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      p === "collections"
+                        ? "bg-violet-50 text-violet-700 border-violet-200"
+                        : "bg-sky-50 text-sky-700 border-sky-200"
+                    }`}
+                    title="Practice area, inferred from the keywords this competitor outranks you on"
+                  >
+                    {PRACTICE_LABEL[p]}
+                  </span>
+                ) : null;
+              })()}
               <button
                 onClick={() => removeCompetitor(c)}
                 disabled={competitorBusy === c}
@@ -1003,11 +1048,25 @@ export default function SeoKeywordsPage() {
               title="Filter to a single competitor domain"
             >
               <option value="all">All competitors</option>
-              {competitorDomains.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
+              {competitorDomains.map((d) => {
+                const p = competitorPractice.get(d);
+                return (
+                  <option key={d} value={d}>
+                    {d}
+                    {p && p !== "other" ? ` — ${PRACTICE_LABEL[p]}` : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <select
+              value={practiceFilter}
+              onChange={(e) => setPracticeFilter(e.target.value as Practice | "all")}
+              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0]"
+              title="Filter competitor gaps by practice area"
+            >
+              <option value="all">All practices</option>
+              <option value="employment">Employment</option>
+              <option value="collections">Collections</option>
             </select>
             <select
               value={clusterFilter}
