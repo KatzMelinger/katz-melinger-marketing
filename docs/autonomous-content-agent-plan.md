@@ -121,12 +121,51 @@ Pick the tier that matches how much you want to invest now. Each tier is a compl
 
 > **Note on guardrails:** the "never auto-publish" rule and per-run volume caps (§6 guardrails) apply to **all three tiers** — the agent's terminal state is always `initial_review`, regardless of scope.
 
+## 5c. Quality, safety & intelligence
+
+Beyond generating and queuing drafts, an autonomous agent for a **law firm** needs the features below. Two of them (#1, #2) are **not optional** — they are Tier-1 requirements before the agent runs autonomously at all. The rest make it a strategist rather than a content firehose.
+
+### Must-have — legal safety (REQUIRED in Tier 1, before any autonomous run)
+
+1. **Attorney-advertising compliance gate.** Every draft passes an automated compliance check *before* it reaches a human, against lawyer-marketing rules (NY Rules of Professional Conduct / ABA Model Rules): no outcome guarantees, no "specialist/expert" claims, no misleading comparisons, testimonial/endorsement rules, and the **"Attorney Advertising"** label where required. Build on the existing `ANTI_AI_VOICE_RULES` and the disclaimer language already in the brand-voice profile; a failing draft is held/regenerated, never queued. *Rationale: autonomous generation without this is a liability.*
+
+2. **Fact & citation verification.** Legal content cites statutes, **statutes of limitations / filing deadlines**, and case results — exactly what LLMs hallucinate. The agent must (a) never fabricate case results or guarantees, and (b) flag every cited statute/deadline/authority for human verification. Ground claims via the existing `generate_research_packet` (legal authority + cannibalization check) rather than free generation. *Rationale: a wrong deadline in published legal content is a real-world harm.*
+
+### High-leverage — makes it smart, not just busy
+
+3. **Performance feedback loop.** Feed results of *past* content back into topic selection using data already integrated — GA4 (traffic), Semrush (rankings), CallRail (calls/conversions). The agent doubles down on what actually drives results instead of guessing. *This is what makes the agent worth building.*
+
+4. **Refresh existing content, not just net-new.** Detect decaying pages (rankings slipping, stale `last_modified` — already read via `lib/wordpress.ts` / site inventory) and propose *updates*. Refreshing a ranking page often beats a new one and costs less. The runner picks a mix of "new" and "refresh" work each run.
+
+5. **Approval-feedback learning.** Capture human edits and rejection reasons; use approved drafts as few-shot examples and steer away from patterns that got rejected. The agent improves over time instead of repeating misses. (Stored on the draft/run rows; fed into the generation prompt.)
+
+### Quality & control
+
+6. **Quality auto-gate.** Use the auto-analysis scores already computed (readability, AEO score, brand-voice match via `lib/content-analysis.ts`) to auto-hold or regenerate weak drafts *before* a human sees them, so the review queue holds only strong candidates and doesn't waste the firm's time.
+
+7. **Editorial balance.** Spread topics across practice areas and the existing pipeline buckets (money_page / bofu_education / mofu_trust / local_authority) instead of clustering, and weave in timely hooks (e.g. new NY employment laws taking effect).
+
+8. **Autonomy levels + explainability.** Let the firm dial aggressiveness — *suggest-only → draft → draft + schedule* — and show the agent's reasoning for each topic pick (surfaced on the runs dashboard) so the firm trusts and can tune it.
+
+### Worth including
+
+9. **Bilingual output.** Reuse the existing Spanish/`languageDirective` support to produce EN/ES pairs — high-value for NYC employment clients.
+
+10. **Auto hero image.** Image generation already exists and the analyzer already suggests images — attach a suggested hero image per draft.
+
+**Where these land by tier:**
+- **Tier 1:** #1 + #2 (legal safety) are mandatory; #6 (quality auto-gate) recommended so the first batches look good.
+- **Tier 2:** #7 (editorial balance), #8 (autonomy levels + explainability).
+- **Tier 3:** #3 (performance loop), #4 (content refresh), #5 (approval-feedback learning), #9 (bilingual), #10 (auto image).
+
 ## 6. Open questions for Kenneth
 
 - **Cadence & volume:** how many drafts per run, how often? (e.g. 4 blogs/week, or a mix of formats?)
 - **Topic source:** purely AI-suggested topics, or seeded from the Strategy Engine / keyword opportunities / content decisions queue?
 - **Formats:** blogs only to start, or the multi-format batch (social + email too)?
 - **Notification:** in-app badge enough, or also email the firm when new drafts are waiting?
+- **Compliance scope (§5c #1):** which jurisdiction's advertising rules apply (NY only, or per-client state once productized)? Should compliance failures auto-regenerate or just flag for the reviewer?
+- **Approval routing (§5c #1–2):** does anything legal-sensitive need an *attorney* reviewer distinct from a marketing reviewer, or is one approval queue enough?
 
 ---
 
