@@ -1,6 +1,6 @@
 /**
  * Department taxonomy — the single source of truth for how MarketOS is
- * organized into nine departments. Both the global sidebar
+ * organized into departments. Both the global sidebar
  * (`components/marketing-sidebar.tsx`) and the executive board on the home
  * page (`app/page.tsx` → `components/dept-board.tsx`) derive their structure
  * from this file so the grouping can never drift between the two.
@@ -48,8 +48,9 @@ export const DEPARTMENTS: Department[] = [
     defaultOpen: true,
     items: [
       { label: "Marketing copy", href: "/content", icon: "▤", status: "active" },
+      { label: "Website Pages", href: "/content/km", icon: "✎", status: "active" },
+      { label: "Batch Generator", href: "/content/batch", icon: "🧪", status: "active" },
       { label: "Opportunities", href: "/seo/opportunities", icon: "✨", status: "active" },
-      { label: "Research Queue", href: "/content/research", icon: "📚", status: "active" },
       { label: "Content Decisions", href: "/content/decisions", icon: "✓", status: "active" },
       { label: "Briefs", href: "/content/briefs", icon: "📋", status: "active" },
       { label: "Production Board", href: "/content/pipeline", icon: "▥", status: "active" },
@@ -57,10 +58,8 @@ export const DEPARTMENTS: Department[] = [
       { label: "Refresh Queue", href: "/content/refresh", icon: "♻", status: "active" },
       { label: "Cluster Map", href: "/content/site-map", icon: "🗺", status: "active" },
       { label: "Intelligence", href: "/content/intelligence", icon: "💡", status: "active" },
-      { label: "Batch Generator", href: "/content/batch", icon: "🧪", status: "active" },
       { label: "Drafts", href: "/content/drafts", icon: "📝", status: "active" },
       { label: "Sources", href: "/content/sources", icon: "📥", status: "active" },
-      { label: "Skills", href: "/content/skills", icon: "📚", status: "active" },
     ],
   },
   {
@@ -170,11 +169,18 @@ export const DEPARTMENTS: Department[] = [
     defaultOpen: false,
     items: [
       { label: "Agent Assistant", href: "/agent", icon: "💬", status: "active" },
-      { label: "Brand Voice", href: "/brand-voice", icon: "🎙", status: "active" },
-      { label: "SEO content", href: "/content/km", icon: "✎", status: "active" },
+      { label: "Content Directions", href: "/brand-voice", icon: "🧭", status: "active" },
       { label: "Image Generator", href: "/content/images", icon: "🖼", status: "active" },
       { label: "Practice Areas", href: "/settings/practice-areas", icon: "⚖", status: "active" },
       { label: "Sales Coach", href: "/settings/sales-training", icon: "🎯", status: "active" },
+    ],
+  },
+  {
+    key: "admin",
+    label: "Admin",
+    accent: "#475569",
+    defaultOpen: false,
+    items: [
       { label: "Integrations", href: "/integrations", icon: "🔌", status: "active", adminOnly: true },
       { label: "Users", href: "/admin/users", icon: "👥", status: "active", adminOnly: true },
       { label: "Settings", href: "/settings", icon: "⚙", status: "active", adminOnly: true },

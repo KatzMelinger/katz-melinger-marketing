@@ -24,8 +24,9 @@ import {
 } from "@/components/brand-voice-wizard";
 import { PRACTICE_AREAS } from "@/lib/practice-areas";
 import { ContentPillarsManager } from "@/components/content-pillars-manager";
+import { ResearchLibraries } from "@/components/research-libraries";
 
-type TabKey = "settings" | "avatars" | "directions" | "samples" | "pillars";
+type TabKey = "settings" | "avatars" | "directions" | "samples" | "pillars" | "research";
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "settings", label: "Brand settings", icon: "🎙" },
@@ -33,6 +34,7 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "directions", label: "Content directions", icon: "🧭" },
   { key: "pillars", label: "Content pillars", icon: "🏛" },
   { key: "samples", label: "Writing samples", icon: "📄" },
+  { key: "research", label: "Research", icon: "📚" },
 ];
 
 type Avatar = {
@@ -381,6 +383,7 @@ export default function BrandVoicePage() {
       {tab === "directions" && <DirectionsSection avatars={avatars} />}
       {tab === "pillars" && <ContentPillarsManager />}
       {tab === "samples" && <WritingSamplesSection />}
+      {tab === "research" && <ResearchLibraries showHeader={false} />}
     </div>
   );
 }
