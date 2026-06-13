@@ -134,6 +134,10 @@ export function RankHistoryPanel() {
   // Comparison-table pagination: 20 per page by default, matching the tracker.
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
+  // Signature of the filter/sort inputs; when it changes we reset to page 0
+  // during render (React's "adjust state on input change" pattern) instead of an
+  // effect, which would fire a setState-in-effect cascade.
+  const [prevFilterSig, setPrevFilterSig] = useState("");
   const ALL_SIZE = 1_000_000; // sentinel for "show all" (finite so math stays safe)
 
   const toggleDomain = (domain: string) => {
@@ -198,6 +202,17 @@ export function RankHistoryPanel() {
     [data, hiddenDomains],
   );
 
+  // If the active sort column belongs to a competitor that's been toggled off,
+  // fall back to the keyword sort for this render. Derived (not stored) so we
+  // avoid a setState-in-effect cascade; the sortCol state itself is untouched,
+  // so re-showing the competitor restores its sort.
+  const sortColHidden =
+    sortCol !== "keyword" &&
+    !!data &&
+    !shownDomains.includes(sortCol.slice(0, sortCol.lastIndexOf("::")));
+  const effectiveSortCol = sortColHidden ? "keyword" : sortCol;
+  const effectiveSortDir: "asc" | "desc" = sortColHidden ? "asc" : sortDir;
+
   // Recharts wants one row per date with a key per domain: { date, [domain]: vis }.
   const chartData = useMemo(() => {
     if (!data) return [];
@@ -223,28 +238,20 @@ export function RankHistoryPanel() {
       .slice()
       .sort((ra, rb) =>
         compareSortValues(
-          sortValueFor(ra, sortCol, dateA, dateB),
-          sortValueFor(rb, sortCol, dateA, dateB),
-          sortDir,
+          sortValueFor(ra, effectiveSortCol, dateA, dateB),
+          sortValueFor(rb, effectiveSortCol, dateA, dateB),
+          effectiveSortDir,
         ),
       );
-  }, [data, search, clusterFilter, sortCol, sortDir, dateA, dateB]);
+  }, [data, search, clusterFilter, effectiveSortCol, effectiveSortDir, dateA, dateB]);
 
-  // Reset to the first page whenever the filtered/sorted set shifts underneath us.
-  useEffect(() => {
-    setPage(0);
-  }, [search, clusterFilter, sortCol, sortDir, dateA, dateB]);
-
-  // If the column we're sorting by belongs to a competitor that just got toggled
-  // off, fall back to the keyword sort so the indicator isn't stranded.
-  useEffect(() => {
-    if (sortCol === "keyword") return;
-    const domain = sortCol.slice(0, sortCol.lastIndexOf("::"));
-    if (data && !shownDomains.includes(domain)) {
-      setSortCol("keyword");
-      setSortDir("asc");
-    }
-  }, [shownDomains, sortCol, data]);
+  // Reset to the first page whenever the filtered/sorted set shifts underneath
+  // us — done during render (not in an effect) so it's applied before paint.
+  const filterSig = `${search}|${clusterFilter}|${effectiveSortCol}|${effectiveSortDir}|${dateA}|${dateB}`;
+  if (filterSig !== prevFilterSig) {
+    setPrevFilterSig(filterSig);
+    if (page !== 0) setPage(0);
+  }
 
   // Comparison-table pagination math (mirrors the tracker on the keywords page).
   const totalRows = comparisonRows.length;
@@ -397,7 +404,7 @@ export function RankHistoryPanel() {
                         onClick={() => setSort("keyword")}
                         className="inline-flex items-center hover:text-[#185FA5]"
                       >
-                        Keyword{sortCol === "keyword" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                        Keyword{effectiveSortCol === "keyword" ? (effectiveSortDir === "asc" ? " ▲" : " ▼") : ""}
                       </button>
                     </th>
                     {shownDomains.map((domain) => (
@@ -419,8 +426,8 @@ export function RankHistoryPanel() {
                         domain={domain}
                         dateA={dateA}
                         dateB={dateB}
-                        sortCol={sortCol}
-                        sortDir={sortDir}
+                        sortCol={effectiveSortCol}
+                        sortDir={effectiveSortDir}
                         onSort={setSort}
                       />
                     ))}
