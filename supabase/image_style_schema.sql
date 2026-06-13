@@ -1,4 +1,19 @@
 -- ============================================================================
+-- !! DB TARGET CHECK — read before running
+-- ----------------------------------------------------------------------------
+-- Run this against the LIVE marketing-SaaS Supabase project — the one your
+-- active .env.local points at via NEXT_PUBLIC_SUPABASE_URL. This is NOT the
+-- CMS project, and NOT the pre-migration project.
+--
+-- Before you click Run:
+--   1. Open the Supabase dashboard and confirm the project ref in the URL
+--      matches the ref in .env.local's NEXT_PUBLIC_SUPABASE_URL.
+--   2. Any project ref written elsewhere in this file may predate the
+--      multitenancy migration (yijrpbdctzrgfpwdezqn -> ijlesksgnfqqpxtaelqs).
+--      When in doubt, .env.local wins, not the comment.
+-- ============================================================================
+
+-- ============================================================================
 -- image_style_settings — brand-style guide for the image generator
 -- ============================================================================
 -- Same idea as brand_voice_settings but for visual generation: stores the

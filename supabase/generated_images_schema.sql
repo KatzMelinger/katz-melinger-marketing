@@ -1,4 +1,19 @@
 -- ============================================================================
+-- !! DB TARGET CHECK — read before running
+-- ----------------------------------------------------------------------------
+-- Run this against the LIVE marketing-SaaS Supabase project — the one your
+-- active .env.local points at via NEXT_PUBLIC_SUPABASE_URL. This is NOT the
+-- CMS project, and NOT the pre-migration project.
+--
+-- Before you click Run:
+--   1. Open the Supabase dashboard and confirm the project ref in the URL
+--      matches the ref in .env.local's NEXT_PUBLIC_SUPABASE_URL.
+--   2. Any project ref written elsewhere in this file may predate the
+--      multitenancy migration (yijrpbdctzrgfpwdezqn -> ijlesksgnfqqpxtaelqs).
+--      When in doubt, .env.local wins, not the comment.
+-- ============================================================================
+
+-- ============================================================================
 -- generated_images — persisted output of /api/images/generate + /api/images/edit
 -- ============================================================================
 -- The Image Generator at /content/images turns prompts into PNGs via OpenAI
