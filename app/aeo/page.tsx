@@ -731,28 +731,24 @@ function PromptRow({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="min-w-0 flex-1 text-left"
+          className="min-w-0 flex-1 flex items-start gap-2 text-left"
+          aria-expanded={open}
         >
-          <div className="text-sm font-medium truncate">{pd.prompt}</div>
-          <div className="flex flex-wrap gap-1.5 mt-1.5">
-            {pd.category && <Pill tone="violet">{pd.category}</Pill>}
-            {pd.intent && <Pill tone="blue">{pd.intent}</Pill>}
-            {pd.geography && <Pill tone="neutral">{pd.geography}</Pill>}
-            <Pill tone={anyMention ? "emerald" : "red"}>
-              {anyMention ? "✓ mentioned" : "✕ missing"}
-            </Pill>
-          </div>
+          <span className="mt-0.5 shrink-0 opacity-50">{open ? "▾" : "▸"}</span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium truncate">{pd.prompt}</span>
+            <span className="flex flex-wrap gap-1.5 mt-1.5">
+              {pd.category && <Pill tone="violet">{pd.category}</Pill>}
+              {pd.intent && <Pill tone="blue">{pd.intent}</Pill>}
+              {pd.geography && <Pill tone="neutral">{pd.geography}</Pill>}
+              <Pill tone={anyMention ? "emerald" : "red"}>
+                {anyMention ? "✓ mentioned" : "✕ missing"}
+              </Pill>
+            </span>
+          </span>
         </button>
         <div className="flex items-center gap-2 shrink-0">
           <ContentActionsRow keyword={pd.prompt} actions={actions} />
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            className="text-sm opacity-50 hover:opacity-100 px-2"
-            aria-label={open ? "Collapse" : "Expand"}
-          >
-            {open ? "▴" : "▾"}
-          </button>
         </div>
       </div>
       {open && !anyMention && <NoShowRecommendations pd={pd} />}
