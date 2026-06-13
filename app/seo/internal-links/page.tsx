@@ -32,7 +32,7 @@ export default function InternalLinksPage() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
-    const res = await fetch("/api/seo/internal-links/latest");
+    const res = await fetch("/api/seo/internal-links/latest", { cache: "no-store" });
     const data = await res.json();
     setAudit(data.audit ?? null);
   };
@@ -106,13 +106,11 @@ export default function InternalLinksPage() {
 
       {audit && (
         <div className="grid lg:grid-cols-3 gap-4">
-          <Section title="Orphan pages" body="Crawled but no other crawled page links here. Add inbound links from related content." count={audit.orphan_pages.length}>
+          <Section title="Orphan pages" body="Crawled but no other crawled page links here. Use “Fix” to find existing pages that should link to each one." count={audit.orphan_pages.length}>
             {audit.orphan_pages.length === 0 && <p className="text-xs opacity-60">None — every page has inbound links.</p>}
-            <ul className="space-y-1 text-xs">
+            <ul className="space-y-1.5 text-xs">
               {audit.orphan_pages.map((p) => (
-                <li key={p.url} className="truncate">
-                  <a href={p.url} target="_blank" rel="noreferrer" className="underline opacity-90">{p.url}</a>
-                </li>
+                <OrphanRow key={p.url} url={p.url} />
               ))}
             </ul>
           </Section>
@@ -192,5 +190,125 @@ function Section({
       <p className="text-xs opacity-60 mt-1 mb-3">{body}</p>
       {children}
     </div>
+  );
+}
+
+type LinkerSource = {
+  url: string;
+  title: string | null;
+  page_type: string;
+  matchedTerm: string;
+};
+type LinkerSuggestion = {
+  orphanUrl: string;
+  orphanTitle: string | null;
+  anchor: string;
+  sources: LinkerSource[];
+};
+
+/**
+ * One orphan page, with an inline "Fix" action that asks the API which existing
+ * pages should link to it (and the anchor text to use), so the orphan stops
+ * being a dead-end report and becomes actionable.
+ */
+function OrphanRow({ url }: { url: string }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<LinkerSuggestion | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const fix = async () => {
+    if (data) {
+      setOpen((v) => !v);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/seo/internal-links/suggest-linkers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "failed");
+      setData(json);
+      setOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyAnchor = async () => {
+    if (!data) return;
+    try {
+      await navigator.clipboard.writeText(data.anchor);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable — ignore */
+    }
+  };
+
+  return (
+    <li className="rounded-md border border-black/10 dark:border-white/10 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <a href={url} target="_blank" rel="noreferrer" className="truncate underline opacity-90">
+          {url}
+        </a>
+        <button
+          onClick={fix}
+          disabled={loading}
+          className="shrink-0 rounded border border-black/15 dark:border-white/15 px-2 py-0.5 text-[11px] font-medium hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+        >
+          {loading ? "Finding…" : data ? (open ? "Hide" : "Show fix") : "Fix"}
+        </button>
+      </div>
+
+      {error && <p className="mt-1 text-[11px] text-red-700 dark:text-red-400">{error}</p>}
+
+      {open && data && (
+        <div className="mt-2 space-y-2 border-t border-black/10 dark:border-white/10 pt-2">
+          {data.sources.length === 0 ? (
+            <p className="text-[11px] opacity-70">
+              No related pages found in the cluster map. This topic may need a new
+              hub — or the inventory is empty, in which case run a crawl on the{" "}
+              <a href="/content/site-map" className="underline">Cluster Map</a> page first.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="opacity-60">Suggested anchor:</span>
+                <span className="font-medium">&ldquo;{data.anchor}&rdquo;</span>
+                <button
+                  onClick={copyAnchor}
+                  className="rounded border border-black/15 dark:border-white/15 px-1.5 py-0.5 text-[10px] hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div>
+                <p className="opacity-60 mb-1">Add a link to this page from:</p>
+                <ul className="space-y-1">
+                  {data.sources.map((s) => (
+                    <li key={s.url} className="flex items-start gap-1.5">
+                      <span className="rounded-full border border-black/15 dark:border-white/15 px-1.5 py-0.5 text-[9px] opacity-70 shrink-0">
+                        {s.page_type}
+                      </span>
+                      <a href={s.url} target="_blank" rel="noreferrer" className="truncate underline opacity-90">
+                        {s.title?.trim() || s.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
