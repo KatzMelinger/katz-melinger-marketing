@@ -152,6 +152,7 @@ export const DEPARTMENTS: Department[] = [
     accent: "#4F46E5",
     defaultOpen: false,
     items: [
+      { label: "Reporting", href: "/reporting", icon: "📑", status: "active" },
       { label: "Recommendations", href: "/recommendations", icon: "💡", status: "active" },
       { label: "Alerts", href: "/alerts", icon: "🔔", status: "active" },
       { label: "Website Analytics", href: "/analytics", icon: "▣", status: "active" },
