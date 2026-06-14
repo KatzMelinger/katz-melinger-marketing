@@ -11,8 +11,9 @@
 import { usePathname } from "next/navigation";
 import { MarketingSidebar } from "@/components/marketing-sidebar";
 import { HubSubNav } from "@/components/hub-subnav";
+import { TenantProvider } from "@/components/tenant-provider";
 
-const NO_CHROME_PATHS = ["/login", "/signup"];
+const NO_CHROME_PATHS = ["/login", "/signup", "/onboarding"];
 
 function isChromeless(pathname: string | null): boolean {
   if (!pathname) return false;
@@ -21,17 +22,26 @@ function isChromeless(pathname: string | null): boolean {
 
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (isChromeless(pathname)) return <>{children}</>;
+  // TenantProvider wraps everything (one /api/auth/me fetch shared by the
+  // sidebar and every tool page via useTenant). Chromeless pages still get it
+  // so future onboarding screens can read tenant context too.
+  if (isChromeless(pathname)) {
+    return (
+      <TenantProvider>{children}</TenantProvider>
+    );
+  }
   return (
-    <div className="flex min-h-screen">
-      <MarketingSidebar />
-      <div className="flex-1 min-w-0">
-        {/* Renders the Ops Hub sub-nav strip on any hub page (returns null
-            elsewhere). Mounted once here so every hub page gets it
-            consistently — pages must NOT render HubSubNav themselves. */}
-        <HubSubNav />
-        {children}
+    <TenantProvider>
+      <div className="flex min-h-screen">
+        <MarketingSidebar />
+        <div className="flex-1 min-w-0">
+          {/* Renders the Ops Hub sub-nav strip on any hub page (returns null
+              elsewhere). Mounted once here so every hub page gets it
+              consistently — pages must NOT render HubSubNav themselves. */}
+          <HubSubNav />
+          {children}
+        </div>
       </div>
-    </div>
+    </TenantProvider>
   );
 }

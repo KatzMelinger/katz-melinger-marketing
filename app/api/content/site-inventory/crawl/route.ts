@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       try {
         const cfg = await getTenantConfig(tenantId);
         perTenant[tenantId] = await crawlSiteInventory({
-          domain: cfg.semrushDomain,
+          domain: cfg.seoDomain,
           tenantId,
         });
       } catch (e) {

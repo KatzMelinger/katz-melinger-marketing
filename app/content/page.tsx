@@ -14,7 +14,7 @@ const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
 const DEFAULT_BRAND_VOICE =
-  "Katz Melinger PLLC is a plaintiff-side employment law firm in New York City. We represent workers in wage theft, discrimination, harassment, and wrongful termination cases. Our tone is professional but approachable, empathetic to workers, and focused on justice. We avoid legal jargon when communicating with clients. We are aggressive advocates but communicate with warmth and clarity.";
+  "Describe your firm's brand voice here: who you serve, your practice areas, your tone (e.g. professional but approachable), how you explain complex legal ideas to clients, and what sets you apart. The AI reads this before drafting anything.";
 
 const PRACTICE_AREAS = [
   "Wage & Hour",
@@ -306,7 +306,7 @@ export default function ContentPage() {
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Content studio</h1>
-          <p className="mt-1 text-sm text-slate-500">AI drafts · Katz Melinger voice</p>
+          <p className="mt-1 text-sm text-slate-500">AI drafts · your brand voice</p>
         </div>
 
         <ContentTypeTabs />
@@ -476,7 +476,7 @@ export default function ContentPage() {
                 type="checkbox"
                 checked={useBrandVoice}
                 onChange={(e) => setUseBrandVoice(e.target.checked)}
-                className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5]"
+                className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-brand"
               />
               Generate with brand voice
             </label>
@@ -515,7 +515,7 @@ export default function ContentPage() {
             rows={5}
             value={brandVoice}
             onChange={(e) => setBrandVoice(e.target.value)}
-            placeholder="Describe how Katz Melinger should sound in marketing…"
+            placeholder="Describe how your firm should sound in marketing…"
           />
           <button
             type="button"
@@ -708,7 +708,7 @@ function PreviewPane({
       {tab === "email" && emailSubject ? (
         <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-3 text-sm">
           <span className="text-xs text-slate-500">Subject</span>
-          <p className="font-medium text-[#185FA5]">{emailSubject}</p>
+          <p className="font-medium text-brand">{emailSubject}</p>
         </div>
       ) : null}
       {tab === "social" ? (
@@ -716,7 +716,7 @@ function PreviewPane({
       ) : null}
       {preview ? (
         <div
-          className="max-h-[480px] overflow-y-auto rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-800 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-[#185FA5] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
+          className="max-h-[480px] overflow-y-auto rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-800 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
           dangerouslySetInnerHTML={{ __html: renderedHtml }}
         />
       ) : (
@@ -728,7 +728,7 @@ function PreviewPane({
         <button
           type="button"
           disabled={!preview.trim()}
-          className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           onClick={() => void copyFormatted()}
         >
           Copy (Word-ready)

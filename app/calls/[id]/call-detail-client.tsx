@@ -216,7 +216,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
               <button
                 onClick={() => void runScore()}
                 disabled={scoring || !c.transcription}
-                className="rounded-lg bg-[#185FA5] px-3 py-2 text-xs font-medium text-white hover:bg-[#1369c4] disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed"
+                className="rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white hover:bg-[#1369c4] disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed"
               >
                 {scoring ? "Scoring…" : score ? "Re-score" : "Score this call"}
               </button>
@@ -225,14 +225,14 @@ export function CallDetailClient({ callId }: { callId: string }) {
                   <button
                     onClick={() => void runScore("intake")}
                     disabled={scoring}
-                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#185FA5] hover:bg-slate-50 disabled:opacity-50"
+                    className="rounded-lg border border-brand bg-transparent px-3 py-2 text-xs font-medium text-brand hover:bg-slate-50 disabled:opacity-50"
                   >
                     As intake
                   </button>
                   <button
                     onClick={() => void runScore("consultation")}
                     disabled={scoring}
-                    className="rounded-lg border border-[#185FA5] bg-transparent px-3 py-2 text-xs font-medium text-[#185FA5] hover:bg-slate-50 disabled:opacity-50"
+                    className="rounded-lg border border-brand bg-transparent px-3 py-2 text-xs font-medium text-brand hover:bg-slate-50 disabled:opacity-50"
                   >
                     As consult
                   </button>
@@ -266,7 +266,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
                 <button
                   onClick={() => setView("manager")}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
-                    view === "manager" ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
+                    view === "manager" ? "bg-brand text-white" : "text-slate-500 hover:text-white"
                   }`}
                 >
                   Manager view
@@ -274,7 +274,7 @@ export function CallDetailClient({ callId }: { callId: string }) {
                 <button
                   onClick={() => setView("screener")}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
-                    view === "screener" ? "bg-[#185FA5] text-white" : "text-slate-500 hover:text-white"
+                    view === "screener" ? "bg-brand text-white" : "text-slate-500 hover:text-white"
                   }`}
                 >
                   Screener view

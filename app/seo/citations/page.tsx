@@ -215,12 +215,12 @@ export default function CitationsPage() {
       )}
 
       {/* Canonical NAP */}
-      <section className="rounded-xl border border-[#185FA5]/30 bg-[#185FA5]/5 p-5">
+      <section className="rounded-xl border border-brand/30 bg-brand/5 p-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[#185FA5]">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-brand">
             Canonical NAP — the source of truth
           </h2>
-          <a href="/brand-voice" className="text-xs text-[#185FA5] hover:underline">
+          <a href="/brand-voice" className="text-xs text-brand hover:underline">
             Edit on Brand Voice →
           </a>
         </div>
@@ -267,14 +267,14 @@ export default function CitationsPage() {
           value={pasteText}
           onChange={(e) => setPasteText(e.target.value)}
           rows={6}
-          placeholder={"Yelp:\nKatz Melinger PLLC\n370 Lexington Ave, Ste 1512, New York, NY 10017\n(212) 460-0047\n\nBing Places:\n…"}
-          className="mt-3 w-full rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+          placeholder={"Yelp:\nYour Firm LLP\n123 Main Street, Suite 100, City, ST 00000\n(555) 123-4567\n\nBing Places:\n…"}
+          className="mt-3 w-full rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
         />
         <div className="mt-2 flex justify-end">
           <button
             onClick={runAudit}
             disabled={auditing || !pasteText.trim()}
-            className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {auditing ? "Auditing…" : "Run audit"}
           </button>
@@ -309,7 +309,7 @@ export default function CitationsPage() {
                       <button
                         onClick={() => saveFinding(f)}
                         disabled={busy === f.source}
-                        className="shrink-0 rounded border border-[#185FA5] px-2 py-1 text-xs text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+                        className="shrink-0 rounded border border-brand px-2 py-1 text-xs text-brand hover:bg-brand/5 disabled:opacity-50"
                       >
                         {busy === f.source ? "…" : "Save"}
                       </button>
@@ -338,12 +338,12 @@ export default function CitationsPage() {
               if (e.key === "Enter") addManual();
             }}
             placeholder="Source (e.g. Yelp, Bing Places)"
-            className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+            className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
           <button
             onClick={addManual}
             disabled={!newSource.trim() || busy === newSource.trim()}
-            className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             Add
           </button>
@@ -385,7 +385,7 @@ export default function CitationsPage() {
                 value={c.status}
                 onChange={(e) => patchStatus(c.id, e.target.value)}
                 disabled={busy === c.id}
-                className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs focus:border-[#185FA5] focus:outline-none"
+                className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs focus:border-brand focus:outline-none"
               >
                 {STATUSES.map((s) => (
                   <option key={s.value} value={s.value}>

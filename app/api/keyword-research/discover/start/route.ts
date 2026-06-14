@@ -14,6 +14,7 @@ import { after } from "next/server";
 import { createJob, runAnthropicJob } from "@/lib/keyword-research-jobs";
 import { getFirmContext } from "@/lib/firm-context";
 import { guardUser } from "@/lib/supabase-route";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300; // give after() background work full Pro Fluid Compute budget
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
 
     // Build the prompt context up front (fast Supabase reads)
     const firmContext = await getFirmContext();
+    const cfg = await getTenantConfig();
 
     const seedContext = seedKeyword
       ? `Use "${seedKeyword}" as the seed keyword to expand from.`
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
 
 ${firmContext}`;
 
-    const userPrompt = `Discover ${safeCount} high-value keyword opportunities for katzmelinger.com.
+    const userPrompt = `Discover ${safeCount} high-value keyword opportunities for ${cfg.seoDomain}.
 
 ${seedContext}
 ${focusArea}

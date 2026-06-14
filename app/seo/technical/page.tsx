@@ -9,9 +9,10 @@
  * the page on PageSpeed and timed out on Vercel.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { SeoShell, formatNumber } from "@/components/seo-shell";
+import { useTenantSiteUrl } from "@/components/tenant-provider";
 
 type Metric = {
   name: string;
@@ -95,7 +96,16 @@ export default function SeoTechnicalPage() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [url, setUrl] = useState("https://www.katzmelinger.com");
+  const tenantSite = useTenantSiteUrl();
+  const sitePrefilled = useRef(false);
+  const [url, setUrl] = useState("");
+  // Prefill the firm's own site once it's known (was hardcoded to KM).
+  useEffect(() => {
+    if (!sitePrefilled.current && tenantSite) {
+      setUrl(tenantSite);
+      sitePrefilled.current = true;
+    }
+  }, [tenantSite]);
 
   // AutoPilot fix suggestions — populated by /api/seo/technical/suggest-fixes.
   const [snapshot, setSnapshot] = useState<PageSnapshotSummary | null>(null);
@@ -241,19 +251,19 @@ export default function SeoTechnicalPage() {
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          className="flex-1 min-w-64 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+          className="flex-1 min-w-64 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
         />
         <button
           onClick={refresh}
           disabled={loading}
-          className="rounded-md border border-[#e2e8f0] px-3 py-2 text-sm font-medium text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+          className="rounded-md border border-[#e2e8f0] px-3 py-2 text-sm font-medium text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
         >
           {loading ? "Loading…" : "Reload cached"}
         </button>
         <button
           onClick={runScan}
           disabled={scanning}
-          className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
         >
           {scanning ? "Scanning… (60-120s)" : "Re-scan"}
         </button>

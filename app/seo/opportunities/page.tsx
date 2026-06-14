@@ -212,20 +212,20 @@ export default function SeoOpportunitiesPage() {
           </span>
           <button
             onClick={() => setScratchOpen(true)}
-            className="rounded-md border border-[#185FA5] px-3 py-1.5 font-medium text-[#185FA5] hover:bg-[#185FA5]/5"
+            className="rounded-md border border-brand px-3 py-1.5 font-medium text-brand hover:bg-brand/5"
           >
             New brief from scratch
           </button>
           <button
             onClick={() => setShowImport(true)}
-            className="rounded-md border border-[#185FA5] px-3 py-1.5 font-medium text-[#185FA5] hover:bg-[#185FA5]/5"
+            className="rounded-md border border-brand px-3 py-1.5 font-medium text-brand hover:bg-brand/5"
           >
             Import SEMrush list
           </button>
           <button
             onClick={refresh}
             disabled={syncing}
-            className="rounded-md bg-[#185FA5] px-3 py-1.5 font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {syncing ? "Refreshing…" : "Refresh opportunities"}
           </button>
@@ -341,7 +341,7 @@ export default function SeoOpportunitiesPage() {
                         {!o.excluded && (
                           <button
                             onClick={() => setWizardOpp(o)}
-                            className="text-xs px-2.5 py-1 rounded bg-[#185FA5] text-white font-medium hover:bg-[#1f6fb8]"
+                            className="text-xs px-2.5 py-1 rounded bg-brand text-white font-medium hover:bg-brand/90"
                           >
                             Create Brief
                           </button>
@@ -452,7 +452,7 @@ function ImportModal({
             </p>
             <button
               onClick={onImported}
-              className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8]"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
             >
               Done
             </button>
@@ -462,7 +462,7 @@ function ImportModal({
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-slate-600">List name</span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
                 placeholder="e.g. gap retaliation"
                 value={listName}
                 onChange={(e) => setListName(e.target.value)}
@@ -473,7 +473,7 @@ function ImportModal({
                 Practice area (optional — inferred per keyword if blank)
               </span>
               <select
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
                 value={practiceArea}
                 onChange={(e) => setPracticeArea(e.target.value)}
               >
@@ -488,7 +488,7 @@ function ImportModal({
                 type="file"
                 accept=".csv,text/csv"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-[#185FA5]/10 file:px-3 file:py-1.5 file:text-[#185FA5]"
+                className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand/10 file:px-3 file:py-1.5 file:text-brand"
               />
             </label>
             {error && (
@@ -506,7 +506,7 @@ function ImportModal({
               <button
                 onClick={submit}
                 disabled={busy}
-                className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
               >
                 {busy ? "Importing…" : "Import"}
               </button>

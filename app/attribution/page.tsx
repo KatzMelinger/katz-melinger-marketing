@@ -4,11 +4,12 @@ import Link from "next/link";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
+import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Attribution | Katz Melinger Marketing",
+  title: `Attribution | ${APP_NAME}`,
 };
 
 type CallSummary = {
@@ -157,7 +158,7 @@ export default async function AttributionPage() {
           </div>
           <Link
             href="/settings/marketing-spend"
-            className="rounded-lg border border-[#185FA5] px-3 py-2 text-sm font-medium text-[#185FA5] hover:bg-slate-50"
+            className="rounded-lg border border-brand px-3 py-2 text-sm font-medium text-brand hover:bg-slate-50"
           >
             Edit marketing spend
           </Link>

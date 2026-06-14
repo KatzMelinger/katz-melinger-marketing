@@ -30,6 +30,7 @@ import DisclaimerLibrary from "@/components/disclaimer-library";
 
 type TabKey =
   | "settings"
+  | "systemPrompt"
   | "avatars"
   | "directions"
   | "samples"
@@ -40,6 +41,7 @@ type TabKey =
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "settings", label: "Brand settings", icon: "🎙" },
+  { key: "systemPrompt", label: "System prompt", icon: "🧠" },
   { key: "avatars", label: "Audience avatars", icon: "👤" },
   { key: "directions", label: "Content directions", icon: "🧭" },
   { key: "pillars", label: "Content pillars", icon: "🏛" },
@@ -110,32 +112,50 @@ const SETTING_FIELDS: {
   {
     key: "firmName",
     label: "Firm name",
-    placeholder: "Katz Melinger PLLC",
+    placeholder: "Your Firm LLP",
   },
   {
     key: "targetGeography",
     label: "Target geography",
-    placeholder: "New York City and New Jersey",
+    placeholder: "Your primary service area (city, state, region)",
   },
   {
     key: "firmAddress",
     label: "Firm address (used verbatim in CTAs and signatures)",
-    placeholder: "370 Lexington Avenue, Suite 1512, New York, NY 10017",
+    placeholder: "123 Main Street, Suite 100, City, ST 00000",
   },
   {
     key: "firmPhone",
     label: "Firm phone",
-    placeholder: "(212) 460-0047",
+    placeholder: "(555) 123-4567",
   },
   {
     key: "firmEmail",
     label: "Firm email",
-    placeholder: "info@katzmelinger.com",
+    placeholder: "info@yourfirm.com",
   },
   {
     key: "firmWebsite",
     label: "Firm website",
-    placeholder: "www.KatzMelinger.com",
+    placeholder: "www.yourfirm.com",
+  },
+  {
+    key: "firmSpokesperson",
+    label: "PR spokesperson (name + title)",
+    placeholder: "Jane Doe, Partner at Your Firm LLP",
+    help: "Used as the attorney attribution in PR pitches and quotes.",
+  },
+  {
+    key: "brandPrimaryColor",
+    label: "Brand color (hex)",
+    placeholder: "#185FA5",
+    help: "Accent color across the dashboard. Use a hex value like #185FA5.",
+  },
+  {
+    key: "logoUrl",
+    label: "Logo URL",
+    placeholder: "https://www.yourfirm.com/logo.png",
+    help: "Shown in the sidebar instead of the firm name.",
   },
   {
     key: "keyMessages",
@@ -356,7 +376,7 @@ export default function BrandVoicePage() {
         </h1>
         <p className="text-sm opacity-70 mt-1">
           One home for the firm standards that drive every AI feature in
-          MarketOS — brand voice, audience avatars, and content directions, plus
+          Huraqan — brand voice, audience avatars, and content directions, plus
           the legal authority, state advertising rules, and disclaimers that
           keep output compliant. Each section has its own ✨ AI wizard.
         </p>
@@ -383,6 +403,7 @@ export default function BrandVoicePage() {
       </div>
 
       {tab === "settings" && <SettingsSection />}
+      {tab === "systemPrompt" && <SystemPromptSection />}
       {tab === "avatars" && (
         <AvatarsSection
           avatars={avatars}
@@ -399,6 +420,135 @@ export default function BrandVoicePage() {
       {tab === "legal" && <LegalLibrary />}
       {tab === "stateRules" && <StateRulesManager />}
       {tab === "disclaimers" && <DisclaimerLibrary />}
+    </div>
+  );
+}
+
+// ---------- System prompt (content-generation instructions) ----------------
+
+function SystemPromptSection() {
+  const [value, setValue] = useState("");
+  const [isDefault, setIsDefault] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/brand-voice/system-prompt");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load");
+        setValue(data.saved ?? "");
+        setIsDefault(Boolean(data.isDefault));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const generate = async () => {
+    setGenerating(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/brand-voice/system-prompt", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to generate");
+      setValue(data.systemPrompt ?? "");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/brand-voice/system-prompt", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ systemPrompt: value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save");
+      setIsDefault(!value.trim());
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <p className="text-sm opacity-60">Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-medium">Content system prompt</h2>
+        <p className="text-sm opacity-70 mt-1">
+          The master instructions the AI follows when drafting content for your firm. Generate a
+          first draft from your firm profile, then edit it to taste and save. Leave it blank to use
+          the built-in default.
+        </p>
+      </div>
+
+      <div
+        className={`rounded-md border px-3 py-2 text-xs ${
+          isDefault
+            ? "border-amber-200 bg-amber-50 text-amber-800"
+            : "border-emerald-200 bg-emerald-50 text-emerald-800"
+        }`}
+      >
+        {isDefault
+          ? "Currently using the built-in default prompt. Generate or write one below to customize."
+          : "Using your saved custom prompt."}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={generate}
+          disabled={generating}
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
+        >
+          {generating ? "Generating…" : "✨ Generate from firm profile"}
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:border-slate-400 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        {saved && <span className="self-center text-sm text-emerald-700">Saved ✓</span>}
+      </div>
+
+      {error && <p className="text-sm text-red-700">{error}</p>}
+
+      <textarea
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setSaved(false);
+        }}
+        rows={24}
+        placeholder="Leave blank to use the built-in default, or click Generate to draft a firm-specific prompt…"
+        className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs text-slate-900 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
+      />
+      <p className="text-xs opacity-60">
+        Generation uses your firm name, practice areas, geography, contact details, and brand voice
+        from the other tabs — fill those in first for the best result. Saved prompts never auto-change.
+      </p>
     </div>
   );
 }

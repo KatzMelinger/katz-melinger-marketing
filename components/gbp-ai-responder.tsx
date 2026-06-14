@@ -170,7 +170,7 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                   <button
                     type="button"
                     onClick={() => void draft(r)}
-                    className="text-xs px-3 py-1.5 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8]"
+                    className="text-xs px-3 py-1.5 rounded bg-brand text-white hover:bg-brand/90"
                   >
                     Draft with AI
                   </button>
@@ -196,7 +196,7 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                       })
                     }
                     rows={4}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm resize-y focus:border-[#185FA5] focus:outline-none"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm resize-y focus:border-brand focus:outline-none"
                   />
                   <ComplianceNotice compliance={st.compliance} />
                   <div className="flex items-center gap-2 flex-wrap">
@@ -212,7 +212,7 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                       type="button"
                       disabled={st.kind === "sending"}
                       onClick={() => void draft(r)}
-                      className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+                      className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
                     >
                       Re-draft
                     </button>

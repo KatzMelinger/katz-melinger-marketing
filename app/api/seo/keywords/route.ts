@@ -12,14 +12,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const { tenantId, semrushDomain } = await getTenantConfig();
+    const { tenantId, seoDomain } = await getTenantConfig();
     const search = request.nextUrl.searchParams;
     const competitor = search.get("competitor");
-    const base = await getTrackedKeywordPerformance(semrushDomain, tenantId);
+    const base = await getTrackedKeywordPerformance(seoDomain, tenantId);
 
     if (!competitor) {
       return NextResponse.json({
-        domain: semrushDomain,
+        domain: seoDomain,
         competitors: await listCompetitors(tenantId),
         ...base,
       });
@@ -29,18 +29,18 @@ export async function GET(request: NextRequest) {
     // page uses). A specific domain → single-competitor gap (backward compat).
     if (competitor === "all") {
       const competitors = await listCompetitors(tenantId);
-      const competitive = await getKeywordGapVsCompetitors(competitors, semrushDomain);
+      const competitive = await getKeywordGapVsCompetitors(competitors, seoDomain);
       return NextResponse.json({
-        domain: semrushDomain,
+        domain: seoDomain,
         competitors,
         ...base,
         competitive,
       });
     }
 
-    const competitive = await getKeywordGapVsCompetitor(competitor, semrushDomain);
+    const competitive = await getKeywordGapVsCompetitor(competitor, seoDomain);
     return NextResponse.json({
-      domain: semrushDomain,
+      domain: seoDomain,
       competitor,
       ...base,
       competitive,

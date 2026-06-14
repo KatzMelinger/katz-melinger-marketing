@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 
 import { formatNumber, SeoShell } from "@/components/seo-shell";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Competitor Detail | Katz Melinger PLLC",
+  title: `Competitor Detail | ${APP_NAME}`,
   description: "Detailed competitor SEO intelligence.",
 };
 

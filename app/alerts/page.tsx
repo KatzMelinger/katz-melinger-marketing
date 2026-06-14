@@ -358,7 +358,7 @@ export default function AlertsPage() {
                   <button
                     onClick={() => analyze(a)}
                     disabled={analysisLoading && analysisFor?.id === a.id}
-                    className="text-xs px-2 py-1 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/10 disabled:opacity-50"
+                    className="text-xs px-2 py-1 rounded border border-brand text-brand hover:bg-brand/10 disabled:opacity-50"
                     title="Assess this topic for SEO / AEO / Social and suggest content"
                   >
                     {analysisLoading && analysisFor?.id === a.id
@@ -565,7 +565,7 @@ export default function AlertsPage() {
                                 })
                               }
                               disabled={isBusy}
-                              className="shrink-0 rounded bg-[#185FA5] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                              className="shrink-0 rounded bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50"
                             >
                               {isBusy ? "…" : "Create"}
                             </button>

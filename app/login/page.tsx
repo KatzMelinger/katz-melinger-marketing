@@ -10,6 +10,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
+import { APP_NAME } from "@/lib/app-config";
 
 function LoginForm() {
   const router = useRouter();
@@ -88,7 +89,7 @@ function LoginForm() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm border border-slate-200 rounded-xl p-6 bg-white shadow-sm">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-[#185FA5]">KatzMelinger Marketing</h1>
+          <h1 className="text-xl font-semibold text-brand">{APP_NAME}</h1>
           <p className="text-sm text-slate-600 mt-1">
             {mode === "signin" ? "Sign in to continue." : "Reset your password."}
           </p>
@@ -104,7 +105,7 @@ function LoginForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
                 required
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
               />
             </div>
             <div>
@@ -113,7 +114,7 @@ function LoginForm() {
                 <button
                   type="button"
                   onClick={() => switchMode("forgot")}
-                  className="text-xs text-[#185FA5] hover:underline"
+                  className="text-xs text-brand hover:underline"
                 >
                   Forgot password?
                 </button>
@@ -124,7 +125,7 @@ function LoginForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
                 required
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
               />
             </div>
 
@@ -133,7 +134,7 @@ function LoginForm() {
             <button
               type="submit"
               disabled={submitting || !email || !password}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
             >
               {submitting ? "Signing in…" : "Sign in"}
             </button>
@@ -147,7 +148,7 @@ function LoginForm() {
             <button
               type="button"
               onClick={() => switchMode("signin")}
-              className="text-[#185FA5] hover:underline"
+              className="text-brand hover:underline"
             >
               Back to sign in
             </button>
@@ -165,7 +166,7 @@ function LoginForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
                 required
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
               />
             </div>
 
@@ -174,14 +175,14 @@ function LoginForm() {
             <button
               type="submit"
               disabled={submitting || !email}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
             >
               {submitting ? "Sending…" : "Send reset link"}
             </button>
             <button
               type="button"
               onClick={() => switchMode("signin")}
-              className="w-full text-xs text-slate-500 hover:text-[#185FA5] hover:underline"
+              className="w-full text-xs text-slate-500 hover:text-brand hover:underline"
             >
               Back to sign in
             </button>
@@ -190,7 +191,7 @@ function LoginForm() {
 
         {mode === "signin" && (
           <p className="text-xs text-slate-500 mt-6">
-            New firm? <a href="/signup" className="text-[#185FA5] hover:underline">Create a firm account</a>. Otherwise, don't have an account? Ask an admin to invite you.
+            New firm? <a href="/signup" className="text-brand hover:underline">Create a firm account</a>. Otherwise, don't have an account? Ask an admin to invite you.
           </p>
         )}
       </div>

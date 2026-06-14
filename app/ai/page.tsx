@@ -11,11 +11,12 @@ import type { Metadata } from "next";
 
 import { HubShell, type HubCard, type HubKpi } from "@/components/hub-shell";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "AI Ops Hub | Katz Melinger PLLC",
+  title: `AI Ops Hub | ${APP_NAME}`,
   description:
     "Answer Engine Optimization, AI search visibility, llms.txt, and prompt operations.",
 };
@@ -135,7 +136,7 @@ export default async function AiHubPage() {
       href: "/ai/bot-traffic",
       label: "AI bot crawls",
       description:
-        "GPTBot / ClaudeBot / PerplexityBot / Google-Extended hits to katzmelinger.com. Requires external ingest setup.",
+        "GPTBot / ClaudeBot / PerplexityBot / Google-Extended hits to your site. Requires external ingest setup.",
     },
     {
       href: "/clarity",

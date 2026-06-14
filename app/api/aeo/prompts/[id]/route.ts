@@ -18,11 +18,12 @@ export async function PATCH(
   for (const key of ["prompt", "category", "intent", "geography", "enabled", "notes"]) {
     if (key in (body ?? {})) patch[key] = body[key];
   }
-  const { supabase } = await getTenantClient();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("aeo_prompts")
     .update(patch)
     .eq("id", id)
+    .eq("tenant_id", tenantId)
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -34,8 +35,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const { supabase } = await getTenantClient();
-  const { error } = await supabase.from("aeo_prompts").delete().eq("id", id);
+  const { supabase, tenantId } = await getTenantClient();
+  const { error } = await supabase
+    .from("aeo_prompts")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

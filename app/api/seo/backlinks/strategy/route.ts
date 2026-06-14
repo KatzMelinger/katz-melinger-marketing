@@ -16,6 +16,7 @@ import {
   KEYWORD_RESEARCH_MODEL,
 } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -35,6 +36,7 @@ export async function POST() {
   const denied = await guardUser();
   if (denied) return denied;
   try {
+    const cfg = await getTenantConfig();
     const profile = await analyzeOutboundLinkProfile();
 
     const existingOutbound = profile.externalLinksOut
@@ -44,7 +46,7 @@ export async function POST() {
       )
       .join("\n");
 
-    const system = `You are an expert SEO link-building strategist for law firms. You're analyzing katzmelinger.com — a NY/NJ plaintiff-side employment law firm whose practice areas include ${PRACTICE_AREAS.join(", ")}.
+    const system = `You are an expert SEO link-building strategist for law firms. You're analyzing ${cfg.seoDomain} — a law firm whose practice areas include ${PRACTICE_AREAS.join(", ")}.
 
 Provide actionable, specific backlink strategies. Name real organizations and publications when you can; avoid generic advice like "guest post on relevant blogs."`;
 
@@ -56,7 +58,7 @@ CURRENT SITE DATA:
 - Total internal links: ${profile.internalLinkCount}
 - Total external links: ${profile.externalLinkCount}
 
-EXISTING OUTBOUND LINKS (where katzmelinger.com currently links to):
+EXISTING OUTBOUND LINKS (where ${cfg.seoDomain} currently links to):
 ${existingOutbound || "(none found)"}
 
 Return JSON only:

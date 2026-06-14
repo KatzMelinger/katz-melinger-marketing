@@ -1,5 +1,5 @@
 /**
- * Semrush helper for MarketOS.
+ * Semrush helper for Huraqan.
  *
  * Two layers:
  *

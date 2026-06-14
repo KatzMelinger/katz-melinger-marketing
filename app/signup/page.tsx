@@ -67,8 +67,9 @@ export default function SignupPage() {
         router.replace("/login");
         return;
       }
-      // Hard refresh so server components pick up the new session cookie.
-      window.location.href = "/";
+      // Hard refresh so server components pick up the new session cookie, and
+      // drop the new firm into the onboarding wizard to configure its profile.
+      window.location.href = "/onboarding";
     } catch (e) {
       setError(e instanceof Error ? e.message : "Signup failed.");
       setSubmitting(false);
@@ -79,7 +80,7 @@ export default function SignupPage() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm border border-slate-200 rounded-xl p-6 bg-white shadow-sm">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-[#185FA5]">Create your firm account</h1>
+          <h1 className="text-xl font-semibold text-brand">Create your firm account</h1>
           <p className="text-sm text-slate-600 mt-1">
             Set up an isolated workspace for your firm in a minute.
           </p>
@@ -93,7 +94,7 @@ export default function SignupPage() {
               onChange={(e) => setFirmName(e.target.value)}
               autoComplete="organization"
               required
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
           </div>
           <div>
@@ -104,7 +105,7 @@ export default function SignupPage() {
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
               required
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
           </div>
           <div>
@@ -116,7 +117,7 @@ export default function SignupPage() {
               autoComplete="new-password"
               required
               minLength={8}
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
             <p className="text-[11px] text-slate-500 mt-1">At least 8 characters.</p>
           </div>
@@ -128,7 +129,7 @@ export default function SignupPage() {
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
               required
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
           </div>
 
@@ -137,7 +138,7 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={submitting || !firmName || !email || !password || !confirm}
-            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {submitting ? "Creating…" : "Create firm account"}
           </button>
@@ -145,7 +146,7 @@ export default function SignupPage() {
 
         <p className="text-xs text-slate-500 mt-6">
           Already have an account?{" "}
-          <a href="/login" className="text-[#185FA5] hover:underline">
+          <a href="/login" className="text-brand hover:underline">
             Sign in
           </a>
         </p>

@@ -16,6 +16,7 @@ import {
 } from "@/lib/anthropic";
 import { normalizeLanguage } from "@/lib/content-language";
 import { guardUser } from "@/lib/supabase-route";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
   const language = normalizeLanguage(body.language);
   const spanish = language === "es";
 
-  const firmName = "Katz Melinger PLLC";
+  const firmName = (await getTenantConfig()).firmName || "the firm";
   const areaLabel =
     practiceArea === "collections" ? "commercial collections" : "employment law";
 

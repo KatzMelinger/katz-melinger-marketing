@@ -735,7 +735,7 @@ export default function ConstantContactPage() {
     const fromName =
       typeof process.env.NEXT_PUBLIC_CC_FROM_NAME === "string"
         ? process.env.NEXT_PUBLIC_CC_FROM_NAME.trim()
-        : "MarketOS";
+        : "Huraqan";
 
     if (!fromEmail) {
       setCreateError(
@@ -855,7 +855,7 @@ export default function ConstantContactPage() {
       onClick={() => setActiveTab(id)}
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
         activeTab === id
-          ? "bg-[#ffffff] text-slate-900 ring-1 ring-[#185FA5]/50"
+          ? "bg-[#ffffff] text-slate-900 ring-1 ring-brand/50"
           : "text-slate-500 hover:bg-slate-50/60 hover:text-slate-900"
       }`}
     >
@@ -1095,7 +1095,7 @@ export default function ConstantContactPage() {
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-brand focus:ring-2"
                     style={{ borderColor: BORDER }}
                     autoComplete="off"
                   />
@@ -1111,7 +1111,7 @@ export default function ConstantContactPage() {
                     required
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-brand focus:ring-2"
                     autoComplete="off"
                   />
                 </div>
@@ -1126,7 +1126,7 @@ export default function ConstantContactPage() {
                     rows={8}
                     value={htmlContent}
                     onChange={(e) => setHtmlContent(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 font-mono text-sm text-slate-900 outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 font-mono text-sm text-slate-900 outline-none ring-brand focus:ring-2"
                     placeholder="<p>Hello…</p>"
                   />
                   <p className="mt-1 text-xs text-slate-500">
@@ -1156,7 +1156,7 @@ export default function ConstantContactPage() {
                                   type="checkbox"
                                   checked={selectedListIds.includes(id)}
                                   onChange={() => toggleCampaignList(id)}
-                                  className="mt-1 h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5] focus:ring-[#185FA5]"
+                                  className="mt-1 h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-brand focus:ring-brand"
                                 />
                                 <span>
                                   {list.name ?? id}
@@ -1333,7 +1333,7 @@ export default function ConstantContactPage() {
                     required
                     value={ruleName}
                     onChange={(e) => setRuleName(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-brand focus:ring-2"
                     autoComplete="off"
                   />
                 </div>
@@ -1348,7 +1348,7 @@ export default function ConstantContactPage() {
                     onChange={(e) =>
                       setRuleTrigger(e.target.value as AutomationTrigger)
                     }
-                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900 outline-none ring-brand focus:ring-2"
                   >
                     {AUTOMATION_TRIGGERS.map((t) => (
                       <option key={t} value={t}>
@@ -1367,7 +1367,7 @@ export default function ConstantContactPage() {
                     rows={6}
                     value={ruleSequence}
                     onChange={(e) => setRuleSequence(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 font-mono text-sm text-slate-900 outline-none ring-[#185FA5] focus:ring-2"
+                    className="mt-1 w-full rounded-md border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 font-mono text-sm text-slate-900 outline-none ring-brand focus:ring-2"
                     placeholder={"Day 0: Welcome email\nDay 3: Follow-up\nDay 7: Check-in"}
                   />
                   <p className="mt-1 text-xs text-slate-500">One line per step: Day X: Subject line</p>
@@ -1377,7 +1377,7 @@ export default function ConstantContactPage() {
                     type="checkbox"
                     checked={ruleActive}
                     onChange={(e) => setRuleActive(e.target.checked)}
-                    className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5] focus:ring-[#185FA5]"
+                    className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-brand focus:ring-brand"
                   />
                   Active
                 </label>

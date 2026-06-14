@@ -19,12 +19,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 
 import { DEPARTMENTS, HOME_NAV_ITEM, type DeptItem } from "@/lib/departments";
 import { usePersistentState, useHydrated } from "@/lib/use-persistent-state";
-
-type Role = "user" | "admin";
+import { APP_NAME } from "@/lib/app-config";
+import { useTenant } from "@/components/tenant-provider";
 
 const STORAGE_COLLAPSED = "km_sidebar_collapsed";
 const STORAGE_GROUPS = "km_sidebar_groups";
@@ -41,8 +40,6 @@ function isActive(pathname: string | null, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-type Me = { id: string; email: string; role: Role };
-
 export function MarketingSidebar() {
   const pathname = usePathname();
   const hydrated = useHydrated();
@@ -58,16 +55,9 @@ export function MarketingSidebar() {
     (raw) => ({ ...DEFAULT_GROUPS, ...(JSON.parse(raw) as Record<string, boolean>) }),
     (value) => JSON.stringify(value),
   );
-  const [me, setMe] = useState<Me | null>(null);
-
-  useEffect(() => {
-    // Load the current user so we can hide admin links and show the user menu.
-    // (setState lives in the async .then(), not the effect body.)
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setMe(d?.user ?? null))
-      .catch(() => setMe(null));
-  }, []);
+  // User + firm name come from the shared tenant context (one fetch for the
+  // whole app), not a sidebar-local fetch.
+  const { user: me, firmName, logoUrl } = useTenant();
 
   const signOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -97,9 +87,19 @@ export function MarketingSidebar() {
         {!collapsed && (
           <Link
             href="/"
-            className="text-sm font-semibold tracking-tight text-[#185FA5] truncate"
+            title={firmName ?? APP_NAME}
+            className="text-sm font-semibold tracking-tight text-brand truncate"
           >
-            KatzMelinger
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt={firmName ?? APP_NAME}
+                className="h-6 max-w-[150px] object-contain"
+              />
+            ) : (
+              (firmName ?? APP_NAME)
+            )}
           </Link>
         )}
         <button
@@ -119,7 +119,7 @@ export function MarketingSidebar() {
           title={HOME_NAV_ITEM.label}
           className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
             homeActive
-              ? "bg-[#185FA5]/10 font-semibold text-[#185FA5]"
+              ? "bg-brand/10 font-semibold text-brand"
               : "text-slate-700 hover:bg-slate-200/70 hover:text-slate-900"
           } ${collapsed ? "justify-center" : ""}`}
         >

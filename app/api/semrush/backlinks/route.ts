@@ -26,11 +26,11 @@ export async function GET() {
   }
 
   try {
-    const { semrushDomain } = await getTenantConfig();
+    const { seoDomain } = await getTenantConfig();
     const url = semrushAnalyticsUrl({
       key,
       type: "backlinks_overview",
-      target: semrushDomain,
+      target: seoDomain,
       target_type: "root_domain",
       export_columns: "ascore,total,domains_num",
       export_decode: "1",

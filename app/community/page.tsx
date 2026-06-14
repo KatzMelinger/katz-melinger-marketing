@@ -134,7 +134,7 @@ export default function CommunityPage() {
             onClick={() => setTab(t.id as Tab)}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] whitespace-nowrap ${
               tab === t.id
-                ? "border-[#185FA5] text-[#185FA5]"
+                ? "border-brand text-brand"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
@@ -282,7 +282,7 @@ function ScannerTab({
               onClick={() => setFilter(f)}
               className={`text-xs px-2 py-1 rounded-full border ${
                 filter === f
-                  ? "border-[#185FA5] text-[#185FA5] bg-[#185FA5]/5"
+                  ? "border-brand text-brand bg-brand/5"
                   : "border-slate-200 text-slate-600 hover:border-slate-400"
               }`}
             >
@@ -304,7 +304,7 @@ function ScannerTab({
         <button
           onClick={runScan}
           disabled={scanning}
-          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
         >
           {scanning ? "Rescanning…" : "Rescan"}
         </button>
@@ -406,7 +406,7 @@ function PostCard({
             href={post.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-semibold text-slate-900 hover:text-[#185FA5] hover:underline"
+            className="text-sm font-semibold text-slate-900 hover:text-brand hover:underline"
           >
             {post.title}
           </a>
@@ -415,7 +415,7 @@ function PostCard({
           href={post.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] shrink-0"
+          className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand shrink-0"
         >
           ↗ Open
         </a>
@@ -429,7 +429,7 @@ function PostCard({
           {post.snippet.length > 150 && (
             <button
               onClick={() => setExpanded((e) => !e)}
-              className="text-xs text-[#185FA5] hover:underline mt-1"
+              className="text-xs text-brand hover:underline mt-1"
             >
               {expanded ? "Show less" : "Read more"}
             </button>
@@ -458,7 +458,7 @@ function PostCard({
         ) : (
           <button
             onClick={() => setShowDraft((s) => !s)}
-            className="text-xs px-3 py-1.5 rounded-md border border-[#185FA5] text-[#185FA5]"
+            className="text-xs px-3 py-1.5 rounded-md border border-brand text-brand"
           >
             {showDraft ? "Hide draft" : "Show draft"}
           </button>
@@ -514,7 +514,7 @@ function PostCard({
       {showDraft && draft && (
         <div className="mt-3 border-t border-slate-200 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-[#185FA5]">✦ Suggested response</span>
+            <span className="text-xs font-medium text-brand">✦ Suggested response</span>
             <button
               onClick={copy}
               className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400"
@@ -657,7 +657,7 @@ function NewsTab() {
         <button
           onClick={runScan}
           disabled={scanning}
-          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
         >
           Refresh
         </button>
@@ -675,7 +675,7 @@ function NewsTab() {
                 href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-semibold text-slate-900 hover:text-[#185FA5] hover:underline"
+                className="text-sm font-semibold text-slate-900 hover:text-brand hover:underline"
               >
                 {item.title}
               </a>
@@ -698,7 +698,7 @@ function NewsTab() {
             <div className="flex flex-col gap-1 shrink-0">
               <a
                 href={`/content/batch?topic=${encodeURIComponent(item.title)}`}
-                className="text-xs px-2 py-1 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5"
+                className="text-xs px-2 py-1 rounded border border-brand text-brand hover:bg-brand/5"
               >
                 → Use as topic
               </a>
@@ -743,7 +743,7 @@ function TikTokTab() {
           videos (hooks, hashtag packs, captions, visual ideas), use{" "}
           <a
             href="/content/intelligence?tab=social"
-            className="text-[#185FA5] underline"
+            className="text-brand underline"
           >
             Content Studio → Intelligence → Social media IQ
           </a>
@@ -760,7 +760,7 @@ function TikTokTab() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
                 >
                   <span className="truncate">{link.label}</span>
                   <span className="text-slate-400 text-xs">↗</span>
@@ -780,7 +780,7 @@ function TikTokTab() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
                 >
                   <span className="truncate">{link.label}</span>
                   <span className="text-slate-400 text-xs">↗</span>
@@ -800,7 +800,7 @@ function TikTokTab() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
                 >
                   <span className="truncate">{link.label}</span>
                   <span className="text-slate-400 text-xs">↗</span>
@@ -816,7 +816,7 @@ function TikTokTab() {
         <ol className="text-xs text-slate-700 list-decimal pl-5 space-y-1">
           <li>Click into a hashtag — see what's trending. Note the angles, hooks, and styles.</li>
           <li>Save anything that sparks an idea (TikTok's bookmark feature works well here).</li>
-          <li>Open <a href="/content/intelligence?tab=social" className="text-[#185FA5] underline">Social media IQ</a>, paste the angle as a topic, pick TikTok, and Claude generates hashtag pack + 3 video hooks + 5 caption variants + visual treatment ideas.</li>
+          <li>Open <a href="/content/intelligence?tab=social" className="text-brand underline">Social media IQ</a>, paste the angle as a topic, pick TikTok, and Claude generates hashtag pack + 3 video hooks + 5 caption variants + visual treatment ideas.</li>
           <li>Shoot the video, post it, link to your firm bio.</li>
         </ol>
       </DashCard>
@@ -889,7 +889,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
               href={link.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+              className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
             >
               <span className="truncate">{link.label}</span>
               <span className="text-slate-400 text-xs">↗</span>
@@ -909,7 +909,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
           onChange={(e) => setText(e.target.value)}
           placeholder={`Paste a ${platformName} question here…`}
           rows={6}
-          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         />
         <div className="mt-3 flex items-center gap-2">
           <DashButton onClick={generate} disabled={generating || !text.trim()}>
@@ -934,7 +934,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
       {response && (
         <DashCard>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-[#185FA5]">
+            <span className="text-sm font-medium text-brand">
               ✦ Suggested response for {platformName}
             </span>
             <button

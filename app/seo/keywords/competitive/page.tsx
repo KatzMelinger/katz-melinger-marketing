@@ -114,7 +114,7 @@ export default function KeywordCompetitivePage() {
         {!loadingDomains && trackedDomains.length === 0 && (
           <p className="text-sm text-slate-500 mt-2">
             No tracked competitors. Add one on{" "}
-            <a href="/seo/competitors" className="text-[#185FA5] hover:underline">
+            <a href="/seo/competitors" className="text-brand hover:underline">
               /seo/competitors
             </a>
             .
@@ -127,8 +127,8 @@ export default function KeywordCompetitivePage() {
               onClick={() => setSelected(domain)}
               className={`rounded border px-3 py-1 text-xs transition-colors ${
                 selected === domain
-                  ? "border-[#185FA5] bg-[#185FA5] text-white"
-                  : "border-[#e2e8f0] bg-white text-slate-700 hover:border-[#185FA5]"
+                  ? "border-brand bg-brand text-white"
+                  : "border-[#e2e8f0] bg-white text-slate-700 hover:border-brand"
               }`}
             >
               {domain}
@@ -140,14 +140,14 @@ export default function KeywordCompetitivePage() {
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <h2 className="text-lg font-semibold">
-            Head-to-head: <span className="text-[#185FA5]">{selected || "—"}</span>
+            Head-to-head: <span className="text-brand">{selected || "—"}</span>
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search keywords…"
-              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
             />
             <select
               value={stateFilter}
@@ -240,7 +240,7 @@ export default function KeywordCompetitivePage() {
                       <td className="py-2 pr-3 tabular-nums">{row.ourPosition || "—"}</td>
                       <td className="py-2 pr-3 tabular-nums">{formatNumber(row.searchVolume)}</td>
                       <td className="py-2 tabular-nums">
-                        <span className="px-1.5 py-0.5 rounded bg-[#185FA5]/10 text-[#185FA5] font-medium">
+                        <span className="px-1.5 py-0.5 rounded bg-brand/10 text-brand font-medium">
                           {Math.round(row.opportunityScore)}
                         </span>
                       </td>
@@ -266,7 +266,7 @@ function ThButton({ children, onClick }: { children: React.ReactNode; onClick: (
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center hover:text-[#185FA5]"
+        className="inline-flex items-center hover:text-brand"
       >
         {children}
       </button>

@@ -65,7 +65,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm border border-slate-200 rounded-xl p-6 bg-white shadow-sm">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-[#185FA5]">Set a new password</h1>
+          <h1 className="text-xl font-semibold text-brand">Set a new password</h1>
           <p className="text-sm text-slate-600 mt-1">
             Choose a password to finish signing in.
           </p>
@@ -84,7 +84,7 @@ export default function ResetPasswordPage() {
               Open the most recent “reset your password” email and click the link
               again, or ask an admin to send a new one.
             </p>
-            <a href="/login" className="text-[#185FA5] hover:underline">
+            <a href="/login" className="text-brand hover:underline">
               Back to sign in
             </a>
           </div>
@@ -100,7 +100,7 @@ export default function ResetPasswordPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
                 required
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
               />
             </div>
             <div>
@@ -111,7 +111,7 @@ export default function ResetPasswordPage() {
                 onChange={(e) => setConfirm(e.target.value)}
                 autoComplete="new-password"
                 required
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
               />
             </div>
 
@@ -120,7 +120,7 @@ export default function ResetPasswordPage() {
             <button
               type="submit"
               disabled={submitting || !password || !confirm}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
             >
               {submitting ? "Saving…" : "Set password"}
             </button>

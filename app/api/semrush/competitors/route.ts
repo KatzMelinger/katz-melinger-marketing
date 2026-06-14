@@ -25,11 +25,11 @@ export async function GET() {
   }
 
   try {
-    const { semrushDomain, semrushDatabase } = await getTenantConfig();
+    const { seoDomain, semrushDatabase } = await getTenantConfig();
     const url = semrushSeoUrl({
       key,
       type: "domain_organic_organic",
-      domain: semrushDomain,
+      domain: seoDomain,
       database: semrushDatabase,
       display_limit: "5",
       display_sort: "np_desc",

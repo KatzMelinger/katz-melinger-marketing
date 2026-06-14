@@ -113,7 +113,7 @@ export function CoachingClient() {
             onClick={() => setRangeDays(r.days)}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ${
               rangeDays === r.days
-                ? "bg-[#185FA5] text-white ring-[#185FA5]"
+                ? "bg-brand text-white ring-brand"
                 : "bg-white text-slate-600 ring-[#e2e8f0] hover:bg-slate-50"
             }`}
           >
@@ -137,7 +137,7 @@ export function CoachingClient() {
       ) : !data || data.agents.length === 0 ? (
         <p className="text-slate-500">
           No scored calls in this range yet. Score some calls from the{" "}
-          <Link href="/calls" className="text-[#185FA5] hover:underline">
+          <Link href="/calls" className="text-brand hover:underline">
             Calls
           </Link>{" "}
           page first.

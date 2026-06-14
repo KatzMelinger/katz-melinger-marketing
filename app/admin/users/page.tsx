@@ -153,9 +153,9 @@ export default function AdminUsersPage() {
               type="email"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="teammate@katzmelinger.com"
+              placeholder="teammate@yourfirm.com"
               required
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
           </div>
           <div>
@@ -163,7 +163,7 @@ export default function AdminUsersPage() {
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as "user" | "admin")}
-              className="mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             >
               <option value="user">User</option>
               <option value="admin">Admin</option>
@@ -172,7 +172,7 @@ export default function AdminUsersPage() {
           <button
             type="submit"
             disabled={inviting || !inviteEmail.trim()}
-            className="px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {inviting ? "Sending…" : "Send invite"}
           </button>
@@ -256,21 +256,21 @@ export default function AdminUsersPage() {
                   <button
                     onClick={() => sendAction(u, "invite")}
                     disabled={busyId === u.user_id}
-                    className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+                    className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
                   >
                     {busyId === u.user_id ? "Sending…" : "Resend invite"}
                   </button>
                   <button
                     onClick={() => sendAction(u, "reset")}
                     disabled={busyId === u.user_id}
-                    className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+                    className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
                   >
                     {busyId === u.user_id ? "Sending…" : "Send reset"}
                   </button>
                   {u.role === "user" ? (
                     <button
                       onClick={() => setRole(u, "admin")}
-                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
                     >
                       Make admin
                     </button>

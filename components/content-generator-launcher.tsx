@@ -26,20 +26,20 @@ export function ContentGeneratorLauncher() {
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           onClick={() => setOpen(true)}
-          className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4d8c]"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4d8c]"
         >
           New content brief →
         </button>
         <a
           href="/seo/opportunities"
-          className="rounded-md border border-[#185FA5] px-4 py-2 text-sm font-medium text-[#185FA5] hover:bg-[#185FA5]/5"
+          className="rounded-md border border-brand px-4 py-2 text-sm font-medium text-brand hover:bg-brand/5"
         >
           Browse SEO opportunities →
         </a>
         {lastDraftId && (
           <a
             href={`/content/drafts?id=${encodeURIComponent(lastDraftId)}`}
-            className="text-sm text-[#185FA5] hover:underline"
+            className="text-sm text-brand hover:underline"
           >
             Open last draft →
           </a>

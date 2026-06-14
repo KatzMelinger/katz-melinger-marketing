@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFirmContext } from "@/lib/firm-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -26,11 +27,12 @@ export async function POST(req: NextRequest) {
   const pageType = (body?.pageType as string | undefined) ?? "blog_post";
   if (!topic) return NextResponse.json({ error: "topic required" }, { status: 400 });
 
-  const firm = await getFirmContext();
+  const [firm, cfg] = await Promise.all([getFirmContext(), getTenantConfig()]);
+  const domain = cfg.seoDomain;
 
-  const system = `You are an SEO strategist auditing katzmelinger.com — a NY/NJ plaintiff-side employment law firm. ${firm}
+  const system = `You are an SEO strategist auditing ${domain} — a law firm. ${firm}
 
-Apply Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) guidelines, especially important since legal content is YMYL (Your Money or Your Life). Apply local SEO best practices for the NY/NJ market.`;
+Apply Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) guidelines, especially important since legal content is YMYL (Your Money or Your Life). Apply local SEO best practices for the firm's target market.`;
 
   const user = `Generate a complete SEO package for a ${pageType} about: "${topic}"
 
@@ -44,7 +46,7 @@ Return JSON only:
   "ogTitle": "Open Graph title for social previews",
   "ogDescription": "Open Graph description for social previews",
   "schemaType": "the most appropriate schema.org type (e.g. LegalService, FAQPage, Article)",
-  "internalLinkSuggestions": ["existing pages on katzmelinger.com to link to/from"],
+  "internalLinkSuggestions": ["existing pages on ${domain} to link to/from"],
   "headerOutline": ["H1: ...", "H2: ...", "H2: ...", "H3: ..."],
   "targetWordCount": <recommended word count number>,
   "seoTips": ["3-5 specific on-page optimization tips for this topic"]

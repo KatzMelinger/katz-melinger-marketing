@@ -119,7 +119,7 @@ export default function FormsPage() {
           <button
             onClick={() => void runSync()}
             disabled={busy}
-            className="rounded-lg bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
+            className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
           >
             {busy ? "Working…" : "Sync from CallRail"}
           </button>

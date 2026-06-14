@@ -288,7 +288,7 @@ export default function PipelinePage() {
                   <td className="px-4 py-3">
                     <div className="text-sm font-medium text-slate-900">
                       {item.url ? (
-                        <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-[#185FA5] hover:underline">
+                        <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-brand hover:underline">
                           {item.title}
                         </a>
                       ) : (
@@ -344,7 +344,7 @@ export default function PipelinePage() {
                         setEditingItem(item);
                         setShowModal(true);
                       }}
-                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
                     >
                       Edit
                     </button>
@@ -408,13 +408,13 @@ function OwnerPicker({
         title={currentEmail ?? "No owner assigned"}
         className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded border ${
           currentId
-            ? "border-slate-300 text-slate-700 hover:border-[#185FA5]"
-            : "border-dashed border-slate-300 text-slate-500 hover:border-[#185FA5] hover:text-[#185FA5]"
+            ? "border-slate-300 text-slate-700 hover:border-brand"
+            : "border-dashed border-slate-300 text-slate-500 hover:border-brand hover:text-brand"
         }`}
       >
         {currentId && (
           <span
-            className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#185FA5] text-white text-[9px] font-semibold"
+            className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-brand text-white text-[9px] font-semibold"
             aria-hidden
           >
             {label.charAt(0).toUpperCase()}
@@ -433,7 +433,7 @@ function OwnerPicker({
                 setOpen(false);
               }}
               className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 ${
-                !currentId ? "font-semibold text-[#185FA5]" : "text-slate-700"
+                !currentId ? "font-semibold text-brand" : "text-slate-700"
               }`}
             >
               Unassigned{!currentId ? " ✓" : ""}
@@ -451,7 +451,7 @@ function OwnerPicker({
                     setOpen(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 ${
-                    u.id === currentId ? "font-semibold text-[#185FA5]" : "text-slate-700"
+                    u.id === currentId ? "font-semibold text-brand" : "text-slate-700"
                   }`}
                   title={u.email}
                 >
@@ -497,7 +497,7 @@ function StatusDropdown({
                   setOpen(false);
                 }}
                 className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 ${
-                  s === current ? "font-semibold text-[#185FA5]" : "text-slate-700"
+                  s === current ? "font-semibold text-brand" : "text-slate-700"
                 }`}
               >
                 {STATUS_LABEL[s]}
@@ -675,7 +675,7 @@ function ContentModal({
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://katzmelinger.com/…"
+            placeholder="https://yourfirm.com/…"
             className="w-full mt-1"
           />
         </div>
@@ -686,7 +686,7 @@ function ContentModal({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+            className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
           />
         </div>
 

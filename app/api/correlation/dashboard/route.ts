@@ -37,7 +37,7 @@ function normalize(url: string | null): string | null {
 export async function GET() {
   const denied = await guardUser();
   if (denied) return denied;
-  const { semrushDomain } = await getTenantConfig();
+  const { seoDomain } = await getTenantConfig();
   const supabase = await getTenantDb();
 
   const { data: keywords } = await supabase
@@ -63,7 +63,7 @@ export async function GET() {
       const cites = (r.citations as { url?: string }[] | null) ?? [];
       for (const c of cites) {
         if (!c.url) continue;
-        if (!c.url.includes(semrushDomain)) continue; // we care about our own URLs here
+        if (!c.url.includes(seoDomain)) continue; // we care about our own URLs here
         const norm = normalize(c.url);
         if (!norm) continue;
         const cur =

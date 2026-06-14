@@ -78,8 +78,8 @@ export default function EmailPage() {
       try {
         const url =
           listFilter && listFilter !== "all"
-            ? `/api/email/constant-contact?listId=${encodeURIComponent(listFilter)}`
-            : "/api/email/constant-contact?listId=all";
+            ? `/api/email?listId=${encodeURIComponent(listFilter)}`
+            : "/api/email?listId=all";
         const res = await fetch(url, { cache: "no-store" });
         const json = (await res.json()) as EmailPayload;
         if (cancelled) return;
@@ -142,7 +142,7 @@ export default function EmailPage() {
                 value={listFilter}
                 onChange={(e) => onListChange(e.target.value)}
                 disabled={loading}
-                className="px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5] disabled:opacity-50"
+                className="px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand disabled:opacity-50"
               >
                 <option value="all">
                   All lists ({data.availableLists.reduce((n, l) => n + l.contacts, 0).toLocaleString()})
@@ -184,7 +184,7 @@ export default function EmailPage() {
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <a
-                className="inline-block rounded-md bg-[#185FA5] text-white px-4 py-2 text-sm font-medium hover:bg-[#1f6fb8]"
+                className="inline-block rounded-md bg-brand text-white px-4 py-2 text-sm font-medium hover:bg-brand/90"
                 href="/api/constant-contact/oauth"
               >
                 Reconnect Constant Contact

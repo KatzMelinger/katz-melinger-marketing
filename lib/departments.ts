@@ -1,5 +1,5 @@
 /**
- * Department taxonomy — the single source of truth for how MarketOS is
+ * Department taxonomy — the single source of truth for how Huraqan is
  * organized into nine departments. Both the global sidebar
  * (`components/marketing-sidebar.tsx`) and the executive board on the home
  * page (`app/page.tsx` → `components/dept-board.tsx`) derive their structure

@@ -344,7 +344,7 @@ export default function IntelligencePage() {
             onClick={() => setTab(t.id as Tab)}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] ${
               tab === t.id
-                ? "border-[#185FA5] text-[#185FA5]"
+                ? "border-brand text-brand"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
@@ -396,11 +396,11 @@ export default function IntelligencePage() {
                     {t.relevance}
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-[#185FA5]">{t.practiceArea}</span>
+                    <span className="text-xs text-brand">{t.practiceArea}</span>
                     <div className="flex gap-1">
                       <Link
                         href={`/content/batch?topic=${encodeURIComponent(t.headline)}`}
-                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
                       >
                         → Generate
                       </Link>
@@ -409,7 +409,7 @@ export default function IntelligencePage() {
                           setMetaTopic(t.headline);
                           setTab("metadata");
                         }}
-                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
                       >
                         SEO
                       </button>
@@ -514,7 +514,7 @@ export default function IntelligencePage() {
                     <li
                       key={run.id}
                       className={`flex items-center justify-between gap-3 py-2 text-sm ${
-                        isActive ? "bg-[#185FA5]/5 -mx-2 px-2 rounded" : ""
+                        isActive ? "bg-brand/5 -mx-2 px-2 rounded" : ""
                       }`}
                     >
                       <button
@@ -576,8 +576,8 @@ export default function IntelligencePage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-600 mb-2">{t.whyTrending}</p>
-                  <div className="bg-[#185FA5]/5 border border-[#185FA5]/20 rounded-md p-2 mb-2">
-                    <span className="text-xs font-medium text-[#185FA5]">Suggested angle:</span>
+                  <div className="bg-brand/5 border border-brand/20 rounded-md p-2 mb-2">
+                    <span className="text-xs font-medium text-brand">Suggested angle:</span>
                     <p className="text-xs text-slate-700 mt-0.5">{t.suggestedAngle}</p>
                   </div>
                   <div className="flex items-center justify-between flex-wrap gap-2">
@@ -590,7 +590,7 @@ export default function IntelligencePage() {
                     </div>
                     <Link
                       href={trendDraftHref(t)}
-                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
                     >
                       → Generate posts
                     </Link>

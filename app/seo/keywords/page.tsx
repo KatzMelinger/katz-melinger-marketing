@@ -327,7 +327,7 @@ export default function SeoKeywordsPage() {
           className={`text-xs px-2 py-1 rounded border disabled:opacity-60 ${
             isTracked
               ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-              : "border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5"
+              : "border-brand text-brand hover:bg-brand/5"
           }`}
           title={isTracked ? "Already a tracked target keyword" : "Add to tracked target keywords"}
         >
@@ -528,7 +528,7 @@ export default function SeoKeywordsPage() {
           <button
             onClick={pushToSemrush}
             disabled={pushBusy || targets.length === 0}
-            className="shrink-0 rounded-md border border-[#185FA5] px-3 py-2 text-xs font-medium text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+            className="shrink-0 rounded-md border border-brand px-3 py-2 text-xs font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
             title="Add all tracked keywords to your Semrush Position Tracking campaign (spends ~100 API units each)"
           >
             {pushBusy ? "Pushing…" : "Push all to Semrush"}
@@ -558,12 +558,12 @@ export default function SeoKeywordsPage() {
                   if (e.key === "Enter" && newTarget.trim()) addTarget(newTarget);
                 }}
                 placeholder='e.g. "best employment lawyer brooklyn"'
-                className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+                className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
               />
               <button
                 onClick={() => addTarget(newTarget)}
                 disabled={!newTarget.trim() || targetBusy === newTarget.trim()}
-                className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
               >
                 {targetBusy === newTarget.trim() ? "…" : "Add"}
               </button>
@@ -603,7 +603,7 @@ export default function SeoKeywordsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search keywords…"
-              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+              className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
             />
             <select
               value={showRanking}
@@ -745,7 +745,7 @@ export default function SeoKeywordsPage() {
                         href={item.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-[#185FA5] hover:underline truncate block max-w-[300px]"
+                        className="text-xs text-brand hover:underline truncate block max-w-[300px]"
                         title={item.url}
                       >
                         {item.url.replace(/^https?:\/\/(www\.)?[^/]+/, "")}
@@ -880,12 +880,12 @@ export default function SeoKeywordsPage() {
               if (e.key === "Enter" && newCompetitor.trim()) addCompetitor(newCompetitor);
             }}
             placeholder="e.g. outtengolden.com"
-            className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+            className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
           <button
             onClick={() => addCompetitor(newCompetitor)}
             disabled={!newCompetitor.trim() || competitorBusy === newCompetitor.trim()}
-            className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {competitorBusy === newCompetitor.trim() ? "…" : "Add"}
           </button>
@@ -923,7 +923,7 @@ export default function SeoKeywordsPage() {
                   <button
                     onClick={() => addCompetitor(s, "suggested")}
                     disabled={competitorBusy === s}
-                    className="inline-flex items-center gap-1 rounded-full border border-dashed border-[#185FA5]/40 bg-[#185FA5]/5 px-3 py-1 text-xs text-[#185FA5] hover:bg-[#185FA5]/10 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded-full border border-dashed border-brand/40 bg-brand/5 px-3 py-1 text-xs text-brand hover:bg-brand/10 disabled:opacity-50"
                     title={`Track ${s}`}
                   >
                     + {s}
@@ -976,7 +976,7 @@ export default function SeoKeywordsPage() {
         {cannibalIssues.length === 0 && (
           <p className="text-[11px] text-slate-400 mt-1">
             Tip: cannibalization suggestions need a scan — run one on the{" "}
-            <a href="/seo/cannibalization" className="text-[#185FA5] hover:underline">
+            <a href="/seo/cannibalization" className="text-brand hover:underline">
               Cannibalization page
             </a>{" "}
             to flag keywords where 2+ of your own pages already compete.
@@ -1068,7 +1068,7 @@ function ThButton({ children, onClick }: { children: React.ReactNode; onClick: (
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center hover:text-[#185FA5]"
+        className="inline-flex items-center hover:text-brand"
       >
         {children}
       </button>

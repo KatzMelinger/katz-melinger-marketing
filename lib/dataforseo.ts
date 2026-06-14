@@ -1,5 +1,5 @@
 /**
- * DataForSEO helper for MarketOS — the replacement for lib/semrush.ts.
+ * DataForSEO helper for Huraqan — the replacement for lib/semrush.ts.
  *
  * Mirrors the public surface of lib/semrush.ts (same function names, same return
  * shapes) so downstream callers — lib/seo-intelligence.ts, lib/opportunity-

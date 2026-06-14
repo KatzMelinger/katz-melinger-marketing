@@ -123,7 +123,7 @@ export async function runOpportunityPipeline(args: {
 
   // Resolve the tenant's own Semrush domain (per-tenant, not the global
   // katzmelinger.com constant) so the pipeline is correct under multi-tenancy.
-  const { tenantId, semrushDomain } = await getTenantConfig();
+  const { tenantId, seoDomain } = await getTenantConfig();
 
   // 1. SOURCE -----------------------------------------------------------------
   const competitors = args.competitor
@@ -132,9 +132,9 @@ export async function runOpportunityPipeline(args: {
 
   const [gaps, tracked] = await Promise.all([
     competitors.length > 0
-      ? getKeywordGapVsCompetitors(competitors, semrushDomain).catch(() => [])
+      ? getKeywordGapVsCompetitors(competitors, seoDomain).catch(() => [])
       : Promise.resolve([]),
-    getTrackedKeywordPerformance(semrushDomain, tenantId).catch(() => ({
+    getTrackedKeywordPerformance(seoDomain, tenantId).catch(() => ({
       tracked: [],
       missingTargets: [] as string[],
       trendingKeywords: [],

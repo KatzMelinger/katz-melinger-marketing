@@ -5,6 +5,7 @@ import {
   parseServiceAccountJson,
 } from "@/lib/google-service-account";
 import { getValidAccessToken } from "@/lib/google-oauth";
+import { getTenantSecret } from "@/lib/tenant-secrets";
 
 const GBP_SCOPE = "https://www.googleapis.com/auth/business.manage";
 
@@ -33,9 +34,12 @@ export async function getGoogleAccessToken(
     }
   }
 
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
+  // Per-tenant service account (B5): the firm's own GA4/GSC credentials, or the
+  // platform env var for the default tenant. A non-default firm with none set
+  // gets undefined → a clear "not configured" error rather than KM's data.
+  const raw = (await getTenantSecret("GOOGLE_SERVICE_ACCOUNT_JSON", tenantId))?.trim();
   if (!raw) {
-    return { error: "GOOGLE_SERVICE_ACCOUNT_JSON is not set" };
+    return { error: "GOOGLE_SERVICE_ACCOUNT_JSON is not set for this firm" };
   }
 
   if (process.env.GOOGLE_DEBUG_AUTH === "1") {

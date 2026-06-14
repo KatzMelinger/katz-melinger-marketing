@@ -322,28 +322,28 @@ const MOCK_KEYWORD_RANKINGS: KeywordRankingRow[] = [
     keyword: "employment lawyer NYC",
     rank: 4,
     change: 2,
-    url: "https://www.katzmelinger.com/employment-law",
+    url: "https://www.example-firm.com/employment-law",
     lastChecked: "2026-04-18T14:00:00Z",
   },
   {
     keyword: "wage hour attorney",
     rank: 7,
     change: -1,
-    url: "https://www.katzmelinger.com/wage-hour",
+    url: "https://www.example-firm.com/wage-hour",
     lastChecked: "2026-04-18T14:00:00Z",
   },
   {
     keyword: "wrongful termination lawyer Manhattan",
     rank: 12,
     change: 3,
-    url: "https://www.katzmelinger.com/wrongful-termination",
+    url: "https://www.example-firm.com/wrongful-termination",
     lastChecked: "2026-04-18T14:00:00Z",
   },
   {
     keyword: "FLSA lawyer New York",
     rank: null,
     change: 0,
-    url: "https://www.katzmelinger.com/flsa",
+    url: "https://www.example-firm.com/flsa",
     lastChecked: "2026-04-17T09:30:00Z",
   },
 ];
@@ -802,7 +802,7 @@ export default function LocalSeoPlatformPage() {
       onClick={() => setActiveTab(id)}
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
         activeTab === id
-          ? "bg-[#ffffff] text-slate-900 ring-1 ring-[#185FA5]/50"
+          ? "bg-[#ffffff] text-slate-900 ring-1 ring-brand/50"
           : "text-slate-500 hover:bg-slate-50/60 hover:text-slate-900"
       }`}
     >
@@ -853,7 +853,7 @@ export default function LocalSeoPlatformPage() {
             type="checkbox"
             checked={useCachedDiscovery}
             onChange={(e) => setUseCachedDiscovery(e.target.checked)}
-            className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-[#185FA5] focus:ring-[#185FA5]"
+            className="h-4 w-4 rounded border-[#e2e8f0] bg-[#ffffff] text-brand focus:ring-brand"
           />
           Use cached account/location discovery when available (reduces Google API calls)
         </label>
@@ -1050,7 +1050,7 @@ export default function LocalSeoPlatformPage() {
 
         {!error && gbpWarnings.length > 0 ? (
           <div
-            className="rounded-lg border border-[#185FA5]/40 p-4 text-sm text-slate-700"
+            className="rounded-lg border border-brand/40 p-4 text-sm text-slate-700"
             style={{ backgroundColor: CARD }}
             role="status"
           >

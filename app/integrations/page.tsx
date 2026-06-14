@@ -125,7 +125,7 @@ export default function IntegrationsPage() {
         <button
           onClick={refresh}
           disabled={loading}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
         >
           {loading ? "Checking…" : "Re-check"}
         </button>
@@ -226,7 +226,7 @@ function IntegrationRow({
         </div>
         <div className="flex flex-wrap gap-1 text-[11px] text-slate-500">
           {integration.feature_pages.map((p) => (
-            <a key={p} href={p} className="px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200 hover:border-[#185FA5] hover:text-[#185FA5]">
+            <a key={p} href={p} className="px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200 hover:border-brand hover:text-brand">
               {p}
             </a>
           ))}
@@ -258,7 +258,7 @@ function IntegrationRow({
               className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
                 a.tone === "danger"
                   ? "border border-red-300 text-red-700 hover:bg-red-50"
-                  : "bg-[#185FA5] text-white hover:bg-[#1f6fb8]"
+                  : "bg-brand text-white hover:bg-brand/90"
               }`}
             >
               {a.label}

@@ -10,6 +10,7 @@ import { after } from "next/server";
 import { createJob, runAnthropicJob } from "@/lib/keyword-research-jobs";
 import { getFirmContext } from "@/lib/firm-context";
 import { guardUser } from "@/lib/supabase-route";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -32,12 +33,13 @@ export async function POST(req: NextRequest) {
 
     const safeKeyword = keyword.trim().slice(0, MAX_KEYWORD_LENGTH);
     const firmContext = await getFirmContext();
+    const cfg = await getTenantConfig();
 
     const systemPrompt = `You are an expert SEO keyword strategist for law firm marketing in NYC/NJ.
 
 ${firmContext}`;
 
-    const userPrompt = `Expand the keyword "${safeKeyword}" into a comprehensive keyword cluster for katzmelinger.com.
+    const userPrompt = `Expand the keyword "${safeKeyword}" into a comprehensive keyword cluster for ${cfg.seoDomain}.
 
 Generate:
 1. Long-tail variations (more specific phrases people search)

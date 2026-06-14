@@ -29,7 +29,7 @@ export function ReviewsTabs({
       onClick={() => setTab(id)}
       className={`border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${
         tab === id
-          ? "border-[#185FA5] text-[#185FA5]"
+          ? "border-brand text-brand"
           : "border-transparent text-slate-500 hover:text-slate-700"
       }`}
     >

@@ -102,7 +102,7 @@ export function AdminTenantsClient() {
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-[#185FA5]">Firms</h1>
+        <h1 className="text-2xl font-semibold text-brand">Firms</h1>
         <p className="text-sm text-slate-600 mt-1">
           Every firm on the platform. Create firms manually or let them self-serve at{" "}
           <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">/signup</code>.
@@ -148,7 +148,7 @@ export function AdminTenantsClient() {
             <button
               type="submit"
               disabled={creating || !firmName || !email || !password}
-              className="w-full px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              className="w-full px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
             >
               {creating ? "Creating…" : "Create firm"}
             </button>
@@ -206,7 +206,7 @@ export function AdminTenantsClient() {
                   <td className="px-4 py-2 text-right">
                     <button
                       onClick={() => toggleStatus(t)}
-                      className="text-xs font-medium text-[#185FA5] hover:underline"
+                      className="text-xs font-medium text-brand hover:underline"
                     >
                       {t.status === "suspended" ? "Reactivate" : "Suspend"}
                     </button>

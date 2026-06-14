@@ -15,6 +15,7 @@ import { SEMRUSH_DOMAIN, type SemrushKeywordRow } from "./semrush";
 import { getDomainKeywords } from "./dataforseo";
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
+import { getTenantConfig } from "./tenant-config";
 import {
   evaluateCannibalizationAlerts,
   type CannibalizationIssue,
@@ -43,6 +44,7 @@ export async function detectCannibalization(
   tenantId?: string,
 ): Promise<{ snapshotId: string; issues: CannibalizationDetail[] }> {
   const tid = tenantId ?? (await resolveTenantId());
+  if (domain === SEMRUSH_DOMAIN) domain = (await getTenantConfig(tid)).seoDomain;
   // Pull a wide enough slice that we can group meaningfully — 1000 rows
   // matches the keyword_research refresh budget and keeps Semrush units low.
   // Callers that already hold the firm's domain_organic report (e.g. the daily

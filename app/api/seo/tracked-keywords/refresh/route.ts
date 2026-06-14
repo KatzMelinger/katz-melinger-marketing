@@ -67,7 +67,7 @@ export async function POST() {
 async function refreshTrackedKeywords(tenantId: string) {
   try {
     const db = getTenantJobDb(tenantId);
-    const { semrushDomain } = await getTenantConfig(tenantId);
+    const { seoDomain } = await getTenantConfig(tenantId);
 
     const { data: rawItems, error: loadErr } = await db
       .select("seo_keywords")
@@ -94,7 +94,7 @@ async function refreshTrackedKeywords(tenantId: string) {
     // keywords missing from the snapshot get a live-SERP rank fallback below.
     let rankedRows: DataForSeoKeywordRow[];
     try {
-      rankedRows = await getDomainKeywords(semrushDomain, undefined, 1000, 0, "traffic", "desc");
+      rankedRows = await getDomainKeywords(seoDomain, undefined, 1000, 0, "traffic", "desc");
     } catch (err) {
       console.error(
         "[seo/keywords/refresh] DataForSEO failed:",
@@ -166,7 +166,7 @@ async function refreshTrackedKeywords(tenantId: string) {
     }
     await Promise.all(
       toLookup.map(async (kw) => {
-        const rank = await getLiveRank(kw, semrushDomain).catch(() => null);
+        const rank = await getLiveRank(kw, seoDomain).catch(() => null);
         liveRankMap.set(kw.toLowerCase().trim(), rank);
       }),
     );
@@ -237,7 +237,7 @@ async function refreshTrackedKeywords(tenantId: string) {
     // spend. Non-fatal: a failure here must not fail the ranking refresh.
     let cannibalizationIssues: number | null = null;
     try {
-      const { issues } = await detectCannibalization(semrushDomain, rankedRows, tenantId);
+      const { issues } = await detectCannibalization(seoDomain, rankedRows, tenantId);
       cannibalizationIssues = issues.length;
     } catch (err) {
       console.error(

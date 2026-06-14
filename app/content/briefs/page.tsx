@@ -208,7 +208,7 @@ export default function BriefsPage() {
           <h3 className="text-lg font-semibold">No approved briefs yet</h3>
           <p className="mx-auto max-w-md text-sm text-slate-600">
             Approve a decision in{" "}
-            <Link href="/content/decisions" className="text-[#185FA5] hover:underline">
+            <Link href="/content/decisions" className="text-brand hover:underline">
               Content Decisions
             </Link>{" "}
             and it shows up here as a brief.
@@ -323,7 +323,7 @@ function BriefCard({
             <DashPill tone="emerald">Sent to Production ✓</DashPill>
             <Link
               href="/content/pipeline"
-              className="text-xs font-medium text-[#185FA5] hover:underline"
+              className="text-xs font-medium text-brand hover:underline"
             >
               Open Production Board →
             </Link>
@@ -335,7 +335,7 @@ function BriefCard({
         )}
         <Link
           href={`/content/km?suggestion=${s.id}`}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-[#185FA5] hover:text-[#185FA5]"
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-brand hover:text-brand"
         >
           Generate draft
         </Link>

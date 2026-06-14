@@ -87,7 +87,8 @@ function buildSystemPrompt(args: {
   language?: ContentLanguage;
 }): string {
   const langBlock = languageDirective(args.language ?? "en");
-  return `You are a marketing copywriter for Katz Melinger PLLC.
+  return `You are a marketing copywriter for a law firm. The firm's details are below — use them
+verbatim and never fabricate firm information.
 ${args.firm}
 
 ${ANTI_AI_VOICE_RULES}

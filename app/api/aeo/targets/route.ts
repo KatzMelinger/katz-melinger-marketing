@@ -10,10 +10,11 @@ import { getTenantClient } from "@/lib/tenant-db";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const { supabase } = await getTenantClient();
+  const { supabase, tenantId } = await getTenantClient();
   const { data, error } = await supabase
     .from("aeo_targets")
     .select("*")
+    .eq("tenant_id", tenantId)
     .order("type", { ascending: true })
     .order("name", { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -33,11 +33,11 @@ export async function GET() {
   }
 
   try {
-    const { semrushDomain, semrushDatabase } = await getTenantConfig();
+    const { seoDomain, semrushDatabase } = await getTenantConfig();
     const ranksUrl = semrushSeoUrl({
       key,
       type: "domain_ranks",
-      domain: semrushDomain,
+      domain: seoDomain,
       database: semrushDatabase,
       export_columns: "Dn,Rk,Or,Ot",
       export_decode: "1",
@@ -46,7 +46,7 @@ export async function GET() {
     const backlinksUrl = semrushAnalyticsUrl({
       key,
       type: "backlinks_overview",
-      target: semrushDomain,
+      target: seoDomain,
       target_type: "root_domain",
       export_columns: "ascore,total",
       export_decode: "1",

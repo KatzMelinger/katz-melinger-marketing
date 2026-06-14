@@ -41,7 +41,7 @@ function CallbackInner() {
   return (
     <main className="mx-auto max-w-lg px-4 py-12">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        MarketOS
+        Huraqan
       </p>
       <h1 className="mt-1 text-xl font-semibold text-slate-900">OAuth callback</h1>
       <p className="mt-2 text-sm text-slate-500">
@@ -114,7 +114,7 @@ function CallbackInner() {
                 client ID, client secret, redirect URI, and the code.
               </li>
               <li>
-                Store access and refresh tokens securely and update your MarketOS
+                Store access and refresh tokens securely and update your Huraqan
                 configuration.
               </li>
             </ol>

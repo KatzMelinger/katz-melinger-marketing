@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { getTenantConfig } from "@/lib/tenant-config";
 import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
@@ -53,9 +54,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const firm = await getFirmContext();
+  const [firm, cfg] = await Promise.all([getFirmContext(), getTenantConfig()]);
+  const firmName = cfg.firmName || "the firm";
+  const spokesperson =
+    cfg.firmSpokesperson || (cfg.firmName ? `an attorney at ${cfg.firmName}` : "a firm attorney");
 
-  const system = `You are a PR strategist for Katz Melinger PLLC, a plaintiff-side employment law firm in NYC. ${firm} You help the firm decide which journalist queries to respond to and draft pitches that actually get used. You're brutally honest about fit — saying no to off-target queries is more valuable than forcing fits.`;
+  const system = `You are a PR strategist for ${firmName}. ${firm} You help the firm decide which journalist queries to respond to and draft pitches that actually get used. You're brutally honest about fit — saying no to off-target queries is more valuable than forcing fits.`;
 
   const user = `A journalist has posted this source query:
 
@@ -65,24 +69,13 @@ Query:
 ${query}
 """
 
-Evaluate this query for Katz Melinger and produce a pitch.
+Evaluate this query for ${firmName} and produce a pitch.
 
-The firm's expertise is plaintiff-side employment law:
-  - Workplace discrimination (race, gender, age, disability, religion)
-  - Wage & hour (overtime, off-the-clock work, wage theft, class actions)
-  - Wrongful termination
-  - Sexual harassment
-  - FMLA / medical leave retaliation
-  - Severance negotiations
-  - Whistleblower retaliation
-  - NY State and NYC-specific worker protections
-  - Commercial collections / judgment enforcement (secondary)
+The firm's practice areas and expertise are described in the firm context above.
+If the query falls outside those practice areas (a different area of law, or a
+non-legal topic), say "no" with a one-line reason.
 
-If the query is about something outside that scope (criminal defense, divorce,
-business contracts, personal injury, etc.), say "no" with a one-line reason.
-
-If it IS in scope, produce a pitch response from "Kenneth Katz, Partner at
-Katz Melinger PLLC" that:
+If it IS in scope, produce a pitch response from "${spokesperson}" that:
   - Opens with one sentence stating the relevant credential
   - Provides a substantive answer / quote that the reporter could use
   - Stays under ~200 words
@@ -96,8 +89,8 @@ Return JSON only:
   "reason": "one sentence on why this is/isn't a fit",
   "angle": "specific expertise angle to lead with (1 sentence)",
   "pitch": "complete pitch response, ~150-200 words, ready to paste into an email reply",
-  "quote": "2-3 sentence pull-quote the journalist could use as-is, attributed to Kenneth Katz",
-  "attribution": "exactly how the attorney + firm should be cited (e.g. 'Kenneth Katz, partner at Katz Melinger PLLC')"
+  "quote": "2-3 sentence pull-quote the journalist could use as-is, attributed to ${spokesperson}",
+  "attribution": "exactly how the attorney + firm should be cited (e.g. '${spokesperson}')"
 }`;
 
   try {

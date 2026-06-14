@@ -311,7 +311,7 @@ export async function GET() {
   // ---- CMS link ----
   items.push({
     id: "cms",
-    label: "Katz Melinger CMS",
+    label: "Firm CMS / case-management link",
     category: "Database",
     ...envCheck(["CMS_API_URL", "CMS_API_SECRET_KEY"]),
     status:
