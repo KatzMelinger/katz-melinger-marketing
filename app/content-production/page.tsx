@@ -7,12 +7,18 @@
  * existing tables (seo_opportunities + content_pipeline) — no spine (Option C;
  * see docs/content-production-board-decisions.md). The New-content kanban columns
  * come from the tenant's workflow_stages, so a second firm can rename/reorder
- * with no code change. Optimize/Repurpose are read-only placeholders until the
- * Stage-6 position-drop wiring. Card actions (Create brief → Review → Publish)
- * reuse the existing wizard/draft-drawer flows and land in a follow-up stage.
+ * with no code change.
+ *
+ * Stage 3: card actions REUSE the existing components — opportunity cards open
+ * the KmBriefWizard ("Create brief"); pipeline cards open the DraftDrawer
+ * ("Review draft" / approve / publish). No workflow logic is rebuilt here.
+ * Optimize/Repurpose remain read-only placeholders until the Stage-6 wiring.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { DraftDrawer } from "@/components/draft-drawer";
+import { KmBriefWizard, type WizardOpportunity } from "@/components/km-brief-wizard";
 
 type Stage = { kind: string; label: string; order: number };
 type Pillar = { id: string; label: string };
@@ -29,6 +35,12 @@ type Item = {
   url: string | null;
   draftId: string | null;
   needsReview: boolean;
+  intent: string | null;
+  competitor: string | null;
+  searchVolume: number | null;
+  pipelineId: number | null;
+  rawStatus: string | null;
+  keywords: string | null;
 };
 type Payload = {
   stages: Stage[];
@@ -52,11 +64,45 @@ const ASSET_LABEL: Record<string, string> = {
   case_result: "Case Result",
 };
 
+// Build the inputs the existing components expect.
+function toWizardOpportunity(i: Item): WizardOpportunity {
+  return {
+    id: i.id,
+    keyword: i.title,
+    practiceArea: i.practiceArea,
+    recommendedContentType: i.assetType,
+    intent: i.intent,
+    pillarId: i.pillarId,
+    competitor: i.competitor,
+    searchVolume: i.searchVolume,
+  };
+}
+type DrawerItem = {
+  id: number;
+  draft_id: string | null;
+  status: "idea" | "brief" | "draft" | "review" | "published";
+  title: string;
+  bucket?: string | null;
+  keywords?: string | null;
+};
+function toDrawerItem(i: Item): DrawerItem {
+  return {
+    id: i.pipelineId ?? 0,
+    draft_id: i.draftId,
+    status: (i.rawStatus ?? "idea") as DrawerItem["status"],
+    title: i.title,
+    bucket: i.bucket,
+    keywords: i.keywords,
+  };
+}
+
 export default function ContentProductionPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("new");
+  const [wizardOpp, setWizardOpp] = useState<WizardOpportunity | null>(null);
+  const [reviewItem, setReviewItem] = useState<DrawerItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,6 +131,9 @@ export default function ContentProductionPage() {
   const stages = data?.stages ?? [];
   const newItems = (data?.items ?? []).filter((i) => i.tab === "new");
   const existingItems = (data?.items ?? []).filter((i) => i.tab === "existing");
+
+  const onCreateBrief = (i: Item) => setWizardOpp(toWizardOpportunity(i));
+  const onReview = (i: Item) => setReviewItem(toDrawerItem(i));
 
   return (
     <main className="mx-auto max-w-[1400px] px-6 py-6">
@@ -140,7 +189,13 @@ export default function ContentProductionPage() {
                 </div>
                 <div className="flex flex-col gap-2">
                   {colItems.map((i) => (
-                    <Card key={`${i.source}-${i.id}`} item={i} pillarLabel={pillarLabel} />
+                    <Card
+                      key={`${i.source}-${i.id}`}
+                      item={i}
+                      pillarLabel={pillarLabel}
+                      onCreateBrief={onCreateBrief}
+                      onReview={onReview}
+                    />
                   ))}
                   {colItems.length === 0 && <p className="px-1 py-2 text-xs text-slate-400">—</p>}
                 </div>
@@ -168,6 +223,25 @@ export default function ContentProductionPage() {
           </div>
         </div>
       )}
+
+      {wizardOpp && (
+        <KmBriefWizard
+          opportunity={wizardOpp}
+          onClose={() => setWizardOpp(null)}
+          onGenerated={() => {
+            setWizardOpp(null);
+            load();
+          }}
+        />
+      )}
+
+      {reviewItem && (
+        <DraftDrawer
+          item={reviewItem}
+          onClose={() => setReviewItem(null)}
+          onChanged={load}
+        />
+      )}
     </main>
   );
 }
@@ -189,10 +263,14 @@ function Card({
   item,
   pillarLabel,
   showUrl,
+  onCreateBrief,
+  onReview,
 }: {
   item: Item;
   pillarLabel: (id: string | null) => string | null;
   showUrl?: boolean;
+  onCreateBrief?: (item: Item) => void;
+  onReview?: (item: Item) => void;
 }) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-2 text-sm shadow-sm">
@@ -220,6 +298,26 @@ function Card({
         )}
         {item.bucket && <span className="rounded bg-slate-100 px-1.5 text-[11px] text-slate-600">{item.bucket}</span>}
       </div>
+      {(onCreateBrief && item.source === "opportunity") || (onReview && item.source === "pipeline") ? (
+        <div className="mt-2">
+          {item.source === "opportunity" && onCreateBrief && (
+            <button
+              onClick={() => onCreateBrief(item)}
+              className="w-full rounded border border-brand px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand/5"
+            >
+              Create brief →
+            </button>
+          )}
+          {item.source === "pipeline" && onReview && (
+            <button
+              onClick={() => onReview(item)}
+              className="w-full rounded border border-brand px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand/5"
+            >
+              {item.stageKind === "approve" ? "Review → Publish →" : "Review draft →"}
+            </button>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

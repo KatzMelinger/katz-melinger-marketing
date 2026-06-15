@@ -68,7 +68,7 @@ export async function GET() {
   const [{ data: opps }, { data: pipe }] = await Promise.all([
     supabase
       .from("seo_opportunities")
-      .select("id, keyword, status, pillar_id, practice_area, recommended_content_type, existing_url")
+      .select("id, keyword, status, pillar_id, practice_area, recommended_content_type, existing_url, intent, competitor, search_volume")
       .eq("excluded", false),
     supabase
       .from("content_pipeline")
@@ -89,6 +89,14 @@ export async function GET() {
     url: string | null;
     draftId: string | null;
     needsReview: boolean;
+    // Inputs the existing components need when a card action opens them:
+    // opportunity → KmBriefWizard; pipeline → DraftDrawer.
+    intent: string | null;
+    competitor: string | null;
+    searchVolume: number | null;
+    pipelineId: number | null; // content_pipeline.id (numeric) for DraftDrawer
+    rawStatus: string | null; // content_pipeline.status for DraftDrawer
+    keywords: string | null;
   };
   const items: Item[] = [];
 
@@ -110,6 +118,12 @@ export async function GET() {
       url: (o.existing_url as string) ?? null,
       draftId: null,
       needsReview: !o.pillar_id,
+      intent: (o.intent as string) ?? null,
+      competitor: (o.competitor as string) ?? null,
+      searchVolume: (o.search_volume as number) ?? null,
+      pipelineId: null,
+      rawStatus: null,
+      keywords: null,
     });
   }
 
@@ -128,6 +142,12 @@ export async function GET() {
       url: (p.url as string) ?? null,
       draftId: (p.draft_id as string) ?? null,
       needsReview: false,
+      intent: null,
+      competitor: null,
+      searchVolume: null,
+      pipelineId: (p.id as number) ?? null,
+      rawStatus: (p.status as string) ?? null,
+      keywords: (p.keywords as string) ?? null,
     });
   }
 
