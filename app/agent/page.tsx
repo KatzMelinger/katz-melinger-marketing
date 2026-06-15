@@ -146,11 +146,11 @@ export default function AgentPage() {
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-5xl mx-auto">
       <div className="mb-6 flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Agent Assistant</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Peggy</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Chat-driven access to every intelligence tool in Huraqan — trending
-            topics, recommendations, tracked keywords, the AutoPilot queue, more.
-            Claude decides which tools to call.
+            Your AI marketing assistant — ask Peggy about trending topics,
+            recommendations, tracked keywords, the AutoPilot queue, and more.
+            Peggy decides which tools to call.
           </p>
         </div>
         {messages.length > 0 ? (

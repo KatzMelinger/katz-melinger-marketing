@@ -172,7 +172,7 @@ export const DEPARTMENTS: Department[] = [
     accent: "#7C3AED",
     defaultOpen: false,
     items: [
-      { label: "Agent Assistant", href: "/agent", icon: "💬", status: "active" },
+      { label: "Peggy", href: "/agent", icon: "💬", status: "active" },
       { label: "Content Directions", href: "/brand-voice", icon: "🧭", status: "active" },
       { label: "Image Generator", href: "/content/images", icon: "🖼", status: "active" },
       { label: "Practice Areas", href: "/settings/practice-areas", icon: "⚖", status: "active" },
