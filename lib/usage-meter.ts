@@ -17,12 +17,21 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { resolveTenantId } from "./tenant-context";
 
-export type Meter = "competitor_lookup";
+// Meters track the OWNER's shared paid-API spend per tenant (reseller model:
+// firms pay us and use our vendor accounts). "competitor_lookup" hard-gates
+// DataForSEO SERP. The vendor meters below are Phase-1 ADVISORY — recorded for
+// per-tenant cost visibility, NOT enforced as caps yet.
+export type Meter = "competitor_lookup" | "dataforseo" | "anthropic" | "ayrshare";
 
-/** Default monthly cap seeded when a tenant has no explicit limit row. */
+/** Default monthly cap seeded when a tenant has no explicit limit row.
+ *  Advisory meters use a high placeholder cap (not enforced in Phase 1). */
 export const DEFAULT_MONTHLY_CAP: Record<Meter, number> = {
   competitor_lookup: 100,
+  dataforseo: 1_000_000,
+  anthropic: 1_000_000,
+  ayrshare: 100_000,
 };
 
 export class QuotaExceededError extends Error {
@@ -236,5 +245,39 @@ export async function recordUsage(input: {
     });
   } catch (err) {
     console.warn("[usage-meter] ledger write failed:", err);
+  }
+}
+
+/**
+ * ADVISORY per-tenant usage recording for the owner's shared vendor accounts
+ * (reseller model). Resolves the tenant best-effort and writes to the ledger.
+ * Fully best-effort: never throws, never blocks the caller. In cron/no-request
+ * contexts the tenant resolves to the default tenant — a known Phase-1 limitation
+ * (cron-driven usage is mis-attributed until we thread tenantId through).
+ */
+export async function recordVendorUsage(
+  meter: Meter,
+  input: {
+    provider: string;
+    endpoint: string;
+    units?: number;
+    cacheHit?: boolean;
+    detail?: string;
+    tenantId?: string;
+  },
+): Promise<void> {
+  try {
+    const tenantId = input.tenantId ?? (await resolveTenantId());
+    await recordUsage({
+      tenantId,
+      provider: input.provider,
+      endpoint: input.endpoint,
+      meter,
+      units: input.units,
+      cacheHit: input.cacheHit,
+      detail: input.detail,
+    });
+  } catch (err) {
+    console.warn("[usage-meter] vendor usage record failed:", err);
   }
 }

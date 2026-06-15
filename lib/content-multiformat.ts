@@ -17,6 +17,7 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
+import { recordVendorUsage } from "./usage-meter";
 import { ANTI_AI_VOICE_RULES } from "./anti-ai-voice";
 import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
@@ -166,6 +167,13 @@ async function callClaudeForFormats(args: {
     max_tokens: 8192,
     system: cachedSystemPrompt(args.system),
     messages: [{ role: "user", content: args.user }],
+  });
+  // Advisory metering: record Anthropic token usage (best-effort; resolves tenant).
+  await recordVendorUsage("anthropic", {
+    provider: "anthropic",
+    endpoint: "content-multiformat",
+    units: (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0),
+    detail: args.model,
   });
   const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
   try {

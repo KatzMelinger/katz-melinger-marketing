@@ -20,6 +20,7 @@
 import { createHash } from "node:crypto";
 
 import { getSupabaseAdmin } from "./supabase-server";
+import { recordVendorUsage } from "./usage-meter";
 
 const API_BASE = "https://api.dataforseo.com/v3";
 
@@ -130,6 +131,8 @@ export async function cachedDataForSeoPost(
       .eq("cache_key", cacheKey)
       .maybeSingle();
     if (cached && new Date(cached.expires_at as string) > new Date()) {
+      // Advisory metering: cache hit = 0 billable units (kept for visibility).
+      await recordVendorUsage("dataforseo", { provider: "dataforseo", endpoint: path, units: 0, cacheHit: true });
       return mark(JSON.parse(cached.response_body as string), true);
     }
   } catch {
@@ -170,5 +173,7 @@ export async function cachedDataForSeoPost(
     }
   }
 
+  // Advisory metering: a live (billable) DataForSEO call fired.
+  await recordVendorUsage("dataforseo", { provider: "dataforseo", endpoint: path, units: 1 });
   return mark(json, false);
 }

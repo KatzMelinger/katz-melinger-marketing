@@ -10,6 +10,8 @@
  * The key lives in AYRSHARE_API_KEY (server-only); never expose it to the client.
  */
 
+import { recordVendorUsage } from "./usage-meter";
+
 const AYRSHARE_POST_URL = "https://api.ayrshare.com/api/post";
 
 /** Platforms Ayrshare accepts in the `platforms` array. */
@@ -89,7 +91,7 @@ export async function postToAyrshare(input: {
   }
 
   const status = (data.status as AyrshareResult["status"]) ?? (httpOk ? "success" : "error");
-  return {
+  const result: AyrshareResult = {
     ok: httpOk && status !== "error",
     status,
     id: typeof data.id === "string" ? data.id : undefined,
@@ -101,4 +103,13 @@ export async function postToAyrshare(input: {
       ? (data.errors as AyrshareResult["errors"])
       : undefined,
   };
+  // Advisory metering: one billable Ayrshare post per platform, on success.
+  if (result.ok) {
+    await recordVendorUsage("ayrshare", {
+      provider: "ayrshare",
+      endpoint: input.scheduleDate ? "post:scheduled" : "post:immediate",
+      units: input.platforms.length || 1,
+    });
+  }
+  return result;
 }
