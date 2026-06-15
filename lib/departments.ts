@@ -51,6 +51,7 @@ export const DEPARTMENTS: Department[] = [
       { label: "Website Pages", href: "/content/km", icon: "✎", status: "active" },
       { label: "Batch Generator", href: "/content/batch", icon: "🧪", status: "active" },
       { label: "Opportunities", href: "/seo/opportunities", icon: "✨", status: "active" },
+      { label: "Content Production", href: "/content-production", icon: "🗂", status: "active" },
       { label: "Content Decisions", href: "/content/decisions", icon: "✓", status: "active" },
       { label: "Briefs", href: "/content/briefs", icon: "📋", status: "active" },
       { label: "Production Board", href: "/content/pipeline", icon: "▥", status: "active" },
