@@ -66,6 +66,12 @@ export const EMPLOYMENT_PILLARS: KMPillar[] = [
   { id: "severance", label: "Severance Agreements", url: "/severance/", practiceArea: "employment" },
   { id: "retaliation", label: "Retaliation", url: "/retaliation/", practiceArea: "employment" },
   { id: "whistleblower", label: "Whistleblower Protection", url: "/whistleblower/", practiceArea: "employment" },
+  // Catch-all hub for general high-intent employment terms ("employment lawyer
+  // nyc", "best employment attorney") that don't belong to a specific pillar.
+  // Per Diana (2026-06-15): map these to the hub page, don't spin up new pillars
+  // or competing pages. URL is the LIVE employment hub — Diana's
+  // /nyc-employment-lawyer/ 404s (verified), /employment-law/ is the live page.
+  { id: "employment-hub", label: "Employment Law (Hub)", url: "/employment-law/", practiceArea: "employment" },
 ];
 
 export const COLLECTIONS_PILLARS: KMPillar[] = [

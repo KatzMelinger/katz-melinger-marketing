@@ -33,6 +33,26 @@ import {
 } from "@/lib/km-content-system";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { DEFAULT_TENANT_ID } from "@/lib/tenant-context";
+import { classifyKeywordCluster } from "@/lib/keyword-cluster";
+
+/**
+ * Bridge from the (richer) keyword-cluster classifier to a pillar id, used as a
+ * fallback when the narrow PILLAR_HINTS miss. Keeps pillar-worthy terms
+ * ("workplace harassment", "constructive discharge") on their real pillar
+ * instead of dumping them in the catch-all hub. "sexual"/"whistleblower" are
+ * disambiguated from their parent clusters at the call site.
+ */
+const CLUSTER_TO_PILLAR: Record<string, string> = {
+  harassment: "hostile",
+  discrimination: "discrimination",
+  retaliation: "retaliation",
+  wrongful_termination: "wrongful-termination",
+  leave: "leave",
+  wage_hour: "wage-theft",
+  severance_contract: "severance",
+  judgment_enforcement: "judgment-enforcement",
+  commercial_collections: "collections-hub",
+};
 
 // ---------- Types ----------------------------------------------------------
 
@@ -81,8 +101,11 @@ export type StrategyDecision = {
  * collections terms must come before generic employment terms.
  */
 const COLLECTIONS_HINTS = [
-  "judgment", "collect", "creditor", "debtor", "cplr", "restraining notice",
+  "judgment", "judgement", "collect", "creditor", "debtor", "cplr", "restraining notice",
   "asset levy", "wage garnishment", "turnover", "domestication", "fraudulent transfer",
+  // Diana 2026-06-15: these were mis-filed under Employment; they're collections.
+  "information subpoena", "notice of pendency", "debt lawyer", "debt attorney",
+  "judgment recovery", "judgement recovery", "debt recovery",
 ];
 const EMPLOYMENT_HINTS = [
   "wage theft", "overtime", "discrimination", "harassment", "wrongful termination",
@@ -125,10 +148,24 @@ export function inferPillar(
     "severance": ["severance", "non-compete", "noncompete", "non compete", "employment agreement", "employment contract", "restrictive covenant", "non-disclosure", "non-solicit", "nda"],
     "retaliation": ["retaliation", "retaliat", "reprisal", "retaliatory"],
     "whistleblower": ["whistleblower", "whistle blow", "whistleblowing", "whistle-blower"],
-    "collections-hub": ["collect", "collections", "creditor"],
+    "collections-hub": ["collect", "collections", "creditor", "debt", "debt lawyer", "debt attorney", "information subpoena", "notice of pendency", "judgment recovery", "judgement recovery", "debt recovery"],
     "judgment-enforcement": ["judgment", "enforcement", "restraining notice", "levy", "garnishment", "turnover", "cplr"],
     "domestication": ["domesticate", "domestication", "out-of-state judgment", "sister state"],
   };
+
+  // Drug-testing keywords (Diana 2026-06-15): drug testing is a *situation* that
+  // leads to a claim, not a practice area. Route by the legal-claim angle. If the
+  // angle is unclear, return "" → flagged for human review (NEVER auto-assigned
+  // to a default pillar, never dropped). Order follows Diana's rules: termination
+  // angle wins first, then targeting, then discrimination, then accommodation.
+  if (/\bdrug (tests?|testing|screens?|screening)\b/.test(text)) {
+    const inPool = (id: string) => (pool.some((p) => p.id === id) ? id : "");
+    if (/\b(fired|terminated|termination|wrongful|let go|lost (my|the|her|his) job)\b/.test(text)) return inPool("wrongful-termination");
+    if (/\b(targeted|target|singled out|single out|only me|picked on|specific employees?|certain employees?|select employees?|random)\b/.test(text)) return inPool("hostile");
+    if (/\b(disab|disability|medical condition|prescription|prescribed|medical marijuana|ada)\b/.test(text)) return inPool("discrimination");
+    if (/\baccommodat/.test(text)) return inPool("leave");
+    return ""; // unclear angle → needs human review
+  }
 
   // Spanish→English semantic equivalence. The hint scoring below is English-only,
   // so a Spanish keyword (e.g. "abogado de despido injustificado") would fall
@@ -165,12 +202,13 @@ export function inferPillar(
 
   // Start unclassified: a keyword that matches no pillar hint must NOT be
   // silently dumped into pool[0] (this was filing ~everything under Wage Theft).
-  // Returning "" surfaces it as "needs review" instead of a wrong default.
-  // (Spanish phrase matches above still return a real pillar outright.)
   let bestId = "";
   let bestScore = 0;
   for (const p of pool) {
     // A pillar's own keywords take precedence; built-ins fall back to the table.
+    // The hub pillar is a deliberate catch-all (no hints) — skip it in scoring so
+    // a specific pillar always wins; it's only reached via the fallback below.
+    if (p.id === "employment-hub") continue;
     const hints = p.keywords && p.keywords.length ? p.keywords : PILLAR_HINTS[p.id] ?? [];
     const score = hints.reduce((acc, h) => (text.includes(h) ? acc + 1 : acc), 0);
     if (score > bestScore) {
@@ -178,7 +216,24 @@ export function inferPillar(
       bestId = p.id;
     }
   }
-  return bestId;
+  if (bestId) return bestId;
+
+  // Cluster bridge: rescue pillar-worthy terms the narrow hints miss (e.g.
+  // "workplace harassment" → hostile, "wrongful dismissal" → wrongful-termination)
+  // before falling through to the generic hub.
+  const cluster = classifyKeywordCluster(input.primaryKeyword);
+  let bridged: string | undefined = CLUSTER_TO_PILLAR[cluster.key];
+  if (cluster.key === "harassment" && /sexual|quid pro quo|groping/.test(text)) bridged = "sexual-harassment";
+  if (cluster.key === "retaliation" && /whistle/.test(text)) bridged = "whistleblower";
+  if (bridged && pool.some((p) => p.id === bridged)) return bridged;
+
+  // No specific pillar matched. Per Ken (2026-06-15): route un-pillared
+  // employment terms (general high-intent searches like "employment lawyer nyc")
+  // to the employment hub rather than the old silent wage-theft default.
+  // Collections falls back to its hub. (The drug-testing branch above already
+  // returned "" for genuinely ambiguous keywords, so they never reach here.)
+  if (area === "collections") return pool.some((p) => p.id === "collections-hub") ? "collections-hub" : "";
+  return pool.some((p) => p.id === "employment-hub") ? "employment-hub" : "";
 }
 
 /**
@@ -448,7 +503,9 @@ function buildBriefSkeleton(
       decision.cannibalizationRisk === "high"
         ? "Engine flagged HIGH cannibalization risk. Confirm whether this should refresh an existing page instead of creating new."
         : undefined,
-    specialInstructions: decision.reasoning,
+    specialInstructions: decision.pillarId
+      ? decision.reasoning
+      : `NEEDS HUMAN REVIEW — could not confidently map this keyword to a pillar (assign one before generating). ${decision.reasoning}`,
   };
 }
 
@@ -485,10 +542,22 @@ export async function suggestForCluster(input: ClusterInput): Promise<StrategyDe
     decisionSource,
   };
 
-  // Validate pillar belongs to practice area, fall back if mismatched
+  // Validate pillar belongs to practice area. An empty id is an intentional
+  // "needs human review" signal (e.g. an ambiguous drug-testing keyword) and is
+  // left as-is so it surfaces for Diana rather than getting a wrong default. A
+  // non-empty id that doesn't belong to the area is repaired to that area's hub.
   const pool = merged.practiceArea === "employment" ? EMPLOYMENT_PILLARS : COLLECTIONS_PILLARS;
-  if (!pool.some((p) => p.id === merged.pillarId)) {
-    merged.pillarId = pool[0].id;
+  if (merged.pillarId && !pool.some((p) => p.id === merged.pillarId)) {
+    merged.pillarId = merged.practiceArea === "employment" ? "employment-hub" : "collections-hub";
+  }
+
+  // General high-intent terms routed to a hub should reinforce the existing hub
+  // page (internal links), not spawn a competing new page (Diana 2026-06-15).
+  const HUB_PILLAR_IDS = new Set(["employment-hub", "collections-hub"]);
+  if (HUB_PILLAR_IDS.has(merged.pillarId) && merged.recommendedAction === "new_page") {
+    merged.recommendedAction = "internal_link";
+    merged.cannibalizationRisk = "high";
+    merged.reasoning = `Covered by the existing hub page — route to the hub and add internal links rather than creating a competing page. ${merged.reasoning}`;
   }
 
   const cfg = await getTenantConfig();
