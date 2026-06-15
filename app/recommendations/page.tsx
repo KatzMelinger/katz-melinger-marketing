@@ -254,7 +254,7 @@ export default function RecommendationsPage() {
           <button
             onClick={generate}
             disabled={generating}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {generating ? "Thinking…" : "Generate"}
           </button>
@@ -288,14 +288,14 @@ export default function RecommendationsPage() {
                 onClick={() => setTab(t.id)}
                 className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] transition-colors ${
                   active
-                    ? "border-[#185FA5] text-[#185FA5]"
+                    ? "border-brand text-brand"
                     : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
                 }`}
               >
                 {t.label}{" "}
                 <span
                   className={`ml-1 px-1.5 py-0.5 rounded-full text-[11px] ${
-                    active ? "bg-[#185FA5]/15 text-[#185FA5]" : "bg-slate-100 text-slate-600"
+                    active ? "bg-brand/15 text-brand" : "bg-slate-100 text-slate-600"
                   }`}
                 >
                   {counts[t.id]}
@@ -307,7 +307,7 @@ export default function RecommendationsPage() {
             onClick={() => setTab("history")}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] transition-colors ${
               tab === "history"
-                ? "border-[#185FA5] text-[#185FA5]"
+                ? "border-brand text-brand"
                 : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
             }`}
           >
@@ -326,7 +326,7 @@ export default function RecommendationsPage() {
                   onClick={() => setCategory(c.id)}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                     active
-                      ? "border-[#185FA5] bg-[#185FA5]/10 text-[#185FA5]"
+                      ? "border-brand bg-brand/10 text-brand"
                       : "border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900"
                   }`}
                 >
@@ -432,7 +432,7 @@ function RecCard({
         {item.status !== "active" && (
           <button
             onClick={() => onStatus("active")}
-            className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+            className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand"
           >
             ↺ Move back to Active
           </button>

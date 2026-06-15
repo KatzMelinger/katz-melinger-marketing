@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -35,6 +36,8 @@ type FanOutPrompt = {
 };
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const keyword = typeof body?.keyword === "string" ? body.keyword.trim() : "";
   const rawCount = Number(body?.count ?? 12);

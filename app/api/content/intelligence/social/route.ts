@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFirmContext } from "@/lib/firm-context";
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -68,6 +69,8 @@ const PLATFORM_RULES: Record<Platform, string> = {
 };
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const topic = (body?.topic as string | undefined)?.trim();
   const platform = body?.platform as Platform | undefined;

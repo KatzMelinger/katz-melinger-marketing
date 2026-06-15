@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 
 import { fetchAllCallRailCalls } from "@/lib/callrail-fetch";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -16,6 +17,8 @@ export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (supabase) {
     const tid = await resolveTenantId();

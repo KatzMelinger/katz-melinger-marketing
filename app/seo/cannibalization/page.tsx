@@ -147,7 +147,7 @@ export default function CannibalizationPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search keywords…"
-            className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+            className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
           <select
             value={filter}
@@ -162,7 +162,7 @@ export default function CannibalizationPage() {
           <button
             onClick={scan}
             disabled={scanning}
-            className="rounded-md bg-[#185FA5] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {scanning ? "Scanning…" : "Re-scan"}
           </button>
@@ -239,10 +239,10 @@ export default function CannibalizationPage() {
                       </span>
                     </div>
                     <a
-                      href={`https://www.google.com/search?q=${encodeURIComponent(issue.keyword + " site:katzmelinger.com")}`}
+                      href={`https://www.google.com/search?q=${encodeURIComponent(issue.keyword + (snapshot?.domain ? ` site:${snapshot.domain}` : ""))}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-[#185FA5] hover:underline mt-1 inline-block"
+                      className="text-xs text-brand hover:underline mt-1 inline-block"
                     >
                       Verify on Google ↗
                     </a>
@@ -281,7 +281,7 @@ export default function CannibalizationPage() {
                                 href={u.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-xs text-slate-700 hover:text-[#185FA5] hover:underline truncate block max-w-[600px]"
+                                className="text-xs text-slate-700 hover:text-brand hover:underline truncate block max-w-[600px]"
                                 title={u.url}
                               >
                                 {u.url.replace(/^https?:\/\/(www\.)?[^/]+/, "")}

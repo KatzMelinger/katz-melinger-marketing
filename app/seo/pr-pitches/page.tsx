@@ -273,7 +273,7 @@ export default function PrPitchesPage() {
           onClick={() => setMode("single")}
           className={`text-xs px-3 py-1.5 rounded ${
             mode === "single"
-              ? "bg-[#185FA5] text-white"
+              ? "bg-brand text-white"
               : "text-slate-700 hover:bg-slate-100"
           }`}
         >
@@ -283,7 +283,7 @@ export default function PrPitchesPage() {
           onClick={() => setMode("haro")}
           className={`text-xs px-3 py-1.5 rounded ${
             mode === "haro"
-              ? "bg-[#185FA5] text-white"
+              ? "bg-brand text-white"
               : "text-slate-700 hover:bg-slate-100"
           }`}
         >
@@ -314,14 +314,14 @@ export default function PrPitchesPage() {
               <button
                 onClick={parseDigest}
                 disabled={!digestText.trim()}
-                className="text-sm px-4 py-2 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+                className="text-sm px-4 py-2 rounded border border-brand text-brand hover:bg-brand/5 disabled:opacity-50"
               >
                 1. Parse digest
               </button>
               <button
                 onClick={screenAll}
                 disabled={parsedQueries.length === 0 || screening}
-                className="text-sm px-4 py-2 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                className="text-sm px-4 py-2 rounded bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
               >
                 {screening
                   ? "Screening…"
@@ -439,7 +439,7 @@ export default function PrPitchesPage() {
                             <p className="mt-1 text-xs italic text-slate-600">{screen.reason}</p>
                           )}
                           <details className="mt-2 text-xs text-slate-600">
-                            <summary className="cursor-pointer text-[#185FA5] hover:underline">
+                            <summary className="cursor-pointer text-brand hover:underline">
                               Show full query
                             </summary>
                             <p className="mt-1 whitespace-pre-wrap text-slate-700">{q.query}</p>
@@ -454,7 +454,7 @@ export default function PrPitchesPage() {
                           <button
                             onClick={() => draftPitchForQuery(idx)}
                             disabled={isBusy}
-                            className="shrink-0 text-xs px-3 py-1.5 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                            className="shrink-0 text-xs px-3 py-1.5 rounded bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
                           >
                             {isBusy ? "Drafting…" : "Draft pitch"}
                           </button>
@@ -465,7 +465,7 @@ export default function PrPitchesPage() {
                           <p className="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold">
                             Drafted pitch
                           </p>
-                          <blockquote className="border-l-4 border-[#185FA5] pl-3 py-1 text-xs italic text-slate-800">
+                          <blockquote className="border-l-4 border-brand pl-3 py-1 text-xs italic text-slate-800">
                             &ldquo;{pitchData.quote}&rdquo;
                             <span className="block mt-1 text-[10px] not-italic text-slate-500">
                               — {pitchData.attribution}
@@ -484,7 +484,7 @@ export default function PrPitchesPage() {
                                   alert("Could not copy.");
                                 }
                               }}
-                              className="text-xs px-2 py-1 rounded border border-[#e2e8f0] hover:border-[#185FA5] hover:text-[#185FA5]"
+                              className="text-xs px-2 py-1 rounded border border-[#e2e8f0] hover:border-brand hover:text-brand"
                             >
                               📋 Copy pitch
                             </button>
@@ -499,14 +499,14 @@ export default function PrPitchesPage() {
                                   alert("Could not copy.");
                                 }
                               }}
-                              className="text-xs px-2 py-1 rounded border border-[#e2e8f0] hover:border-[#185FA5] hover:text-[#185FA5]"
+                              className="text-xs px-2 py-1 rounded border border-[#e2e8f0] hover:border-brand hover:text-brand"
                             >
                               📋 Copy quote
                             </button>
                             {q.email && (
                               <a
                                 href={`mailto:${q.email}?subject=Re: ${encodeURIComponent(q.summary)}&body=${encodeURIComponent(pitchData.pitch)}`}
-                                className="text-xs px-2 py-1 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8]"
+                                className="text-xs px-2 py-1 rounded bg-brand text-white hover:bg-brand/90"
                               >
                                 ✉ Open email reply
                               </a>
@@ -534,7 +534,7 @@ export default function PrPitchesPage() {
               <button
                 key={ex.label}
                 onClick={() => loadExample(ex)}
-                className="text-xs px-2 py-1 rounded border border-[#e2e8f0] text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+                className="text-xs px-2 py-1 rounded border border-[#e2e8f0] text-slate-700 hover:border-brand hover:text-brand"
               >
                 {ex.label}
               </button>
@@ -577,7 +577,7 @@ export default function PrPitchesPage() {
           <button
             onClick={generate}
             disabled={loading || query.trim().length < 40}
-            className="text-sm px-4 py-2 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="text-sm px-4 py-2 rounded bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {loading ? "Generating…" : "Evaluate + draft pitch"}
           </button>
@@ -591,7 +591,7 @@ export default function PrPitchesPage() {
       </section>
 
       {pitch && (
-        <section className="rounded-xl border border-[#185FA5]/30 bg-white p-5 shadow-sm space-y-4">
+        <section className="rounded-xl border border-brand/30 bg-white p-5 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Result</h2>
@@ -623,12 +623,12 @@ export default function PrPitchesPage() {
                   </p>
                   <button
                     onClick={copyQuote}
-                    className="text-xs px-2 py-0.5 rounded border border-[#e2e8f0] hover:border-[#185FA5] hover:text-[#185FA5]"
+                    className="text-xs px-2 py-0.5 rounded border border-[#e2e8f0] hover:border-brand hover:text-brand"
                   >
                     📋 Copy
                   </button>
                 </div>
-                <blockquote className="mt-1 border-l-4 border-[#185FA5] pl-3 py-1 text-sm italic text-slate-800">
+                <blockquote className="mt-1 border-l-4 border-brand pl-3 py-1 text-sm italic text-slate-800">
                   &ldquo;{pitch.quote}&rdquo;
                 </blockquote>
                 <p className="mt-1 text-xs text-slate-500">— {pitch.attribution}</p>
@@ -642,14 +642,14 @@ export default function PrPitchesPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={copyPitch}
-                      className="text-xs px-2 py-0.5 rounded border border-[#e2e8f0] hover:border-[#185FA5] hover:text-[#185FA5]"
+                      className="text-xs px-2 py-0.5 rounded border border-[#e2e8f0] hover:border-brand hover:text-brand"
                     >
                       📋 Copy pitch
                     </button>
                     <button
                       onClick={saveAsDraft}
                       disabled={savingDraft || !!savedDraftId}
-                      className="text-xs px-2 py-0.5 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                      className="text-xs px-2 py-0.5 rounded bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
                     >
                       {savingDraft
                         ? "Saving…"
@@ -666,7 +666,7 @@ export default function PrPitchesPage() {
                   <p className="mt-2 text-xs">
                     <a
                       href={`/content/drafts?id=${encodeURIComponent(savedDraftId)}`}
-                      className="text-[#185FA5] hover:underline"
+                      className="text-brand hover:underline"
                     >
                       Open in drafts library →
                     </a>

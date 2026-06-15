@@ -16,6 +16,10 @@ import {
   getAnthropic,
   KEYWORD_RESEARCH_MODEL,
 } from "./anthropic";
+import {
+  checkContentCompliance,
+  type ContentComplianceResult,
+} from "./content-compliance";
 import { getFirmContext } from "./firm-context";
 import {
   GBP_MYBUSINESS_V4_BASE,
@@ -37,7 +41,11 @@ const MAX_TARGET_CHARS = 900; // long enough to be substantive, short enough to 
 
 export async function draftReply(
   review: ReviewToReply,
-): Promise<{ reply: string; usedModel: string }> {
+): Promise<{
+  reply: string;
+  usedModel: string;
+  compliance: ContentComplianceResult | null;
+}> {
   const firm = await getFirmContext();
   const system = `You are drafting public replies to Google Business Profile reviews for a NY/NJ plaintiff-side employment law firm. ${firm}
 
@@ -76,9 +84,21 @@ Draft the public reply.`;
   });
   const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
   const cleaned = text.trim().replace(/^["']|["']$/g, "");
+  const reply = cleaned.slice(0, MAX_REPLY_CHARS);
+
+  // Advisory compliance pass on the public reply. Never let it fail the draft.
+  const compliance = await checkContentCompliance({
+    content: reply,
+    surface: "gbp_reply",
+  }).catch((err) => {
+    console.warn("[gbp-reply] Compliance check failed:", err);
+    return null;
+  });
+
   return {
-    reply: cleaned.slice(0, MAX_REPLY_CHARS),
+    reply,
     usedModel: KEYWORD_RESEARCH_MODEL,
+    compliance,
   };
 }
 

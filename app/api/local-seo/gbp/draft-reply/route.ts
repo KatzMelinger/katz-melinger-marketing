@@ -9,11 +9,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { draftReply, type ReviewToReply } from "@/lib/gbp-reply";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as Partial<ReviewToReply>;
   if (!body.reviewId || typeof body.comment !== "string") {
     return NextResponse.json(
@@ -34,8 +37,8 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    const { reply, usedModel } = await draftReply(review);
-    return NextResponse.json({ reply, usedModel });
+    const { reply, usedModel, compliance } = await draftReply(review);
+    return NextResponse.json({ reply, usedModel, compliance });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "draft failed";
     return NextResponse.json({ error: msg }, { status: 500 });

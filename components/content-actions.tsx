@@ -265,7 +265,7 @@ export function useContentActions() {
           <div className="mt-3 flex gap-2">
             <a
               href={`/content/drafts?id=${encodeURIComponent(createToast.draftId)}`}
-              className="text-xs px-3 py-1.5 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8]"
+              className="text-xs px-3 py-1.5 rounded bg-brand text-white hover:bg-brand/90"
             >
               Open draft
             </a>
@@ -385,7 +385,7 @@ function LanguageToggle({
           key={l.id}
           onClick={() => onChange(l.id)}
           className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-            value === l.id ? "bg-[#185FA5] text-white" : "text-slate-600 hover:bg-slate-100"
+            value === l.id ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100"
           }`}
         >
           {l.label}
@@ -427,7 +427,7 @@ export function ContentActionsRow({
       <button
         onClick={() => actions.openRecs(keyword)}
         disabled={actions.recsLoading && actions.recsFor === keyword}
-        className="text-xs px-2 py-1 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+        className="text-xs px-2 py-1 rounded border border-brand text-brand hover:bg-brand/5 disabled:opacity-50"
         title="See AI-generated content ideas to rank for this keyword"
       >
         {actions.recsLoading && actions.recsFor === keyword ? "…" : "Ideas"}
@@ -453,7 +453,7 @@ export function ContentActionsRow({
             })
           }
           disabled={isCreating}
-          className="text-xs px-2 py-1 rounded-l bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+          className="text-xs px-2 py-1 rounded-l bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
           title="Generate a blog draft targeting this keyword"
         >
           {isCreating ? "…" : "Create"}
@@ -461,7 +461,7 @@ export function ContentActionsRow({
         <button
           onClick={() => actions.setMenuFor(isMenuOpen ? null : keyword)}
           disabled={isCreating}
-          className="text-xs px-1.5 py-1 rounded-r bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50 border-l border-white/20"
+          className="text-xs px-1.5 py-1 rounded-r bg-brand text-white hover:bg-brand/90 disabled:opacity-50 border-l border-white/20"
           title="Pick content type"
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
@@ -602,7 +602,7 @@ function RecommendationsModal({
                     )}
                     {idea.suggestedHeadings && idea.suggestedHeadings.length > 0 && (
                       <details className="mt-2 text-xs text-slate-600">
-                        <summary className="cursor-pointer text-[#185FA5] hover:underline">
+                        <summary className="cursor-pointer text-brand hover:underline">
                           Outline ({idea.suggestedHeadings.length} sections)
                         </summary>
                         <ul className="mt-1 ml-4 list-disc space-y-0.5">
@@ -618,14 +618,14 @@ function RecommendationsModal({
                       <button
                         onClick={() => onCreate(idea, "blog_post")}
                         disabled={creatingKey === `idea:${idea.headline}`}
-                        className="rounded-l bg-[#185FA5] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                        className="rounded-l bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50"
                       >
                         {creatingKey === `idea:${idea.headline}` ? "Generating…" : "Create as blog"}
                       </button>
                       <button
                         onClick={() => setPickerFor(isPickerOpen ? null : idea.headline)}
                         disabled={creatingKey === `idea:${idea.headline}`}
-                        className="rounded-r bg-[#185FA5] px-1.5 py-1.5 text-xs text-white hover:bg-[#1f6fb8] disabled:opacity-50 border-l border-white/20"
+                        className="rounded-r bg-brand px-1.5 py-1.5 text-xs text-white hover:bg-brand/90 disabled:opacity-50 border-l border-white/20"
                         title="Pick content type"
                         aria-haspopup="menu"
                         aria-expanded={isPickerOpen}
@@ -773,7 +773,7 @@ function FanOutModal({
                   onClick={() => setFilter(f)}
                   className={`text-xs px-2 py-1 rounded uppercase tracking-wider ${
                     filter === f
-                      ? "bg-[#185FA5] text-white"
+                      ? "bg-brand text-white"
                       : "text-slate-700 hover:bg-slate-100"
                   }`}
                 >
@@ -816,7 +816,7 @@ function FanOutModal({
                       <div className="inline-flex">
                         <button
                           onClick={() => copyPrompt(p.prompt)}
-                          className="rounded-l border border-[#e2e8f0] px-2 py-1.5 text-xs hover:border-[#185FA5] hover:text-[#185FA5]"
+                          className="rounded-l border border-[#e2e8f0] px-2 py-1.5 text-xs hover:border-brand hover:text-brand"
                           title="Copy prompt"
                         >
                           📋
@@ -824,14 +824,14 @@ function FanOutModal({
                         <button
                           onClick={() => onCreate(p, "blog_post")}
                           disabled={creatingKey === `fanout:${p.prompt}`}
-                          className="bg-[#185FA5] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                          className="bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50"
                         >
                           {creatingKey === `fanout:${p.prompt}` ? "…" : "Create"}
                         </button>
                         <button
                           onClick={() => setPickerFor(isPickerOpen ? null : p.prompt)}
                           disabled={creatingKey === `fanout:${p.prompt}`}
-                          className="rounded-r bg-[#185FA5] px-1.5 py-1.5 text-xs text-white hover:bg-[#1f6fb8] disabled:opacity-50 border-l border-white/20"
+                          className="rounded-r bg-brand px-1.5 py-1.5 text-xs text-white hover:bg-brand/90 disabled:opacity-50 border-l border-white/20"
                           title="Pick content type"
                         >
                           ▾

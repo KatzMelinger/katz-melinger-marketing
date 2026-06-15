@@ -51,8 +51,8 @@ export function DashButton({
   const base =
     "inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
   const variants: Record<string, string> = {
-    primary: "bg-[#185FA5] text-white hover:bg-[#1f6fb8]",
-    outline: "border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]",
+    primary: "bg-brand text-white hover:bg-brand/90",
+    outline: "border border-slate-300 text-slate-700 hover:border-brand hover:text-brand",
     ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
     danger: "border border-red-300 text-red-700 hover:bg-red-50",
   };
@@ -109,7 +109,7 @@ export function DashInput(
   return (
     <input
       {...rest}
-      className={`px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5] ${className}`}
+      className={`px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand ${className}`}
     />
   );
 }
@@ -121,7 +121,7 @@ export function DashSelect(
   return (
     <select
       {...rest}
-      className={`px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5] ${className}`}
+      className={`px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand ${className}`}
     >
       {children}
     </select>
@@ -136,7 +136,7 @@ export function DashBar({
   tone?: "self" | "competitor" | "blue";
 }) {
   const bg =
-    tone === "self" ? "bg-emerald-500" : tone === "competitor" ? "bg-amber-500" : "bg-[#185FA5]";
+    tone === "self" ? "bg-emerald-500" : tone === "competitor" ? "bg-amber-500" : "bg-brand";
   return (
     <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
       <div

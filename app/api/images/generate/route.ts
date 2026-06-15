@@ -25,6 +25,7 @@ import {
   listStyleAssets,
   readStyleAssetBytes,
 } from "@/lib/image-style-assets";
+import { guardUser } from "@/lib/supabase-route";
 
 const MAX_REFERENCES = 4;
 
@@ -40,6 +41,8 @@ const VALID_SIZES: ImageSize[] = [
 const VALID_QUALITIES: ImageQuality[] = ["low", "medium", "high", "auto"];
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as {
     prompt?: unknown;
     size?: unknown;

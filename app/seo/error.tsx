@@ -51,7 +51,7 @@ export default function SeoRouteError({
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="rounded bg-[#185FA5] px-3 py-1.5 text-sm font-medium text-white"
+              className="rounded bg-brand px-3 py-1.5 text-sm font-medium text-white"
             >
               Reload now
             </button>
@@ -86,7 +86,7 @@ export default function SeoRouteError({
           <button
             type="button"
             onClick={reset}
-            className="rounded bg-[#185FA5] px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-brand px-3 py-1.5 text-sm font-medium text-white"
           >
             Try again
           </button>

@@ -34,7 +34,7 @@ export function languageDirective(lang: ContentLanguage): string {
     "OUTPUT LANGUAGE: Write the ENTIRE piece in natural, professional Spanish (es-US) for a New York / New Jersey audience.",
     "- Use the formal register (usted), not informal tú.",
     "- Translate all headings, body text, FAQs, the meta title, and the meta description into Spanish.",
-    "- Keep proper nouns unchanged: the firm name (Katz Melinger PLLC), statute names and citations (e.g. NYLL, NYCHRL, CPLR 5222, Title VII), court and agency names (SDNY, EEOC, NYSDHR).",
+    "- Keep proper nouns unchanged: the firm name, statute names and citations (e.g. NYLL, NYCHRL, CPLR 5222, Title VII), court and agency names (SDNY, EEOC, NYSDHR).",
     "- On first use of an English legal term, give the Spanish explanation followed by the English term in parentheses, e.g. \"salario mínimo (minimum wage)\".",
     "- Do not mix English and Spanish sentences; write fluent Spanish throughout.",
   ].join("\n");

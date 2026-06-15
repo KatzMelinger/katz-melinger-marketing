@@ -18,10 +18,9 @@
  */
 
 import { logger } from "./logger";
+import { getTenantConfig } from "./tenant-config";
 
-const BASE_URL = "https://www.katzmelinger.com";
-const OUR_DOMAIN = "katzmelinger.com";
-const USER_AGENT = "KMDashboard-BacklinkAnalyzer/1.0";
+const USER_AGENT = "MarketingDashboard-BacklinkAnalyzer/1.0";
 const MAX_PAGES_TO_SCAN = 15;
 
 export type ExternalLink = {
@@ -61,15 +60,15 @@ function getHostname(href: string): string | null {
   }
 }
 
-function isOurDomain(hostname: string): boolean {
-  return hostname === OUR_DOMAIN || hostname.endsWith(`.${OUR_DOMAIN}`);
+function isOurDomain(hostname: string, ourDomain: string): boolean {
+  return hostname === ourDomain || hostname.endsWith(`.${ourDomain}`);
 }
 
 function isSocialDomain(hostname: string): boolean {
   return SOCIAL_DOMAINS.has(hostname);
 }
 
-function extractExternalLinks(html: string, sourceUrl: string): ExternalLink[] {
+function extractExternalLinks(html: string, sourceUrl: string, ourDomain: string): ExternalLink[] {
   const regex = /<a\b[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   const links: ExternalLink[] = [];
   const seen = new Set<string>();
@@ -80,7 +79,7 @@ function extractExternalLinks(html: string, sourceUrl: string): ExternalLink[] {
     const anchorText = m[2].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     const hostname = getHostname(url);
     if (!hostname) continue;
-    if (isOurDomain(hostname)) continue;
+    if (isOurDomain(hostname, ourDomain)) continue;
     if (isSocialDomain(hostname)) continue;
     if (seen.has(url)) continue;
     seen.add(url);
@@ -89,7 +88,7 @@ function extractExternalLinks(html: string, sourceUrl: string): ExternalLink[] {
   return links;
 }
 
-function extractAllHrefs(html: string): { internal: number; external: number } {
+function extractAllHrefs(html: string, ourDomain: string): { internal: number; external: number } {
   const regex = /href=["']([^"']+)["']/gi;
   let internal = 0;
   let external = 0;
@@ -101,7 +100,7 @@ function extractAllHrefs(html: string): { internal: number; external: number } {
       internal++;
     } else if (href.startsWith("http")) {
       const hostname = getHostname(href);
-      if (hostname && isOurDomain(hostname)) internal++;
+      if (hostname && isOurDomain(hostname, ourDomain)) internal++;
       else external++;
     }
   }
@@ -109,10 +108,13 @@ function extractAllHrefs(html: string): { internal: number; external: number } {
 }
 
 export async function analyzeOutboundLinkProfile(): Promise<BacklinkProfile> {
+  // Per-tenant: crawl the signed-in firm's own site, not a hardcoded domain.
+  const ourDomain = (await getTenantConfig()).seoDomain;
+  const baseUrl = `https://www.${ourDomain}`;
   let sitePages: string[] = [];
 
   try {
-    const res = await fetch(`${BASE_URL}/sitemap.xml`, {
+    const res = await fetch(`${baseUrl}/sitemap.xml`, {
       headers: { "User-Agent": USER_AGENT },
       signal: AbortSignal.timeout(10_000),
     });
@@ -126,7 +128,7 @@ export async function analyzeOutboundLinkProfile(): Promise<BacklinkProfile> {
     logger.warn({}, "Sitemap fetch failed; falling back to homepage");
   }
 
-  if (sitePages.length === 0) sitePages = [BASE_URL];
+  if (sitePages.length === 0) sitePages = [baseUrl];
 
   const targets = sitePages.slice(0, MAX_PAGES_TO_SCAN);
   const externalLinks: ExternalLink[] = [];
@@ -142,8 +144,8 @@ export async function analyzeOutboundLinkProfile(): Promise<BacklinkProfile> {
       });
       if (!res.ok) continue;
       const html = await res.text();
-      externalLinks.push(...extractExternalLinks(html, url));
-      const counts = extractAllHrefs(html);
+      externalLinks.push(...extractExternalLinks(html, url, ourDomain));
+      const counts = extractAllHrefs(html, ourDomain);
       internalCount += counts.internal;
       externalCount += counts.external;
     } catch (err) {
@@ -155,7 +157,7 @@ export async function analyzeOutboundLinkProfile(): Promise<BacklinkProfile> {
   }
 
   return {
-    domain: OUR_DOMAIN,
+    domain: ourDomain,
     sitePages: targets,
     externalLinksOut: externalLinks,
     internalLinkCount: internalCount,

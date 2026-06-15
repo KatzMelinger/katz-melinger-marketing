@@ -149,7 +149,7 @@ export default function SocialAnalyticsPage() {
       <MarketingNav />
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#185FA5]">
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand">
             Social Ops Hub / Analytics
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-slate-900">
@@ -210,7 +210,7 @@ export default function SocialAnalyticsPage() {
               <li>Redeploy and reload this page.</li>
               <li>
                 Check{" "}
-                <a className="text-[#185FA5] underline" href="/integrations">
+                <a className="text-brand underline" href="/integrations">
                   /integrations
                 </a>{" "}
                 if anything still looks wrong.

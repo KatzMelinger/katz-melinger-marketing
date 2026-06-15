@@ -19,6 +19,7 @@ import {
   getAnthropic,
 } from "@/lib/anthropic";
 import { normalizePillar, type KMPillar } from "@/lib/km-content-system";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,8 @@ function asString(v: unknown): string {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },

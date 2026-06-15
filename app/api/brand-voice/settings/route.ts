@@ -6,7 +6,7 @@
  * These settings feed lib/firm-context.ts, which injects them into the
  * system prompt of every keyword research AI call. Recognized keys include
  * firmName, targetGeography, keyMessages, toneOfVoice — but the table
- * accepts any key so MarketOS can grow into other context fields (e.g.
+ * accepts any key so Huraqan can grow into other context fields (e.g.
  * brandStory, valueProps) without schema changes.
  */
 
@@ -16,6 +16,24 @@ import { getTenantDb } from "@/lib/tenant-db";
 export const runtime = "nodejs";
 
 const MAX_VALUE_LENGTH = 40000;
+
+// Firm-IDENTITY fields live canonically in tenant_settings (read by the sidebar,
+// getTenantConfig, and every per-tenant feature). They are ALSO mirrored here in
+// brand_voice_settings for backward compatibility with getFirmContext. This map
+// keeps the two in sync: any identity key saved through this endpoint is written
+// to its tenant_settings column, and the GET overlays tenant_settings on top so
+// the form always shows the canonical value (even if edited elsewhere).
+const IDENTITY_TO_COLUMN: Record<string, string> = {
+  firmName: "firm_name",
+  firmAddress: "firm_address",
+  firmPhone: "firm_phone",
+  firmEmail: "firm_email",
+  firmWebsite: "firm_website",
+  targetGeography: "target_geography",
+  firmSpokesperson: "firm_spokesperson",
+  brandPrimaryColor: "brand_primary_color",
+  logoUrl: "logo_url",
+};
 
 export async function GET() {
   try {
@@ -33,6 +51,25 @@ export async function GET() {
     for (const row of data ?? []) {
       if (row?.key) settings[row.key] = row.value ?? "";
     }
+
+    // Overlay the canonical firm-identity values from tenant_settings so the
+    // form reflects the single source of truth (and stays consistent with the
+    // sidebar / content generation) regardless of where it was last edited.
+    try {
+      const { data: ts } = await db
+        .from("tenant_settings")
+        .select("firm_name, firm_address, firm_phone, firm_email, firm_website, target_geography, firm_spokesperson, brand_primary_color, logo_url")
+        .maybeSingle();
+      if (ts) {
+        for (const [key, col] of Object.entries(IDENTITY_TO_COLUMN)) {
+          const v = (ts as Record<string, string | null>)[col];
+          if (typeof v === "string" && v.trim()) settings[key] = v;
+        }
+      }
+    } catch {
+      /* tenant_settings unavailable — fall back to brand_voice_settings values */
+    }
+
     return NextResponse.json({ settings });
   } catch (err: any) {
     console.error("[brand-voice/settings GET] Failed:", err?.message);
@@ -88,6 +125,24 @@ export async function PUT(req: NextRequest) {
     if (error) {
       console.error("[brand-voice/settings PUT] Supabase error:", error.message);
       return NextResponse.json({ error: "Failed to save settings" }, { status: 500 });
+    }
+
+    // Mirror any firm-identity fields into tenant_settings (the canonical home),
+    // so edits here also update the sidebar wordmark and every per-tenant feature.
+    const identityPatch: Record<string, string> = {};
+    for (const [key, col] of Object.entries(IDENTITY_TO_COLUMN)) {
+      const v = (settings as Record<string, unknown>)[key];
+      if (typeof v === "string") identityPatch[col] = v;
+    }
+    if (Object.keys(identityPatch).length > 0) {
+      identityPatch.updated_at = now;
+      const { error: tsError } = await db.upsert("tenant_settings", [identityPatch], {
+        onConflict: "tenant_id",
+      });
+      if (tsError) {
+        // Non-fatal: brand_voice_settings already saved. Log and continue.
+        console.error("[brand-voice/settings PUT] tenant_settings sync failed:", tsError.message);
+      }
     }
 
     // Return the full updated set so the client can swap state in one go.

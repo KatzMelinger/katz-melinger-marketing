@@ -9,8 +9,9 @@
  * history shows what was sent to LLMs over time.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MarketingNav } from "@/components/marketing-nav";
+import { useTenantSiteUrl } from "@/components/tenant-provider";
 
 type Version = {
   id: string;
@@ -21,7 +22,16 @@ type Version = {
 };
 
 export default function LlmsTxtPage() {
-  const [url, setUrl] = useState("https://www.katzmelinger.com");
+  const tenantSite = useTenantSiteUrl();
+  const sitePrefilled = useRef(false);
+  const [url, setUrl] = useState("");
+  // Prefill the firm's own site once it's known (was hardcoded to KM).
+  useEffect(() => {
+    if (!sitePrefilled.current && tenantSite) {
+      setUrl(tenantSite);
+      sitePrefilled.current = true;
+    }
+  }, [tenantSite]);
   const [generating, setGenerating] = useState(false);
   const [content, setContent] = useState("");
   const [pages, setPages] = useState<{ url: string; title: string; section: string }[]>([]);

@@ -42,7 +42,7 @@ export type HubAction = {
 
 const TONE_MAP: Record<NonNullable<HubKpi["tone"]>, string> = {
   neutral: "bg-slate-50 text-slate-900 border-slate-200",
-  blue: "bg-[#185FA5] text-white border-transparent",
+  blue: "bg-brand text-white border-transparent",
   emerald: "bg-emerald-600 text-white border-transparent",
   amber: "bg-amber-600 text-white border-transparent",
   violet: "bg-violet-600 text-white border-transparent",
@@ -75,7 +75,7 @@ export function HubShell({
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#185FA5]">
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand">
             {eyebrow}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
@@ -88,8 +88,8 @@ export function HubShell({
             {actions.map((a, i) => {
               const cls =
                 a.variant === "primary"
-                  ? "rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8]"
-                  : "rounded-md border border-[#e2e8f0] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]";
+                  ? "rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90"
+                  : "rounded-md border border-[#e2e8f0] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-brand hover:text-brand";
               return a.href ? (
                 <Link key={i} href={a.href} className={cls}>
                   {a.label}
@@ -137,10 +137,10 @@ export function HubShell({
             <Link
               key={c.href}
               href={c.href}
-              className="group rounded-xl border border-[#e2e8f0] bg-white p-4 transition hover:border-[#185FA5] hover:shadow-sm"
+              className="group rounded-xl border border-[#e2e8f0] bg-white p-4 transition hover:border-brand hover:shadow-sm"
             >
               <div className="flex items-start justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-900 group-hover:text-[#185FA5]">
+                <h3 className="text-sm font-semibold text-slate-900 group-hover:text-brand">
                   {c.label}
                 </h3>
                 {c.metric && (
@@ -150,7 +150,7 @@ export function HubShell({
                 )}
               </div>
               <p className="mt-1.5 text-xs text-slate-500">{c.description}</p>
-              <p className="mt-3 text-xs text-[#185FA5] group-hover:underline">Open →</p>
+              <p className="mt-3 text-xs text-brand group-hover:underline">Open →</p>
             </Link>
           ))}
         </div>

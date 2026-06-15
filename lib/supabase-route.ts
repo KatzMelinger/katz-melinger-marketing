@@ -9,6 +9,7 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 
 export async function getSupabaseRouteClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -87,6 +88,35 @@ export async function requireAdmin(): Promise<SessionUser> {
   if (!user) throw new Error("Unauthorized");
   if (user.role !== "admin") throw new Error("Forbidden: admin only");
   return user;
+}
+
+/**
+ * Require any authenticated user (not necessarily admin). Throws "Unauthorized"
+ * when there's no session, mirroring requireAdmin. The auth proxy deliberately
+ * skips /api/* (pages do server-side internal fetches that don't carry the
+ * cookie), so any API route exposing tenant data or spending the owner's
+ * external-API budget must gate itself with this.
+ */
+export async function requireUser(): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  return user;
+}
+
+/**
+ * Auth gate for API route handlers. Returns null when a user is signed in, or a
+ * ready-to-return 401/403 JSON response when not, so a handler can start with:
+ *   const denied = await guardUser(); if (denied) return denied;
+ */
+export async function guardUser(): Promise<NextResponse | null> {
+  try {
+    await requireUser();
+    return null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unauthorized";
+    const status = message.startsWith("Forbidden") ? 403 : 401;
+    return NextResponse.json({ error: message }, { status });
+  }
 }
 
 /**

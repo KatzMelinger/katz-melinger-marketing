@@ -611,7 +611,7 @@ function NoShowRecommendations({ pd }: { pd: Dashboard["promptDetail"][number] }
             type="button"
             onClick={generate}
             disabled={loading}
-            className="text-xs rounded-md bg-[#185FA5] text-white px-3 py-1.5 hover:bg-[#1f6fb8] disabled:opacity-50 shrink-0"
+            className="text-xs rounded-md bg-brand text-white px-3 py-1.5 hover:bg-brand/90 disabled:opacity-50 shrink-0"
           >
             {loading ? "Analyzing…" : "Why aren't we appearing?"}
           </button>
@@ -689,7 +689,7 @@ function NoShowRecommendations({ pd }: { pd: Dashboard["promptDetail"][number] }
           <ul className="space-y-1">
             {rec.citationOpportunities.map((c, i) => (
               <li key={i} className="text-xs">
-                <span className="font-mono text-[#185FA5]">{c.domain}</span> —{" "}
+                <span className="font-mono text-brand">{c.domain}</span> —{" "}
                 <span className="text-slate-700 dark:text-slate-300">{c.reason}</span>
               </li>
             ))}

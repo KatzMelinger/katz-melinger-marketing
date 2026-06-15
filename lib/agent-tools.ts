@@ -235,7 +235,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "list_autopilot_queue",
     description:
-      "List on-page SEO fixes currently in the AutoPilot queue for katzmelinger.com — pending fixes awaiting approval, approved fixes waiting for the WP plugin to apply, or recently applied fixes.",
+      "List on-page SEO fixes currently in the AutoPilot queue for the firm's site — pending fixes awaiting approval, approved fixes waiting for the WP plugin to apply, or recently applied fixes.",
     input_schema: {
       type: "object",
       properties: {

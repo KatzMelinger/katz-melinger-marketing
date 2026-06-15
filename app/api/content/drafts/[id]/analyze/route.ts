@@ -26,7 +26,7 @@ export async function POST(
   const { supabase, tenantId } = await getTenantClient();
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("body, seo_brief, title, topic, format, template")
+    .select("body, seo_brief, title, topic, format, template, practice_area")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -45,6 +45,7 @@ export async function POST(
       topic: (draft.topic as string | null) ?? null,
       format: (draft.format as string | null) ?? null,
       template: (draft.template as string | null) ?? null,
+      practiceArea: (draft.practice_area as string | null) ?? null,
     });
     return NextResponse.json(analysis);
   } catch (err) {

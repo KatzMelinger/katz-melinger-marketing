@@ -28,6 +28,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -246,6 +247,8 @@ function normalizeDirections(input: Record<string, unknown>) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
 
   const target = str(body?.target) as Target;

@@ -13,6 +13,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { getTenantConfig } from "@/lib/tenant-config";
 import { KM_HUB_LINKS } from "@/lib/km-content-system";
 import { getPillars } from "@/lib/pillars-store";
 
@@ -34,8 +35,6 @@ export type LinkVerifyResult = {
   links: VerifiedLink[];
   counts: { total: number; confirmed: number; unverified: number; external: number };
 };
-
-const INTERNAL_HOST = "katzmelinger.com";
 
 function normalizePath(path: string): string {
   let p = path.trim().toLowerCase();
@@ -72,6 +71,8 @@ function isSkippable(href: string): boolean {
 
 export async function verifyLinks(body: string): Promise<LinkVerifyResult> {
   const raw = extractLinks(body).filter((l) => !isSkippable(l.href));
+  // The firm's own domain (per-tenant) — used to classify internal links.
+  const internalHost = (await getTenantConfig()).seoDomain;
 
   // Build the set of known-live internal paths: site_pages ∪ pillars ∪ hubs.
   const liveByPath = new Map<string, { url: string; title: string | null }>();
@@ -84,7 +85,7 @@ export async function verifyLinks(body: string): Promise<LinkVerifyResult> {
       .limit(2000);
     for (const row of (data ?? []) as { url: string; title: string | null }[]) {
       try {
-        const u = new URL(row.url, `https://www.${INTERNAL_HOST}`);
+        const u = new URL(row.url, `https://www.${internalHost}`);
         liveByPath.set(normalizePath(u.pathname), { url: row.url, title: row.title });
       } catch {
         liveByPath.set(normalizePath(row.url), { url: row.url, title: row.title });
@@ -109,7 +110,7 @@ export async function verifyLinks(body: string): Promise<LinkVerifyResult> {
     if (/^https?:\/\//i.test(href)) {
       try {
         const u = new URL(href);
-        if (u.hostname.toLowerCase().includes(INTERNAL_HOST)) {
+        if (u.hostname.toLowerCase().includes(internalHost)) {
           isInternal = true;
           path = u.pathname;
         } else {

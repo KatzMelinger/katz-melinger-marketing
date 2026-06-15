@@ -101,6 +101,38 @@ export default function AdminUsersPage() {
     refresh();
   };
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [actionErr, setActionErr] = useState<string | null>(null);
+
+  const sendAction = async (u: AppUser, action: "invite" | "reset") => {
+    setBusyId(u.user_id);
+    setActionMsg(null);
+    setActionErr(null);
+    try {
+      const res = await fetch(`/api/admin/users/${u.user_id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionErr(data.error || "Action failed");
+        return;
+      }
+      setActionMsg(
+        data.message ||
+          (action === "invite"
+            ? `Invitation re-sent to ${u.email}.`
+            : `Password reset email sent to ${u.email}.`),
+      );
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       <div className="mb-6">
@@ -121,9 +153,9 @@ export default function AdminUsersPage() {
               type="email"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="teammate@katzmelinger.com"
+              placeholder="teammate@yourfirm.com"
               required
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
           </div>
           <div>
@@ -131,7 +163,7 @@ export default function AdminUsersPage() {
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as "user" | "admin")}
-              className="mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             >
               <option value="user">User</option>
               <option value="admin">Admin</option>
@@ -140,7 +172,7 @@ export default function AdminUsersPage() {
           <button
             type="submit"
             disabled={inviting || !inviteEmail.trim()}
-            className="px-3 py-2 rounded-md text-sm font-medium bg-[#185FA5] text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="px-3 py-2 rounded-md text-sm font-medium bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {inviting ? "Sending…" : "Send invite"}
           </button>
@@ -152,6 +184,17 @@ export default function AdminUsersPage() {
       {error && (
         <div className="border border-red-200 rounded-md p-3 text-sm text-red-700 bg-red-50 mb-4">
           {error}
+        </div>
+      )}
+
+      {actionMsg && (
+        <div className="border border-emerald-200 rounded-md p-3 text-sm text-emerald-700 bg-emerald-50 mb-4">
+          {actionMsg}
+        </div>
+      )}
+      {actionErr && (
+        <div className="border border-red-200 rounded-md p-3 text-sm text-red-700 bg-red-50 mb-4">
+          {actionErr}
         </div>
       )}
 
@@ -210,10 +253,24 @@ export default function AdminUsersPage() {
                   {new Date(u.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-2 text-right space-x-2">
+                  <button
+                    onClick={() => sendAction(u, "invite")}
+                    disabled={busyId === u.user_id}
+                    className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
+                  >
+                    {busyId === u.user_id ? "Sending…" : "Resend invite"}
+                  </button>
+                  <button
+                    onClick={() => sendAction(u, "reset")}
+                    disabled={busyId === u.user_id}
+                    className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
+                  >
+                    {busyId === u.user_id ? "Sending…" : "Send reset"}
+                  </button>
                   {u.role === "user" ? (
                     <button
                       onClick={() => setRole(u, "admin")}
-                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
                     >
                       Make admin
                     </button>

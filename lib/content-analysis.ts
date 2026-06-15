@@ -15,6 +15,8 @@ import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
 import { getFirmContext } from "./firm-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { checkContentCompliance, type ContentSurface } from "./content-compliance";
+import type { ComplianceViolation } from "./compliance-core";
 import {
   filterTitlesByCannibalization,
   type FilteredTitle,
@@ -63,6 +65,8 @@ export type SuggestedImage = {
   altText: string;
 };
 
+export type ComplianceStatus = "compliant" | "needs_changes" | "non_compliant";
+
 export type ContentAnalysis = {
   readability_score: number;
   reading_grade_level: number;
@@ -86,6 +90,12 @@ export type ContentAnalysis = {
   linkability_score: number | null;
   linkability_findings: string[];
   outreach_angles: OutreachAngle[];
+  // Attorney-advertising compliance (advisory). Null score = couldn't compute.
+  compliance_score: number | null;
+  compliance_status: ComplianceStatus | null;
+  compliance_violations: ComplianceViolation[];
+  compliance_required_disclaimers: string[];
+  compliance_summary: string;
   suggested_titles: string[];
   /** Per-title conflict detail (only present in the live response — not
    *  persisted). Lets the UI render a warning badge on titles that overlap
@@ -680,8 +690,8 @@ Produce 4-6 image suggestions covering:
   }
 }
 
-async function brandVoiceMatch(body: string): Promise<{ score: number | null; findings: string[]; summary: string }> {
-  const firm = await getFirmContext();
+async function brandVoiceMatch(body: string, tenantId?: string): Promise<{ score: number | null; findings: string[]; summary: string }> {
+  const firm = await getFirmContext(tenantId);
   const truncated = body.slice(0, 6000); // keep prompt small
 
   const system = `You are a brand-voice auditor. Score how well a draft matches the firm's voice on a 0-100 scale and list 2-4 specific findings (what fits, what drifts). Be terse.`;
@@ -729,6 +739,26 @@ Return JSON only:
   }
 }
 
+/**
+ * Map a draft's format to the compliance surface so the checker applies the
+ * right obligations (e.g. the "Attorney Advertising" label applies to a blog
+ * post but not to a social caption the same way). Drafts are firm-owned
+ * content, so unknown formats default to "blog".
+ */
+function formatToComplianceSurface(format: string | null): ContentSurface {
+  const f = (format ?? "").toLowerCase();
+  if (f.includes("email") || f.includes("newsletter")) return "email";
+  if (
+    /(social|linkedin|instagram|facebook|threads|tiktok|youtube|twitter|^x$|tweet)/.test(
+      f,
+    )
+  ) {
+    return "social";
+  }
+  if (f.includes("page") || f.includes("webpage")) return "webpage";
+  return "blog";
+}
+
 export async function analyzeDraft(args: {
   draftId: string;
   body: string;
@@ -737,6 +767,7 @@ export async function analyzeDraft(args: {
   topic?: string | null;
   format?: string | null;
   template?: string | null;
+  practiceArea?: string | null;
 }): Promise<ContentAnalysis> {
   const {
     draftId,
@@ -756,10 +787,10 @@ export async function analyzeDraft(args: {
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
-  // Run brand voice + CASH + linkability + contentEnhancements in parallel
-  // — all are Claude calls and independent of each other.
-  const [brand, cash, linkability, enhancements] = await Promise.all([
-    brandVoiceMatch(body),
+  // Run brand voice + CASH + linkability + contentEnhancements + compliance in
+  // parallel — all are Claude calls and independent of each other.
+  const [brand, cash, linkability, enhancements, compliance] = await Promise.all([
+    brandVoiceMatch(body, tid),
     cashScore(body),
     linkabilityScore({ body, topic: topic ?? title ?? "", title }),
     contentEnhancements({
@@ -769,6 +800,16 @@ export async function analyzeDraft(args: {
       format,
       template,
       targetKeywords,
+    }),
+    // Advisory attorney-advertising compliance. Never let it fail the whole
+    // analysis — degrade to a null score the UI renders as "re-run".
+    checkContentCompliance({
+      content: body,
+      surface: formatToComplianceSurface(format),
+      practiceArea: args.practiceArea ?? undefined,
+    }).catch((err) => {
+      console.warn("[content-analysis] Compliance check failed:", err);
+      return null;
     }),
   ]);
 
@@ -801,6 +842,13 @@ export async function analyzeDraft(args: {
     linkability_score: linkability.score,
     linkability_findings: linkability.findings,
     outreach_angles: linkability.angles,
+    compliance_score: compliance ? compliance.score : null,
+    compliance_status: compliance ? compliance.status : null,
+    compliance_violations: compliance ? compliance.violations : [],
+    compliance_required_disclaimers: compliance
+      ? compliance.requiredDisclaimers
+      : [],
+    compliance_summary: compliance ? compliance.summary : "",
     suggested_titles: keptTitles,
     suggested_titles_dropped: filtered.dropped,
     suggested_titles_conflicts_avoided: filtered.dropped.length,
@@ -815,13 +863,30 @@ export async function analyzeDraft(args: {
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_conflicts_avoided;
 
   // Graceful column-degradation. If new columns aren't migrated yet, drop
-  // the offending fields and retry. Newest columns (suggested_titles /
-  // suggested_images) drop first, then seo_/linkability_/outreach_angles,
-  // then CASH-era columns. Each retry strips one generation of columns.
+  // the offending fields and retry. Newest columns (compliance_*) drop first,
+  // then suggested_titles / suggested_images, then seo_/linkability_/
+  // outreach_angles, then CASH-era columns. Each retry strips one generation of
+  // columns. Stripping mutates `persistable` so later retries stay cumulative.
   let { error } = await supabase.from("content_analyses").insert({ tenant_id: tid,
     draft_id: draftId,
     ...persistable,
   });
+  if (error && /compliance_/.test(error.message)) {
+    for (const k of [
+      "compliance_score",
+      "compliance_status",
+      "compliance_violations",
+      "compliance_required_disclaimers",
+      "compliance_summary",
+    ] as const) {
+      delete (persistable as Record<string, unknown>)[k];
+    }
+    const retry = await supabase.from("content_analyses").insert({ tenant_id: tid,
+      draft_id: draftId,
+      ...persistable,
+    });
+    error = retry.error;
+  }
   if (error && /(suggested_titles|suggested_images)/.test(error.message)) {
     const withoutEnhancements = { ...persistable };
     delete (withoutEnhancements as Partial<ContentAnalysis>).suggested_titles;

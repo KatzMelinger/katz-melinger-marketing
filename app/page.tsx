@@ -20,6 +20,8 @@ import { Suspense } from "react";
 
 import { DepartmentPanel } from "@/components/department-panel";
 import { DEPARTMENTS } from "@/lib/departments";
+import { APP_NAME } from "@/lib/app-config";
+import { getTenantConfig } from "@/lib/tenant-config";
 import {
   getAiVisibilityKpis,
   getCampaignsKpis,
@@ -38,9 +40,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Katz Melinger PLLC | Marketing Dashboard",
+  title: `Home | ${APP_NAME}`,
   description:
-    "Executive marketing overview for Katz Melinger PLLC — content, rankings, authority, and every department at a glance.",
+    "Executive marketing overview — content, rankings, authority, and every department at a glance.",
 };
 
 const ACCENT = Object.fromEntries(DEPARTMENTS.map((d) => [d.key, d.accent])) as Record<string, string>;
@@ -50,12 +52,13 @@ function deptLabel(key: string): string {
 }
 
 export default async function Home() {
+  const { firmName } = await getTenantConfig();
   return (
     <main className="mx-auto max-w-[1400px] space-y-5 px-4 py-6 sm:px-6 lg:px-8">
       <header>
         <h1 className="text-xl font-semibold tracking-tight text-slate-900">Marketing Intelligence</h1>
         <p className="mt-0.5 text-sm text-slate-500">
-          Katz Melinger PLLC · Content, rankings, and authority across every department.
+          {firmName ? `${firmName} · ` : ""}Content, rankings, and authority across every department.
         </p>
       </header>
       <Suspense fallback={<BoardSkeleton />}>
@@ -195,7 +198,7 @@ async function Board() {
 
 function DeptLinks({ deptKey }: { deptKey: string }) {
   const dept = DEPARTMENTS.find((d) => d.key === deptKey);
-  const items = (dept?.items ?? []).filter((it) => it.status === "active" && !it.adminOnly);
+  const items = (dept?.items ?? []).filter((it) => !it.adminOnly);
   return (
     <div className="flex flex-wrap gap-2">
       {items.map((it) => (
@@ -261,7 +264,7 @@ function DetailTable({
           </tbody>
         </table>
       )}
-      <a href={href} className="mt-2 inline-block text-xs font-medium text-[#185FA5] hover:underline">
+      <a href={href} className="mt-2 inline-block text-xs font-medium text-brand hover:underline">
         View all →
       </a>
     </div>

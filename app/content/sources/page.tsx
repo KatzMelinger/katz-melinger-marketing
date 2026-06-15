@@ -132,7 +132,7 @@ export default function SourcesPage() {
                   onClick={() => setMode(m)}
                   className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] capitalize ${
                     mode === m
-                      ? "border-[#185FA5] text-[#185FA5]"
+                      ? "border-brand text-brand"
                       : "border-transparent text-slate-600 hover:text-slate-900"
                   }`}
                 >
@@ -146,7 +146,7 @@ export default function SourcesPage() {
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Paste a draft, an article, an email, anything…"
                 rows={10}
-                className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
               />
             )}
             {mode === "url" && (
@@ -229,7 +229,7 @@ function SourceCard({ source, onDelete }: { source: Source; onDelete: () => void
         <div className="flex items-center gap-2 shrink-0">
           <Link
             href={`/content/batch?source=${source.id}`}
-            className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+            className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
           >
             Repurpose →
           </Link>

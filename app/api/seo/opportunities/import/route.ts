@@ -35,6 +35,7 @@ import { listExclusionTerms } from "@/lib/keyword-exclusions";
 import { inferIntent, inferPillar, inferPracticeArea } from "@/lib/strategy-engine";
 import { getPillars } from "@/lib/pillars-store";
 import { getTenantDb } from "@/lib/tenant-db";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +60,8 @@ function contentTypeFromIntent(intent: KMSearchIntent): KMContentType {
 const normalize = (k: string) => k.trim().toLowerCase();
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   let form: FormData;
   try {
     form = await req.formData();

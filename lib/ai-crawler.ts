@@ -130,11 +130,11 @@ export interface AISiteCrawlResult {
   };
 }
 
-const USER_AGENT = "KMDashboard-AICrawler/1.0";
+const USER_AGENT = "MarketingDashboard-AICrawler/1.0";
 
 function normalizeBaseUrl(input: string): { base: string; host: string } {
   let raw = (input || "").trim();
-  if (!raw) raw = "https://www.katzmelinger.com";
+  if (!raw) raw = "https://example.com";
   if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
   const u = new URL(raw);
   // Strip path/query/hash — we want the site root.

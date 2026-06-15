@@ -17,6 +17,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  ComplianceNotice,
+  type ComplianceNoticeData,
+} from "@/components/compliance-notice";
+import {
   DashCard,
   DashButton,
   DashSpinner,
@@ -130,7 +134,7 @@ export default function CommunityPage() {
             onClick={() => setTab(t.id as Tab)}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-[1px] whitespace-nowrap ${
               tab === t.id
-                ? "border-[#185FA5] text-[#185FA5]"
+                ? "border-brand text-brand"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
@@ -174,9 +178,16 @@ function ScannerTab({
   const [error, setError] = useState<string | null>(null);
 
   const refreshStatuses = async () => {
-    const res = await fetch(`/api/community/statuses?platform=${platform}`);
-    const data = await res.json();
-    setStatuses(data.statuses ?? {});
+    // Best-effort overlay: a failed/non-JSON response must not reject unhandled
+    // (this runs from a mount effect) or crash the tab — just skip the update.
+    try {
+      const res = await fetch(`/api/community/statuses?platform=${platform}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setStatuses(data.statuses ?? {});
+    } catch (e) {
+      console.warn("[community] status refresh failed:", e);
+    }
   };
 
   useEffect(() => {
@@ -271,7 +282,7 @@ function ScannerTab({
               onClick={() => setFilter(f)}
               className={`text-xs px-2 py-1 rounded-full border ${
                 filter === f
-                  ? "border-[#185FA5] text-[#185FA5] bg-[#185FA5]/5"
+                  ? "border-brand text-brand bg-brand/5"
                   : "border-slate-200 text-slate-600 hover:border-slate-400"
               }`}
             >
@@ -293,7 +304,7 @@ function ScannerTab({
         <button
           onClick={runScan}
           disabled={scanning}
-          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
         >
           {scanning ? "Rescanning…" : "Rescan"}
         </button>
@@ -333,13 +344,19 @@ function PostCard({
   onStatusChange: (s: PostStatus) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState<{ text: string; warning: string } | null>(null);
+  const [draft, setDraft] = useState<{
+    text: string;
+    warning: string;
+    compliance?: ComplianceNoticeData | null;
+  } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [showDraft, setShowDraft] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
 
   const generate = async () => {
     setGenerating(true);
+    setDraftError(null);
     try {
       const res = await fetch("/api/community/suggest", {
         method: "POST",
@@ -350,11 +367,15 @@ function PostCard({
           body: post.snippet,
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setDraft({ text: data.text, warning: data.warning });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
+        setDraft({ text: data.text, warning: data.warning, compliance: data.compliance });
         setShowDraft(true);
+      } else {
+        setDraftError(data?.error || "Couldn't draft a response. Try again.");
       }
+    } catch {
+      setDraftError("Couldn't reach the drafting service. Try again.");
     } finally {
       setGenerating(false);
     }
@@ -385,7 +406,7 @@ function PostCard({
             href={post.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-semibold text-slate-900 hover:text-[#185FA5] hover:underline"
+            className="text-sm font-semibold text-slate-900 hover:text-brand hover:underline"
           >
             {post.title}
           </a>
@@ -394,7 +415,7 @@ function PostCard({
           href={post.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] shrink-0"
+          className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand shrink-0"
         >
           ↗ Open
         </a>
@@ -408,7 +429,7 @@ function PostCard({
           {post.snippet.length > 150 && (
             <button
               onClick={() => setExpanded((e) => !e)}
-              className="text-xs text-[#185FA5] hover:underline mt-1"
+              className="text-xs text-brand hover:underline mt-1"
             >
               {expanded ? "Show less" : "Read more"}
             </button>
@@ -437,7 +458,7 @@ function PostCard({
         ) : (
           <button
             onClick={() => setShowDraft((s) => !s)}
-            className="text-xs px-3 py-1.5 rounded-md border border-[#185FA5] text-[#185FA5]"
+            className="text-xs px-3 py-1.5 rounded-md border border-brand text-brand"
           >
             {showDraft ? "Hide draft" : "Show draft"}
           </button>
@@ -484,10 +505,16 @@ function PostCard({
         </div>
       </div>
 
+      {draftError && (
+        <div className="mt-2 text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded-md px-2 py-1">
+          ⚠ {draftError}
+        </div>
+      )}
+
       {showDraft && draft && (
         <div className="mt-3 border-t border-slate-200 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-[#185FA5]">✦ Suggested response</span>
+            <span className="text-xs font-medium text-brand">✦ Suggested response</span>
             <button
               onClick={copy}
               className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400"
@@ -501,6 +528,7 @@ function PostCard({
           <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
             ⚠ {draft.warning}
           </div>
+          <ComplianceNotice compliance={draft.compliance} className="mt-2" />
         </div>
       )}
     </DashCard>
@@ -629,7 +657,7 @@ function NewsTab() {
         <button
           onClick={runScan}
           disabled={scanning}
-          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:border-brand hover:text-brand disabled:opacity-50"
         >
           Refresh
         </button>
@@ -647,7 +675,7 @@ function NewsTab() {
                 href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-semibold text-slate-900 hover:text-[#185FA5] hover:underline"
+                className="text-sm font-semibold text-slate-900 hover:text-brand hover:underline"
               >
                 {item.title}
               </a>
@@ -670,7 +698,7 @@ function NewsTab() {
             <div className="flex flex-col gap-1 shrink-0">
               <a
                 href={`/content/batch?topic=${encodeURIComponent(item.title)}`}
-                className="text-xs px-2 py-1 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5"
+                className="text-xs px-2 py-1 rounded border border-brand text-brand hover:bg-brand/5"
               >
                 → Use as topic
               </a>
@@ -715,7 +743,7 @@ function TikTokTab() {
           videos (hooks, hashtag packs, captions, visual ideas), use{" "}
           <a
             href="/content/intelligence?tab=social"
-            className="text-[#185FA5] underline"
+            className="text-brand underline"
           >
             Content Studio → Intelligence → Social media IQ
           </a>
@@ -732,7 +760,7 @@ function TikTokTab() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
                 >
                   <span className="truncate">{link.label}</span>
                   <span className="text-slate-400 text-xs">↗</span>
@@ -752,7 +780,7 @@ function TikTokTab() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
                 >
                   <span className="truncate">{link.label}</span>
                   <span className="text-slate-400 text-xs">↗</span>
@@ -772,7 +800,7 @@ function TikTokTab() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+                  className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
                 >
                   <span className="truncate">{link.label}</span>
                   <span className="text-slate-400 text-xs">↗</span>
@@ -788,7 +816,7 @@ function TikTokTab() {
         <ol className="text-xs text-slate-700 list-decimal pl-5 space-y-1">
           <li>Click into a hashtag — see what's trending. Note the angles, hooks, and styles.</li>
           <li>Save anything that sparks an idea (TikTok's bookmark feature works well here).</li>
-          <li>Open <a href="/content/intelligence?tab=social" className="text-[#185FA5] underline">Social media IQ</a>, paste the angle as a topic, pick TikTok, and Claude generates hashtag pack + 3 video hooks + 5 caption variants + visual treatment ideas.</li>
+          <li>Open <a href="/content/intelligence?tab=social" className="text-brand underline">Social media IQ</a>, paste the angle as a topic, pick TikTok, and Claude generates hashtag pack + 3 video hooks + 5 caption variants + visual treatment ideas.</li>
           <li>Shoot the video, post it, link to your firm bio.</li>
         </ol>
       </DashCard>
@@ -800,7 +828,11 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
   const [links, setLinks] = useState<{ label: string; url: string }[]>([]);
   const [text, setText] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [response, setResponse] = useState<{ text: string; warning: string } | null>(null);
+  const [response, setResponse] = useState<{
+    text: string;
+    warning: string;
+    compliance?: ComplianceNoticeData | null;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -824,7 +856,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Generate failed");
-      setResponse({ text: data.text, warning: data.warning });
+      setResponse({ text: data.text, warning: data.warning, compliance: data.compliance });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generate failed");
     } finally {
@@ -857,7 +889,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
               href={link.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+              className="text-xs px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
             >
               <span className="truncate">{link.label}</span>
               <span className="text-slate-400 text-xs">↗</span>
@@ -877,7 +909,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
           onChange={(e) => setText(e.target.value)}
           placeholder={`Paste a ${platformName} question here…`}
           rows={6}
-          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         />
         <div className="mt-3 flex items-center gap-2">
           <DashButton onClick={generate} disabled={generating || !text.trim()}>
@@ -902,7 +934,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
       {response && (
         <DashCard>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-[#185FA5]">
+            <span className="text-sm font-medium text-brand">
               ✦ Suggested response for {platformName}
             </span>
             <button
@@ -918,6 +950,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
           <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
             ⚠ {response.warning}
           </div>
+          <ComplianceNotice compliance={response.compliance} className="mt-3" />
         </DashCard>
       )}
     </div>

@@ -15,10 +15,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { semrushDomain } = await getTenantConfig();
-    const opportunities = await getKeywordGapVsCompetitor(domain, semrushDomain);
+    const { seoDomain } = await getTenantConfig();
+    const opportunities = await getKeywordGapVsCompetitor(domain, seoDomain);
     return NextResponse.json({
-      domain: semrushDomain,
+      domain: seoDomain,
       competitor: domain,
       opportunities,
     });

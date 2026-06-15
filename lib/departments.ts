@@ -1,5 +1,5 @@
 /**
- * Department taxonomy — the single source of truth for how MarketOS is
+ * Department taxonomy — the single source of truth for how Huraqan is
  * organized into departments. Both the global sidebar
  * (`components/marketing-sidebar.tsx`) and the executive board on the home
  * page (`app/page.tsx` → `components/dept-board.tsx`) derive their structure
@@ -130,6 +130,7 @@ export const DEPARTMENTS: Department[] = [
       { label: "Constant Contact", href: "/constant-contact", icon: "📨", status: "active" },
       { label: "Forms", href: "/forms", icon: "▤", status: "active" },
       { label: "Calls", href: "/calls", icon: "☎", status: "active" },
+      { label: "Lead Response", href: "/lead-response", icon: "⚡", status: "active" },
       { label: "Agent Coaching", href: "/coaching", icon: "🎯", status: "active" },
       { label: "Sales Pipeline", href: "/pipeline", icon: "▥", status: "active" },
     ],
@@ -144,6 +145,7 @@ export const DEPARTMENTS: Department[] = [
       { label: "Trends & Playbooks", href: "/social/trends", icon: "🔥", status: "active" },
       { label: "Community", href: "/community", icon: "💬", status: "active" },
       { label: "Reviews", href: "/reviews", icon: "★", status: "active" },
+      { label: "Request Reviews", href: "/reviews?tab=requests", icon: "✉️", status: "active" },
     ],
   },
   {

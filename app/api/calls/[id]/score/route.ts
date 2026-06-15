@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 
 import { scoreCall } from "@/lib/sales-coach";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 

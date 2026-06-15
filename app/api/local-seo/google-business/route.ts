@@ -12,6 +12,7 @@ import {
 } from "@/lib/gbp-http";
 import { getGoogleAccessToken } from "@/lib/google-access-token";
 import { describeServiceAccountJson } from "@/lib/google-service-account";
+import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
 
@@ -803,6 +804,8 @@ type PostBody = {
 };
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const auth = await getGoogleAccessToken([GBP_OAUTH_SCOPE]);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: 500 });

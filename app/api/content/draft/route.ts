@@ -15,6 +15,7 @@ import {
 import { buildSkillsContext } from "@/lib/content-skills";
 import { languageDirective, normalizeLanguage } from "@/lib/content-language";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
@@ -85,6 +86,8 @@ function deriveTitle(content: string, fallbackTopic: string): string {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },
@@ -169,7 +172,7 @@ export async function POST(req: Request) {
         ? "About 2000 words for blog."
         : "About 1000 words for blog.";
 
-  const system = `You are a marketing copywriter for Katz Melinger PLLC, a plaintiff-side employment law firm in New York City. The firm represents workers in wage & hour, discrimination, class actions, judgment enforcement, severance, and related matters. Voice: professional but approachable, focused on helping workers understand their rights—never corporate or cold.
+  const system = `You are a marketing copywriter for a law firm. Use the firm's details, practice areas, and audience from the firm context below — never fabricate firm information. Voice: professional but approachable, focused on helping clients understand their rights—never corporate or cold.
 
 ${firmContext}
 ${ANTI_AI_VOICE_RULES}

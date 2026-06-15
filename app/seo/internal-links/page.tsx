@@ -9,8 +9,9 @@
  * fresh crawl every time.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MarketingNav } from "@/components/marketing-nav";
+import { useTenantSiteUrl } from "@/components/tenant-provider";
 
 type Audit = {
   id: string;
@@ -28,8 +29,17 @@ type Audit = {
 export default function InternalLinksPage() {
   const [audit, setAudit] = useState<Audit | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [url, setUrl] = useState("https://www.katzmelinger.com");
+  const tenantSite = useTenantSiteUrl();
+  const sitePrefilled = useRef(false);
+  const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Prefill the firm's own site once it's known (was hardcoded to KM).
+  useEffect(() => {
+    if (!sitePrefilled.current && tenantSite) {
+      setUrl(tenantSite);
+      sitePrefilled.current = true;
+    }
+  }, [tenantSite]);
 
   const refresh = async () => {
     const res = await fetch("/api/seo/internal-links/latest", { cache: "no-store" });

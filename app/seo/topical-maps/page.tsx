@@ -333,7 +333,7 @@ export default function TopicalMapsPage() {
                     href={selected.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline hover:text-[#185FA5]"
+                    className="underline hover:text-brand"
                   >
                     {selected.url.replace(/^https?:\/\//, "")}
                   </a>
@@ -393,13 +393,13 @@ export default function TopicalMapsPage() {
           <div className="flex gap-2 flex-wrap">
             <Link
               href={`/content/batch?topic=${encodeURIComponent(selected.keyword)}&keywords=${encodeURIComponent(selected.keyword)}`}
-              className="text-xs px-3 py-1.5 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5"
+              className="text-xs px-3 py-1.5 rounded border border-brand text-brand hover:bg-brand/5"
             >
               → Draft article
             </Link>
             <Link
               href={`/seo/keywords?q=${encodeURIComponent(selected.keyword)}`}
-              className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+              className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand"
             >
               Open in keyword tracker
             </Link>

@@ -78,7 +78,7 @@ const HUB_LABEL: Record<HubKey, string> = {
 };
 
 const HUB_ACCENT: Record<HubKey, string> = {
-  seo: "text-[#185FA5]",
+  seo: "text-brand",
   ai: "text-violet-700",
   social: "text-rose-700",
 };

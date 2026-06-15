@@ -14,9 +14,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { tenantId, semrushDomain } = await getTenantConfig();
+    const { tenantId, seoDomain } = await getTenantConfig();
     const [semrushCompetitors, trackedDomains] = await Promise.all([
-      getOrganicCompetitors(semrushDomain, 20),
+      getOrganicCompetitors(seoDomain, 20),
       listCompetitors(tenantId),
     ]);
 

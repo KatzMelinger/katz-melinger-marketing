@@ -22,6 +22,7 @@ import {
   isStyleScope,
   type StyleScope,
 } from "@/lib/image-style";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -35,6 +36,8 @@ const VALID_SIZES: ImageSize[] = [
 const VALID_QUALITIES: ImageQuality[] = ["low", "medium", "high", "auto"];
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as {
     parentImageId?: unknown;
     prompt?: unknown;

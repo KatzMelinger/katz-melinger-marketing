@@ -32,6 +32,7 @@ import {
   type KMPracticeArea,
   type KMSearchIntent,
 } from "@/lib/km-content-system";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getPillars } from "@/lib/pillars-store";
@@ -114,6 +115,8 @@ function parseBrief(o: Record<string, unknown>): Partial<KMPerPageBrief> {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },
@@ -199,7 +202,7 @@ export async function POST(req: Request) {
     userPrompt +=
       `\n\n---\nAPPROVED INTERNAL LINK PLAN — these are the ONLY internal links you may use. ` +
       `Each is a confirmed live page. Use the given anchor text and place the link in the indicated section. ` +
-      `Do NOT invent, guess, or add any other internal link (any relative URL or katzmelinger.com URL). ` +
+      `Do NOT invent, guess, or add any other internal link (any relative URL or absolute URL to the firm's own website). ` +
       `You may still cite external authorities (statutes, courts, government sites) in prose.\n` +
       planLines.join("\n");
   }

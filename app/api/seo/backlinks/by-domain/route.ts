@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "domain query param required" }, { status: 400 });
   }
   try {
-    const { semrushDomain } = await getTenantConfig();
-    const backlinks = await getBacklinksForDomain(domain, semrushDomain);
+    const { seoDomain } = await getTenantConfig();
+    const backlinks = await getBacklinksForDomain(domain, seoDomain);
     return NextResponse.json({ domain, backlinks });
   } catch (e) {
     return NextResponse.json(

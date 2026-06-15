@@ -40,6 +40,7 @@ import { fetchGscPositionMap } from "@/lib/gsc-positions";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
+import { guardUser } from "@/lib/supabase-route";
 
 /** Intent → KM content type (Practice Page / Blog / Case Result). */
 function contentTypeFromIntent(intent: KMSearchIntent): KMContentType {
@@ -119,6 +120,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST() {
+  const denied = await guardUser();
+  if (denied) return denied;
   // UI "Refresh" button — sync only the caller's firm.
   const tenantId = await resolveTenantId();
   return NextResponse.json(await runSyncForTenant(tenantId));
@@ -132,7 +135,7 @@ async function runSyncForTenant(tenantId: string) {
   let step = "source";
   try {
     // Firm-specific config (Semrush domain etc.) instead of a hardcoded constant.
-    const { semrushDomain, gscSiteUrl } = await getTenantConfig(tenantId);
+    const { seoDomain, gscSiteUrl } = await getTenantConfig(tenantId);
     const competitors = await listCompetitors(tenantId);
     const customExclusions = await listExclusionTerms(tenantId);
     const ctx = {
@@ -144,8 +147,8 @@ async function runSyncForTenant(tenantId: string) {
     const pillars = await getPillars(tenantId);
 
     const [gaps, tracked] = await Promise.all([
-      getKeywordGapVsCompetitors(competitors, semrushDomain, 120).catch(() => []),
-      getTrackedKeywordPerformance(semrushDomain, tenantId).catch(() => ({
+      getKeywordGapVsCompetitors(competitors, seoDomain, 120).catch(() => []),
+      getTrackedKeywordPerformance(seoDomain, tenantId).catch(() => ({
         missingTargets: [] as string[],
         longTailSuggestions: [] as Array<{ keyword: string; searchVolume: number }>,
       })),
@@ -233,7 +236,7 @@ async function runSyncForTenant(tenantId: string) {
     // yields an empty map, and labels fall back to the SEMrush rank.
     step = "cannibalize";
     const [wpModified, gscPositions] = await Promise.all([
-      fetchWordPressModifiedMap(semrushDomain).catch(() => new Map<string, string>()),
+      fetchWordPressModifiedMap(seoDomain).catch(() => new Map<string, string>()),
       fetchGscPositionMap(tenantId, gscSiteUrl).catch(() => new Map<string, number>()),
     ]);
     counts.gsc_positions = gscPositions.size;

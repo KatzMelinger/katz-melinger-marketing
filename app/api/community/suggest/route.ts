@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { suggestResponse, type Platform } from "@/lib/community-suggester";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -15,6 +16,8 @@ export const maxDuration = 300;
 const VALID: Platform[] = ["reddit", "quora", "avvo", "youtube"];
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const platform = body?.platform as Platform | undefined;
   const title = (body?.title as string | undefined)?.trim();

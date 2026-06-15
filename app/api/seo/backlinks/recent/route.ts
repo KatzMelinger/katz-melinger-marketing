@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
   const limitParam = Number(req.nextUrl.searchParams.get("limit") ?? 50);
   const sort = sortParam === "lost" ? "last_seen_asc" : "first_seen_desc";
   try {
-    const { semrushDomain } = await getTenantConfig();
-    const backlinks = await getRecentBacklinks(semrushDomain, { sort, limit: limitParam });
+    const { seoDomain } = await getTenantConfig();
+    const backlinks = await getRecentBacklinks(seoDomain, { sort, limit: limitParam });
     return NextResponse.json({ sort: sortParam, backlinks });
   } catch (e) {
     return NextResponse.json(

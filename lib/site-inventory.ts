@@ -16,10 +16,11 @@
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { getTenantConfig } from "@/lib/tenant-config";
 import { type KMPillar } from "@/lib/km-content-system";
 import { getPillars } from "@/lib/pillars-store";
 
-const USER_AGENT = "Mozilla/5.0 (compatible; KMSiteInventory/0.1; +https://katzmelinger.com)";
+const USER_AGENT = "Mozilla/5.0 (compatible; MarketingDashboardSiteInventory/0.1)";
 const MAX_PAGES = 300;
 const FETCH_CONCURRENCY = 8;
 
@@ -280,7 +281,7 @@ export async function crawlSiteInventory(args?: {
   tenantId?: string;
 }): Promise<{ crawled: number; classified: number; skipped: number }> {
   const tid = args?.tenantId ?? (await resolveTenantId());
-  const domain = (args?.domain ?? "katzmelinger.com").trim();
+  const domain = (args?.domain ?? (await getTenantConfig(tid)).seoDomain).trim();
   const base = `https://${domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
   const host = new URL(base).host.replace(/^www\./, "");
 

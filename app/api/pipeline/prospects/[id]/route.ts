@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: Request, ctx: Params) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const { id } = await ctx.params;
   if (!id) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });

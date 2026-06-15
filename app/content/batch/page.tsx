@@ -413,14 +413,14 @@ export default function BatchPage() {
                     onClick={() => toggleFormat(f.id)}
                     className={`text-left rounded-md border px-3 py-2 transition-colors ${
                       on
-                        ? "border-[#185FA5] bg-[#185FA5]/5"
+                        ? "border-brand bg-brand/5"
                         : "border-slate-200 hover:border-slate-300"
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <span
                         className={`inline-block w-3 h-3 rounded-sm border ${
-                          on ? "bg-[#185FA5] border-[#185FA5]" : "border-slate-400"
+                          on ? "bg-brand border-brand" : "border-slate-400"
                         }`}
                         aria-hidden
                       />
@@ -493,7 +493,7 @@ export default function BatchPage() {
             {batchId && (
               <Link
                 href={`/content/drafts?batch=${batchId}`}
-                className="text-xs text-[#185FA5] hover:underline ml-2"
+                className="text-xs text-brand hover:underline ml-2"
               >
                 View in library →
               </Link>
@@ -524,13 +524,13 @@ function DraftCard({ draft }: { draft: GeneratedDraft }) {
         <div className="flex items-center gap-2">
           <a
             href={`/api/content/drafts/${draft.id}/export-docx`}
-            className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+            className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
           >
             ⬇ .docx
           </a>
           <Link
             href={`/content/drafts?id=${draft.id}`}
-            className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+            className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
           >
             Open
           </Link>
@@ -575,7 +575,7 @@ function LengthPicker({
         <select
           value={value}
           onChange={(e) => onValue(e.target.value)}
-          className="rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+          className="rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none"
         >
           {presets.map((p) => (
             <option key={p} value={p}>
@@ -589,7 +589,7 @@ function LengthPicker({
             value={custom}
             onChange={(e) => onCustom(e.target.value)}
             placeholder="e.g. 45 minutes"
-            className="flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+            className="flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none"
           />
         )}
       </div>

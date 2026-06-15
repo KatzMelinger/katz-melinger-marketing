@@ -17,6 +17,7 @@ import {
   pushKeywordsToCampaign,
   SEMRUSH_CAMPAIGN_ID,
 } from "@/lib/semrush-position-tracking";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,6 +26,8 @@ export const dynamic = "force-dynamic";
 const MAX_PUSH = 2000; // backstop against an accidental huge spend
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as { confirm?: unknown };
   if (body?.confirm !== true) {
     return NextResponse.json(

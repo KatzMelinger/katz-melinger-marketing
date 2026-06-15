@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { crawlSiteInventory } from "@/lib/site-inventory";
+import { guardUser } from "@/lib/supabase-route";
 import { listTenantIds } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
       try {
         const cfg = await getTenantConfig(tenantId);
         perTenant[tenantId] = await crawlSiteInventory({
-          domain: cfg.semrushDomain,
+          domain: cfg.seoDomain,
           tenantId,
         });
       } catch (e) {
@@ -52,6 +53,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as {
     domain?: unknown;
     maxPages?: unknown;

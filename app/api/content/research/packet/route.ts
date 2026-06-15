@@ -15,6 +15,7 @@ import {
   listResearchPackets,
 } from "@/lib/research-packet";
 import type { PeopleAskSourceType } from "@/lib/research-libraries";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,6 +29,8 @@ const VALID_SOURCES: PeopleAskSourceType[] = [
 ];
 
 export async function GET(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const id = new URL(req.url).searchParams.get("id");
   try {
     if (id) {
@@ -48,6 +51,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const topic = typeof body.topic === "string" ? body.topic.trim() : "";
   if (!topic) {

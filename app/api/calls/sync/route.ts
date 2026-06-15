@@ -1,64 +1,73 @@
 /**
- * POST /api/calls/sync — pulls calls from CallRail (with detail fields:
- * recording, transcription, voicemail flag, agent email, etc.) and upserts
- * into public.calls.
+ * Sync calls from CallRail (with detail fields: recording, transcription,
+ * voicemail flag, agent email, etc.) into public.calls.
  *
- * Body (optional):
- *   { since: "YYYY-MM-DD" }   — only sync calls on/after this date
+ * POST /api/calls/sync — UI trigger ("Sync from CallRail" button).
+ *   Body (optional): { since: "YYYY-MM-DD" } — only sync calls on/after this date.
  *
- * Returns: { synced, errors? }
+ * GET /api/calls/sync — Vercel Cron trigger. Requires
+ *   `Authorization: Bearer ${CRON_SECRET}`. Reads ?since=YYYY-MM-DD from query.
+ *   Registered in vercel.json (hourly) so the call log stays fresh without a
+ *   human clicking the button — everything downstream (scoring, lead-response
+ *   leakage) is only as current as the last sync.
+ *
+ * Returns: { synced, total, errors? }
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { fetchAllCallRailCallsDetailed } from "@/lib/callrail-fetch";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { resolveTenantId } from "@/lib/tenant-context";
+import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 type Json = Record<string, unknown>;
+
+/**
+ * Vercel injects `Authorization: Bearer ${CRON_SECRET}` on scheduled
+ * invocations when CRON_SECRET is set. Reject anything else so the cron URL
+ * can't be abused to burn CallRail quota.
+ */
+function isAuthorizedCron(req: NextRequest): boolean {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return false;
+  return (req.headers.get("authorization") ?? "") === `Bearer ${expected}`;
+}
 
 function detectLanguage(text: string | null | undefined): "en" | "es" | "mixed" | "unknown" {
   if (!text || text.trim().length < 30) return "unknown";
   const t = text.toLowerCase();
   // Crude heuristic: count common Spanish-only words vs English-only words.
-  const es = (t.match(/\b(qué|cómo|gracias|hola|usted|trabajo|trabajaba|señor|señora|señorita|empleador|salario|hora|despidieron|despido|chamba|carro|señor|señora)\b/g) || []).length;
-  const en = (t.match(/\b(the|and|you|your|with|that|have|will|this|from|been|were|are|been|been)\b/g) || []).length;
+  const es = (t.match(/\b(qué|cómo|gracias|hola|usted|trabajo|trabajaba|señor|señora|señorita|empleador|salario|hora|despidieron|despido|chamba|carro)\b/g) || []).length;
+  const en = (t.match(/\b(the|and|you|your|with|that|have|will|this|from|been|were|are)\b/g) || []).length;
   if (es >= 3 && en < 5) return "es";
   if (es >= 3 && en >= 5) return "mixed";
   if (en >= 5) return "en";
   return "unknown";
 }
 
-export async function POST(req: Request) {
+async function runCallsSync(
+  supabase: SupabaseClient,
+  tenantId: string,
+  since: string | undefined,
+): Promise<NextResponse> {
   const apiKey = process.env.CALLRAIL_API_KEY;
   const accountId = process.env.CALLRAIL_ACCOUNT_ID;
   if (!apiKey || !accountId) {
     return NextResponse.json({ error: "Missing CALLRAIL_API_KEY or CALLRAIL_ACCOUNT_ID" }, { status: 503 });
   }
 
-  const supabase = getSupabaseServer();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
-  }
-  const tid = await resolveTenantId();
-
-  let since: string | undefined;
-  try {
-    const body = (await req.json().catch(() => ({}))) as Json;
-    if (typeof body.since === "string" && body.since.trim()) since = body.since.trim();
-  } catch {
-    // No body — that's fine.
-  }
-
   const result = await fetchAllCallRailCallsDetailed(apiKey, accountId, since);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 502 });
   }
-
   if (result.calls.length === 0) {
-    return NextResponse.json({ synced: 0 });
+    return NextResponse.json({ synced: 0, total: 0 });
   }
 
   // Upsert in batches of 250 to keep payload size reasonable.
@@ -69,11 +78,7 @@ export async function POST(req: Request) {
     const slice = result.calls.slice(i, i + BATCH);
     const rows = slice.map((c) => {
       const valueNum =
-        c.value == null
-          ? null
-          : typeof c.value === "number"
-            ? c.value
-            : Number(c.value);
+        c.value == null ? null : typeof c.value === "number" ? c.value : Number(c.value);
       return {
         id: c.id,
         customer_name: c.customer_name ?? null,
@@ -102,7 +107,7 @@ export async function POST(req: Request) {
         transcription_language: detectLanguage(c.transcription ?? null),
         raw: c as unknown as Json,
         synced_at: new Date().toISOString(),
-        tenant_id: tid,
+        tenant_id: tenantId,
       };
     });
 
@@ -115,4 +120,35 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ synced, total: result.calls.length, errors: errors.length ? errors : undefined });
+}
+
+export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
+  const supabase = getSupabaseServer();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
+  }
+  let since: string | undefined;
+  try {
+    const body = (await req.json().catch(() => ({}))) as Json;
+    if (typeof body.since === "string" && body.since.trim()) since = body.since.trim();
+  } catch {
+    // No body — that's fine.
+  }
+  return runCallsSync(supabase, await resolveTenantId(), since);
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const supabase = getSupabaseServer();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
+  }
+  const sinceParam = req.nextUrl.searchParams.get("since");
+  const since = sinceParam && sinceParam.trim() ? sinceParam.trim() : undefined;
+  // Cron has no user session — stamp the default tenant.
+  return runCallsSync(supabase, DEFAULT_TENANT_ID, since);
 }

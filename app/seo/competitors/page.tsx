@@ -137,12 +137,12 @@ export default function SeoCompetitorsPage() {
                 if (e.key === "Enter" && newDomain.trim()) add(newDomain.trim());
               }}
               placeholder="competitor-firm.com"
-              className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+              className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
             />
             <button
               onClick={() => newDomain.trim() && add(newDomain.trim())}
               disabled={!newDomain.trim() || busy === newDomain.trim()}
-              className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
             >
               Add
             </button>
@@ -160,14 +160,14 @@ export default function SeoCompetitorsPage() {
               >
                 <Link
                   href={`/seo/competitors/${encodeURIComponent(domain)}`}
-                  className="text-sm font-medium text-slate-900 hover:text-[#185FA5] hover:underline"
+                  className="text-sm font-medium text-slate-900 hover:text-brand hover:underline"
                 >
                   {domain}
                 </Link>
                 <div className="flex items-center gap-2">
                   <Link
                     href={`/seo/competitors/${encodeURIComponent(domain)}`}
-                    className="text-xs text-[#185FA5] hover:underline"
+                    className="text-xs text-brand hover:underline"
                   >
                     Detail →
                   </Link>
@@ -219,7 +219,7 @@ export default function SeoCompetitorsPage() {
                   <button
                     onClick={() => add(c.domain, "suggested")}
                     disabled={busy === c.domain}
-                    className="text-xs px-2 py-1 rounded border border-[#185FA5] text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+                    className="text-xs px-2 py-1 rounded border border-brand text-brand hover:bg-brand/5 disabled:opacity-50"
                   >
                     {busy === c.domain ? "…" : "+ Track"}
                   </button>

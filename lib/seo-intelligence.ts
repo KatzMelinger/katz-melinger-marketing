@@ -25,6 +25,18 @@ import {
 import { listTargets } from "@/lib/seo-targets";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { getTenantConfig } from "@/lib/tenant-config";
+
+/**
+ * The current tenant's primary domain. KM's config returns "katzmelinger.com",
+ * so KM behaves identically; any other tenant gets its own domain. Functions
+ * below default their `domain` param to the SEMRUSH_DOMAIN constant and then
+ * swap in the per-tenant value when the default (or KM's domain) was used — so
+ * callers that pass an explicit competitor domain are unaffected.
+ */
+async function tenantDomain(tenantId?: string): Promise<string> {
+  return (await getTenantConfig(tenantId)).seoDomain;
+}
 
 type SemrushRecord = Record<string, string>;
 
@@ -269,6 +281,8 @@ export async function getDomainOrganicKeywords(
   // mapped to the KeywordRow shape. This single repoint also moves
   // getKeywordGapVsCompetitor(s), getTrackedKeywordPerformance, and the
   // opportunities sync onto DataForSEO, since they all build on this function.
+  // Per-tenant: callers resolve the tenant domain before passing it in here
+  // (this function takes an explicit `domain` with no hardcoded default).
   const rows = await getDataForSeoDomainKeywords(
     safeDomain(domain),
     undefined,
@@ -422,6 +436,7 @@ export async function getTrackedKeywordPerformance(
   trendingKeywords: Array<{ keyword: string; searchVolume: number; trendScore: number }>;
   longTailSuggestions: Array<{ keyword: string; searchVolume: number }>;
 }> {
+  if (domain === SEMRUSH_DOMAIN) domain = await tenantDomain(tenantId);
   const targets = await getTargetKeywords(tenantId);
   // Pull up to 1000 keywords (Semrush per-request max) so targets that rank
   // outside the top-120-by-traffic still get picked up via exact match.
@@ -499,6 +514,7 @@ export async function getKeywordGapVsCompetitor(
   competitorDomain: string,
   ourDomain = SEMRUSH_DOMAIN,
 ): Promise<CompetitorKeywordGap[]> {
+  if (ourDomain === SEMRUSH_DOMAIN) ourDomain = await tenantDomain();
   const [ours, competitor] = await Promise.all([
     getDomainOrganicKeywords(ourDomain, 150),
     getDomainOrganicKeywords(competitorDomain, 150),
@@ -540,6 +556,7 @@ export async function getKeywordGapVsCompetitors(
   ourDomain = SEMRUSH_DOMAIN,
   limit = 30,
 ): Promise<Array<CompetitorKeywordGap & { competitorsBeatingUs: number }>> {
+  if (ourDomain === SEMRUSH_DOMAIN) ourDomain = await tenantDomain();
   const domains = competitorDomains
     .map(safeDomain)
     .filter((d) => d && !isNonCompetitorDomain(d));
@@ -581,6 +598,7 @@ export async function getBacklinkOverview(domain = SEMRUSH_DOMAIN): Promise<{
   referringDomains: number;
   followRatio: number;
 }> {
+  if (domain === SEMRUSH_DOMAIN) domain = await tenantDomain();
   // DataForSEO Backlinks summary (replaces Semrush backlinks_overview). Its
   // 0-1000 "rank" is scaled to a 0-100 authority-style score; follow ratio is
   // derived from the referring-domain follow/nofollow split.
@@ -595,6 +613,7 @@ export async function getBacklinkOverview(domain = SEMRUSH_DOMAIN): Promise<{
 }
 
 export async function getBacklinkDomains(domain = SEMRUSH_DOMAIN): Promise<BacklinkDomain[]> {
+  if (domain === SEMRUSH_DOMAIN) domain = await tenantDomain();
   // DataForSEO referring_domains (replaces Semrush backlinks_refdomains).
   // Toxicity is read from DataForSEO's backlinks_spam_score (0-100) when
   // present; authority is the 0-1000 rank scaled to 0-100.
@@ -653,6 +672,7 @@ export async function getRecentBacklinks(
   domain = SEMRUSH_DOMAIN,
   options: { limit?: number; sort?: "first_seen_desc" | "last_seen_asc" } = {},
 ): Promise<RecentBacklink[]> {
+  if (domain === SEMRUSH_DOMAIN) domain = await tenantDomain();
   const sort = options.sort ?? "first_seen_desc";
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
   // DataForSEO backlinks list (replaces Semrush backlinks). one_per_domain so
@@ -684,6 +704,7 @@ export async function getBacklinksForDomain(
   targetDomain = SEMRUSH_DOMAIN,
   limit = 20,
 ): Promise<RecentBacklink[]> {
+  if (targetDomain === SEMRUSH_DOMAIN) targetDomain = await tenantDomain();
   const cleaned = referringDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   const all = await getRecentBacklinks(targetDomain, { limit: 200 });
   return all.filter((b) => b.sourceDomain === cleaned).slice(0, limit);
@@ -699,6 +720,7 @@ export async function getOrganicCompetitors(
     estimatedTraffic: number;
   }>
 > {
+  if (domain === SEMRUSH_DOMAIN) domain = await tenantDomain();
   // DataForSEO Labs competitors_domain (replaces Semrush domain_organic_organic).
   const rows = await getDfsOrganicCompetitors(safeDomain(domain), limit);
   return rows
@@ -758,6 +780,7 @@ export async function getTechnicalSeoMonitoring(
   schemaChecks: TechnicalMetric[];
   crawlErrors: Array<{ url: string; issue: string; severity: "warning" | "critical" }>;
 }> {
+  if (url === `https://${SEMRUSH_DOMAIN}`) url = `https://${await tenantDomain()}`;
   const [mobile, desktop] = await Promise.all([
     fetchPageSpeed(url, "mobile"),
     fetchPageSpeed(url, "desktop"),

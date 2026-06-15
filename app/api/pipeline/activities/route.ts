@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const url = new URL(req.url);
   const prospectId = url.searchParams.get("prospect_id")?.trim();
   if (!prospectId) {
@@ -35,6 +38,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await req.json();

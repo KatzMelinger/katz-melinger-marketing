@@ -14,11 +14,14 @@ import {
   persistGeneratedRecommendations,
 } from "@/lib/recommendation-items";
 import { getTenantDb } from "@/lib/tenant-db";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST() {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     // Skip anything the user has already marked done or disregarded so Claude
     // doesn't keep proposing work that's been completed or rejected.

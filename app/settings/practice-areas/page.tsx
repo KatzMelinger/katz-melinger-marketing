@@ -80,7 +80,7 @@ export default function PracticeAreasSettingsPage() {
     <main className="mx-auto max-w-2xl px-6 py-8">
       <h1 className="text-2xl font-semibold text-slate-900">Practice Areas</h1>
       <p className="mt-2 text-sm text-slate-600">
-        The single source of truth for practice areas across MarketOS — Content
+        The single source of truth for practice areas across Huraqan — Content
         Studio dropdowns, draft generation, and the AI firm context all read
         this list. Edit it here; no code change needed.
       </p>
@@ -97,7 +97,7 @@ export default function PracticeAreasSettingsPage() {
                   value={area}
                   onChange={(e) => update(i, e.target.value)}
                   placeholder="Practice area name"
-                  className="flex-1 rounded-lg border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                  className="flex-1 rounded-lg border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none"
                 />
                 <button
                   onClick={() => move(i, -1)}
@@ -131,7 +131,7 @@ export default function PracticeAreasSettingsPage() {
 
           <button
             onClick={add}
-            className="mt-3 rounded-lg border border-dashed border-[#185FA5] px-3 py-2 text-sm text-[#185FA5] hover:bg-[#185FA5]/5"
+            className="mt-3 rounded-lg border border-dashed border-brand px-3 py-2 text-sm text-brand hover:bg-brand/5"
           >
             + Add practice area
           </button>
@@ -140,7 +140,7 @@ export default function PracticeAreasSettingsPage() {
             <button
               onClick={save}
               disabled={saving}
-              className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save changes"}
             </button>

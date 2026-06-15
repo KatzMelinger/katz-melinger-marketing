@@ -7,12 +7,15 @@ import {
   semrushSeoUrl,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
 /** Semrush report: organic competitors (type domain_organic_organic). */
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const key = process.env.SEMRUSH_API_KEY;
   if (!key) {
     return NextResponse.json({
@@ -22,11 +25,11 @@ export async function GET() {
   }
 
   try {
-    const { semrushDomain, semrushDatabase } = await getTenantConfig();
+    const { seoDomain, semrushDatabase } = await getTenantConfig();
     const url = semrushSeoUrl({
       key,
       type: "domain_organic_organic",
-      domain: semrushDomain,
+      domain: seoDomain,
       database: semrushDatabase,
       display_limit: "5",
       display_sort: "np_desc",

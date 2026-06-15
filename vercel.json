@@ -2,6 +2,18 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
+      "path": "/api/calls/sync",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/forms/sync",
+      "schedule": "15 * * * *"
+    },
+    {
+      "path": "/api/leads/leakage/snapshot",
+      "schedule": "30 6 * * 1"
+    },
+    {
       "path": "/api/seo/tracked-keywords/refresh",
       "schedule": "0 11 * * *"
     },
@@ -20,6 +32,10 @@
     {
       "path": "/api/aeo/runs/start",
       "schedule": "0 12 * * 1"
+    },
+    {
+      "path": "/api/agent/run",
+      "schedule": "0 6 * * 1"
     }
   ]
 }

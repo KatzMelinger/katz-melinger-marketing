@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
 import { getAuthConfig } from "@/lib/constant-contact-server";
+import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,8 @@ function getFallback(error?: string): ConstantContactPayload {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const auth = await getAuthConfig();
   // listId precedence: ?listId= query param > CONSTANT_CONTACT_LIST_ID env var > none (all lists)
   const queryListId = req.nextUrl.searchParams.get("listId")?.trim() || null;

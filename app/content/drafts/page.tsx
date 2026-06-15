@@ -21,7 +21,7 @@ import { marked } from "marked";
  * Studio preview (app/content/page.tsx) so a draft looks the same everywhere.
  */
 const PROSE_CLASS =
-  "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-[#185FA5] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_table]:my-2 [&_table]:w-full [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1";
+  "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_table]:my-2 [&_table]:w-full [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1";
 
 import { ContentNav } from "@/components/content-nav";
 import { ContentTypeTabs } from "@/components/content-type-tabs";
@@ -583,7 +583,7 @@ export default function DraftsPage() {
                   onClick={() => setFilter(f)}
                   className={`text-[11px] px-2 py-0.5 rounded-full border ${
                     filter === f
-                      ? "border-[#185FA5] text-[#185FA5] bg-[#185FA5]/5"
+                      ? "border-brand text-brand bg-brand/5"
                       : "border-slate-200 text-slate-600 hover:border-slate-400"
                   }`}
                 >
@@ -606,7 +606,7 @@ export default function DraftsPage() {
                 onClick={() => setSelectedId(d.id)}
                 className={`w-full text-left rounded-md border px-3 py-2 transition-colors ${
                   selectedId === d.id
-                    ? "border-[#185FA5] bg-[#185FA5]/5"
+                    ? "border-brand bg-brand/5"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
@@ -669,7 +669,7 @@ export default function DraftsPage() {
                     />
                     <a
                       href={`/api/content/drafts/${selectedDraft.id}/export-docx`}
-                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+                      className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
                     >
                       ⬇ Export .docx
                     </a>
@@ -705,7 +705,7 @@ export default function DraftsPage() {
                       onClick={() => setBodyView("write")}
                       className={`px-2 py-0.5 rounded ${
                         bodyView === "write"
-                          ? "bg-[#185FA5] text-white"
+                          ? "bg-brand text-white"
                           : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
@@ -716,7 +716,7 @@ export default function DraftsPage() {
                       onClick={() => setBodyView("preview")}
                       className={`px-2 py-0.5 rounded ${
                         bodyView === "preview"
-                          ? "bg-[#185FA5] text-white"
+                          ? "bg-brand text-white"
                           : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
@@ -729,7 +729,7 @@ export default function DraftsPage() {
                     value={editBody}
                     onChange={(e) => setEditBody(e.target.value)}
                     rows={20}
-                    className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm font-mono mt-1 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+                    className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm font-mono mt-1 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
                   />
                 ) : (
                   <div
@@ -879,7 +879,7 @@ function DraftStatusDropdown({
                   setOpen(false);
                 }}
                 className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 ${
-                  s === current ? "font-semibold text-[#185FA5]" : "text-slate-700"
+                  s === current ? "font-semibold text-brand" : "text-slate-700"
                 }`}
               >
                 {DRAFT_STATUS_LABEL[s]}
@@ -1115,7 +1115,7 @@ function AnalysisCard({
               className={`text-xs px-2.5 py-1 rounded border ${
                 hasMissingScores
                   ? "border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100"
-                  : "border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+                  : "border-slate-300 text-slate-700 hover:border-brand hover:text-brand"
               } disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-1.5`}
               title={
                 hasMissingScores
@@ -1309,7 +1309,7 @@ function AnalysisCard({
                     <button
                       type="button"
                       onClick={() => onApplyTitle(t)}
-                      className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5] shrink-0"
+                      className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand shrink-0"
                       title="Use this as the draft title"
                     >
                       Use
@@ -1549,7 +1549,7 @@ function FindingsList({
           <button
             type="button"
             onClick={toggleAllInList}
-            className="text-[10px] text-slate-500 hover:text-[#185FA5] underline"
+            className="text-[10px] text-slate-500 hover:text-brand underline"
           >
             {allSelectedHere ? "deselect all" : "select all"}
           </button>
@@ -1586,7 +1586,7 @@ function FindingsList({
                 <button
                   type="button"
                   onClick={() => onApply(f)}
-                  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5] shrink-0"
+                  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand shrink-0"
                   title="Apply just this one"
                 >
                   Apply
@@ -2213,7 +2213,7 @@ function ImportDraftModal({
               onClick={() => setMode("paste")}
               className={`text-xs px-3 py-1.5 rounded ${
                 mode === "paste"
-                  ? "bg-[#185FA5] text-white"
+                  ? "bg-brand text-white"
                   : "text-slate-700 hover:bg-slate-50"
               }`}
             >
@@ -2224,7 +2224,7 @@ function ImportDraftModal({
               onClick={() => setMode("file")}
               className={`text-xs px-3 py-1.5 rounded ${
                 mode === "file"
-                  ? "bg-[#185FA5] text-white"
+                  ? "bg-brand text-white"
                   : "text-slate-700 hover:bg-slate-50"
               }`}
             >
@@ -2261,7 +2261,7 @@ function ImportDraftModal({
               <select
                 value={formatOption}
                 onChange={(e) => setFormatOption(e.target.value)}
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
               >
                 <optgroup label="Website">
                   {IMPORT_FORMAT_OPTIONS.filter((f) => f.contentType === "website").map((f) => (
@@ -2293,7 +2293,7 @@ function ImportDraftModal({
               <select
                 value={practiceArea}
                 onChange={(e) => setPracticeArea(e.target.value)}
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
               >
                 {practiceAreas.map((p) => (
                   <option key={p} value={p}>
@@ -2329,7 +2329,7 @@ function ImportDraftModal({
                 onChange={(e) => setBody(e.target.value)}
                 rows={12}
                 placeholder="Paste plain text or markdown…"
-                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+                className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
               />
               <p className="text-[11px] text-slate-500 mt-1">
                 Markdown formatting is preserved.

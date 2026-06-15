@@ -10,11 +10,12 @@ import type { Metadata } from "next";
 
 import { HubShell, type HubCard, type HubKpi } from "@/components/hub-shell";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "SEO Ops Hub | Katz Melinger PLLC",
+  title: `SEO Ops Hub | ${APP_NAME}`,
   description:
     "Keyword tracking, backlinks, competitors, technical health, and content production.",
 };
@@ -103,7 +104,7 @@ export default async function SeoHubPage() {
       href: "/seo/competitors",
       label: "Competitors",
       description:
-        "Domains monitored alongside katzmelinger.com — keyword overlap, backlinks, content cadence.",
+        "Domains monitored alongside your site — keyword overlap, backlinks, content cadence.",
       metric: `${trackedCompetitors} tracked`,
     },
     {

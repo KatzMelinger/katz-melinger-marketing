@@ -185,7 +185,7 @@ export default function PromptsPage() {
                     onClick={() => setFilterProject(p.id)}
                     className={`w-full text-left text-xs px-2 py-1.5 rounded ${
                       filterProject === p.id
-                        ? "bg-[#185FA5]/10 text-[#185FA5] font-semibold"
+                        ? "bg-brand/10 text-brand font-semibold"
                         : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
@@ -209,7 +209,7 @@ export default function PromptsPage() {
                 onClick={() => setSelectedId(p.id)}
                 className={`w-full text-left rounded-md border px-3 py-2 transition-colors ${
                   selectedId === p.id
-                    ? "border-[#185FA5] bg-[#185FA5]/5"
+                    ? "border-brand bg-brand/5"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
@@ -428,7 +428,7 @@ function PromptEditor({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="text-lg font-semibold flex-1 min-w-0 px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-[#185FA5] focus:outline-none"
+            className="text-lg font-semibold flex-1 min-w-0 px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-brand focus:outline-none"
           />
           <div className="flex items-center gap-2">
             <DashButton onClick={save} disabled={saving}>
@@ -507,7 +507,7 @@ function PromptEditor({
               onChange={(e) => setSystemPrompt(e.target.value)}
               rows={4}
               placeholder="Instructions that shape the model's role/behavior."
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
           </div>
           <div>
@@ -519,7 +519,7 @@ function PromptEditor({
               onChange={(e) => setUserPrompt(e.target.value)}
               rows={10}
               placeholder={DEFAULT_USER_PROMPT}
-              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+              className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
           </div>
         </div>
@@ -541,7 +541,7 @@ function PromptEditor({
             {variables.map((v) => (
               <div key={v}>
                 <label className="text-[11px] font-medium text-slate-700">
-                  <code className="font-mono text-[#185FA5]">{`{{${v}}}`}</code>
+                  <code className="font-mono text-brand">{`{{${v}}}`}</code>
                 </label>
                 <DashInput
                   value={varValues[v] ?? ""}
@@ -573,7 +573,7 @@ function PromptEditor({
         {result && (
           <div className="mt-4 border-t border-slate-200 pt-3">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <span className="text-xs font-medium text-[#185FA5]">Output</span>
+              <span className="text-xs font-medium text-brand">Output</span>
               <div className="text-[11px] text-slate-500 flex flex-wrap gap-3">
                 <span>
                   <strong>{result.input_tokens}</strong> in
@@ -642,7 +642,7 @@ function RunItem({ run }: { run: Run }) {
               <div className="space-y-0.5">
                 {Object.entries(run.variables).map(([k, v]) => (
                   <div key={k}>
-                    <code className="text-[#185FA5]">{`{{${k}}}`}</code>:{" "}
+                    <code className="text-brand">{`{{${k}}}`}</code>:{" "}
                     <span className="text-slate-700">{v}</span>
                   </div>
                 ))}
@@ -731,7 +731,7 @@ function NewPromptModal({
             value={userPrompt}
             onChange={(e) => setUserPrompt(e.target.value)}
             rows={8}
-            className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30 focus:border-[#185FA5]"
+            className="w-full mt-1 px-3 py-2 rounded-md border border-slate-300 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
           />
         </div>
         <div className="flex justify-end gap-2 pt-2">

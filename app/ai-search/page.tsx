@@ -10,13 +10,14 @@
  * editable so this works for our own site and for competitor analysis.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ContentActionsRow,
   useContentActions,
   type ContentActions,
 } from "@/components/content-actions";
 import { MarketingNav } from "@/components/marketing-nav";
+import { useTenantSiteUrl } from "@/components/tenant-provider";
 
 type Tab = "overview" | "bots" | "pages" | "recommendations";
 
@@ -237,7 +238,16 @@ type AnalysisResult = {
 // ---------- top-level page --------------------------------------------------
 
 export default function AISearchPage() {
-  const [url, setUrl] = useState("https://www.katzmelinger.com");
+  const tenantSite = useTenantSiteUrl();
+  const sitePrefilled = useRef(false);
+  const [url, setUrl] = useState("");
+  // Prefill the firm's own site once it's known (was hardcoded to KM).
+  useEffect(() => {
+    if (!sitePrefilled.current && tenantSite) {
+      setUrl(tenantSite);
+      sitePrefilled.current = true;
+    }
+  }, [tenantSite]);
   const [crawling, setCrawling] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [crawlData, setCrawlData] = useState<CrawlResult | null>(null);
@@ -374,7 +384,7 @@ export default function AISearchPage() {
               <button
                 key={s.id}
                 onClick={() => loadScan(s.id)}
-                className="text-xs px-2 py-1 rounded border border-slate-200 hover:border-[#185FA5] hover:text-[#185FA5] transition-colors"
+                className="text-xs px-2 py-1 rounded border border-slate-200 hover:border-brand hover:text-brand transition-colors"
                 title={`${s.domain} — ${new Date(s.created_at).toLocaleString()}`}
               >
                 <span className="font-medium">{s.domain}</span>

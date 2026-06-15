@@ -17,6 +17,11 @@
 
 import { useMemo, useState } from "react";
 
+import {
+  ComplianceNotice,
+  type ComplianceNoticeData,
+} from "@/components/compliance-notice";
+
 type ReviewRow = {
   id: string;
   author: string;
@@ -29,8 +34,8 @@ type ReviewRow = {
 type ReplyState =
   | { kind: "idle" }
   | { kind: "drafting" }
-  | { kind: "draft"; text: string }
-  | { kind: "sending"; text: string }
+  | { kind: "draft"; text: string; compliance?: ComplianceNoticeData | null }
+  | { kind: "sending"; text: string; compliance?: ComplianceNoticeData | null }
   | { kind: "sent" }
   | { kind: "error"; message: string };
 
@@ -62,11 +67,19 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
           date: review.date,
         }),
       });
-      const data = (await res.json()) as { reply?: string; error?: string };
+      const data = (await res.json()) as {
+        reply?: string;
+        error?: string;
+        compliance?: ComplianceNoticeData | null;
+      };
       if (!res.ok || !data.reply) {
         throw new Error(data.error ?? "draft failed");
       }
-      setReview(review.id, { kind: "draft", text: data.reply });
+      setReview(review.id, {
+        kind: "draft",
+        text: data.reply,
+        compliance: data.compliance ?? null,
+      });
     } catch (err) {
       setReview(review.id, {
         kind: "error",
@@ -134,9 +147,9 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-900">
                     <span className="text-amber-500 mr-1">
-                      {"★".repeat(r.rating)}
+                      {"★".repeat(Math.max(0, Math.min(5, r.rating)))}
                       <span className="text-slate-300">
-                        {"★".repeat(5 - r.rating)}
+                        {"★".repeat(5 - Math.max(0, Math.min(5, r.rating)))}
                       </span>
                     </span>
                     {r.author}
@@ -157,7 +170,7 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                   <button
                     type="button"
                     onClick={() => void draft(r)}
-                    className="text-xs px-3 py-1.5 rounded bg-[#185FA5] text-white hover:bg-[#1f6fb8]"
+                    className="text-xs px-3 py-1.5 rounded bg-brand text-white hover:bg-brand/90"
                   >
                     Draft with AI
                   </button>
@@ -175,10 +188,17 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                 <div className="space-y-2">
                   <textarea
                     value={st.text}
-                    onChange={(e) => setReview(r.id, { kind: "draft", text: e.target.value })}
+                    onChange={(e) =>
+                      setReview(r.id, {
+                        kind: "draft",
+                        text: e.target.value,
+                        compliance: st.compliance,
+                      })
+                    }
                     rows={4}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm resize-y focus:border-[#185FA5] focus:outline-none"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm resize-y focus:border-brand focus:outline-none"
                   />
+                  <ComplianceNotice compliance={st.compliance} />
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
@@ -192,7 +212,7 @@ export function GbpAiResponder({ reviews }: { reviews: ReviewRow[] }) {
                       type="button"
                       disabled={st.kind === "sending"}
                       onClick={() => void draft(r)}
-                      className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+                      className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
                     >
                       Re-draft
                     </button>

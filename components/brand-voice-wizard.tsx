@@ -118,7 +118,7 @@ function WizardShell({
   const primaryClass =
     primaryTone === "emerald"
       ? "bg-emerald-600 hover:bg-emerald-700"
-      : "bg-[#185FA5] hover:bg-[#1f6fb8]";
+      : "bg-brand hover:bg-brand/90";
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
@@ -151,9 +151,9 @@ function WizardShell({
                   disabled={i > step}
                   className={`rounded-full px-2.5 py-1 text-[11px] font-medium disabled:cursor-not-allowed ${
                     i === step
-                      ? "bg-[#185FA5] text-white"
+                      ? "bg-brand text-white"
                       : i < step
-                        ? "bg-[#185FA5]/10 text-[#185FA5]"
+                        ? "bg-brand/10 text-brand"
                         : "bg-slate-100 text-slate-400"
                   }`}
                 >
@@ -253,7 +253,7 @@ function DoneScreen({
       <div className="flex justify-center gap-2 pt-2">
         <button
           onClick={onClose}
-          className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8]"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
         >
           Done
         </button>
@@ -264,7 +264,7 @@ function DoneScreen({
 
 function GeneratingBanner({ what }: { what: string }) {
   return (
-    <div className="rounded-lg border border-[#185FA5]/30 bg-[#185FA5]/5 px-3 py-2 text-sm text-[#185FA5]">
+    <div className="rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm text-brand">
       Drafting {what} with AI… this takes ~15–30s.
     </div>
   );
@@ -433,7 +433,7 @@ export function BrandVoiceWizard({
       {done ? (
         <DoneScreen
           heading="Brand voice saved"
-          detail="Your voice guide, key messages, and tone are saved. Every AI feature in MarketOS will use them from now on."
+          detail="Your voice guide, key messages, and tone are saved. Every AI feature in Huraqan will use them from now on."
           warnings={[]}
           onClose={onClose}
         />
