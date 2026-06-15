@@ -94,6 +94,23 @@ const OFF_DOMAIN_PATTERNS: RegExp[] = [
   /\bw-?2\b/,
 ];
 
+/**
+ * Practice areas the firm does NOT handle. Per Diana (2026-06-15): Katz Melinger
+ * does not take workers' compensation cases, so those keywords will never
+ * convert and should never surface as content opportunities. (OSHA / workplace-
+ * safety terms are intentionally NOT here — those can be retaliation /
+ * whistleblower angles the firm does handle.)
+ */
+const NOT_PRACTICED_PATTERNS: RegExp[] = [
+  /\bworkers'? comp\b/,
+  /\bworkers'? compensation\b/,
+  /\bworkman'?s comp/,
+  /\bworkmans comp/,
+  /\bwork(place)? injury\b/,
+  /\binjured (at|on the) (work|job)\b/,
+  /\bon[- ]the[- ]job injury\b/,
+];
+
 function normalize(keyword: string): string {
   return ` ${keyword.toLowerCase().trim()} `;
 }
@@ -136,6 +153,9 @@ export function scoreKeyword(
   }
   if (OFF_DOMAIN_PATTERNS.some((re) => re.test(lc))) {
     return { relevanceScore: 0, excluded: true, excludeReason: "Off-domain (unemployment / tax)", flags: ["off_domain"] };
+  }
+  if (NOT_PRACTICED_PATTERNS.some((re) => re.test(lc))) {
+    return { relevanceScore: 0, excluded: true, excludeReason: "Not a practice area (workers' comp)", flags: ["not_practiced"] };
   }
   if (ctx.customExclusions?.length) {
     const hit = ctx.customExclusions.find((t) => t && lc.includes(t));
