@@ -1,5 +1,5 @@
 /**
- * Shared Anthropic client for MarketOS AI routes.
+ * Shared Anthropic client for Huraqan AI routes.
  *
  * Lazy-initialized so missing env vars don't break the Next.js build.
  * Single source of truth for the model name — bump it here when upgrading.

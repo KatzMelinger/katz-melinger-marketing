@@ -148,7 +148,7 @@ export default function AgentPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Agent Assistant</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Chat-driven access to every intelligence tool in MarketOS — trending
+            Chat-driven access to every intelligence tool in Huraqan — trending
             topics, recommendations, tracked keywords, the AutoPilot queue, more.
             Claude decides which tools to call.
           </p>
@@ -179,7 +179,7 @@ export default function AgentPage() {
                   <button
                     type="button"
                     onClick={() => void send(s)}
-                    className="text-left w-full text-sm text-[#185FA5] hover:bg-[#185FA5]/5 rounded px-2 py-1.5"
+                    className="text-left w-full text-sm text-brand hover:bg-brand/5 rounded px-2 py-1.5"
                   >
                     → {s}
                   </button>
@@ -201,7 +201,7 @@ export default function AgentPage() {
             <div
               className={
                 m.role === "user"
-                  ? "max-w-[80%] rounded-lg bg-[#185FA5] text-white px-3 py-2 text-sm whitespace-pre-wrap"
+                  ? "max-w-[80%] rounded-lg bg-brand text-white px-3 py-2 text-sm whitespace-pre-wrap"
                   : "max-w-[85%] rounded-lg bg-slate-100 border border-slate-200 text-slate-900 px-3 py-2 text-sm whitespace-pre-wrap"
               }
             >
@@ -244,7 +244,7 @@ export default function AgentPage() {
           }}
           placeholder="Ask the agent…"
           rows={2}
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm resize-none focus:border-[#185FA5] focus:outline-none"
+          className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm resize-none focus:border-brand focus:outline-none"
         />
         {loading ? (
           <DashButton variant="danger" onClick={stop}>

@@ -315,7 +315,7 @@ export default function LinkStrategyPage() {
               <h3 className="text-sm font-semibold mb-2">Reciprocal link ideas</h3>
               <ul className="space-y-2 text-xs">
                 {strategy.reciprocalLinkIdeas.map((r, i) => (
-                  <li key={i} className="border-l-2 border-[#185FA5]/30 pl-3">
+                  <li key={i} className="border-l-2 border-brand/30 pl-3">
                     <div className="text-slate-700 font-mono">{r.existingOutboundLink}</div>
                     <div className="text-slate-600 mt-0.5">{r.suggestion}</div>
                   </li>
@@ -333,7 +333,7 @@ export default function LinkStrategyPage() {
                   if (!v) return null;
                   return (
                     <div key={k} className="border border-slate-200 rounded-md p-3 bg-slate-50">
-                      <div className="text-xs font-semibold text-[#185FA5] mb-1">Month {i + 1}</div>
+                      <div className="text-xs font-semibold text-brand mb-1">Month {i + 1}</div>
                       <p className="text-xs text-slate-700">{v}</p>
                     </div>
                   );
@@ -350,7 +350,7 @@ export default function LinkStrategyPage() {
           <h3 className="text-sm font-semibold mb-2">Verify a backlink</h3>
           <p className="text-xs text-slate-600 mb-3">
             Paste any URL — we'll fetch the page and check whether it links to
-            katzmelinger.com (and what anchor text + rel attribute, if any).
+            your site (and what anchor text + rel attribute, if any).
             SSRF-protected: only public URLs allowed.
           </p>
           <div className="flex gap-2 flex-wrap">
@@ -375,7 +375,7 @@ export default function LinkStrategyPage() {
               )}
               {!verifyResult.error && verifyResult.found && (
                 <div className="border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-md px-3 py-2 text-sm">
-                  ✓ Found link to katzmelinger.com
+                  ✓ Found link to your site
                   {verifyResult.anchorText && (
                     <div className="text-xs mt-1">
                       Anchor: "<span className="font-mono">{verifyResult.anchorText}</span>"
@@ -393,7 +393,7 @@ export default function LinkStrategyPage() {
               )}
               {!verifyResult.error && !verifyResult.found && (
                 <div className="border border-slate-200 bg-slate-50 text-slate-700 rounded-md px-3 py-2 text-sm">
-                  ✕ No link to katzmelinger.com found on that page.
+                  ✕ No link to your site found on that page.
                 </div>
               )}
             </div>

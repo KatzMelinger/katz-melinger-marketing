@@ -31,6 +31,8 @@ import {
   type KMPracticeArea,
   type KMSearchIntent,
 } from "@/lib/km-content-system";
+import { getTenantConfig } from "@/lib/tenant-config";
+import { DEFAULT_TENANT_ID } from "@/lib/tenant-context";
 
 // ---------- Types ----------------------------------------------------------
 
@@ -161,7 +163,11 @@ export function inferPillar(
     }
   }
 
-  let bestId = pool[0]?.id ?? "";
+  // Start unclassified: a keyword that matches no pillar hint must NOT be
+  // silently dumped into pool[0] (this was filing ~everything under Wage Theft).
+  // Returning "" surfaces it as "needs review" instead of a wrong default.
+  // (Spanish phrase matches above still return a real pillar outright.)
+  let bestId = "";
   let bestScore = 0;
   for (const p of pool) {
     // A pillar's own keywords take precedence; built-ins fall back to the table.
@@ -325,7 +331,7 @@ function rulesDecision(input: ClusterInput): {
 
 // ---------- Claude fallback ------------------------------------------------
 
-const CLAUDE_JUDGE_SYSTEM = `You are a senior SEO strategist for Katz Melinger PLLC, an NYC employment law and commercial collections firm. You decide what each keyword cluster should become.
+const CLAUDE_JUDGE_SYSTEM = `You are a senior SEO strategist for a law firm. You decide what each keyword cluster should become.
 
 For the given cluster, return ONLY a JSON object with these keys (no prose, no markdown fences):
 {
@@ -395,6 +401,7 @@ function slugify(s: string): string {
 function buildBriefSkeleton(
   input: ClusterInput,
   decision: Omit<StrategyDecision, "brief">,
+  firm: { firmName: string; targetGeography: string; isDefault: boolean },
 ): Partial<KMPerPageBrief> {
   const pillar = ALL_KM_PILLARS.find((p) => p.id === decision.pillarId);
   const primary = input.primaryKeyword.trim();
@@ -404,17 +411,24 @@ function buildBriefSkeleton(
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 
-  const metaTitle =
-    decision.contentType === "practice_page"
+  // KM (default tenant) keeps its exact original meta strings; every other firm
+  // gets a neutral template populated from its own config so no KM name leaks in.
+  const metaTitle = firm.isDefault
+    ? decision.contentType === "practice_page"
       ? `${titleized} | Katz Melinger PLLC`
       : decision.contentType === "case_result"
         ? `${titleized}: Case Result | Katz Melinger PLLC`
-        : `${titleized} in NY and NJ | Katz Melinger`;
+        : `${titleized} in NY and NJ | Katz Melinger`
+    : decision.contentType === "case_result"
+      ? `${titleized}: Case Result | ${firm.firmName}`
+      : `${titleized} | ${firm.firmName}`;
 
   const metaDescription = (
-    decision.practiceArea === "employment"
-      ? `Katz Melinger PLLC represents employees in New York and New Jersey on ${primary}. Free consultation.`
-      : `Katz Melinger PLLC represents creditors in New York and New Jersey on ${primary}. Direct court enforcement.`
+    firm.isDefault
+      ? decision.practiceArea === "employment"
+        ? `Katz Melinger PLLC represents employees in New York and New Jersey on ${primary}. Free consultation.`
+        : `Katz Melinger PLLC represents creditors in New York and New Jersey on ${primary}. Direct court enforcement.`
+      : `${firm.firmName} serves ${firm.targetGeography} on ${primary}. Free consultation.`
   ).slice(0, 155);
 
   return {
@@ -477,7 +491,12 @@ export async function suggestForCluster(input: ClusterInput): Promise<StrategyDe
     merged.pillarId = pool[0].id;
   }
 
-  const brief = buildBriefSkeleton(input, merged);
+  const cfg = await getTenantConfig();
+  const brief = buildBriefSkeleton(input, merged, {
+    firmName: cfg.firmName,
+    targetGeography: cfg.targetGeography,
+    isDefault: cfg.tenantId === DEFAULT_TENANT_ID,
+  });
 
   return { ...merged, brief };
 }

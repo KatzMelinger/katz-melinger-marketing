@@ -226,7 +226,7 @@ export default function LegalDirectoriesPage() {
           <button
             onClick={suggest}
             disabled={suggesting}
-            className="shrink-0 rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="shrink-0 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {suggesting ? "Thinking…" : suggestions.length ? "Re-suggest" : "Suggest directories"}
           </button>
@@ -261,7 +261,7 @@ export default function LegalDirectoriesPage() {
                         href={s.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-1 inline-block text-xs text-[#185FA5] hover:underline"
+                        className="mt-1 inline-block text-xs text-brand hover:underline"
                       >
                         {s.url}
                       </a>
@@ -279,7 +279,7 @@ export default function LegalDirectoriesPage() {
                       })
                     }
                     disabled={busy === s.name}
-                    className="shrink-0 rounded border border-[#185FA5] px-2 py-1 text-xs text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+                    className="shrink-0 rounded border border-brand px-2 py-1 text-xs text-brand hover:bg-brand/5 disabled:opacity-50"
                   >
                     {busy === s.name ? "…" : "+ Add"}
                   </button>
@@ -303,19 +303,19 @@ export default function LegalDirectoriesPage() {
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Directory name (e.g. Avvo)"
-            className="flex-1 min-w-[160px] rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+            className="flex-1 min-w-[160px] rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
           <input
             type="text"
             value={newUrl}
             onChange={(e) => setNewUrl(e.target.value)}
             placeholder="https://… (optional)"
-            className="flex-1 min-w-[160px] rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+            className="flex-1 min-w-[160px] rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
           <button
             onClick={() => newName.trim() && add({ name: newName.trim(), url: newUrl.trim() || null })}
             disabled={!newName.trim() || busy === newName.trim()}
-            className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             Add
           </button>
@@ -347,7 +347,7 @@ export default function LegalDirectoriesPage() {
                     href={(d.listing_url || d.url) as string}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-[#185FA5] hover:underline"
+                    className="text-xs text-brand hover:underline"
                   >
                     {d.listing_url ? "View listing" : "Visit directory"} →
                   </a>
@@ -366,7 +366,7 @@ export default function LegalDirectoriesPage() {
                 value={d.status}
                 onChange={(e) => patch(d.id, { status: e.target.value })}
                 disabled={busy === d.id}
-                className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs focus:border-[#185FA5] focus:outline-none"
+                className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs focus:border-brand focus:outline-none"
               >
                 {STATUSES.map((s) => (
                   <option key={s.value} value={s.value}>

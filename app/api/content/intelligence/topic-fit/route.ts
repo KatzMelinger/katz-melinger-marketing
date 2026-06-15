@@ -15,12 +15,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFirmContext } from "@/lib/firm-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },

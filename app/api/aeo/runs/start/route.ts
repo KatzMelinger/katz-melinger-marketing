@@ -17,6 +17,7 @@ import { startRun, executeRun } from "@/lib/aeo-runner";
 import { evaluateRankAlerts } from "@/lib/alerts-engine";
 import { listTenantIds } from "@/lib/tenant-db";
 import type { AEOProviderId } from "@/lib/aeo-providers";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -62,6 +63,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const providers = Array.isArray(body?.providers)

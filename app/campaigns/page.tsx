@@ -11,13 +11,14 @@ import type { Metadata } from "next";
 
 import { HubShell, type HubCard, type HubKpi } from "@/components/hub-shell";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Campaigns Hub | Katz Melinger PLLC",
+  title: `Campaigns Hub | ${APP_NAME}`,
   description:
-    "Paid ads, email marketing, and campaign operations for Katz Melinger PLLC.",
+    "Paid ads, email marketing, and campaign operations.",
 };
 
 async function fetchJsonSafe<T>(url: string): Promise<T | null> {

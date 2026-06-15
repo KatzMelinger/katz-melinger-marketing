@@ -1,6 +1,6 @@
 /**
  * Backlink verifier — fetches an arbitrary URL and checks whether it links
- * to katzmelinger.com.
+ * to the firm's own domain (resolved per-tenant).
  *
  * SSRF-protected: blocks localhost, RFC1918 private ranges, link-local,
  * and known cloud metadata endpoints. Only http/https + public hostnames
@@ -8,10 +8,11 @@
  * up the function.
  */
 
-const OUR_DOMAIN = "katzmelinger.com";
+import { getTenantConfig } from "./tenant-config";
+
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; KMDashboard/1.0; +https://katzmelinger.com)";
+  "Mozilla/5.0 (compatible; MarketingDashboard/1.0)";
 
 function isPublicUrl(urlStr: string): boolean {
   let parsed: URL;
@@ -48,8 +49,8 @@ function getHostname(href: string): string | null {
   }
 }
 
-function isOurDomain(hostname: string): boolean {
-  return hostname === OUR_DOMAIN || hostname.endsWith(`.${OUR_DOMAIN}`);
+function isOurDomain(hostname: string, ourDomain: string): boolean {
+  return hostname === ourDomain || hostname.endsWith(`.${ourDomain}`);
 }
 
 export type VerifyResult = {
@@ -64,6 +65,8 @@ export async function verifyBacklinkFromUrl(targetUrl: string): Promise<VerifyRe
   if (!isPublicUrl(targetUrl)) {
     return { found: false, url: targetUrl, error: "Only public HTTP/HTTPS URLs are allowed" };
   }
+
+  const ourDomain = (await getTenantConfig()).seoDomain;
 
   try {
     const res = await fetch(targetUrl, {
@@ -92,7 +95,7 @@ export async function verifyBacklinkFromUrl(targetUrl: string): Promise<VerifyRe
       const anchor = m[4].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
       const hostname = getHostname(href);
       if (!hostname) continue;
-      if (isOurDomain(hostname)) {
+      if (isOurDomain(hostname, ourDomain)) {
         const fullTag = beforeHref + " " + afterHref;
         const relMatch = fullTag.match(/\brel\s*=\s*["']([^"']+)["']/i);
         return {

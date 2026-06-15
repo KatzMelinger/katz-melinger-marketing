@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { postReply } from "@/lib/gbp-reply";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,8 @@ function asString(v: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as Body;
   const reviewId = asString(body.reviewId).trim();
   const comment = asString(body.comment).trim();

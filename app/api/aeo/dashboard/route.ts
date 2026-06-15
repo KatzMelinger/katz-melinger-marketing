@@ -34,12 +34,13 @@ type ResponseRow = {
 };
 
 export async function GET() {
-  const { supabase } = await getTenantClient();
+  const { supabase, tenantId } = await getTenantClient();
 
   // Latest done run.
   const { data: latest } = await supabase
     .from("aeo_runs")
     .select("id, status, completed_at, providers, prompt_count, response_count, failure_count")
+    .eq("tenant_id", tenantId)
     .eq("status", "done")
     .order("completed_at", { ascending: false })
     .limit(1);
@@ -48,6 +49,7 @@ export async function GET() {
   const { data: active } = await supabase
     .from("aeo_runs")
     .select("id, status, started_at")
+    .eq("tenant_id", tenantId)
     .in("status", ["pending", "running"])
     .order("created_at", { ascending: false })
     .limit(1);
@@ -84,6 +86,7 @@ export async function GET() {
     .select(
       "id, prompt_id, provider, model, response_text, citations, brand_mentions, self_mentioned, self_position, self_sentiment, authority_sources, latency_ms, error",
     )
+    .eq("tenant_id", tenantId)
     .eq("run_id", runId);
   if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 });
 
@@ -91,7 +94,8 @@ export async function GET() {
 
   const { data: prompts } = await supabase
     .from("aeo_prompts")
-    .select("id, prompt, category, intent, geography");
+    .select("id, prompt, category, intent, geography")
+    .eq("tenant_id", tenantId);
   const promptMap = new Map<string, { prompt: string; category: string | null; intent: string | null; geography: string | null }>();
   for (const p of prompts ?? []) {
     promptMap.set(p.id as string, {

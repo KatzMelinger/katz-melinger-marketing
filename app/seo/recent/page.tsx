@@ -124,7 +124,7 @@ export default function SeoRecentPage() {
                   >
                     <Link
                       href={hrefForSearch(item)}
-                      className="text-sm text-slate-700 hover:text-[#185FA5] truncate"
+                      className="text-sm text-slate-700 hover:text-brand truncate"
                       title={item.query}
                     >
                       {item.query}

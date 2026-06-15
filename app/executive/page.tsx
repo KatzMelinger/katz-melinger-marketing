@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 
 import { ExecutiveClient } from "@/app/executive/executive-client";
 import { MarketingNav } from "@/components/marketing-nav";
+import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Executive dashboard | Katz Melinger Marketing",
+  title: `Executive dashboard | ${APP_NAME}`,
 };
 
 export default function ExecutivePage() {

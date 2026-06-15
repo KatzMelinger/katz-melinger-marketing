@@ -117,12 +117,12 @@ export default function AiReferralsPage() {
       <MarketingNav />
       <DashShell>
         <header>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#185FA5]">
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand">
             AI Ops Hub / Referrals
           </p>
           <h1 className="mt-1 text-2xl font-semibold">AI engine referrals</h1>
           <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-            Sessions on katzmelinger.com where the referrer is an AI answer engine. The clearest
+            Sessions on your site where the referrer is an AI answer engine. The clearest
             signal that AI search is sending real visitors — last 30 days.
           </p>
         </header>
@@ -303,7 +303,7 @@ export default function AiReferralsPage() {
               <p className="mt-3 text-xs text-slate-500">
                 <b>Note:</b> AI bot crawls (GPTBot, ClaudeBot, PerplexityBot, etc.) are not in this
                 view — GA4 strips bots by default. To track bot crawls, we'd need to enable Vercel
-                Edge Middleware or Cloudflare log forwarding for katzmelinger.com.
+                Edge Middleware or Cloudflare log forwarding for your site.
               </p>
             </DashCard>
           </>

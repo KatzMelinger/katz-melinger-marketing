@@ -151,7 +151,7 @@ export function ContentPillarsManager() {
         </div>
         <button
           onClick={() => setWizardOpen(true)}
-          className="rounded-md border border-[#185FA5] px-3 py-1.5 text-sm font-medium text-[#185FA5] hover:bg-[#185FA5]/5"
+          className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5"
         >
           ✨ Create with AI
         </button>
@@ -180,24 +180,24 @@ export function ContentPillarsManager() {
                 value={r.label}
                 onChange={(e) => update(i, { label: e.target.value })}
                 placeholder="Wrongful Termination"
-                className="rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+                className="rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none"
               />
               <input
                 value={r.id}
                 onChange={(e) => update(i, { id: e.target.value })}
                 placeholder="wrongful-termination"
-                className="rounded border border-slate-200 px-2 py-1.5 font-mono text-xs focus:border-[#185FA5] focus:outline-none"
+                className="rounded border border-slate-200 px-2 py-1.5 font-mono text-xs focus:border-brand focus:outline-none"
               />
               <input
                 value={r.url}
                 onChange={(e) => update(i, { url: e.target.value })}
                 placeholder="/wrongful-termination/"
-                className="rounded border border-slate-200 px-2 py-1.5 font-mono text-xs focus:border-[#185FA5] focus:outline-none"
+                className="rounded border border-slate-200 px-2 py-1.5 font-mono text-xs focus:border-brand focus:outline-none"
               />
               <select
                 value={r.practiceArea}
                 onChange={(e) => update(i, { practiceArea: e.target.value as Area })}
-                className="rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+                className="rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none"
               >
                 {AREAS.map((a) => (
                   <option key={a.id} value={a.id}>{a.label}</option>
@@ -207,7 +207,7 @@ export function ContentPillarsManager() {
                 value={r.keywords}
                 onChange={(e) => update(i, { keywords: e.target.value })}
                 placeholder="fired, wrongful termination, retaliation firing"
-                className="rounded border border-slate-200 px-2 py-1.5 text-xs focus:border-[#185FA5] focus:outline-none"
+                className="rounded border border-slate-200 px-2 py-1.5 text-xs focus:border-brand focus:outline-none"
               />
               <div className="flex items-center gap-1">
                 <button onClick={() => move(i, -1)} disabled={i === 0} className="rounded border border-slate-200 px-1.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30" aria-label="Move up">↑</button>
@@ -219,7 +219,7 @@ export function ContentPillarsManager() {
 
           <button
             onClick={addBlank}
-            className="mt-1 rounded-lg border border-dashed border-[#185FA5] px-3 py-2 text-sm text-[#185FA5] hover:bg-[#185FA5]/5"
+            className="mt-1 rounded-lg border border-dashed border-brand px-3 py-2 text-sm text-brand hover:bg-brand/5"
           >
             + Add pillar
           </button>
@@ -228,7 +228,7 @@ export function ContentPillarsManager() {
             <button
               onClick={save}
               disabled={saving}
-              className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
@@ -300,13 +300,13 @@ function PillarWizard({
           <div className="flex gap-2">
             <button
               onClick={() => { setMode("single"); setProposed(null); }}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === "single" ? "bg-[#185FA5] text-white" : "border border-slate-200 text-slate-600"}`}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === "single" ? "bg-brand text-white" : "border border-slate-200 text-slate-600"}`}
             >
               One pillar
             </button>
             <button
               onClick={() => { setMode("set"); setProposed(null); }}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === "set" ? "bg-[#185FA5] text-white" : "border border-slate-200 text-slate-600"}`}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === "set" ? "bg-brand text-white" : "border border-slate-200 text-slate-600"}`}
             >
               A whole practice-area set
             </button>
@@ -318,7 +318,7 @@ function PillarWizard({
               <select
                 value={practiceArea}
                 onChange={(e) => setPracticeArea(e.target.value as Area)}
-                className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm focus:border-brand focus:outline-none"
               >
                 {AREAS.map((a) => (
                   <option key={a.id} value={a.id}>{a.label}</option>
@@ -333,7 +333,7 @@ function PillarWizard({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Whistleblower Protection"
-                  className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                  className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm focus:border-brand focus:outline-none"
                 />
               </label>
             ) : (
@@ -343,7 +343,7 @@ function PillarWizard({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="What does this practice area cover? The AI proposes 3–8 pillars."
-                  className="mt-1 min-h-[64px] w-full rounded border border-slate-200 px-3 py-2 text-sm focus:border-[#185FA5] focus:outline-none"
+                  className="mt-1 min-h-[64px] w-full rounded border border-slate-200 px-3 py-2 text-sm focus:border-brand focus:outline-none"
                 />
               </label>
             )}
@@ -352,7 +352,7 @@ function PillarWizard({
               <button
                 onClick={suggest}
                 disabled={busy || !canSuggest}
-                className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
               >
                 {busy ? "Thinking…" : "Suggest pillars"}
               </button>

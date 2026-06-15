@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Keyword Research page for MarketOS.
+ * Keyword Research page for Huraqan.
  *
  * Four tabs: Discover / Expand / Competitor Gaps / Tracked.
  *

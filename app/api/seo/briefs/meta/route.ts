@@ -15,6 +15,8 @@ import {
   getAnthropic,
 } from "@/lib/anthropic";
 import { normalizeLanguage } from "@/lib/content-language";
+import { guardUser } from "@/lib/supabase-route";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +26,8 @@ function asString(v: unknown): string {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured" },
@@ -56,7 +60,7 @@ export async function POST(req: Request) {
   const language = normalizeLanguage(body.language);
   const spanish = language === "es";
 
-  const firmName = "Katz Melinger PLLC";
+  const firmName = (await getTenantConfig()).firmName || "the firm";
   const areaLabel =
     practiceArea === "collections" ? "commercial collections" : "employment law";
 

@@ -7,11 +7,14 @@ import {
   semrushAnalyticsUrl,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const key = process.env.SEMRUSH_API_KEY;
   if (!key) {
     return NextResponse.json({
@@ -23,11 +26,11 @@ export async function GET() {
   }
 
   try {
-    const { semrushDomain } = await getTenantConfig();
+    const { seoDomain } = await getTenantConfig();
     const url = semrushAnalyticsUrl({
       key,
       type: "backlinks_overview",
-      target: semrushDomain,
+      target: seoDomain,
       target_type: "root_domain",
       export_columns: "ascore,total,domains_num",
       export_decode: "1",

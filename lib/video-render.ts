@@ -23,7 +23,6 @@ import {
 
 const BUCKET = "video-renders";
 const SIGNED_URL_TTL = 60 * 60 * 24 * 365; // private bucket → long-lived signed URLs
-// TODO(content batch): prefix video paths with tenant_id + flip video_renders RLS.
 
 export type VideoRender = {
   id: string;

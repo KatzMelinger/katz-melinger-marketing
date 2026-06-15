@@ -144,7 +144,7 @@ export default function DecisionsPage() {
               onClick={() => setStatus(t.value)}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 status === t.value
-                  ? "bg-[#185FA5] text-white"
+                  ? "bg-brand text-white"
                   : "text-slate-600 hover:bg-slate-100"
               }`}
             >
@@ -181,7 +181,7 @@ export default function DecisionsPage() {
           <p className="mx-auto max-w-md text-sm text-slate-600">
             No {status === "all" ? "" : status} decisions. Generate one from a
             keyword, or pull keywords in from{" "}
-            <Link href="/seo/opportunities" className="text-[#185FA5] hover:underline">
+            <Link href="/seo/opportunities" className="text-brand hover:underline">
               Opportunities
             </Link>
             .
@@ -300,7 +300,7 @@ function DecisionCard({
             <DashPill tone="emerald">Approved</DashPill>
             <Link
               href="/content/briefs"
-              className="text-xs font-medium text-[#185FA5] hover:underline"
+              className="text-xs font-medium text-brand hover:underline"
             >
               View in Briefs →
             </Link>
@@ -391,7 +391,7 @@ function NewDecisionForm({
   }
 
   return (
-    <DashCard className="mb-4 space-y-3 border-[#185FA5]/30 bg-slate-50">
+    <DashCard className="mb-4 space-y-3 border-brand/30 bg-slate-50">
       <h2 className="text-sm font-semibold text-slate-900">
         Run the Strategy Engine on a keyword
       </h2>
@@ -466,7 +466,7 @@ function NewDecisionForm({
             className="mt-1 w-full"
             value={existingUrl}
             onChange={(e) => setExistingUrl(e.target.value)}
-            placeholder="https://katzmelinger.com/…"
+            placeholder="https://yourfirm.com/…"
           />
         </div>
       </div>

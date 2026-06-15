@@ -3,12 +3,15 @@
  */
 import { NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 

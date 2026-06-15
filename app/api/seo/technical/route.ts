@@ -21,8 +21,8 @@ function defaultUrl(url: string | null, domain: string): string {
 }
 
 export async function GET(request: NextRequest) {
-  const { semrushDomain } = await getTenantConfig();
-  const url = defaultUrl(request.nextUrl.searchParams.get("url"), semrushDomain);
+  const { seoDomain } = await getTenantConfig();
+  const url = defaultUrl(request.nextUrl.searchParams.get("url"), seoDomain);
   const db = await getTenantDb();
   const { data } = await db
     .from("technical_seo_runs")
@@ -35,8 +35,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { semrushDomain } = await getTenantConfig();
-  const url = defaultUrl(request.nextUrl.searchParams.get("url"), semrushDomain);
+  const { seoDomain } = await getTenantConfig();
+  const url = defaultUrl(request.nextUrl.searchParams.get("url"), seoDomain);
   const db = await getTenantDb();
   try {
     const data = await getTechnicalSeoMonitoring(url);

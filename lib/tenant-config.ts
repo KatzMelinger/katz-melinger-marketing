@@ -19,6 +19,7 @@ import { getGscSiteUrl } from "@/lib/gsc-site-url";
 import {
   ALL_KM_PILLARS,
   KM_SYSTEM_PROMPT,
+  NEUTRAL_SYSTEM_PROMPT,
   type KMPillar,
 } from "@/lib/km-content-system";
 
@@ -26,7 +27,7 @@ export type PracticeAreaOption = { id: string; label: string };
 
 export type TenantConfig = {
   tenantId: string;
-  semrushDomain: string;
+  seoDomain: string;
   semrushDatabase: string;
   gscSiteUrl: string;
   firmName: string;
@@ -35,6 +36,15 @@ export type TenantConfig = {
   firmEmail: string;
   firmWebsite: string;
   targetGeography: string;
+  /** Attribution-ready spokesperson, e.g. "Jane Doe, Partner at Doe Law LLP".
+   *  Used for PR pitches / quotes. Empty when not configured (non-default firms). */
+  firmSpokesperson: string;
+  /** Per-tenant brand color (hex). Always resolved — defaults to the product blue. */
+  brandColor: string;
+  /** Optional logo URL shown in the sidebar wordmark slot. */
+  logoUrl: string | null;
+  /** Chosen email-distribution provider id, or null = registry default. */
+  emailProvider: string | null;
   /** null when the tenant hasn't customized — callers use their own default. */
   practiceAreas: PracticeAreaOption[] | null;
   /** Always resolved: tenant value or the code-defined ALL_KM_PILLARS. */
@@ -46,20 +56,34 @@ export type TenantConfig = {
   ayrshareProfileKey: string | null;
 };
 
-// Hardcoded fallbacks for the firm-contact fields (mirror DEFAULT_CONTACT in
-// lib/firm-context.ts). Kept here because tenant-config is the canonical
-// config source going forward.
-const FALLBACK = {
+// Hardcoded firm-identity fallbacks. These are KM-SPECIFIC and must ONLY apply
+// to the default Katz Melinger tenant — any other tenant that hasn't filled in
+// its tenant_settings gets blanks, never KM's name/address/phone/email. The
+// content prompts are instructed never to fabricate contact details, so blank
+// is safe; inheriting KM's would be a cross-firm data leak. (Mirrors
+// DEFAULT_CONTACT in lib/firm-context.ts.)
+const KM_FALLBACK = {
   firmName: "Katz Melinger PLLC",
   firmAddress: "370 Lexington Avenue, Suite 1512, New York, NY 10017",
   firmPhone: "(212) 460-0047",
   firmEmail: "info@katzmelinger.com",
   firmWebsite: "www.KatzMelinger.com",
   targetGeography: "New York and New Jersey",
+  firmSpokesperson: "Kenneth Katz, Partner at Katz Melinger PLLC",
+};
+
+const EMPTY_FALLBACK = {
+  firmName: "",
+  firmAddress: "",
+  firmPhone: "",
+  firmEmail: "",
+  firmWebsite: "",
+  targetGeography: "",
+  firmSpokesperson: "",
 };
 
 type SettingsRow = {
-  semrush_domain: string | null;
+  seo_domain: string | null;
   semrush_database: string | null;
   gsc_site_url: string | null;
   firm_name: string | null;
@@ -68,6 +92,10 @@ type SettingsRow = {
   firm_email: string | null;
   firm_website: string | null;
   target_geography: string | null;
+  firm_spokesperson: string | null;
+  brand_primary_color: string | null;
+  logo_url: string | null;
+  email_provider: string | null;
   practice_areas: PracticeAreaOption[] | null;
   pillars: KMPillar[] | null;
   system_prompt: string | null;
@@ -91,17 +119,25 @@ export async function getTenantConfig(tenantId?: string): Promise<TenantConfig> 
     }
   }
 
+  // KM-specific identity defaults apply only to the default tenant; every other
+  // tenant falls back to blanks so it can never inherit KM's firm details.
+  const fb = id === DEFAULT_TENANT_ID ? KM_FALLBACK : EMPTY_FALLBACK;
+
   return {
     tenantId: id,
-    semrushDomain: row?.semrush_domain || SEMRUSH_DOMAIN,
+    seoDomain: row?.seo_domain || SEMRUSH_DOMAIN,
     semrushDatabase: row?.semrush_database || SEMRUSH_DATABASE,
     gscSiteUrl: row?.gsc_site_url || getGscSiteUrl(),
-    firmName: row?.firm_name || FALLBACK.firmName,
-    firmAddress: row?.firm_address || FALLBACK.firmAddress,
-    firmPhone: row?.firm_phone || FALLBACK.firmPhone,
-    firmEmail: row?.firm_email || FALLBACK.firmEmail,
-    firmWebsite: row?.firm_website || FALLBACK.firmWebsite,
-    targetGeography: row?.target_geography || FALLBACK.targetGeography,
+    firmName: row?.firm_name || fb.firmName,
+    firmAddress: row?.firm_address || fb.firmAddress,
+    firmPhone: row?.firm_phone || fb.firmPhone,
+    firmEmail: row?.firm_email || fb.firmEmail,
+    firmWebsite: row?.firm_website || fb.firmWebsite,
+    targetGeography: row?.target_geography || fb.targetGeography,
+    firmSpokesperson: row?.firm_spokesperson || fb.firmSpokesperson,
+    brandColor: row?.brand_primary_color || "#185FA5",
+    logoUrl: row?.logo_url || null,
+    emailProvider: row?.email_provider || null,
     practiceAreas:
       Array.isArray(row?.practice_areas) && row!.practice_areas!.length > 0
         ? row!.practice_areas!
@@ -109,11 +145,15 @@ export async function getTenantConfig(tenantId?: string): Promise<TenantConfig> 
     pillars:
       Array.isArray(row?.pillars) && row!.pillars!.length > 0
         ? row!.pillars!
-        : ALL_KM_PILLARS,
+        : id === DEFAULT_TENANT_ID
+          ? ALL_KM_PILLARS
+          : [],
     systemPrompt:
       typeof row?.system_prompt === "string" && row.system_prompt.trim()
         ? row.system_prompt
-        : KM_SYSTEM_PROMPT,
+        : id === DEFAULT_TENANT_ID
+          ? KM_SYSTEM_PROMPT
+          : NEUTRAL_SYSTEM_PROMPT,
     ayrshareProfileKey:
       typeof row?.ayrshare_profile_key === "string" && row.ayrshare_profile_key.trim()
         ? row.ayrshare_profile_key
@@ -134,7 +174,7 @@ function normalizeHost(input: string): string {
 /**
  * Reverse lookup: which tenant owns a given site host? Used by session-less
  * public endpoints (e.g. /api/ai-bots/ingest) that only know which domain was
- * crawled. Matches the host against each tenant's semrush_domain / gsc_site_url
+ * crawled. Matches the host against each tenant's seo_domain / gsc_site_url
  * / firm_website. Falls back to the default tenant when nothing matches, so
  * single-tenant behavior is unchanged.
  */
@@ -149,10 +189,10 @@ export async function resolveTenantIdByDomain(
   try {
     const { data } = await sb
       .from("tenant_settings")
-      .select("tenant_id, semrush_domain, gsc_site_url, firm_website");
+      .select("tenant_id, seo_domain, gsc_site_url, firm_website");
     for (const row of data ?? []) {
       const candidates = [
-        row.semrush_domain,
+        row.seo_domain,
         row.gsc_site_url,
         row.firm_website,
       ].filter((v): v is string => typeof v === "string" && v.length > 0);

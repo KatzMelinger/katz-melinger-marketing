@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getGoogleAccessToken } from "@/lib/google-access-token";
-import { gscSiteUrlEncoded } from "@/lib/gsc-site-url";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export async function GET() {
   const start = new Date(end);
   start.setDate(start.getDate() - 28);
 
-  const siteEnc = gscSiteUrlEncoded();
+  const siteEnc = encodeURIComponent((await getTenantConfig()).gscSiteUrl);
   const url = `https://searchconsole.googleapis.com/webmasters/v3/sites/${siteEnc}/searchAnalytics/query`;
 
   try {

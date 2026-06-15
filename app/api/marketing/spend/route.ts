@@ -12,6 +12,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -30,6 +31,8 @@ function firstOfMonth(raw: unknown): string | null {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 
@@ -52,6 +55,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 
@@ -83,6 +88,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
 

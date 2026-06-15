@@ -50,7 +50,7 @@ export function RecentSearchesStrip({
       <span className="font-medium text-slate-600">Recent:</span>
       {items.map((item) => {
         const className =
-          "rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]";
+          "rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700 hover:border-brand hover:text-brand";
         if (onPick) {
           return (
             <button

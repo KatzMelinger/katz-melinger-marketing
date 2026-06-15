@@ -15,6 +15,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { getTenantConfig } from "@/lib/tenant-config";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -30,6 +32,8 @@ type ScreenResult = {
 const MAX_QUERIES = 60;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const queries = Array.isArray(body?.queries) ? body.queries : [];
   if (queries.length === 0) {
@@ -42,7 +46,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const firm = await getFirmContext();
+  const [firm, cfg] = await Promise.all([getFirmContext(), getTenantConfig()]);
+  const firmName = cfg.firmName || "the firm";
 
   // Number queries in the prompt so Claude can return matching indices.
   const numbered = queries
@@ -65,25 +70,16 @@ export async function POST(req: NextRequest) {
     })
     .join("\n\n");
 
-  const system = `You are a PR strategist for Katz Melinger PLLC, a plaintiff-side employment law firm in NYC. ${firm} You're screening a batch of journalist source queries to identify which ones are worth a pitch. Be brutally honest — say no to off-topic queries.`;
+  const system = `You are a PR strategist for ${firmName}. ${firm} You're screening a batch of journalist source queries to identify which ones are worth a pitch. Be brutally honest — say no to off-topic queries.`;
 
   const user = `Below are ${queries.length} journalist queries from today's HARO digest. For each one, decide if it's a credible opportunity for the firm.
 
-The firm's expertise is plaintiff-side employment law in NYC:
-  - Workplace discrimination (race, gender, age, disability, religion)
-  - Wage & hour (overtime, off-the-clock work, wage theft, class actions)
-  - Wrongful termination
-  - Sexual harassment / hostile work environment
-  - FMLA / medical leave retaliation
-  - Severance negotiations
-  - Whistleblower retaliation
-  - NY State and NYC-specific worker protections
-  - Commercial collections / judgment enforcement (secondary)
+The firm's practice areas and expertise are described in the firm context above. Judge each query against THOSE practice areas only.
 
 Return a JSON object with one entry per query. Be conservative — most queries on HARO are NOT a fit.
 
 For each:
-  - fit: "yes" if directly in the firm's plaintiff-side employment law expertise; "maybe" if adjacent / requires some creative angle; "no" if off-topic (criminal law, divorce, business contracts, personal injury, opinion pieces unrelated to workers' rights, etc.)
+  - fit: "yes" if directly within the firm's stated practice areas; "maybe" if adjacent / requires some creative angle; "no" if off-topic (a different area of law, or a non-legal topic unrelated to the firm's practice)
   - reason: one sentence on why it is/isn't a fit
   - angle: if yes/maybe, the specific expertise angle to lead with. Empty string if no.
 

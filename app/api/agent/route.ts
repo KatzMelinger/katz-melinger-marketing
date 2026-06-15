@@ -22,6 +22,8 @@ import {
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { dispatchTool, TOOLS } from "@/lib/agent-tools";
+import { guardUser } from "@/lib/supabase-route";
+import { APP_NAME } from "@/lib/app-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -43,6 +45,8 @@ function asString(v: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as {
     messages?: IncomingMessage[];
   };
@@ -71,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   const firm = await getFirmContext();
   const today = new Date().toISOString().slice(0, 10);
-  const system = `You are Agent Assistant — an AI assistant inside Katz Melinger's MarketOS dashboard. ${firm}
+  const system = `You are Agent Assistant — an AI assistant inside the ${APP_NAME} dashboard. ${firm}
 
 Today is ${today}. You help the marketing team plan, execute, and review work across SEO, AEO, content, and on-page fixes. You have access to live tools that read from the firm's data and call into the dashboard's intelligence endpoints.
 

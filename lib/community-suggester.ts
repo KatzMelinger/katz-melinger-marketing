@@ -13,6 +13,10 @@
  */
 
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import {
+  checkContentCompliance,
+  type ContentComplianceResult,
+} from "./content-compliance";
 import { getFirmContext } from "./firm-context";
 
 export type Platform = "reddit" | "quora" | "avvo" | "youtube";
@@ -48,6 +52,8 @@ export type Suggestion = {
   platform: Platform;
   text: string;
   warning: string;
+  /** Advisory attorney-advertising compliance review of the suggested text. */
+  compliance: ContentComplianceResult | null;
 };
 
 const WARNING: Record<Platform, string> = {
@@ -89,9 +95,20 @@ Draft a response that follows the etiquette above for the ${args.platform} platf
   });
   const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
 
+  // Advisory compliance pass on the suggested reply. Never let it fail the
+  // suggestion — degrade to null (the UI keeps the static etiquette warning).
+  const compliance = await checkContentCompliance({
+    content: text,
+    surface: "community_reply",
+  }).catch((err) => {
+    console.warn("[community-suggester] Compliance check failed:", err);
+    return null;
+  });
+
   return {
     platform: args.platform,
     text,
     warning: WARNING[args.platform],
+    compliance,
   };
 }

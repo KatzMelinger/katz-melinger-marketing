@@ -12,11 +12,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { analyzePageForFixes } from "@/lib/technical-fix-analyzer";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as { url?: unknown };
   const raw = typeof body.url === "string" ? body.url.trim() : "";
   if (!raw) {

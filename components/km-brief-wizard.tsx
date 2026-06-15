@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useTenant } from "@/components/tenant-provider";
 import { type ContentLanguage } from "@/lib/content-language";
 import {
   getKmStructure,
@@ -103,9 +104,13 @@ export function KmBriefWizard({
 
   const initialArea = (opp.practiceArea as KMPracticeArea) || "employment";
   const initialPillar =
-    opp.pillarId || pillarsForPracticeArea(initialArea)[0]?.id || "";
+    opp.pillarId || ""; // unclassified stays empty → surfaced as "needs review"
   const initialPillarUrl =
     pillarsForPracticeArea(initialArea).find((p) => p.id === initialPillar)?.url ?? "";
+
+  const { firmName } = useTenant();
+  // " | Firm Name" suffix for default meta titles (omitted until firm name known).
+  const firmSuffix = firmName ? ` | ${firmName}` : "";
 
   const [step, setStep] = useState(firstStep);
   const [language, setLanguage] = useState<ContentLanguage>("en");
@@ -118,7 +123,7 @@ export function KmBriefWizard({
     primaryKeyword: opp.keyword,
     h1: titleCase(opp.keyword),
     urlSlug: slugify(opp.keyword),
-    metaTitle: opp.keyword ? `${titleCase(opp.keyword)} | Katz Melinger PLLC` : "",
+    metaTitle: opp.keyword ? `${titleCase(opp.keyword)}${firmSuffix}` : "",
     metaDescription: "",
     internalPillarLink: initialPillarUrl,
     secondaryKeywords: [],
@@ -161,7 +166,9 @@ export function KmBriefWizard({
       : pillarsForPracticeArea(area);
   }, [brief.practiceArea, allPillars]);
   useEffect(() => {
-    if (!pillars.find((p) => p.id === brief.pillarId)) {
+    // Correct a STALE pillar id (not in this area's list), but leave an
+    // intentionally-empty pillar empty so unclassified items show "needs review".
+    if (brief.pillarId && !pillars.find((p) => p.id === brief.pillarId)) {
       const first = pillars[0];
       if (first) set({ pillarId: first.id, internalPillarLink: first.url });
     }
@@ -380,9 +387,9 @@ export function KmBriefWizard({
                   onClick={() => doneDraftId === undefined && setStep(i)}
                   className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                     i === step
-                      ? "bg-[#185FA5] text-white"
+                      ? "bg-brand text-white"
                       : i < step
-                        ? "bg-[#185FA5]/10 text-[#185FA5]"
+                        ? "bg-brand/10 text-brand"
                         : "bg-slate-100 text-slate-500"
                   }`}
                 >
@@ -407,7 +414,7 @@ export function KmBriefWizard({
                 {doneDraftId && (
                   <a
                     href={`/content/drafts?id=${encodeURIComponent(doneDraftId)}`}
-                    className="rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8]"
+                    className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90"
                   >
                     Open draft
                   </a>
@@ -422,7 +429,7 @@ export function KmBriefWizard({
               {step === 0 && (
                 <div className="space-y-3">
                   <p className="text-sm text-slate-600">
-                    This brief targets a keyword where {opp.competitor ? <b>{opp.competitor}</b> : "a competitor"} outranks Katz Melinger.
+                    This brief targets a keyword where {opp.competitor ? <b>{opp.competitor}</b> : "a competitor"} outranks {firmName ?? "your firm"}.
                   </p>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                     <p><span className="text-slate-500">Primary keyword:</span> <b>{opp.keyword}</b></p>
@@ -453,7 +460,7 @@ export function KmBriefWizard({
                                 primaryKeyword: kw,
                                 h1: titleCase(kw),
                                 urlSlug: slugify(kw),
-                                metaTitle: kw ? `${titleCase(kw)} | Katz Melinger PLLC` : "",
+                                metaTitle: kw ? `${titleCase(kw)}${firmSuffix}` : "",
                               }
                             : { primaryKeyword: kw },
                         );
@@ -478,12 +485,13 @@ export function KmBriefWizard({
                   <Field label="Pillar">
                     <select
                       className="inp"
-                      value={brief.pillarId}
+                      value={brief.pillarId ?? ""}
                       onChange={(e) => {
                         const p = pillars.find((x) => x.id === e.target.value);
                         set({ pillarId: e.target.value, internalPillarLink: p?.url ?? brief.internalPillarLink });
                       }}
                     >
+                      {!brief.pillarId && <option value="">— Select pillar (needs review) —</option>}
                       {pillars.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                     </select>
                   </Field>
@@ -509,7 +517,7 @@ export function KmBriefWizard({
                   {(brief.secondaryKeywords ?? []).length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {(brief.secondaryKeywords ?? []).map((k) => (
-                        <span key={k} className="inline-flex items-center gap-1 rounded-full bg-[#185FA5]/10 px-2 py-0.5 text-xs text-[#185FA5]">
+                        <span key={k} className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">
                           {k}
                           <button onClick={() => toggleKw(k)} className="hover:text-red-600">×</button>
                         </span>
@@ -572,7 +580,7 @@ export function KmBriefWizard({
                       type="button"
                       onClick={draftMeta}
                       disabled={metaBusy || !brief.primaryKeyword}
-                      className="rounded-md border border-[#185FA5] px-2.5 py-1 text-xs font-medium text-[#185FA5] hover:bg-[#185FA5]/5 disabled:opacity-50"
+                      className="rounded-md border border-brand px-2.5 py-1 text-xs font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
                     >
                       {metaBusy ? "Drafting…" : "✨ Draft with AI"}
                     </button>
@@ -703,7 +711,7 @@ export function KmBriefWizard({
             {step < STEPS.length - 1 ? (
               <button
                 onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
-                className="rounded-md bg-[#185FA5] px-4 py-1.5 text-sm font-medium text-white hover:bg-[#1f6fb8]"
+                className="rounded-md bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand/90"
               >
                 Continue
               </button>

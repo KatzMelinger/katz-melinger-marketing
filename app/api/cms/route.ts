@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -7,6 +9,8 @@ export const dynamic = "force-dynamic";
  * (e.g. https://your-cms.vercel.app) and CMS_API_SECRET_KEY to match API_SECRET_KEY on the CMS.
  */
 export async function GET(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const base = process.env.CMS_API_URL?.replace(/\/$/, "");
   if (!base) {
     return NextResponse.json(

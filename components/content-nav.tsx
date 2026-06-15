@@ -54,7 +54,7 @@ export function ContentNav() {
             href={linkFor(t.href, false)}
             className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-[1px] ${
               active
-                ? "border-[#185FA5] text-[#185FA5]"
+                ? "border-brand text-brand"
                 : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
             }`}
           >
@@ -76,7 +76,7 @@ export function ContentNav() {
             href={linkFor(t.href, true)}
             className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-[1px] ${
               active
-                ? "border-[#185FA5] text-[#185FA5]"
+                ? "border-brand text-brand"
                 : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
             }`}
           >
@@ -88,7 +88,7 @@ export function ContentNav() {
       {/* Jump to the SEO Opportunity Radar — the source of pre-filled briefs. */}
       <Link
         href="/seo/opportunities"
-        className="ml-auto mb-1 inline-flex items-center gap-1 rounded-md bg-[#185FA5]/10 px-3 py-1.5 text-sm font-medium text-[#185FA5] hover:bg-[#185FA5]/15"
+        className="ml-auto mb-1 inline-flex items-center gap-1 rounded-md bg-brand/10 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/15"
       >
         SEO Opportunity Radar ↗
       </Link>

@@ -13,12 +13,18 @@
   --foreground: #0f172a;     /* slate-900 */
   --muted: #f1f5f9;          /* slate-100 */
   --border: #e2e8f0;         /* slate-200 */
-  --accent: #185FA5;         /* brand blue */
+  --accent: #185FA5;         /* brand blue (legacy) */
+  /* Per-tenant brand color. Default = KM blue; TenantProvider overrides this on
+     <html> from tenant_settings.brand_primary_color for white-label theming. */
+  --brand: #185FA5;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* Exposes `bg-brand` / `text-brand` / `border-brand` / `ring-brand` utilities
+     (+ opacity modifiers) wired to the per-tenant --brand variable. */
+  --color-brand: var(--brand);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

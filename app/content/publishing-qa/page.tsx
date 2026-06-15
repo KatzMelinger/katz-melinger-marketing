@@ -153,7 +153,7 @@ export default function PublishingQAPage() {
           <p className="mx-auto max-w-md text-sm text-slate-600">
             Move a piece to{" "}
             <span className="font-medium">Review</span> on the{" "}
-            <Link href="/content/pipeline" className="text-[#185FA5] hover:underline">
+            <Link href="/content/pipeline" className="text-brand hover:underline">
               Production Board
             </Link>{" "}
             and it shows up here for the publish checklist.
@@ -208,7 +208,7 @@ function QACard({
                 href={item.url}
                 target="_blank"
                 rel="noreferrer"
-                className="hover:text-[#185FA5] hover:underline"
+                className="hover:text-brand hover:underline"
               >
                 {item.title}
               </a>
@@ -264,7 +264,7 @@ function QACard({
                       type="checkbox"
                       checked={ok}
                       onChange={() => onToggle(c.key)}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-[#185FA5] focus:ring-[#185FA5]/30"
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand/30"
                     />
                     <span className={ok ? "text-slate-700" : "text-slate-500"}>{c.label}</span>
                   </label>

@@ -374,7 +374,7 @@ export default function PipelinePage() {
               </div>
               <div>
                 <p className="text-xs text-slate-500">Projected MRR (sum est.)</p>
-                <p className="text-xl font-semibold text-[#185FA5]">
+                <p className="text-xl font-semibold text-brand">
                   {fmtMrr(pipelineValue)}
                 </p>
               </div>
@@ -411,7 +411,7 @@ export default function PipelinePage() {
                       onClick={() => setSelected(p)}
                       className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
                         selected?.id === p.id
-                          ? "border-[#185FA5] bg-[#185FA5]/15"
+                          ? "border-brand bg-brand/15"
                           : "border-[#e2e8f0] bg-[#ffffff] hover:border-slate-500"
                       }`}
                     >
@@ -421,7 +421,7 @@ export default function PipelinePage() {
                       <p className="text-xs text-slate-500">
                         {p.contact_name ?? "—"}
                       </p>
-                      <p className="mt-1 text-xs text-[#185FA5]">
+                      <p className="mt-1 text-xs text-brand">
                         {fmtMrr(p.estimated_mrr)} · {daysOpen(p)}d open
                       </p>
                       {p.source ? (
@@ -534,7 +534,7 @@ export default function PipelinePage() {
                   className="rounded border border-[#e2e8f0] p-2"
                   style={{ backgroundColor: "#ffffff" }}
                 >
-                  <span className="font-medium text-[#185FA5]">{a.type}</span> ·{" "}
+                  <span className="font-medium text-brand">{a.type}</span> ·{" "}
                   {new Date(a.created_at).toLocaleString()}
                   {a.notes ? (
                     <p className="mt-1 text-slate-600">{a.notes}</p>

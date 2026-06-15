@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { guardUser } from "@/lib/supabase-route";
 import { resolveTenantId } from "@/lib/tenant-context";
 import {
   generateToken,
@@ -28,6 +29,8 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as {
     domain?: unknown;
     label?: unknown;
@@ -68,6 +71,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const url = new URL(req.url);
   const domainParam = url.searchParams.get("domain") ?? "";
   const sb = getSupabaseAdmin();
@@ -85,6 +90,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   if (!id) {

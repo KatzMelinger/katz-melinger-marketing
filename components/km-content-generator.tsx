@@ -252,7 +252,7 @@ export function KMContentGenerator() {
             className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors ${
               !ready || loading
                 ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                : "bg-[#185FA5] text-white hover:bg-[#0f4d8c]"
+                : "bg-brand text-white hover:bg-[#0f4d8c]"
             }`}
           >
             {loading
@@ -279,7 +279,7 @@ export function KMContentGenerator() {
           {draftId && (
             <Link
               href={`/content/drafts/${draftId}`}
-              className="text-xs text-[#185FA5] hover:underline"
+              className="text-xs text-brand hover:underline"
             >
               Open in Drafts →
             </Link>

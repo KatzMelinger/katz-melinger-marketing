@@ -196,7 +196,7 @@ export function ExecutiveClient() {
               key={p.label}
               onClick={() => applyPreset(p.days)}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ${
-                active ? "bg-[#185FA5] text-white ring-[#185FA5]" : "bg-white text-slate-600 ring-[#e2e8f0] hover:bg-slate-50"
+                active ? "bg-brand text-white ring-brand" : "bg-white text-slate-600 ring-[#e2e8f0] hover:bg-slate-50"
               }`}
             >
               {p.label}
@@ -280,11 +280,11 @@ export function ExecutiveClient() {
           <p className="text-xs text-slate-500">
             Spend and calls are date-scoped from your data. Site sessions come from GA4. Intakes, matters, and
             revenue come from the CMS funnel —{" "}
-            <Link href="/attribution" className="text-[#185FA5] hover:underline">
+            <Link href="/attribution" className="text-brand hover:underline">
               see per-channel attribution
             </Link>
             . Set spend in{" "}
-            <Link href="/settings/marketing-spend" className="text-[#185FA5] hover:underline">
+            <Link href="/settings/marketing-spend" className="text-brand hover:underline">
               Marketing spend
             </Link>
             .

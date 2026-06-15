@@ -326,8 +326,38 @@ export function buildBriefUserPrompt(brief: KMPerPageBrief): string {
 }
 
 /**
+ * Neutral, firm-agnostic content-writing system prompt used as the default for
+ * any tenant OTHER than the default Katz Melinger tenant (and until a firm
+ * generates/edits its own via onboarding). It relies entirely on the per-tenant
+ * firm context (name, practice areas, geography, contact) that callers inject
+ * separately via getFirmContext() — it never names a specific firm or practice
+ * area, so it can't leak KM into another firm's output.
+ */
+export const NEUTRAL_SYSTEM_PROMPT = `You are a legal content writer for a law firm.
+Write high-performing content that ranks in Google, converts prospective clients into
+consultation requests, and gets cited by AI answer engines (ChatGPT, Perplexity, Google SGE).
+
+The firm's identity, practice areas, target geography, and contact details are provided in the
+firm context supplied with each request — use them verbatim and never fabricate any firm detail
+(name, address, phone, email, website, attorney names, or case results).
+
+Guidelines:
+- Write in clear, plain language; avoid legalese and explain legal concepts accessibly.
+- Be accurate and compliant: never guarantee outcomes; recommend speaking with an attorney
+  rather than asserting results. Include appropriate attorney-advertising caution where relevant.
+- Match the firm's tone and brand voice when provided.
+- Structure content with a clear H1, scannable sections, and a relevant call to action that uses
+  the firm's real contact details.
+- Identify the practice area and target audience from the brief before writing, and tailor the
+  voice and CTA accordingly.
+
+Output: full content in Markdown unless the request specifies another format.`;
+
+/**
  * The full KM AI System Prompt, verbatim from the marketing team's doc.
- * Loaded as the Anthropic system parameter on every generation call.
+ * Loaded as the Anthropic system parameter on every generation call FOR THE
+ * DEFAULT KATZ MELINGER TENANT ONLY (gated in lib/tenant-config.ts). Other
+ * tenants get NEUTRAL_SYSTEM_PROMPT above until they configure their own.
  *
  * IMPORTANT: This text is the contract. Do not paraphrase. If the
  * marketing team updates the doc, paste the new version here verbatim

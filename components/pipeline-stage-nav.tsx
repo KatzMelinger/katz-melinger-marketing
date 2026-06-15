@@ -39,7 +39,7 @@ export function PipelineStageNav() {
               aria-current={active ? "page" : undefined}
               className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
                 active
-                  ? "bg-[#185FA5]/10 text-[#185FA5]"
+                  ? "bg-brand/10 text-brand"
                   : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               }`}
             >

@@ -90,13 +90,13 @@ export default function AiBotTrafficPage() {
       <MarketingNav />
       <DashShell>
         <header>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#185FA5]">
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand">
             AI Ops Hub / Bot Traffic
           </p>
           <h1 className="mt-1 text-2xl font-semibold">AI bot crawls</h1>
           <p className="mt-1 text-sm text-slate-500 max-w-2xl">
             GPTBot, ClaudeBot, PerplexityBot, Google-Extended, and other AI
-            crawler hits to katzmelinger.com. GA4 strips bots, so this view
+            crawler hits to your site. GA4 strips bots, so this view
             needs its own ingest path — see "How to enable" below if no data
             is showing.
           </p>
@@ -259,7 +259,7 @@ export default function AiBotTrafficPage() {
               />
 
               <SetupBlock
-                title="Option B — Cloudflare Worker (in front of katzmelinger.com)"
+                title="Option B — Cloudflare Worker (in front of your site)"
                 lang="js"
                 code={`export default {
   async fetch(req, env, ctx) {

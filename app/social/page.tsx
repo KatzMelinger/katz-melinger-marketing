@@ -12,13 +12,14 @@ import { HubShell, type HubCard, type HubKpi } from "@/components/hub-shell";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Social Ops Hub | Katz Melinger PLLC",
+  title: `Social Ops Hub | ${APP_NAME}`,
   description:
-    "Social media performance, community management, and reviews for Katz Melinger PLLC.",
+    "Social media performance, community management, and reviews.",
 };
 
 async function fetchJsonSafe<T>(url: string): Promise<T | null> {

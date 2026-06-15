@@ -5,11 +5,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { runInternalLinkAudit } from "@/lib/internal-link-audit";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const url = (body?.url as string | undefined) ?? "https://www.katzmelinger.com";

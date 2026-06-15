@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
+import { ReviewsTabs } from "@/components/reviews-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,11 @@ async function getRequestOrigin(): Promise<string> {
   return fromEnv ?? "http://localhost:3000";
 }
 
-export default async function MarketingReviewsPage() {
+export default async function MarketingReviewsPage(
+  props: PageProps<"/reviews">,
+) {
+  const sp = await props.searchParams;
+  const initialTab = typeof sp.tab === "string" ? sp.tab : undefined;
   const base = await getRequestOrigin();
   let rows: ReviewRow[] = [];
   let errorMessage: string | null = null;
@@ -95,12 +100,13 @@ export default async function MarketingReviewsPage() {
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Reviews overview</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Reviews</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Reputation snapshot from your review database.
+            Monitor your reputation and request new reviews from past clients.
           </p>
         </div>
 
+        <ReviewsTabs initialTab={initialTab}>
         {errorMessage ? (
           <div className="rounded-xl border border-rose-900/50 bg-rose-950/40 p-4 text-sm text-rose-200">
             Could not load reviews: {errorMessage}
@@ -239,6 +245,7 @@ export default async function MarketingReviewsPage() {
             </div>
           </section>
         ) : null}
+        </ReviewsTabs>
       </main>
     </div>
   );

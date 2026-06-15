@@ -11,10 +11,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { tenantId, semrushDomain } = await getTenantConfig();
+    const { tenantId, seoDomain } = await getTenantConfig();
     const [overview, domains] = await Promise.all([
-      getBacklinkOverview(semrushDomain),
-      getBacklinkDomains(semrushDomain),
+      getBacklinkOverview(seoDomain),
+      getBacklinkDomains(seoDomain),
     ]);
 
     const toxicLinks = domains
@@ -23,7 +23,7 @@ export async function GET() {
       .map((domain) => `domain:${domain.domain}`);
 
     return NextResponse.json({
-      domain: semrushDomain,
+      domain: seoDomain,
       competitors: await listCompetitors(tenantId),
       overview,
       domains,

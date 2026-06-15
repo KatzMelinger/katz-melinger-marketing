@@ -199,7 +199,7 @@ export default function SchemaGeneratorPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#185FA5]">
+        <p className="text-xs font-semibold uppercase tracking-wider text-brand">
           SEO Ops Hub / Schema generator
         </p>
         <h1 className="mt-1 text-2xl font-semibold text-slate-900">
@@ -271,7 +271,7 @@ export default function SchemaGeneratorPage() {
             type="button"
             onClick={generate}
             disabled={loading}
-            className="rounded-md bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
           >
             {loading ? "Generating…" : "Generate JSON-LD"}
           </button>

@@ -9,11 +9,12 @@
  * When unset, it shows the setup steps.
  *
  * The Project ID is not a secret (it's already in the public tracking script
- * embedded on katzmelinger.com), so it's safe to render in the URL.
+ * embedded on the firm's site), so it's safe to render in the URL.
  */
 
 import { useEffect, useState } from "react";
 
+import { useTenant } from "@/components/tenant-provider";
 
 type Status = { configured: boolean; projectId: string };
 
@@ -77,6 +78,7 @@ const KEY_PAGES = [
 export default function ClarityPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(true);
+  const { domain } = useTenant();
 
   useEffect(() => {
     fetch("/api/clarity/status")
@@ -126,12 +128,12 @@ export default function ClarityPage() {
                 href="https://clarity.microsoft.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#185FA5] hover:underline"
+                className="text-brand hover:underline"
               >
                 clarity.microsoft.com
               </a>
               {" "}— sign in with a Microsoft account, add{" "}
-              <span className="font-mono">katzmelinger.com</span> as the site,
+              <span className="font-mono">{domain ?? "your site"}</span> as the site,
               and copy the tracking script Clarity provides into your website's{" "}
               <span className="font-mono">&lt;head&gt;</span>.
             </li>
@@ -176,7 +178,7 @@ export default function ClarityPage() {
             href={`${base}/dashboard`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-slate-300 hover:border-brand hover:text-brand"
           >
             ↗ Open in Clarity
           </a>
@@ -190,8 +192,8 @@ export default function ClarityPage() {
         <h3 className="text-sm font-semibold mb-1">Project connected</h3>
         <p className="text-sm text-slate-600">
           Clarity project{" "}
-          <span className="font-mono text-[#185FA5]">{status.projectId}</span>{" "}
-          is tracking user behavior on katzmelinger.com. Clarity opens in a new
+          <span className="font-mono text-brand">{status.projectId}</span>{" "}
+          is tracking user behavior on {domain ?? "your site"}. Clarity opens in a new
           tab for full access to heatmaps, recordings, and analytics.
         </p>
         <div className="flex flex-wrap items-center gap-2 mt-3">
@@ -201,7 +203,7 @@ export default function ClarityPage() {
               href={base + d.path}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5]"
+              className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-brand hover:text-brand"
             >
               {d.label}
             </a>
@@ -216,13 +218,13 @@ export default function ClarityPage() {
             href={base + link.path}
             target="_blank"
             rel="noopener noreferrer"
-            className="group border border-slate-200 rounded-xl p-5 bg-white hover:border-[#185FA5]/40 transition-colors block"
+            className="group border border-slate-200 rounded-xl p-5 bg-white hover:border-brand/40 transition-colors block"
           >
             <div className="flex items-start justify-between mb-2">
               <span className="text-2xl" aria-hidden>
                 {link.icon}
               </span>
-              <span className="text-slate-400 group-hover:text-[#185FA5]" aria-hidden>
+              <span className="text-slate-400 group-hover:text-brand" aria-hidden>
                 ↗
               </span>
             </div>
@@ -238,10 +240,10 @@ export default function ClarityPage() {
           {KEY_PAGES.map((p) => (
             <a
               key={p.label}
-              href={`${base}/heatmaps?url=https://katzmelinger.com${p.page}`}
+              href={`${base}/heatmaps?url=https://${domain ?? "your-site.com"}${p.page}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm px-3 py-2 rounded-md border border-slate-300 hover:border-[#185FA5] hover:text-[#185FA5] flex items-center justify-between"
+              className="text-sm px-3 py-2 rounded-md border border-slate-300 hover:border-brand hover:text-brand flex items-center justify-between"
             >
               <span>{p.label}</span>
               <span className="text-xs text-slate-400">↗</span>

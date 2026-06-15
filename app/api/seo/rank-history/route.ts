@@ -22,7 +22,7 @@ const HISTORY_DAYS = 180;
 export async function GET() {
   try {
     const db = await getTenantDb();
-    const { semrushDomain } = await getTenantConfig(db.tenantId);
+    const { seoDomain } = await getTenantConfig(db.tenantId);
 
     const cutoff = new Date(Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000)
       .toISOString()
@@ -40,7 +40,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      shapeRankHistory((data ?? []) as RankSnapshotRow[], semrushDomain),
+      shapeRankHistory((data ?? []) as RankSnapshotRow[], seoDomain),
     );
   } catch (err) {
     console.error(

@@ -8,6 +8,7 @@ import {
   semrushSeoUrl,
 } from "@/lib/semrush";
 import { cachedSemrushFetch } from "@/lib/semrush-cache";
+import { guardUser } from "@/lib/supabase-route";
 import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,8 @@ export const dynamic = "force-dynamic";
  * because `domain_ranks` does not include those fields.
  */
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const key = process.env.SEMRUSH_API_KEY;
   if (!key) {
     return NextResponse.json({
@@ -30,11 +33,11 @@ export async function GET() {
   }
 
   try {
-    const { semrushDomain, semrushDatabase } = await getTenantConfig();
+    const { seoDomain, semrushDatabase } = await getTenantConfig();
     const ranksUrl = semrushSeoUrl({
       key,
       type: "domain_ranks",
-      domain: semrushDomain,
+      domain: seoDomain,
       database: semrushDatabase,
       export_columns: "Dn,Rk,Or,Ot",
       export_decode: "1",
@@ -43,7 +46,7 @@ export async function GET() {
     const backlinksUrl = semrushAnalyticsUrl({
       key,
       type: "backlinks_overview",
-      target: semrushDomain,
+      target: seoDomain,
       target_type: "root_domain",
       export_columns: "ascore,total",
       export_decode: "1",

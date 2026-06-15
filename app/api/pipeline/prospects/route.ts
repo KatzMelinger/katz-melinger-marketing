@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const sb = getSupabaseServer();
   if (!sb) {
     return NextResponse.json(
@@ -41,6 +44,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await req.json();

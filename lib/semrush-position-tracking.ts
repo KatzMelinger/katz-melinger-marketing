@@ -1,9 +1,9 @@
 /**
  * Push keywords INTO a Semrush Position Tracking campaign (two-way sync).
  *
- * Read sync (Semrush -> MarketOS) is the CSV import + the domain_organic
+ * Read sync (Semrush -> Huraqan) is the CSV import + the domain_organic
  * refresh cron. This module is the reverse: when keywords are added in
- * MarketOS, mirror them into the firm's Semrush campaign so Semrush's
+ * Huraqan, mirror them into the firm's Semrush campaign so Semrush's
  * dashboards / position history / reports stay in sync.
  *
  * API: PUT https://api.semrush.com/management/v1/projects/{campaignID}/keywords

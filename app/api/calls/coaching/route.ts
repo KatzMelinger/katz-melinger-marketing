@@ -13,6 +13,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -50,6 +51,8 @@ function num(v: unknown): number | null {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
   const tid = await resolveTenantId();

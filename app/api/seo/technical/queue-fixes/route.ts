@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { normalizeDomain, type FixType } from "@/lib/wp-autopilot";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,8 @@ const VALID_FIX_TYPES: FixType[] = [
 ];
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as {
     page_url?: unknown;
     fixes?: unknown;

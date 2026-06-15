@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getGoogleAccessToken } from "@/lib/google-access-token";
-import { getGscSiteUrl, gscSiteUrlEncoded } from "@/lib/gsc-site-url";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,9 @@ export async function GET(req: Request) {
   }
   const token = auth.token;
 
-  const base = `https://searchconsole.googleapis.com/webmasters/v3/sites/${gscSiteUrlEncoded()}/searchAnalytics/query`;
+  // Per-tenant Search Console property (KM's config returns its own site URL).
+  const { gscSiteUrl } = await getTenantConfig();
+  const base = `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(gscSiteUrl)}/searchAnalytics/query`;
   const range = dateRange();
 
   async function query(body: Record<string, unknown>) {
@@ -121,7 +123,7 @@ export async function GET(req: Request) {
       }
 
       return NextResponse.json({
-        propertyUrl: getGscSiteUrl(),
+        propertyUrl: gscSiteUrl,
         totalClicks,
         totalImpressions,
         avgCtr,

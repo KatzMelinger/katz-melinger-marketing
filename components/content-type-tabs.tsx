@@ -40,7 +40,7 @@ export function ContentTypeTabs() {
             onClick={() => setType(t)}
             className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
               active
-                ? "bg-[#185FA5] text-white"
+                ? "bg-brand text-white"
                 : "bg-white border border-slate-200 text-slate-700 hover:border-slate-300"
             }`}
           >

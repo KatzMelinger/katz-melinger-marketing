@@ -9,6 +9,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createJob, runAnthropicJob } from "@/lib/keyword-research-jobs";
 import { getFirmContext } from "@/lib/firm-context";
+import { guardUser } from "@/lib/supabase-route";
+import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,6 +19,8 @@ const MAX_COMPETITORS = 10;
 const MAX_COMPETITOR_LENGTH = 100;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const { competitors } = body || {};
@@ -36,6 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const firmContext = await getFirmContext();
+    const cfg = await getTenantConfig();
 
     const competitorContext =
       competitorList.length > 0
@@ -46,12 +51,12 @@ export async function POST(req: NextRequest) {
 
 ${firmContext}`;
 
-    const userPrompt = `Identify keyword gaps and competitive opportunities for katzmelinger.com.
+    const userPrompt = `Identify keyword gaps and competitive opportunities for ${cfg.seoDomain}.
 
 ${competitorContext}
 
 Find:
-1. Keywords competitors likely rank for that katzmelinger.com probably doesn't
+1. Keywords competitors likely rank for that ${cfg.seoDomain} probably doesn't
 2. Underserved topics in employment law that no one covers well
 3. Emerging search trends in employment law
 4. Local SEO opportunities specific to NY/NJ

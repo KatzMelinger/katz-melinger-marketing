@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LayoutShell } from "@/components/layout-shell";
+import { APP_NAME } from "@/lib/app-config";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KatzMelinger Marketing",
+  title: APP_NAME,
   description:
-    "Marketing analytics dashboard for Katz Melinger PLLC, plaintiff employment law in NYC.",
+    "Marketing, SEO, and content command center for law firms.",
 };
 
 export default function RootLayout({

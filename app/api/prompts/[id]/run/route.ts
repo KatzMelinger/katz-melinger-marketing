@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { runPrompt } from "@/lib/prompt-runner";
-import { getCurrentUser } from "@/lib/supabase-route";
+import { getCurrentUser, guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,6 +19,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const { id } = await params;
   const tid = await resolveTenantId();
   const body = await req.json().catch(() => ({}));

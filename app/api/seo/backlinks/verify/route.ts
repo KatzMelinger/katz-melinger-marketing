@@ -8,10 +8,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyBacklinkFromUrl } from "@/lib/backlink-verify";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const url = (body?.url as string | undefined)?.trim();
   if (!url) return NextResponse.json({ error: "url required" }, { status: 400 });

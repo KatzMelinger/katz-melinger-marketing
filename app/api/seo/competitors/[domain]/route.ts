@@ -26,10 +26,10 @@ export async function GET(_request: Request, context: Context) {
   }
 
   try {
-    const { semrushDomain } = await getTenantConfig();
+    const { seoDomain } = await getTenantConfig();
     const [keywords, gaps, backlinks, technical] = await Promise.all([
       getDomainOrganicKeywords(domain, 60),
-      getKeywordGapVsCompetitor(domain, semrushDomain),
+      getKeywordGapVsCompetitor(domain, seoDomain),
       getBacklinkOverview(domain),
       getTechnicalSeoMonitoring(`https://${domain}`),
     ]);
