@@ -65,7 +65,7 @@ export async function GET() {
     ? settings.pillars.map((p: { id: string; label: string }) => ({ id: p.id, label: p.label }))
     : [];
 
-  const [{ data: opps }, { data: pipe }] = await Promise.all([
+  const [{ data: opps }, { data: pipe }, { data: tracked }] = await Promise.all([
     supabase
       .from("seo_opportunities")
       .select("id, keyword, status, pillar_id, practice_area, recommended_content_type, existing_url, intent, competitor, search_volume")
@@ -74,6 +74,14 @@ export async function GET() {
       .from("content_pipeline")
       .select("id, title, keywords, status, bucket, url, draft_id")
       .order("updated_at", { ascending: false }),
+    // Position-drop source for Optimize/Repurpose: tracked keywords whose rank
+    // worsened. A "drop" means the rank NUMBER went up (e.g. #4 → #9). So
+    // "dropped > 5 positions" == current_rank - previous_rank > 5.
+    supabase
+      .from("seo_keywords")
+      .select("id, keyword, url, current_rank, previous_rank, search_volume, practice_area")
+      .not("current_rank", "is", null)
+      .not("previous_rank", "is", null),
   ]);
 
   type Item = {
@@ -81,7 +89,7 @@ export async function GET() {
     title: string;
     stageKind: string;
     tab: "new" | "existing";
-    source: "opportunity" | "pipeline";
+    source: "opportunity" | "pipeline" | "page";
     pillarId: string | null;
     practiceArea: string | null;
     assetType: string | null;
@@ -97,6 +105,10 @@ export async function GET() {
     pipelineId: number | null; // content_pipeline.id (numeric) for DraftDrawer
     rawStatus: string | null; // content_pipeline.status for DraftDrawer
     keywords: string | null;
+    // Position-drop fields (source === "page" only)
+    rankDrop?: number;
+    currentRank?: number | null;
+    previousRank?: number | null;
   };
   const items: Item[] = [];
 
@@ -148,6 +160,43 @@ export async function GET() {
       pipelineId: (p.id as number) ?? null,
       rawStatus: (p.status as string) ?? null,
       keywords: (p.keywords as string) ?? null,
+    });
+  }
+
+  // Position-drop pages → Optimize/Repurpose (existing tab). Dedupe by URL so a
+  // page already surfaced via an opportunity's existing_url isn't doubled.
+  const seenUrls = new Set(items.filter((i) => i.url).map((i) => (i.url as string).toLowerCase()));
+  for (const t of tracked ?? []) {
+    const cur = t.current_rank as number | null;
+    const prev = t.previous_rank as number | null;
+    if (cur == null || prev == null) continue;
+    const drop = cur - prev; // positive = rank worsened
+    if (drop <= 5) continue; // only "dropped more than 5 positions"
+    const url = (t.url as string) ?? null;
+    if (url && seenUrls.has(url.toLowerCase())) continue;
+    if (url) seenUrls.add(url.toLowerCase());
+    items.push({
+      id: `kw-${t.id}`,
+      title: (t.keyword as string) ?? url ?? "(untitled)",
+      stageKind: "published",
+      tab: "existing",
+      source: "page",
+      pillarId: null,
+      practiceArea: (t.practice_area as string) ?? null,
+      assetType: null,
+      bucket: null,
+      url,
+      draftId: null,
+      needsReview: false,
+      intent: null,
+      competitor: null,
+      searchVolume: (t.search_volume as number) ?? null,
+      pipelineId: null,
+      rawStatus: null,
+      keywords: null,
+      rankDrop: drop,
+      currentRank: cur,
+      previousRank: prev,
     });
   }
 
