@@ -72,7 +72,7 @@ export async function GET() {
       .eq("excluded", false),
     supabase
       .from("content_pipeline")
-      .select("id, title, keywords, status, bucket, url, draft_id")
+      .select("id, title, keywords, status, bucket, url, draft_id, suggestion_id")
       .order("updated_at", { ascending: false }),
     // Position-drop source for Optimize/Repurpose: tracked keywords whose rank
     // worsened. A "drop" means the rank NUMBER went up (e.g. #4 → #9). So
@@ -105,6 +105,7 @@ export async function GET() {
     pipelineId: number | null; // content_pipeline.id (numeric) for DraftDrawer
     rawStatus: string | null; // content_pipeline.status for DraftDrawer
     keywords: string | null;
+    suggestionId: string | null; // brief_suggestions.id — the brief behind a brief-stage row
     // Position-drop fields (source === "page" only)
     rankDrop?: number;
     currentRank?: number | null;
@@ -136,6 +137,7 @@ export async function GET() {
       pipelineId: null,
       rawStatus: null,
       keywords: null,
+      suggestionId: null,
     });
   }
 
@@ -160,6 +162,7 @@ export async function GET() {
       pipelineId: (p.id as number) ?? null,
       rawStatus: (p.status as string) ?? null,
       keywords: (p.keywords as string) ?? null,
+      suggestionId: (p.suggestion_id as string) ?? null,
     });
   }
 
@@ -194,6 +197,7 @@ export async function GET() {
       pipelineId: null,
       rawStatus: null,
       keywords: null,
+      suggestionId: null,
       rankDrop: drop,
       currentRank: cur,
       previousRank: prev,

@@ -37,6 +37,14 @@ export type CampaignPerformanceRow = {
   emails_sent: number;
   open_rate: number;
   click_rate: number;
+  unsubscribes: number;
+};
+
+export type SegmentRow = {
+  segment_id: string;
+  name: string;
+  /** CC doesn't always return a count on the list endpoint — null when absent. */
+  contact_count: number | null;
 };
 
 export type SyncActivityRow = {
@@ -80,6 +88,15 @@ function parseCampaignRow(
     status.emails_sent ?? status.sends ?? status.send_count ?? c.emails_sent,
   );
 
+  const unsubscribes = extractNumber(
+    status.unsubscribes ??
+      status.opt_outs ??
+      status.unsubscribe_count ??
+      status.opt_out_count ??
+      c.unsubscribes ??
+      c.opt_outs,
+  );
+
   let open_rate = normalizeRate(
     extractNumber(status.open_rate ?? status.unique_open_rate ?? c.open_rate),
   );
@@ -111,7 +128,78 @@ function parseCampaignRow(
     emails_sent,
     open_rate: Number.isFinite(open_rate) ? open_rate : 0,
     click_rate: Number.isFinite(click_rate) ? click_rate : 0,
+    unsubscribes,
   };
+}
+
+type CampaignStats = {
+  sends: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+};
+
+/**
+ * Per-campaign performance stats. CC's /emails list carries only a status
+ * string (no metrics), so opens/clicks/bounces/unsubscribes come from the
+ * summary-reports endpoint, keyed by campaign_id. Best-effort: returns an empty
+ * map if the endpoint isn't available, leaving the /emails-derived fallback.
+ */
+async function fetchCampaignSummaries(): Promise<Map<string, CampaignStats>> {
+  const map = new Map<string, CampaignStats>();
+  try {
+    const res = await ccAuthedFetch(
+      `${CONSTANT_CONTACT_API_BASE}/reports/summary_reports/email_campaign_summaries?limit=500`,
+    );
+    if (!res.ok) return map;
+    const body = await parseJsonSafe(res);
+    const arr = Array.isArray((body as { bulk_email_campaign_summaries?: unknown }).bulk_email_campaign_summaries)
+      ? ((body as { bulk_email_campaign_summaries: Record<string, unknown>[] }).bulk_email_campaign_summaries)
+      : [];
+    for (const s of arr) {
+      const id = String(s.campaign_id ?? "");
+      if (!id) continue;
+      const u =
+        s.unique_counts && typeof s.unique_counts === "object"
+          ? (s.unique_counts as Record<string, unknown>)
+          : {};
+      map.set(id, {
+        sends: extractNumber(u.sends),
+        opens: extractNumber(u.opens),
+        clicks: extractNumber(u.clicks),
+        bounces: extractNumber(u.bounces),
+        // CC names this field "optouts" (no underscore) on unique_counts.
+        unsubscribes: extractNumber(u.optouts ?? u.opt_outs ?? u.unsubscribes),
+      });
+    }
+  } catch {
+    /* endpoint unavailable — fall back to /emails-derived values */
+  }
+  return map;
+}
+
+/** Fetch contact segments (names + counts where CC provides them). Best-effort:
+ *  returns [] if the segments endpoint is unavailable on the account/plan. */
+async function fetchSegments(): Promise<SegmentRow[]> {
+  try {
+    const res = await ccAuthedFetch(`${CONSTANT_CONTACT_API_BASE}/segments?limit=1000`);
+    if (!res.ok) return [];
+    const body = await parseJsonSafe(res);
+    const arr = Array.isArray((body as { segments?: unknown }).segments)
+      ? ((body as { segments: unknown[] }).segments as Record<string, unknown>[])
+      : [];
+    return arr.map((s) => ({
+      segment_id: String(s.segment_id ?? s.id ?? ""),
+      name: String(s.name ?? "Untitled segment"),
+      contact_count:
+        s.contact_count != null || s.member_count != null
+          ? extractNumber(s.contact_count ?? s.member_count)
+          : null,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function fetchRevenuePlaceholder(): Promise<number> {
@@ -157,9 +245,11 @@ export async function fetchAnalyticsResponse(): Promise<NextResponse> {
   const listsUrl = `${CONSTANT_CONTACT_API_BASE}/contact_lists?limit=1000&include_membership_count=active`;
 
   try {
-    const [emailsRes, listsRes] = await Promise.all([
+    const [emailsRes, listsRes, segments, summaries] = await Promise.all([
       ccAuthedFetch(emailsUrl),
       ccAuthedFetch(listsUrl),
+      fetchSegments(),
+      fetchCampaignSummaries(),
     ]);
 
     const emailsBody = await parseJsonSafe(emailsRes);
@@ -198,17 +288,37 @@ export async function fetchAnalyticsResponse(): Promise<NextResponse> {
     }
 
     const rawCampaigns = normalizeCampaigns(emailsBody);
-    const performance: CampaignPerformanceRow[] = rawCampaigns.map((c, i) =>
-      parseCampaignRow(c, i),
-    );
+    const performance: CampaignPerformanceRow[] = rawCampaigns.map((c, i) => {
+      const row = parseCampaignRow(c, i);
+      // Overlay real stats from the summary-reports endpoint (the /emails list
+      // carries no metrics). Keeps the /emails-derived row as the fallback.
+      const s = summaries.get(row.campaign_id);
+      if (s) {
+        const opens = s.opens || row.opens;
+        const clicks = s.clicks || row.clicks;
+        const sends = s.sends || row.emails_sent;
+        return {
+          ...row,
+          opens,
+          clicks,
+          emails_sent: sends,
+          unsubscribes: s.unsubscribes,
+          open_rate: sends > 0 ? (opens / sends) * 100 : row.open_rate,
+          click_rate: sends > 0 ? (clicks / sends) * 100 : row.click_rate,
+        };
+      }
+      return row;
+    });
 
     let total_opens = 0;
     let total_clicks = 0;
     let total_sent = 0;
+    let total_unsubscribes = 0;
     for (const row of performance) {
       total_opens += row.opens;
       total_clicks += row.clicks;
       total_sent += row.emails_sent;
+      total_unsubscribes += row.unsubscribes;
     }
 
     const overall_open_rate =
@@ -265,11 +375,14 @@ export async function fetchAnalyticsResponse(): Promise<NextResponse> {
         total_opens,
         total_clicks,
         total_sent,
+        total_unsubscribes,
+        total_segments: segments.length,
         overall_open_rate,
         overall_click_rate,
         revenue_generated,
       },
       campaigns: performance,
+      segments,
       sync_activity,
       generated_at,
     });

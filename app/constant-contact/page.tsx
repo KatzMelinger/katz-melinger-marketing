@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import { MarketingNav } from "@/components/marketing-nav";
+import { ConnectionHealthBadge } from "@/components/connection-health-badge";
 
 const BG = "#ffffff";
 const CARD = "#ffffff";
@@ -24,7 +25,9 @@ const CC_BRAND = "#F47B20";
 const SYNC_STORAGE_PREFIX = "constant-contact-list-sync:";
 const ACTIVITY_LOG_KEY = "constant-contact-activity-log";
 
-const REFRESH_MS = 30_000;
+// 5 minutes — the analytics tab used to poll every 30s, which hammered the CC
+// API and amplified refresh-token rotation churn. Five minutes is plenty fresh.
+const REFRESH_MS = 5 * 60_000;
 
 /** Email campaign row from GET /api/constant-contact?action=campaigns */
 export interface EmailCampaign {
@@ -108,6 +111,8 @@ export interface EmailAnalyticsSummary {
   overall_open_rate: number;
   overall_click_rate: number;
   revenue_generated: number;
+  total_unsubscribes?: number;
+  total_segments?: number;
 }
 
 export interface CampaignPerformanceRow {
@@ -119,6 +124,7 @@ export interface CampaignPerformanceRow {
   emails_sent: number;
   open_rate: number;
   click_rate: number;
+  unsubscribes?: number;
 }
 
 export interface SyncActivityServerRow {
@@ -874,8 +880,9 @@ export default function ConstantContactPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Constant Contact</h1>
           <p className="mt-1 text-sm text-slate-500">
             Campaigns, lists, automation, and performance analytics. Data refreshes every
-            30 seconds on the active tab.
+            5 minutes on the active tab.
           </p>
+          <ConnectionHealthBadge className="mt-3 max-w-md" />
           <div className="mt-4 flex flex-wrap gap-2 border-b border-[#e2e8f0] pb-3">
             {tabBtn("campaigns", "Campaigns")}
             {tabBtn("lists", "Lists")}
@@ -1506,7 +1513,14 @@ export default function ConstantContactPage() {
                     <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
                       {analyticsSummary.total_contacts.toLocaleString()}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">Across contact lists</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Across contact lists
+                      {analyticsSummary.total_segments != null
+                        ? ` · ${analyticsSummary.total_segments.toLocaleString()} segment${
+                            analyticsSummary.total_segments === 1 ? "" : "s"
+                          }`
+                        : ""}
+                    </p>
                   </article>
                   <article
                     className="rounded-lg border border-[#e2e8f0]/80 p-4"
@@ -1528,6 +1542,11 @@ export default function ConstantContactPage() {
                       Clicks: {analyticsSummary.total_clicks.toLocaleString()} (
                       {formatPct(analyticsSummary.overall_click_rate)})
                     </p>
+                    {analyticsSummary.total_unsubscribes != null ? (
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Unsubscribes: {analyticsSummary.total_unsubscribes.toLocaleString()}
+                      </p>
+                    ) : null}
                   </article>
                   <article
                     className="rounded-lg border border-[#e2e8f0]/80 p-4"
@@ -1603,7 +1622,8 @@ export default function ConstantContactPage() {
                         <th className="pb-3 pr-4 font-medium tabular-nums">Opens</th>
                         <th className="pb-3 pr-4 font-medium tabular-nums">Clicks</th>
                         <th className="pb-3 pr-4 font-medium tabular-nums">Open rate</th>
-                        <th className="pb-3 font-medium tabular-nums">Click rate</th>
+                        <th className="pb-3 pr-4 font-medium tabular-nums">Click rate</th>
+                        <th className="pb-3 font-medium tabular-nums">Unsub</th>
                       </tr>
                     </thead>
                     <tbody className="text-slate-700">
@@ -1623,11 +1643,14 @@ export default function ConstantContactPage() {
                             {formatPct(row.open_rate)}
                           </td>
                           <td
-                            className={`py-2 tabular-nums font-medium ${clickRateColor(
+                            className={`py-2 pr-4 tabular-nums font-medium ${clickRateColor(
                               row.click_rate,
                             )}`}
                           >
                             {formatPct(row.click_rate)}
+                          </td>
+                          <td className="py-2 tabular-nums text-slate-500">
+                            {(row.unsubscribes ?? 0).toLocaleString()}
                           </td>
                         </tr>
                       ))}

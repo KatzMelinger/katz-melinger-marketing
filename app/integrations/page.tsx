@@ -12,6 +12,8 @@
 
 import { useEffect, useState } from "react";
 
+import { ConnectionHealthBadge } from "@/components/connection-health-badge";
+
 type Status = "connected" | "missing_env" | "needs_oauth" | "error";
 
 type Integration = {
@@ -142,6 +144,8 @@ export default function IntegrationsPage() {
           {banner.text}
         </div>
       )}
+
+      <ConnectionHealthBadge className="mb-6 max-w-md" defaultOpen />
 
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">

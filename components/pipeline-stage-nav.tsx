@@ -15,7 +15,7 @@ const STAGES: { href: string; label: string }[] = [
   { href: "/content/research", label: "Research" },
   { href: "/content/decisions", label: "Decisions" },
   { href: "/content/briefs", label: "Briefs" },
-  { href: "/content/pipeline", label: "Production" },
+  { href: "/content/pipeline", label: "Content Studio" },
   { href: "/content/publishing-qa", label: "QA" },
   { href: "/content/refresh", label: "Refresh" },
 ];
@@ -24,8 +24,16 @@ export function PipelineStageNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="mb-5 flex flex-wrap items-center gap-1 text-sm">
-      {STAGES.map((s, i) => {
+    <div className="mb-5 space-y-2">
+      {/* Back to the unified board, so every stage links home without the sidebar. */}
+      <Link
+        href="/content-production"
+        className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+      >
+        <span aria-hidden>←</span> Production Board
+      </Link>
+      <nav className="flex flex-wrap items-center gap-1 text-sm">
+        {STAGES.map((s, i) => {
         const active = pathname === s.href || pathname?.startsWith(s.href + "/");
         return (
           <span key={s.href} className="flex items-center gap-1">
@@ -45,9 +53,10 @@ export function PipelineStageNav() {
             >
               {s.label}
             </Link>
-          </span>
-        );
-      })}
-    </nav>
+            </span>
+          );
+        })}
+      </nav>
+    </div>
   );
 }

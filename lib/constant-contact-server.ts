@@ -228,9 +228,16 @@ export function getConstantContactAuthUrl(state: string): string {
   const cfg = getOAuthConfig();
   if ("error" in cfg) return "";
 
-  const scope =
+  // offline_access is REQUIRED for Constant Contact to issue a refresh token.
+  // Without it every connection is access-token-only and dies on expiry with no
+  // way to renew — the root cause of the recurring "reconnect required" loop.
+  // We force it on even when CONSTANT_CONTACT_OAUTH_SCOPES overrides the rest.
+  const baseScope =
     process.env.CONSTANT_CONTACT_OAUTH_SCOPES?.trim() ||
     "account_read contact_data campaign_data";
+  const scope = /\boffline_access\b/.test(baseScope)
+    ? baseScope
+    : `${baseScope} offline_access`;
 
   const u = new URL(`${CONSTANT_CONTACT_AUTH_BASE}/authorize`);
   u.searchParams.set("client_id", cfg.clientId);

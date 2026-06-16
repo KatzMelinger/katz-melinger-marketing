@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 import { ContentNav } from "@/components/content-nav";
 import { ContentTypeTabs } from "@/components/content-type-tabs";
@@ -242,6 +243,12 @@ export default function PipelinePage() {
 
   return (
     <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+      <Link
+        href="/content-production"
+        className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+      >
+        <span aria-hidden>←</span> Production Board
+      </Link>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Content studio</h1>

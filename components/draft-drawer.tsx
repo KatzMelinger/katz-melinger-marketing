@@ -25,6 +25,11 @@ import { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 
 import { DashSpinner, DashPill } from "@/components/dashboard-ui";
+import {
+  AnalysisCard,
+  ApplySuggestionModal,
+  type Analysis,
+} from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 
 const PROSE_CLASS =
@@ -61,6 +66,9 @@ const SOURCE_LABEL: Record<string, string> = {
 type ReviewItem = {
   id: number;
   draft_id: string | null;
+  /** brief_suggestions.id — present on rows created from a brief. Lets the
+   *  drawer show the brief even before a draft has been generated. */
+  suggestion_id?: string | null;
   status: PipelineStatus;
   title: string;
   bucket?: string | null;
@@ -88,13 +96,6 @@ type DraftRow = {
   created_at?: string;
   seo_brief?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
-};
-
-type Analysis = {
-  readability_score: number | null;
-  reading_grade_level: number | null;
-  word_count: number | null;
-  seo_score: number | null;
 };
 
 function readBrief(draft: DraftRow): Brief {
@@ -165,6 +166,7 @@ export function DraftDrawer({
   onEditMeta?: () => void;
 }) {
   const draftId = item.draft_id ?? "";
+  const suggestionId = item.suggestion_id ?? "";
   const [draft, setDraft] = useState<DraftRow | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -176,29 +178,65 @@ export function DraftDrawer({
   const [legalReview, setLegalReview] = useState(false);
   const [proofread, setProofread] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // When the row has no draft yet (brief stage), we load the linked brief so
+  // the reviewer still sees the brief they built — not "Draft not found".
+  const [briefOnly, setBriefOnly] = useState<Brief | null>(null);
+  const [suggestedRaw, setSuggestedRaw] = useState<Record<string, unknown> | null>(null);
+  const [generating, setGenerating] = useState(false);
+  // Findings the reviewer chose to apply — opens the AI rewrite/diff modal.
+  const [applyingFindings, setApplyingFindings] = useState<string[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/content/drafts/${draftId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        setDraft(data.draft ?? null);
-        setAnalysis(data.latest_analysis ?? null);
-        setEditBody(data.draft?.body ?? "");
-        setLoading(false);
-        if (data.draft && !data.latest_analysis) void runAnalysis(data.draft);
-      })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
-      });
+    setDraft(null);
+    setBriefOnly(null);
+    setSuggestedRaw(null);
+
+    if (draftId) {
+      fetch(`/api/content/drafts/${draftId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return;
+          setDraft(data.draft ?? null);
+          setAnalysis(data.latest_analysis ?? null);
+          setEditBody(data.draft?.body ?? "");
+          setLoading(false);
+          if (data.draft && !data.latest_analysis) void runAnalysis(data.draft);
+        })
+        .catch(() => {
+          if (!cancelled) setLoading(false);
+        });
+    } else if (suggestionId) {
+      // No draft generated yet — show the brief from the linked suggestion.
+      fetch(`/api/seo/suggestions/${suggestionId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return;
+          const raw = (data?.suggested_brief ?? null) as Record<string, unknown> | null;
+          setSuggestedRaw(raw);
+          setBriefOnly(
+            raw
+              ? readBrief({ id: "", title: null, body: "", metadata: { km_brief: raw } } as DraftRow)
+              : ({} as Brief),
+          );
+          setLoading(false);
+        })
+        .catch(() => {
+          if (!cancelled) setLoading(false);
+        });
+    } else {
+      setLoading(false);
+    }
     return () => {
       cancelled = true;
     };
-  }, [draftId]);
+  }, [draftId, suggestionId]);
 
-  const brief = useMemo(() => (draft ? readBrief(draft) : ({} as Brief)), [draft]);
+  const brief = useMemo(
+    () => (draft ? readBrief(draft) : (briefOnly ?? ({} as Brief))),
+    [draft, briefOnly],
+  );
   const body = editing ? editBody : (draft?.body ?? "");
   const renderedBody = useMemo(
     () =>
@@ -241,6 +279,72 @@ export function DraftDrawer({
       setAnalyzing(false);
     }
   }
+
+  // Generate the draft from the linked brief (brief-stage rows that have no
+  // draft yet). On success the new draft is pulled straight into the drawer.
+  const generateDraft = async () => {
+    if (!suggestedRaw) return;
+    setGenerating(true);
+    setMsg("Generating draft from brief…");
+    try {
+      const res = await fetch("/api/content/km-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...suggestedRaw, language: "en", suggestionId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && typeof data?.draft_id === "string") {
+        const r = await fetch(`/api/content/drafts/${data.draft_id}`);
+        const dj = await r.json();
+        setDraft(dj.draft ?? null);
+        setAnalysis(dj.latest_analysis ?? null);
+        setEditBody(dj.draft?.body ?? "");
+        setBriefOnly(null);
+        setStatus("draft");
+        setMsg("Draft generated.");
+        onChanged();
+        if (dj.draft && !dj.latest_analysis) void runAnalysis(dj.draft);
+      } else {
+        setMsg(data?.error ? `Generation failed: ${data.error}` : "Generation failed.");
+      }
+    } catch {
+      setMsg("Generation failed.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // Persist an AI-proposed edit after the reviewer accepts it in the diff modal.
+  const acceptApply = async (newBody: string) => {
+    if (!draft) return;
+    const res = await fetch(`/api/content/drafts/${draft.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: newBody }),
+    });
+    if (res.ok) {
+      setDraft({ ...draft, body: newBody });
+      setEditBody(newBody);
+      setMsg("Applied.");
+      onChanged();
+    }
+    setApplyingFindings(null);
+  };
+
+  // Apply a suggested title — a quick PATCH, no AI step.
+  const applyTitle = async (newTitle: string) => {
+    if (!draft) return;
+    const res = await fetch(`/api/content/drafts/${draft.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newTitle }),
+    });
+    if (res.ok) {
+      setDraft({ ...draft, title: newTitle });
+      setMsg("Title updated.");
+      onChanged();
+    }
+  };
 
   const saveBody = async () => {
     if (!draft) return;
@@ -328,8 +432,10 @@ export function DraftDrawer({
           <div className="flex items-center justify-center py-20 text-sm text-slate-500">
             <DashSpinner /> Loading draft…
           </div>
-        ) : !draft ? (
-          <div className="py-20 text-center text-sm text-slate-500">Draft not found.</div>
+        ) : !draft && !briefOnly ? (
+          <div className="py-20 text-center text-sm text-slate-500">
+            {suggestionId || draftId ? "Draft not found." : "No brief linked to this item yet."}
+          </div>
         ) : (
           <div className="px-5 py-4">
             {/* Title + tags + toolbar */}
@@ -344,18 +450,20 @@ export function DraftDrawer({
                   {brief.cannibalizationConfirmed && <DashPill tone="emerald">No cannibalization</DashPill>}
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <button onClick={copyBody} className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5]">
-                  Copy
-                </button>
-                <button
-                  onClick={() => draft && runAnalysis(draft)}
-                  disabled={analyzing}
-                  className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
-                >
-                  {analyzing ? "Analyzing…" : "Run analysis"}
-                </button>
-              </div>
+              {draft && (
+                <div className="flex items-center gap-1.5">
+                  <button onClick={copyBody} className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5]">
+                    Copy
+                  </button>
+                  <button
+                    onClick={() => draft && runAnalysis(draft)}
+                    disabled={analyzing}
+                    className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+                  >
+                    {analyzing ? "Analyzing…" : "Run analysis"}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* SEO metadata bar — full width, on top */}
@@ -400,22 +508,43 @@ export function DraftDrawer({
                 <div className="rounded-lg border border-slate-200">
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Draft content</span>
-                    {editing ? (
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { setEditing(false); setEditBody(draft.body); }} className="text-xs text-slate-500 hover:text-slate-700">
-                          Cancel
+                    {draft &&
+                      (editing ? (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => { setEditing(false); setEditBody(draft.body); }} className="text-xs text-slate-500 hover:text-slate-700">
+                            Cancel
+                          </button>
+                          <button onClick={saveBody} disabled={saving} className="text-xs font-medium text-[#185FA5] hover:underline disabled:opacity-50">
+                            {saving ? "Saving…" : "Save"}
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setEditBody(draft.body); setEditing(true); }} className="text-xs font-medium text-[#185FA5] hover:underline">
+                          Edit
                         </button>
-                        <button onClick={saveBody} disabled={saving} className="text-xs font-medium text-[#185FA5] hover:underline disabled:opacity-50">
-                          {saving ? "Saving…" : "Save"}
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={() => { setEditBody(draft.body); setEditing(true); }} className="text-xs font-medium text-[#185FA5] hover:underline">
-                        Edit
-                      </button>
-                    )}
+                      ))}
                   </div>
-                  {editing ? (
+                  {!draft ? (
+                    <div className="px-4 py-8 text-center">
+                      <p className="text-sm font-medium text-slate-700">No draft generated yet</p>
+                      <p className="mx-auto mt-1 max-w-sm text-xs text-slate-400">
+                        This brief is ready. Generate the draft to review, QA, and publish it.
+                      </p>
+                      <button
+                        onClick={generateDraft}
+                        disabled={generating || !suggestedRaw}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {generating ? (
+                          <>
+                            <DashSpinner /> Generating…
+                          </>
+                        ) : (
+                          "Generate draft from brief"
+                        )}
+                      </button>
+                    </div>
+                  ) : editing ? (
                     <textarea
                       value={editBody}
                       onChange={(e) => setEditBody(e.target.value)}
@@ -462,29 +591,51 @@ export function DraftDrawer({
 
               {/* RIGHT: publish + QA + content info */}
               <div className="space-y-4">
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                  <div className="text-sm font-semibold text-emerald-900">Ready to publish</div>
-                  <p className="mt-0.5 text-xs text-emerald-700">
-                    {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
-                  </p>
-                  <button
-                    onClick={() => changeStatus("published", "Approved. WordPress publishing connects in Phase 4.")}
-                    disabled={!canPublish}
-                    className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
-                    title={canPublish ? undefined : "Complete the manual checks first"}
-                  >
-                    Approve → Publish to WordPress
-                  </button>
-                  <button
-                    onClick={() => changeStatus("draft", "Sent back to draft.")}
-                    className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
-                  >
-                    Send back to draft
-                  </button>
-                  <p className="mt-2 text-[10px] text-emerald-700/80">
-                    WordPress publishing connects in Phase 4 — this advances the editorial status for now.
-                  </p>
-                </div>
+                {draft ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                    <div className="text-sm font-semibold text-emerald-900">Ready to publish</div>
+                    <p className="mt-0.5 text-xs text-emerald-700">
+                      {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
+                    </p>
+                    <button
+                      onClick={() => changeStatus("published", "Approved. WordPress publishing connects in Phase 4.")}
+                      disabled={!canPublish}
+                      className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                      title={canPublish ? undefined : "Complete the manual checks first"}
+                    >
+                      Approve → Publish to WordPress
+                    </button>
+                    <button
+                      onClick={() => changeStatus("draft", "Sent back to draft.")}
+                      className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                    >
+                      Send back to draft
+                    </button>
+                    <p className="mt-2 text-[10px] text-emerald-700/80">
+                      WordPress publishing connects in Phase 4 — this advances the editorial status for now.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-[#185FA5]/30 bg-[#185FA5]/5 p-3">
+                    <div className="text-sm font-semibold text-slate-900">Brief ready</div>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      Generate the draft from this brief to start the review.
+                    </p>
+                    <button
+                      onClick={generateDraft}
+                      disabled={generating || !suggestedRaw}
+                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {generating ? (
+                        <>
+                          <DashSpinner /> Generating…
+                        </>
+                      ) : (
+                        "Generate draft from brief"
+                      )}
+                    </button>
+                  </div>
+                )}
 
                 {/* QA checklist */}
                 <div className="rounded-lg border border-slate-200 p-3">
@@ -502,7 +653,7 @@ export function DraftDrawer({
                     <Check ok={qa.titleLen} label="Title under 60 characters" />
                   </div>
                   <div className="mt-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                    Manual — Diana certifies
+                    Manual certification
                   </div>
                   <div className="mt-1 space-y-1">
                     <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
@@ -537,6 +688,42 @@ export function DraftDrawer({
                 {msg && <p className="text-xs text-slate-500">{msg}</p>}
               </div>
             </div>
+
+            {/* Analysis results — full width, at the bottom. The same rich card
+                used in the Drafts studio: scores, findings (apply-to-rewrite),
+                suggested titles/images/links, compliance, and overlap. */}
+            {draft &&
+              (analysis ? (
+                <div className="mt-4">
+                  <AnalysisCard
+                    analysis={analysis}
+                    onRerun={() => runAnalysis(draft)}
+                    rerunning={analyzing}
+                    onApplyFindings={(fs) => setApplyingFindings(fs)}
+                    onApplyTitle={applyTitle}
+                    currentTitle={draft.title}
+                  />
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-slate-200 p-4 text-xs text-slate-500">
+                  {analyzing ? (
+                    <span className="inline-flex items-center gap-2">
+                      <DashSpinner /> Running analysis…
+                    </span>
+                  ) : (
+                    "No analysis yet — click “Run analysis” above."
+                  )}
+                </div>
+              ))}
+
+            {draft && applyingFindings && (
+              <ApplySuggestionModal
+                draftId={draft.id}
+                findings={applyingFindings}
+                onAccept={acceptApply}
+                onClose={() => setApplyingFindings(null)}
+              />
+            )}
           </div>
         )}
       </div>

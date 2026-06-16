@@ -37,6 +37,8 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getPillars } from "@/lib/pillars-store";
 import { detectContentOverlap } from "@/lib/content-overlap";
+import { getFirmContext } from "@/lib/firm-context";
+import { buildSkillsContext } from "@/lib/content-skills";
 import {
   languageDirective,
   normalizeLanguage,
@@ -167,6 +169,47 @@ export async function POST(req: Request) {
 
   let userPrompt = buildBriefUserPrompt(brief);
 
+  // --- Known firm information ------------------------------------------------
+  // Ground the FIRST pass in what the firm already knows, so drafts start
+  // in-voice instead of needing a rewrite pass:
+  //   1. getFirmContext   — the SAME brand-voice guide + audience personas the
+  //                         analyzer scores brand_voice against. Aligning the
+  //                         generator to it is what lifts the brand-voice score.
+  //   2. buildSkillsContext — the firm's trained content directions/skills
+  //                         (voice rules, do/don'ts, practice facts), scoped to
+  //                         this content type + practice area.
+  //   3. reference sources — any /content/sources material whose text matches
+  //                         this brief's keywords (facts/figures to draw on).
+  // All three fail soft (empty string) so generation never breaks on a missing
+  // table or unset brand voice.
+  const knownInfoTenantId = await resolveTenantId();
+  const [firmContext, skillsContext, sourcesBlock] = await Promise.all([
+    getFirmContext(knownInfoTenantId).catch(() => ""),
+    buildSkillsContext(
+      {
+        contentType: KM_CONTENT_TYPE_LABELS[brief.contentType],
+        practiceArea: brief.practiceArea === "employment" ? "Employment" : "Collections",
+      },
+      knownInfoTenantId,
+    ).catch(() => ""),
+    buildRelevantSourcesBlock(brief, knownInfoTenantId),
+  ]);
+
+  const knownInfo = [
+    firmContext &&
+      `FIRM CONTEXT — write in this firm's voice and to these audiences, and use ` +
+        `the contact details verbatim. This is the same brand-voice guide the ` +
+        `draft will be scored against, so match it:\n${firmContext}`,
+    skillsContext,
+    sourcesBlock,
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+
+  if (knownInfo) {
+    userPrompt = `${knownInfo}\n\n===\n\n${userPrompt}`;
+  }
+
   // Spanish (or any non-English) output directive.
   const langBlock = languageDirective(language);
   if (langBlock) {
@@ -289,6 +332,63 @@ async function linkPipelineDraft(suggestionId: string, draftId: string): Promise
       .neq("status", "published");
   } catch {
     /* non-fatal — draft is saved regardless of board state */
+  }
+}
+
+type SourceRow = {
+  filename: string | null;
+  url: string | null;
+  content: string | null;
+  notes: string | null;
+};
+
+/**
+ * Find reference source material relevant to this brief and render it as a
+ * prompt block. "Relevant" = the source's text/notes/filename mentions the
+ * brief's primary or secondary keyword (content_sources isn't tagged by
+ * practice area, so keyword overlap is the best signal we have). Capped to the
+ * 2 most recent matches, each truncated, so a large library can't blow the
+ * prompt. Fails soft to "" so generation never breaks if the table is missing.
+ */
+async function buildRelevantSourcesBlock(
+  brief: KMPerPageBrief,
+  tenantId: string,
+): Promise<string> {
+  const supabase = getSupabaseServer();
+  if (!supabase) return "";
+  const terms = [brief.primaryKeyword, ...(brief.secondaryKeywords ?? [])]
+    .map((t) => t.toLowerCase().trim())
+    .filter(Boolean);
+  if (terms.length === 0) return "";
+  try {
+    const { data } = await supabase
+      .from("content_sources")
+      .select("filename, url, content, notes")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (!data || data.length === 0) return "";
+    const EXCERPT = 1800;
+    const matches = (data as SourceRow[])
+      .filter((s) => {
+        const hay = `${s.filename ?? ""} ${s.notes ?? ""} ${s.content ?? ""}`.toLowerCase();
+        return terms.some((t) => hay.includes(t));
+      })
+      .slice(0, 2);
+    if (matches.length === 0) return "";
+    const blocks = matches.map((s, i) => {
+      const label = s.filename || s.url || `Source ${i + 1}`;
+      const content = s.content ?? "";
+      const excerpt = content.length > EXCERPT ? content.slice(0, EXCERPT) + "…" : content;
+      return `[${label}]${s.notes ? ` — note: ${s.notes}` : ""}\n${excerpt}`;
+    });
+    return (
+      `REFERENCE SOURCE MATERIAL — the firm provided these. Draw facts, figures, ` +
+      `and framing from them where relevant; do not contradict them and never ` +
+      `invent statistics they don't support:\n\n${blocks.join("\n\n")}`
+    );
+  } catch {
+    return "";
   }
 }
 

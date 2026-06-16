@@ -51,11 +51,10 @@ export const DEPARTMENTS: Department[] = [
       { label: "Website Pages", href: "/content/km", icon: "✎", status: "active" },
       { label: "Batch Generator", href: "/content/batch", icon: "🧪", status: "active" },
       { label: "Opportunities", href: "/seo/opportunities", icon: "✨", status: "active" },
-      { label: "Content Production", href: "/content-production", icon: "🗂", status: "active" },
-      { label: "Content Decisions", href: "/content/decisions", icon: "✓", status: "active" },
-      { label: "Briefs", href: "/content/briefs", icon: "📋", status: "active" },
-      { label: "Production Board", href: "/content/pipeline", icon: "▥", status: "active" },
-      { label: "Publishing QA", href: "/content/publishing-qa", icon: "🔍", status: "active" },
+      // The production line (Decisions, Briefs, Production Board, Publishing QA)
+      // is reached from the Content Production page itself, so it needs only one
+      // sidebar tab instead of five.
+      { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
       { label: "Refresh Queue", href: "/content/refresh", icon: "♻", status: "active" },
       { label: "Cluster Map", href: "/content/site-map", icon: "🗺", status: "active" },
       { label: "Intelligence", href: "/content/intelligence", icon: "💡", status: "active" },
