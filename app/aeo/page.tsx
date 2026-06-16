@@ -23,6 +23,7 @@ import {
   useContentActions,
   type ContentActions,
 } from "@/components/content-actions";
+import { AiVisibilityNav } from "@/components/ai-visibility-nav";
 import { MarketingNav } from "@/components/marketing-nav";
 
 type Tab = "overview" | "prompts" | "targets" | "sources" | "runs";
@@ -327,6 +328,7 @@ export default function AEOPage() {
     <>
       <MarketingNav />
       <div className="p-6 space-y-6 mx-auto max-w-7xl">
+      <AiVisibilityNav />
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Answer Engine Optimization</h1>

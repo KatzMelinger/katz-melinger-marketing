@@ -65,11 +65,10 @@ export async function GET() {
     ? settings.pillars.map((p: { id: string; label: string }) => ({ id: p.id, label: p.label }))
     : [];
 
-  const [{ data: opps }, { data: pipe }, { data: tracked }] = await Promise.all([
-    supabase
-      .from("seo_opportunities")
-      .select("id, keyword, status, pillar_id, practice_area, recommended_content_type, existing_url, intent, competitor, search_volume")
-      .eq("excluded", false),
+  // Opportunities (the SEO Opportunity Radar) now live in Content Studio, not on
+  // this board — the board shows the production pipeline (brief → published) plus
+  // position-drop pages for Optimize/Repurpose.
+  const [{ data: pipe }, { data: tracked }] = await Promise.all([
     supabase
       .from("content_pipeline")
       .select("id, title, keywords, status, bucket, url, draft_id, suggestion_id")
@@ -112,34 +111,6 @@ export async function GET() {
     previousRank?: number | null;
   };
   const items: Item[] = [];
-
-  // Opportunities: status=new with no page yet → "new content" Opportunity column.
-  // Opportunities with an existing page → "optimize"/"repurpose" candidates.
-  for (const o of opps ?? []) {
-    const hasPage = Boolean(o.existing_url);
-    if (!hasPage && o.status !== "new") continue; // advanced ones show via pipeline
-    items.push({
-      id: o.id as string,
-      title: (o.keyword as string) ?? "(untitled)",
-      stageKind: "opportunity",
-      tab: hasPage ? "existing" : "new",
-      source: "opportunity",
-      pillarId: (o.pillar_id as string) ?? null,
-      practiceArea: (o.practice_area as string) ?? null,
-      assetType: (o.recommended_content_type as string) ?? null,
-      bucket: null,
-      url: (o.existing_url as string) ?? null,
-      draftId: null,
-      needsReview: !o.pillar_id,
-      intent: (o.intent as string) ?? null,
-      competitor: (o.competitor as string) ?? null,
-      searchVolume: (o.search_volume as number) ?? null,
-      pipelineId: null,
-      rawStatus: null,
-      keywords: null,
-      suggestionId: null,
-    });
-  }
 
   // Pipeline items: the production stages (brief → published).
   for (const p of pipe ?? []) {

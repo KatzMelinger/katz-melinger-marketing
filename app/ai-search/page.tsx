@@ -16,6 +16,7 @@ import {
   useContentActions,
   type ContentActions,
 } from "@/components/content-actions";
+import { AiVisibilityNav } from "@/components/ai-visibility-nav";
 import { MarketingNav } from "@/components/marketing-nav";
 import { useTenantSiteUrl } from "@/components/tenant-provider";
 
@@ -339,6 +340,7 @@ export default function AISearchPage() {
     <>
       <MarketingNav />
       <div className="p-6 space-y-6 mx-auto max-w-7xl">
+      <AiVisibilityNav />
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">AI Search Optimization</h1>
         <p className="text-sm opacity-70 mt-1">
