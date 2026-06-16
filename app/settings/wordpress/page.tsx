@@ -149,8 +149,10 @@ export default function WordPressSettingsPage() {
     }
   };
 
+  // The plugin's "Dashboard base URL" field takes the ORIGIN only — it appends
+  // `/api/wp/recommendations` (and the other API paths) itself. Don't include a path.
   const pollUrl =
-    typeof window !== "undefined" ? `${window.location.origin}/api/wp/recommendations` : "/api/wp/recommendations";
+    typeof window !== "undefined" ? window.location.origin : "https://katz-melinger-marketing.vercel.app";
 
   const active = tokens.filter((t) => !t.revoked_at);
   const revoked = tokens.filter((t) => t.revoked_at);
@@ -246,10 +248,11 @@ export default function WordPressSettingsPage() {
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600">
           <li>Install &amp; activate the KM AutoPilot plugin on the WordPress site.</li>
           <li>
-            In the plugin settings, set the dashboard endpoint to:
+            In the plugin settings, set the <span className="font-medium">Dashboard base URL</span> to:
             <code className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800">
               {pollUrl}
             </code>
+            <span className="ml-1 text-xs text-slate-500">(base URL only — no path; the plugin adds the rest)</span>
           </li>
           <li>Paste the token from step 1 and save.</li>
           <li>
