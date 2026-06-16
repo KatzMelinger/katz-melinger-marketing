@@ -9,7 +9,15 @@ import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
-const VALID_STATUSES = ["idea", "brief", "draft", "review", "published"] as const;
+const VALID_STATUSES = [
+  "idea",
+  "brief",
+  "draft",
+  "review",
+  "needs_legal",
+  "approved",
+  "published",
+] as const;
 const VALID_BUCKETS = ["money_page", "bofu_education", "mofu_trust", "local_authority"] as const;
 const VALID_CONTENT_TYPES = ["website", "social", "email"] as const;
 

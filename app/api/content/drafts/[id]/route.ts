@@ -44,7 +44,15 @@ const VALID_DRAFT_STATUSES = [
   "archived",
 ] as const;
 
-const PIPELINE_STATUSES = new Set(["idea", "brief", "draft", "review", "published"]);
+const PIPELINE_STATUSES = new Set([
+  "idea",
+  "brief",
+  "draft",
+  "review",
+  "needs_legal",
+  "approved",
+  "published",
+]);
 
 export async function PATCH(
   req: NextRequest,

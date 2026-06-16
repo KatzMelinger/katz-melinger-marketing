@@ -96,7 +96,7 @@ type DrawerItem = {
   id: number;
   draft_id: string | null;
   suggestion_id: string | null;
-  status: "idea" | "brief" | "draft" | "review" | "published";
+  status: "idea" | "brief" | "draft" | "review" | "needs_legal" | "approved" | "published";
   title: string;
   bucket?: string | null;
   keywords?: string | null;
