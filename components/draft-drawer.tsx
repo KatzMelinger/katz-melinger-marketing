@@ -17,8 +17,10 @@
  * brief come from content_drafts, the scores from content_analyses. No new
  * data model — this is the spine's reviewer view.
  *
- * Approve → Publish is stubbed: it advances the editorial status. The actual
- * WordPress write lands in Phase 4 (lib/wordpress.ts is read-only today).
+ * The editorial machine is review → approved → published. Approve re-runs the
+ * compliance HARD gate server-side (/api/agent/approve) and fails closed to
+ * needs_legal; Publish advances approved → published. External posting
+ * (Ayrshare / WordPress) wires into the Publish step in later phases.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -42,14 +44,22 @@ const PILLAR_URL: Record<string, string> = Object.fromEntries(
   ALL_KM_PILLARS.map((p) => [p.id, p.url]),
 );
 
-type PipelineStatus = "idea" | "brief" | "draft" | "review" | "published";
+type PipelineStatus =
+  | "idea"
+  | "brief"
+  | "draft"
+  | "review"
+  | "needs_legal"
+  | "approved"
+  | "published";
 
 const STAGES: { key: PipelineStatus; label: string }[] = [
   { key: "idea", label: "Opportunity" },
   { key: "brief", label: "Brief" },
   { key: "draft", label: "Draft review" },
   { key: "review", label: "Approve" },
-  { key: "published", label: "Publish to WordPress" },
+  { key: "approved", label: "Approved" },
+  { key: "published", label: "Published" },
 ];
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -380,6 +390,81 @@ export function DraftDrawer({
     onChanged();
   };
 
+  // Move the draft's editorial status. When a draft_id exists we go through the
+  // draft endpoint so content_drafts and content_pipeline stay in lockstep (and
+  // the site_pages ingest fires on publish); brief-only rows fall back to the
+  // pipeline row.
+  const setDraftStage = async (next: PipelineStatus, note: string) => {
+    setStatus(next);
+    setMsg(note);
+    if (draftId) {
+      await fetch(`/api/content/drafts/${draftId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+    } else {
+      await fetch(`/api/content/pipeline/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+    }
+    onChanged();
+  };
+
+  // Approve = the human sign-off. The server re-runs the compliance HARD gate;
+  // a 422 means it was held at needs_legal (with violations), not approved.
+  const [approving, setApproving] = useState(false);
+  const approve = async () => {
+    if (!draftId) {
+      setMsg("No draft to approve yet.");
+      return;
+    }
+    setApproving(true);
+    setMsg("Running compliance check…");
+    try {
+      const res = await fetch("/api/agent/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "content", id: draftId, action: "approve" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setStatus("approved");
+        setMsg("Approved — ready to publish.");
+      } else if (res.status === 422) {
+        setStatus("needs_legal");
+        const n = data?.compliance?.violations?.length ?? 0;
+        setMsg(
+          data?.error ??
+            `Held by the compliance gate${n ? ` (${n} issue${n === 1 ? "" : "s"})` : ""}.`,
+        );
+      } else {
+        setMsg(data?.error ?? "Approve failed.");
+      }
+    } catch {
+      setMsg("Approve failed.");
+    } finally {
+      setApproving(false);
+      onChanged();
+    }
+  };
+
+  // Publish = advance approved → published. External posting (Ayrshare /
+  // WordPress) hangs off this step in later phases; today it advances the
+  // editorial status and refreshes the site inventory.
+  const publish = () => setDraftStage("published", "Published.");
+
+  // Compliance verdict the gate stored on the draft (shown when held).
+  const compliance = (draft?.metadata as Record<string, unknown> | undefined)
+    ?.compliance as
+    | {
+        score?: number;
+        violations?: { rule?: string; severity?: string; reason?: string }[];
+      }
+    | undefined;
+
   const copyBody = async () => {
     try {
       await navigator.clipboard.writeText(draft?.body ?? "");
@@ -393,7 +478,9 @@ export function DraftDrawer({
     ((draft?.metadata as Record<string, unknown>)?.origin_source as string) ?? "";
   const sourceLabel = SOURCE_LABEL[sourceRaw] ?? (sourceRaw ? sourceRaw : "—");
   const generated = draft?.created_at ? new Date(draft.created_at).toLocaleString() : "—";
-  const currentStage = STAGES.findIndex((s) => s.key === status);
+  // needs_legal is a hold off the Approve stage, not its own column on the bar.
+  const stageStatus: PipelineStatus = status === "needs_legal" ? "review" : status;
+  const currentStage = STAGES.findIndex((s) => s.key === stageStatus);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-3 sm:p-6">
@@ -592,29 +679,90 @@ export function DraftDrawer({
               {/* RIGHT: publish + QA + content info */}
               <div className="space-y-4">
                 {draft ? (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                    <div className="text-sm font-semibold text-emerald-900">Ready to publish</div>
-                    <p className="mt-0.5 text-xs text-emerald-700">
-                      {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
-                    </p>
-                    <button
-                      onClick={() => changeStatus("published", "Approved. WordPress publishing connects in Phase 4.")}
-                      disabled={!canPublish}
-                      className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
-                      title={canPublish ? undefined : "Complete the manual checks first"}
-                    >
-                      Approve → Publish to WordPress
-                    </button>
-                    <button
-                      onClick={() => changeStatus("draft", "Sent back to draft.")}
-                      className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
-                    >
-                      Send back to draft
-                    </button>
-                    <p className="mt-2 text-[10px] text-emerald-700/80">
-                      WordPress publishing connects in Phase 4 — this advances the editorial status for now.
-                    </p>
-                  </div>
+                  status === "needs_legal" ? (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                      <div className="text-sm font-semibold text-amber-900">Held by compliance</div>
+                      <p className="mt-0.5 text-xs text-amber-700">
+                        The compliance gate held this draft
+                        {typeof compliance?.score === "number" ? ` (score ${compliance.score})` : ""}.
+                        Edit it to compliance, then approve again.
+                      </p>
+                      {compliance?.violations?.length ? (
+                        <ul className="mt-2 space-y-1">
+                          {compliance.violations.slice(0, 5).map((v, i) => (
+                            <li key={i} className="text-[11px] text-amber-800">
+                              <span className="font-medium capitalize">{v.severity ?? "issue"}:</span>{" "}
+                              {v.reason ?? v.rule}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <button
+                        onClick={() => setDraftStage("draft", "Sent back to draft.")}
+                        className="mt-2 w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
+                      >
+                        Send back to draft
+                      </button>
+                    </div>
+                  ) : status === "published" ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                      <div className="text-sm font-semibold text-emerald-900">Published</div>
+                      <p className="mt-0.5 text-xs text-emerald-700">
+                        This draft is marked published.
+                      </p>
+                      <button
+                        onClick={() => setDraftStage("draft", "Sent back to draft.")}
+                        className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                      >
+                        Send back to draft
+                      </button>
+                    </div>
+                  ) : status === "approved" ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                      <div className="text-sm font-semibold text-emerald-900">Approved — ready to publish</div>
+                      <p className="mt-0.5 text-xs text-emerald-700">Signed off and compliance-cleared.</p>
+                      <button
+                        onClick={publish}
+                        className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8]"
+                      >
+                        Publish
+                      </button>
+                      <button
+                        onClick={() => setDraftStage("draft", "Sent back to draft.")}
+                        className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                      >
+                        Send back to draft
+                      </button>
+                      <p className="mt-2 text-[10px] text-emerald-700/80">
+                        Social (Ayrshare) and WordPress posting wire into Publish next. For now it
+                        advances the editorial status and refreshes the site inventory.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                      <div className="text-sm font-semibold text-emerald-900">Ready to approve</div>
+                      <p className="mt-0.5 text-xs text-emerald-700">
+                        {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
+                      </p>
+                      <button
+                        onClick={approve}
+                        disabled={!canPublish || approving}
+                        className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                        title={canPublish ? undefined : "Complete the manual checks first"}
+                      >
+                        {approving ? "Checking compliance…" : "Approve"}
+                      </button>
+                      <button
+                        onClick={() => setDraftStage("draft", "Sent back to draft.")}
+                        className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                      >
+                        Send back to draft
+                      </button>
+                      <p className="mt-2 text-[10px] text-emerald-700/80">
+                        Approve re-runs the compliance check; if it fails the draft is held for legal.
+                      </p>
+                    </div>
+                  )
                 ) : (
                   <div className="rounded-lg border border-[#185FA5]/30 bg-[#185FA5]/5 p-3">
                     <div className="text-sm font-semibold text-slate-900">Brief ready</div>

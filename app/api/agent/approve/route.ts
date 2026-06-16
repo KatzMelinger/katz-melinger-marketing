@@ -16,6 +16,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantClient } from "@/lib/tenant-db";
+import {
+  runComplianceGate,
+  surfaceForFormat,
+} from "@/lib/agent/compliance-filter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +59,7 @@ async function approveContent(
   // RLS scopes this read to the caller's tenant — a cross-tenant id returns null.
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("id, status, metadata")
+    .select("id, status, body, format, practice_area, metadata")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -85,6 +89,63 @@ async function approveContent(
     return NextResponse.json(
       { error: `Only items awaiting review can be approved (status: ${draft.status}).` },
       { status: 409 },
+    );
+  }
+
+  // Re-run the compliance HARD gate on the CURRENT body. Manual approvals are
+  // gated exactly like the agent's auto-path, fail-closed to needs_legal — so a
+  // reviewer can't sign off on content the gate would have held (and edits made
+  // since drafting are re-checked). The gate throwing = treat as held.
+  let verdict;
+  try {
+    verdict = await runComplianceGate({
+      content: typeof draft.body === "string" ? draft.body : "",
+      surface: surfaceForFormat((draft.format as string | null) ?? "blog"),
+      practiceArea: (draft.practice_area as string | null) ?? undefined,
+    });
+  } catch {
+    verdict = null;
+  }
+
+  if (!verdict || !verdict.pass) {
+    const compliance = verdict
+      ? {
+          pass: verdict.pass,
+          status: verdict.status,
+          score: verdict.score,
+          highSeverityCount: verdict.highSeverityCount,
+          violations: verdict.violations.map((v) => ({
+            rule: v.rule,
+            severity: v.severity,
+            reason: v.reason,
+          })),
+          suggestedRewrite: verdict.suggestedRewrite,
+        }
+      : { pass: false, status: "non_compliant", score: 0, error: "compliance check failed" };
+
+    const mergedMetadata = {
+      ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+      compliance,
+    };
+    await supabase
+      .from("content_drafts")
+      .update({ status: "needs_legal", metadata: mergedMetadata })
+      .eq("id", id)
+      .eq("tenant_id", tenantId);
+    await supabase
+      .from("content_pipeline")
+      .update({ status: "needs_legal" })
+      .eq("draft_id", id)
+      .eq("tenant_id", tenantId);
+
+    return NextResponse.json(
+      {
+        error:
+          "Held by the compliance gate — edit the draft to compliance before approving.",
+        status: "needs_legal",
+        compliance,
+      },
+      { status: 422 },
     );
   }
 

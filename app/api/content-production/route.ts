@@ -37,11 +37,15 @@ const DEFAULT_STAGES: Stage[] = [
 ];
 
 // content_pipeline.status → the fixed stage vocabulary the board renders.
+// review (awaiting sign-off), needs_legal (held by the compliance gate), and
+// approved (signed off, awaiting publish) all live in the Approve column.
 const PIPE_TO_STAGE: Record<string, string> = {
   idea: "opportunity",
   brief: "brief",
   draft: "draft",
   review: "approve",
+  needs_legal: "approve",
+  approved: "approve",
   published: "published",
 };
 
