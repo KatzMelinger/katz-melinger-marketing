@@ -30,7 +30,13 @@ export type FixStatus =
   | "approved"
   | "applied"
   | "rejected"
-  | "reverted";
+  | "reverted"
+  // Reported by the plugin when a fix could not be applied. 'failed' is a real
+  // error (no post for URL, unknown fix_type); 'needs_manual' means the fix_type
+  // isn't auto-appliable in this plugin version and a human must do it by hand.
+  // Both drop out of the approved-only sync queue so the plugin stops retrying.
+  | "failed"
+  | "needs_manual";
 
 export type AutoPilotRecommendation = {
   id: string;
@@ -45,6 +51,9 @@ export type AutoPilotRecommendation = {
   applied_value: string | null;
   reverted_at: string | null;
   wp_post_id: number | null;
+  failure_reason: string | null;
+  failed_at: string | null;
+  attempts: number;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -171,6 +180,151 @@ export async function markApplied(args: {
       wp_post_id: args.wpPostId ?? null,
       metadata: mergedMetadata,
     })
+    .eq("tenant_id", args.tenantId)
+    .eq("id", args.id)
+    .select("*")
+    .maybeSingle();
+  if (error || !data) throw new Error(error?.message ?? "update failed");
+  return data as AutoPilotRecommendation;
+}
+
+/**
+ * Mark a recommendation as failed (or needs_manual). Called by the plugin when
+ * it could not apply a fix. Same approved-only guard as markApplied — a stale
+ * plugin can't flip arbitrary rows. Increments attempts and records the reason.
+ *
+ * status:
+ *   'failed'       — a real error the plugin hit while applying.
+ *   'needs_manual' — fix_type the plugin can't auto-apply; needs a human.
+ */
+export async function markFailed(args: {
+  id: string;
+  domain: string;
+  tenantId: string;
+  reason: string;
+  status?: "failed" | "needs_manual";
+  wpPostId?: number | null;
+}): Promise<AutoPilotRecommendation> {
+  const sb = getSupabaseAdmin();
+  const domain = normalizeDomain(args.domain);
+  const nextStatus = args.status === "needs_manual" ? "needs_manual" : "failed";
+
+  const { data: existing, error: lookupErr } = await sb
+    .from("wp_autopilot_recommendations")
+    .select("id, domain, status, attempts")
+    .eq("tenant_id", args.tenantId)
+    .eq("id", args.id)
+    .maybeSingle();
+  if (lookupErr) throw new Error(lookupErr.message);
+  if (!existing) throw new Error("recommendation not found");
+  if (existing.domain !== domain) throw new Error("domain mismatch");
+  if (existing.status !== "approved") {
+    throw new Error(
+      `cannot fail recommendation in status='${existing.status}' — must be 'approved'`,
+    );
+  }
+
+  const { data, error } = await sb
+    .from("wp_autopilot_recommendations")
+    .update({
+      status: nextStatus,
+      failure_reason: args.reason.slice(0, 2000),
+      failed_at: new Date().toISOString(),
+      attempts: (Number(existing.attempts) || 0) + 1,
+      wp_post_id: args.wpPostId ?? null,
+    })
+    .eq("tenant_id", args.tenantId)
+    .eq("id", args.id)
+    .select("*")
+    .maybeSingle();
+  if (error || !data) throw new Error(error?.message ?? "update failed");
+  return data as AutoPilotRecommendation;
+}
+
+/**
+ * Dashboard read — list recommendations across ALL statuses for a tenant
+ * (optionally scoped to one domain), newest activity first. Powers the
+ * AutoPilot Fixes lifecycle tab. Session-authed callers pass the resolved
+ * tenantId; this never uses the plugin token path.
+ */
+export async function listDashboardFixes(args: {
+  tenantId: string;
+  domain?: string;
+  limit?: number;
+}): Promise<AutoPilotRecommendation[]> {
+  const sb = getSupabaseAdmin();
+  let q = sb
+    .from("wp_autopilot_recommendations")
+    .select("*")
+    .eq("tenant_id", args.tenantId)
+    .order("updated_at", { ascending: false })
+    .limit(Math.min(Math.max(args.limit ?? 100, 1), 500));
+  if (args.domain) q = q.eq("domain", normalizeDomain(args.domain));
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AutoPilotRecommendation[];
+}
+
+/**
+ * Count recommendations grouped by status for a tenant (optionally one domain).
+ * Cheap lightweight query (status column only) so the lifecycle cards are
+ * accurate regardless of the list's display limit.
+ */
+export async function countFixesByStatus(args: {
+  tenantId: string;
+  domain?: string;
+}): Promise<Record<FixStatus, number>> {
+  const sb = getSupabaseAdmin();
+  let q = sb
+    .from("wp_autopilot_recommendations")
+    .select("status")
+    .eq("tenant_id", args.tenantId);
+  if (args.domain) q = q.eq("domain", normalizeDomain(args.domain));
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  const counts: Record<FixStatus, number> = {
+    pending: 0,
+    approved: 0,
+    applied: 0,
+    rejected: 0,
+    reverted: 0,
+    failed: 0,
+    needs_manual: 0,
+  };
+  for (const row of data ?? []) {
+    const s = (row as { status: FixStatus }).status;
+    if (s in counts) counts[s] += 1;
+  }
+  return counts;
+}
+
+/**
+ * Retry a failed / needs_manual recommendation by flipping it back to
+ * 'approved' so the plugin re-attempts it on the next sync. Session-authed
+ * (tenant-scoped). Only failed/needs_manual rows are eligible.
+ */
+export async function retryRecommendation(args: {
+  tenantId: string;
+  id: string;
+}): Promise<AutoPilotRecommendation> {
+  const sb = getSupabaseAdmin();
+  const { data: existing, error: lookupErr } = await sb
+    .from("wp_autopilot_recommendations")
+    .select("id, status")
+    .eq("tenant_id", args.tenantId)
+    .eq("id", args.id)
+    .maybeSingle();
+  if (lookupErr) throw new Error(lookupErr.message);
+  if (!existing) throw new Error("recommendation not found");
+  if (existing.status !== "failed" && existing.status !== "needs_manual") {
+    throw new Error(
+      `cannot retry recommendation in status='${existing.status}' — must be 'failed' or 'needs_manual'`,
+    );
+  }
+
+  const { data, error } = await sb
+    .from("wp_autopilot_recommendations")
+    .update({ status: "approved" })
     .eq("tenant_id", args.tenantId)
     .eq("id", args.id)
     .select("*")

@@ -9,7 +9,8 @@
  * the page on PageSpeed and timed out on Vercel.
  */
 
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SeoShell, formatNumber } from "@/components/seo-shell";
 import { useTenantSiteUrl } from "@/components/tenant-provider";
@@ -96,6 +97,7 @@ export default function SeoTechnicalPage() {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"health" | "autopilot" | "settings">("health");
   const tenantSite = useTenantSiteUrl();
   const sitePrefilled = useRef(false);
   const [url, setUrl] = useState("");
@@ -243,9 +245,37 @@ export default function SeoTechnicalPage() {
 
   return (
     <SeoShell
-      title="Technical SEO Monitoring"
-      subtitle="Core Web Vitals (mobile + desktop), schema markup checks, and crawl error tracking."
+      title="Technical SEO"
+      subtitle="Site health, AutoPilot fixes, and connection settings — in one place."
     >
+      <nav className="flex gap-1 border-b border-[#e2e8f0]">
+        {(
+          [
+            ["health", "Site Health"],
+            ["autopilot", "AutoPilot Fixes"],
+            ["settings", "Settings"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              tab === key
+                ? "border-brand text-brand"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "autopilot" && <AutoPilotFixesTab siteUrl={url} />}
+
+      {tab === "settings" && <SettingsTab />}
+
+      {tab === "health" && (
+      <>
       <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 flex flex-wrap items-center gap-3">
         <input
           type="url"
@@ -472,6 +502,8 @@ export default function SeoTechnicalPage() {
           </section>
         </>
       )}
+      </>
+      )}
     </SeoShell>
   );
 }
@@ -517,5 +549,449 @@ function MetricsBlock({
         })}
       </ul>
     </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AutoPilot Fixes — full lifecycle of every fix pushed to WordPress.
+// Reads /api/seo/technical/autopilot-fixes (all statuses for the tenant site),
+// surfaces failed / needs-manual fixes that the plugin reported back, and lets
+// a marketer Retry them (flip back to 'approved' for the next sync).
+// ---------------------------------------------------------------------------
+
+type FixStatusKey =
+  | "pending"
+  | "approved"
+  | "applied"
+  | "rejected"
+  | "reverted"
+  | "failed"
+  | "needs_manual";
+
+type DashboardFix = {
+  id: string;
+  page_url: string;
+  fix_type: string;
+  current_value: string | null;
+  suggested_value: string;
+  applied_value: string | null;
+  status: FixStatusKey;
+  failure_reason: string | null;
+  failed_at: string | null;
+  applied_at: string | null;
+  updated_at: string;
+  attempts: number;
+};
+
+const STATUS_META: Record<
+  FixStatusKey,
+  { label: string; badge: string; dot: string }
+> = {
+  pending: {
+    label: "Suggested",
+    badge: "bg-slate-50 text-slate-600 border-slate-200",
+    dot: "bg-slate-400",
+  },
+  approved: {
+    label: "Queued",
+    badge: "bg-amber-50 text-amber-700 border-amber-200",
+    dot: "bg-amber-500",
+  },
+  applied: {
+    label: "Applied",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    dot: "bg-emerald-500",
+  },
+  needs_manual: {
+    label: "Needs manual",
+    badge: "bg-orange-50 text-orange-700 border-orange-200",
+    dot: "bg-orange-500",
+  },
+  failed: {
+    label: "Failed",
+    badge: "bg-red-50 text-red-700 border-red-200",
+    dot: "bg-red-500",
+  },
+  rejected: {
+    label: "Rejected",
+    badge: "bg-slate-50 text-slate-500 border-slate-200",
+    dot: "bg-slate-300",
+  },
+  reverted: {
+    label: "Reverted",
+    badge: "bg-slate-50 text-slate-500 border-slate-200",
+    dot: "bg-slate-300",
+  },
+};
+
+const ALL_FIX_LABELS: Record<string, string> = {
+  meta_title: "Meta title",
+  meta_description: "Meta description",
+  canonical: "Canonical URL",
+  schema_jsonld: "JSON-LD schema",
+  og_title: "Open Graph title",
+  og_description: "Open Graph description",
+  h1: "H1 heading",
+  internal_link_insert: "Internal link",
+  alt_text: "Image alt text",
+};
+
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.round(hrs / 24);
+  return `${days}d ago`;
+}
+
+function pagePath(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).pathname || "/";
+  } catch {
+    return rawUrl;
+  }
+}
+
+type FixFilter = "all" | "attention" | "queued" | "applied";
+
+function AutoPilotFixesTab({ siteUrl }: { siteUrl: string }) {
+  const [items, setItems] = useState<DashboardFix[]>([]);
+  const [counts, setCounts] = useState<Record<FixStatusKey, number> | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FixFilter>("all");
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const qs = siteUrl ? `?url=${encodeURIComponent(siteUrl)}` : "";
+      const res = await fetch(`/api/seo/technical/autopilot-fixes${qs}`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json?.error ?? "Failed to load fixes");
+        return;
+      }
+      setItems((json.items as DashboardFix[]) ?? []);
+      setCounts((json.counts as Record<FixStatusKey, number>) ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load fixes");
+    } finally {
+      setLoading(false);
+    }
+  }, [siteUrl]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const retry = async (id: string) => {
+    setRetryingId(id);
+    try {
+      const res = await fetch("/api/seo/technical/autopilot-fixes/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json?.error ?? "Retry failed");
+        return;
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Retry failed");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  const lastSync = items.find((i) => i.applied_at)?.applied_at ?? null;
+
+  const filtered = items.filter((i) => {
+    if (filter === "attention")
+      return i.status === "failed" || i.status === "needs_manual";
+    if (filter === "queued") return i.status === "approved";
+    if (filter === "applied") return i.status === "applied";
+    return true;
+  });
+
+  const cards: Array<{ key: FixStatusKey; label: string; accent: string }> = [
+    { key: "pending", label: "Suggested", accent: "text-slate-700" },
+    { key: "approved", label: "Queued", accent: "text-amber-700" },
+    { key: "applied", label: "Applied", accent: "text-emerald-700" },
+    { key: "needs_manual", label: "Needs manual", accent: "text-orange-700" },
+    { key: "failed", label: "Failed", accent: "text-red-700" },
+  ];
+
+  const filters: Array<{ key: FixFilter; label: string }> = [
+    { key: "all", label: "All" },
+    { key: "attention", label: "Needs attention" },
+    { key: "queued", label: "Queued" },
+    { key: "applied", label: "Applied" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">AutoPilot fixes</h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Full lifecycle of every fix pushed to WordPress.
+            {lastSync && (
+              <span> Last applied {timeAgo(lastSync)}.</span>
+            )}
+          </p>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="shrink-0 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm font-medium text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {cards.map((c) => (
+          <div
+            key={c.key}
+            className="rounded-xl border border-[#e2e8f0] bg-white p-3"
+          >
+            <div className="text-xs text-slate-500">{c.label}</div>
+            <div className={`mt-1 text-2xl font-semibold ${c.accent}`}>
+              {counts ? counts[c.key] : "—"}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {filters.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`rounded-md border px-3 py-1 text-xs font-medium ${
+              filter === f.key
+                ? "border-brand bg-brand/5 text-brand"
+                : "border-[#e2e8f0] text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && items.length === 0 ? (
+        <p className="text-sm text-slate-500">Loading fixes…</p>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[#e2e8f0] bg-white p-8 text-center">
+          <p className="text-sm font-medium text-slate-700">No fixes here yet</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Approve fixes from the <span className="font-medium">Site Health</span>{" "}
+            tab and they&apos;ll show up here as they move through the queue.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-[#e2e8f0] bg-white">
+          <div className="flex items-center gap-3 border-b border-[#e2e8f0] bg-slate-50 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            <span className="flex-1">Page · fix</span>
+            <span className="w-28">Status</span>
+            <span className="w-20">Updated</span>
+            <span className="w-16 text-right">Action</span>
+          </div>
+          {filtered.map((fix) => {
+            const meta = STATUS_META[fix.status];
+            const canRetry =
+              fix.status === "failed" || fix.status === "needs_manual";
+            const isFailing = canRetry;
+            const expanded = expandedId === fix.id;
+            return (
+              <div
+                key={fix.id}
+                className={`border-b border-[#e2e8f0] last:border-b-0 ${
+                  isFailing ? "bg-red-50/30" : ""
+                }`}
+              >
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <button
+                    onClick={() => setExpandedId(expanded ? null : fix.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    aria-expanded={expanded}
+                  >
+                    <span
+                      className={`text-slate-400 transition-transform ${
+                        expanded ? "rotate-90" : ""
+                      }`}
+                      aria-hidden
+                    >
+                      ›
+                    </span>
+                    <span className="min-w-0">
+                      <span
+                        className="block truncate text-sm text-slate-900"
+                        title={fix.page_url}
+                      >
+                        {pagePath(fix.page_url)}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">
+                        {ALL_FIX_LABELS[fix.fix_type] ?? fix.fix_type}
+                        {isFailing && fix.failure_reason && (
+                          <span className="text-red-600">
+                            {" · "}
+                            {fix.failure_reason}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                  <span className="w-28">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.badge}`}
+                    >
+                      <span
+                        className={`inline-block h-1.5 w-1.5 rounded-full ${meta.dot}`}
+                        aria-hidden
+                      />
+                      {meta.label}
+                    </span>
+                  </span>
+                  <span className="w-20 text-xs text-slate-400">
+                    {timeAgo(fix.updated_at)}
+                  </span>
+                  <span className="w-16 text-right">
+                    {canRetry ? (
+                      <button
+                        onClick={() => retry(fix.id)}
+                        disabled={retryingId === fix.id}
+                        className="text-xs font-medium text-brand hover:underline disabled:opacity-50"
+                      >
+                        {retryingId === fix.id ? "…" : "Retry"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-300">—</span>
+                    )}
+                  </span>
+                </div>
+
+                {expanded && (
+                  <div className="space-y-2 border-t border-[#e2e8f0] bg-slate-50 px-4 py-3 pl-9 text-xs">
+                    {fix.current_value && (
+                      <FixValue
+                        label="Currently on the page"
+                        value={fix.current_value}
+                        tone="slate"
+                      />
+                    )}
+                    {fix.status === "applied" && fix.applied_value ? (
+                      <FixValue
+                        label="Applied to WordPress"
+                        value={fix.applied_value}
+                        tone="emerald"
+                      />
+                    ) : (
+                      <FixValue
+                        label={
+                          fix.status === "applied"
+                            ? "Value"
+                            : "Will be set to"
+                        }
+                        value={fix.suggested_value}
+                        tone="violet"
+                      />
+                    )}
+                    {isFailing && fix.failure_reason && (
+                      <FixValue
+                        label="Why it didn't apply"
+                        value={fix.failure_reason}
+                        tone="red"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsTab() {
+  return (
+    <div className="space-y-4">
+      <article className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Connection settings
+        </h2>
+        <p className="mt-1 text-sm text-slate-600">
+          The WordPress domain, AutoPilot token, and plugin connection live on the
+          dedicated WordPress settings page — kept in one place so there&apos;s a
+          single source of truth for the token.
+        </p>
+        <Link
+          href="/settings/wordpress"
+          className="mt-4 inline-flex items-center gap-1 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90"
+        >
+          Open WordPress settings →
+        </Link>
+      </article>
+      <article className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+        <h2 className="text-lg font-semibold text-slate-900">Sync frequency</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          The KM AutoPilot plugin polls for approved fixes every ~15 minutes via
+          WP-Cron. That cadence is set in the plugin itself — adjust it there, or
+          use <span className="font-medium">Sync now</span> in the plugin admin to
+          run immediately.
+        </p>
+      </article>
+    </div>
+  );
+}
+
+function FixValue({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "slate" | "violet" | "emerald" | "red";
+}) {
+  const toneCls = {
+    slate: "border-slate-200 bg-white text-slate-700",
+    violet: "border-violet-200 bg-violet-50 text-slate-800",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    red: "border-red-200 bg-red-50 text-red-800",
+  }[tone];
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </div>
+      <pre
+        className={`mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border px-2 py-1.5 ${toneCls}`}
+      >
+        {value}
+      </pre>
+    </div>
   );
 }

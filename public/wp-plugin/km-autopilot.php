@@ -3,7 +3,7 @@
  * Plugin Name:       KM AutoPilot
  * Plugin URI:        https://katzmelinger.com
  * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates posts from approved, compliance-cleared drafts.
- * Version:           0.2.0
+ * Version:           0.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Katz Melinger
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('KM_AUTOPILOT_VERSION', '0.2.0');
+define('KM_AUTOPILOT_VERSION', '0.3.0');
 define('KM_AUTOPILOT_OPTION', 'km_autopilot_settings');
 define('KM_AUTOPILOT_LOG_OPTION', 'km_autopilot_log');
 define('KM_AUTOPILOT_CRON_HOOK', 'km_autopilot_sync_cron');
@@ -231,6 +231,30 @@ add_action('wp_head', function () {
 }, 99);
 
 // -----------------------------------------------------------------------------
+// Failure write-back — tell the dashboard a fix could not be applied so the row
+// leaves the approved queue instead of being re-attempted every sync.
+// -----------------------------------------------------------------------------
+
+function km_autopilot_report_failure($rec_id, $reason, $status, $wp_post_id = null) {
+    $resp = km_autopilot_http_request('POST', '/api/wp/failed', [
+        'id'         => $rec_id,
+        'reason'     => $reason,
+        'status'     => ($status === 'needs_manual') ? 'needs_manual' : 'failed',
+        'wp_post_id' => $wp_post_id,
+    ]);
+    if (is_wp_error($resp)) {
+        // Report itself failed — leave the row 'approved' so a later sync retries
+        // the report. Logged locally so it's visible in Recent activity.
+        km_autopilot_log_event(
+            'Could not report failure for ' . $rec_id . ': ' . $resp->get_error_message(),
+            ['rec_id' => $rec_id]
+        );
+        return false;
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 // Sync routine
 // -----------------------------------------------------------------------------
 
@@ -253,9 +277,21 @@ function km_autopilot_run_sync() {
         $result = km_autopilot_apply_one($rec);
         if (is_wp_error($result)) {
             $skipped++;
+            // 'km_autopilot_skip_risky' = fix_type we can't auto-apply yet, not
+            // an error → needs_manual. Anything else is a real failure.
+            $is_manual = ($result->get_error_code() === 'km_autopilot_skip_risky');
+            $report_status = $is_manual ? 'needs_manual' : 'failed';
+            $post_id = km_autopilot_post_id_for_url($rec['page_url']);
+            km_autopilot_report_failure(
+                $rec['id'],
+                $result->get_error_message(),
+                $report_status,
+                $post_id ?: null
+            );
             km_autopilot_log_event(
-                'Skipped ' . $rec['id'] . ' (' . $rec['fix_type'] . '): ' . $result->get_error_message(),
-                ['rec_id' => $rec['id']]
+                ($is_manual ? 'Needs manual ' : 'Failed ') . $rec['id']
+                    . ' (' . $rec['fix_type'] . '): ' . $result->get_error_message(),
+                ['rec_id' => $rec['id'], 'status' => $report_status]
             );
             continue;
         }
