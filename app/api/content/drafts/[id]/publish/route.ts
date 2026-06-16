@@ -8,8 +8,10 @@
  *   - social-surface drafts (format = a known Ayrshare platform) are posted via
  *     Ayrshare and recorded in social_posts; the returned permalink is written
  *     back and the site-inventory ingest fires.
- *   - long-form (blog) + email don't post externally yet — WordPress publishing
- *     is a later phase — so they just advance the editorial status.
+ *   - long-form (blog) drafts are QUEUED for the WordPress pull plugin: they
+ *     stay `approved` with metadata.wp_publish.queued, and the plugin creates
+ *     the post + confirms via /api/wp/content/applied (which flips them to
+ *     published). Email / other formats just advance the editorial status.
  *
  * Guard: only an `approved` draft can be published (enforces Approve→Publish).
  * On an external-publish failure the status is left at `approved` and the error
@@ -171,6 +173,26 @@ export async function POST(
     } catch {
       /* tracking insert is non-fatal — the post already went out */
     }
+  } else if (surface === "blog") {
+    // Long-form → queue for the WordPress pull plugin instead of posting here.
+    // The draft stays `approved`; the plugin creates the post and confirms via
+    // /api/wp/content/applied, which flips it to published.
+    const queuedMetadata = {
+      ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+      wp_publish: { queued: true, queued_at: new Date().toISOString() },
+    };
+    await supabase
+      .from("content_drafts")
+      .update({ metadata: queuedMetadata })
+      .eq("id", id)
+      .eq("tenant_id", tenantId);
+    return NextResponse.json({
+      ok: true,
+      status: "queued",
+      channel: "wordpress",
+      message:
+        "Queued for WordPress — the site plugin will publish it on its next sync.",
+    });
   }
 
   const mergedMetadata = {

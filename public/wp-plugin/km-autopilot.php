@@ -2,15 +2,16 @@
 /**
  * Plugin Name:       KM AutoPilot
  * Plugin URI:        https://katzmelinger.com
- * Description:       Pulls approved on-page SEO fixes from the Katz Melinger marketing dashboard and applies them — meta titles, descriptions, canonicals, Open Graph tags, JSON-LD schema. Safe-by-default: only writes to Yoast/RankMath fields or post meta, never to raw post content.
- * Version:           0.1.0
+ * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates posts from approved, compliance-cleared drafts.
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Katz Melinger
  * License:           Proprietary
  * Text Domain:       km-autopilot
  *
- * Companion to the marketing dashboard's /api/wp/recommendations + /api/wp/applied endpoints.
+ * Companion to the dashboard's /api/wp/recommendations + /api/wp/applied (on-page
+ * fixes) and /api/wp/content + /api/wp/content/applied (long-form posts).
  * Settings → KM AutoPilot to configure base URL + token. Sync runs on WP-Cron every 15 minutes.
  */
 
@@ -18,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('KM_AUTOPILOT_VERSION', '0.1.0');
+define('KM_AUTOPILOT_VERSION', '0.2.0');
 define('KM_AUTOPILOT_OPTION', 'km_autopilot_settings');
 define('KM_AUTOPILOT_LOG_OPTION', 'km_autopilot_log');
 define('KM_AUTOPILOT_CRON_HOOK', 'km_autopilot_sync_cron');
@@ -54,9 +55,14 @@ add_filter('cron_schedules', function ($schedules) {
 
 function km_autopilot_get_settings() {
     $defaults = [
-        'base_url' => '',
-        'token'    => '',
-        'enabled'  => false,
+        'base_url'        => '',
+        'token'           => '',
+        'enabled'         => false,
+        // Long-form content publishing is opt-in and separate from on-page fixes.
+        'content_enabled' => false,
+        // 'publish' = post goes live on confirm; 'draft' = created as a WP draft
+        // for a human to publish in WP (the dashboard still marks it handed-off).
+        'content_status'  => 'draft',
     ];
     return wp_parse_args(get_option(KM_AUTOPILOT_OPTION, []), $defaults);
 }
@@ -281,7 +287,115 @@ function km_autopilot_run_sync() {
             ['rec_id' => $rec['id'], 'value' => substr($applied_value, 0, 120)]
         );
     }
-    return ['applied' => $applied, 'skipped' => $skipped, 'fetched' => count($items)];
+    // Long-form content publishing rides on the same cron (opt-in).
+    $content = km_autopilot_publish_content();
+
+    return [
+        'applied' => $applied,
+        'skipped' => $skipped,
+        'fetched' => count($items),
+        'content' => $content,
+    ];
+}
+
+// -----------------------------------------------------------------------------
+// Long-form content publishing — create posts from approved, queued drafts.
+// -----------------------------------------------------------------------------
+
+function km_autopilot_publish_content() {
+    $settings = km_autopilot_get_settings();
+    if (empty($settings['content_enabled'])) {
+        return ['skipped' => true, 'reason' => 'content disabled'];
+    }
+
+    $resp = km_autopilot_http_request('GET', '/api/wp/content?status=approved&limit=25');
+    if (is_wp_error($resp)) {
+        km_autopilot_log_event('Content fetch failed: ' . $resp->get_error_message());
+        return ['error' => $resp->get_error_message()];
+    }
+
+    $items = isset($resp['items']) && is_array($resp['items']) ? $resp['items'] : [];
+    $post_status = ($settings['content_status'] === 'publish') ? 'publish' : 'draft';
+    $published = 0;
+    $failed    = 0;
+
+    foreach ($items as $item) {
+        if (empty($item['id'])) {
+            continue;
+        }
+        $postarr = [
+            'post_title'   => isset($item['title']) ? wp_strip_all_tags($item['title']) : 'Untitled',
+            'post_content' => isset($item['content_html']) ? wp_kses_post($item['content_html']) : '',
+            'post_status'  => $post_status,
+            'post_type'    => 'post',
+        ];
+        if (!empty($item['slug'])) {
+            $postarr['post_name'] = sanitize_title($item['slug']);
+        }
+        if (!empty($item['meta_description'])) {
+            $postarr['post_excerpt'] = sanitize_text_field($item['meta_description']);
+        }
+
+        // Idempotency: reuse a post we already created for this draft (e.g. when
+        // a prior confirm failed) instead of creating a duplicate on retry.
+        $existing = get_posts([
+            'post_type'   => 'post',
+            'post_status' => 'any',
+            'numberposts' => 1,
+            'fields'      => 'ids',
+            'meta_key'    => '_km_autopilot_draft_id',
+            'meta_value'  => $item['id'],
+        ]);
+        $post_id = !empty($existing) ? (int) $existing[0] : 0;
+
+        if (!$post_id) {
+            $post_id = wp_insert_post($postarr, true);
+            if (is_wp_error($post_id) || !$post_id) {
+                $failed++;
+                km_autopilot_log_event(
+                    'Content create failed for ' . $item['id'] . ': '
+                        . (is_wp_error($post_id) ? $post_id->get_error_message() : 'unknown'),
+                    ['draft_id' => $item['id']]
+                );
+                continue;
+            }
+            update_post_meta($post_id, '_km_autopilot_draft_id', $item['id']);
+
+            // Best-effort SEO meta, same handler precedence as on-page fixes.
+            if (!empty($item['meta_title'])) {
+                km_autopilot_apply_meta_field($post_id, $item['meta_title'], '_yoast_wpseo_title', 'rank_math_title');
+            }
+            if (!empty($item['meta_description'])) {
+                km_autopilot_apply_meta_field($post_id, $item['meta_description'], '_yoast_wpseo_metadesc', 'rank_math_description');
+            }
+        }
+
+        $url = get_permalink($post_id);
+        $confirm = km_autopilot_http_request('POST', '/api/wp/content/applied', [
+            'id'         => $item['id'],
+            'wp_post_id' => $post_id,
+            'url'        => $url,
+        ]);
+        if (is_wp_error($confirm)) {
+            // Post exists locally; the dashboard row stays 'approved' and the
+            // next sync would re-fetch it — so avoid duplicates by leaving the
+            // created post in place and letting a marketer reconcile. Logged.
+            km_autopilot_log_event(
+                'Content created (post ' . $post_id . ') but confirm failed for ' . $item['id'] . ': '
+                    . $confirm->get_error_message(),
+                ['draft_id' => $item['id'], 'wp_post_id' => $post_id]
+            );
+            continue;
+        }
+
+        $published++;
+        km_autopilot_log_event(
+            'Published content "' . $item['title'] . '" as post ' . $post_id . ' (' . $post_status . ')',
+            ['draft_id' => $item['id'], 'wp_post_id' => $post_id]
+        );
+    }
+
+    return ['published' => $published, 'failed' => $failed, 'fetched' => count($items)];
 }
 
 add_action(KM_AUTOPILOT_CRON_HOOK, 'km_autopilot_run_sync');
@@ -307,6 +421,10 @@ add_action('admin_init', function () {
             $out['base_url'] = isset($input['base_url']) ? esc_url_raw(trim($input['base_url'])) : '';
             $out['token']    = isset($input['token']) ? sanitize_text_field(trim($input['token'])) : '';
             $out['enabled']  = !empty($input['enabled']);
+            $out['content_enabled'] = !empty($input['content_enabled']);
+            $out['content_status']  = (isset($input['content_status']) && $input['content_status'] === 'publish')
+                ? 'publish'
+                : 'draft';
             return $out;
         },
     ]);
@@ -357,6 +475,27 @@ function km_autopilot_render_settings_page() {
                                    value="1" <?php checked($settings['enabled']); ?> />
                             Run every 15 minutes via WP-Cron
                         </label>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Publish long-form content</th>
+                    <td>
+                        <label>
+                            <input type="checkbox" name="<?php echo esc_attr(KM_AUTOPILOT_OPTION); ?>[content_enabled]"
+                                   value="1" <?php checked($settings['content_enabled']); ?> />
+                            Create posts from approved, compliance-cleared drafts (<code>/api/wp/content</code>)
+                        </label>
+                        <p class="description">Opt-in. Off by default — on-page fixes run independently of this.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="km_content_status">New post status</label></th>
+                    <td>
+                        <select id="km_content_status" name="<?php echo esc_attr(KM_AUTOPILOT_OPTION); ?>[content_status]">
+                            <option value="draft" <?php selected($settings['content_status'], 'draft'); ?>>Draft (review in WordPress before going live)</option>
+                            <option value="publish" <?php selected($settings['content_status'], 'publish'); ?>>Publish immediately (fully autonomous)</option>
+                        </select>
+                        <p class="description">The dashboard has already gated each draft on approval + compliance. "Draft" creates the post for a final human publish in WP.</p>
                     </td>
                 </tr>
             </table>

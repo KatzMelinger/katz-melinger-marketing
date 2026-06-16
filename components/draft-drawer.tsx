@@ -456,6 +456,7 @@ export function DraftDrawer({
   // external post failed and the draft stays approved (we never mark something
   // published that didn't go out); a 422 means it was held at needs_legal.
   const [publishing, setPublishing] = useState(false);
+  const [queuedForWp, setQueuedForWp] = useState(false);
   const publish = async () => {
     if (!draftId) {
       setMsg("No draft to publish yet.");
@@ -470,7 +471,12 @@ export function DraftDrawer({
         body: "{}",
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
+      if (res.ok && data?.status === "queued") {
+        // Long-form → handed to the WordPress plugin; stays approved until the
+        // plugin confirms the post was created.
+        setQueuedForWp(true);
+        setMsg(data?.message ?? "Queued for WordPress.");
+      } else if (res.ok) {
         setStatus("published");
         const urls: string[] = Array.isArray(data?.postUrls) ? data.postUrls : [];
         setMsg(
@@ -500,6 +506,14 @@ export function DraftDrawer({
         violations?: { rule?: string; severity?: string; reason?: string }[];
       }
     | undefined;
+
+  // A long-form draft handed to the WordPress plugin (queued just now, or still
+  // queued from a prior Publish click) sits in approved until the plugin confirms.
+  const isQueuedForWp =
+    queuedForWp ||
+    ((draft?.metadata as Record<string, unknown> | undefined)?.wp_publish as
+      | { queued?: unknown }
+      | undefined)?.queued === true;
 
   const copyBody = async () => {
     try {
@@ -754,27 +768,43 @@ export function DraftDrawer({
                       </button>
                     </div>
                   ) : status === "approved" ? (
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                      <div className="text-sm font-semibold text-emerald-900">Approved — ready to publish</div>
-                      <p className="mt-0.5 text-xs text-emerald-700">Signed off and compliance-cleared.</p>
-                      <button
-                        onClick={publish}
-                        disabled={publishing}
-                        className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {publishing ? "Publishing…" : "Publish"}
-                      </button>
-                      <button
-                        onClick={() => setDraftStage("draft", "Sent back to draft.")}
-                        className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
-                      >
-                        Send back to draft
-                      </button>
-                      <p className="mt-2 text-[10px] text-emerald-700/80">
-                        Social drafts post live via Ayrshare on Publish (with a final compliance
-                        check). Long-form publishing to WordPress lands next.
-                      </p>
-                    </div>
+                    isQueuedForWp ? (
+                      <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+                        <div className="text-sm font-semibold text-sky-900">Queued for WordPress</div>
+                        <p className="mt-0.5 text-xs text-sky-700">
+                          The site plugin will create the post on its next sync, then this flips to
+                          Published automatically.
+                        </p>
+                        <button
+                          onClick={() => setDraftStage("draft", "Sent back to draft.")}
+                          className="mt-2 w-full rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100"
+                        >
+                          Send back to draft
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                        <div className="text-sm font-semibold text-emerald-900">Approved — ready to publish</div>
+                        <p className="mt-0.5 text-xs text-emerald-700">Signed off and compliance-cleared.</p>
+                        <button
+                          onClick={publish}
+                          disabled={publishing}
+                          className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {publishing ? "Publishing…" : "Publish"}
+                        </button>
+                        <button
+                          onClick={() => setDraftStage("draft", "Sent back to draft.")}
+                          className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                        >
+                          Send back to draft
+                        </button>
+                        <p className="mt-2 text-[10px] text-emerald-700/80">
+                          Social drafts post live via Ayrshare; long-form drafts are queued for
+                          WordPress — both run a final compliance check on Publish.
+                        </p>
+                      </div>
+                    )
                   ) : (
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                       <div className="text-sm font-semibold text-emerald-900">Ready to approve</div>
