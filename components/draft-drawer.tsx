@@ -19,8 +19,8 @@
  *
  * The editorial machine is review → approved → published. Approve re-runs the
  * compliance HARD gate server-side (/api/agent/approve) and fails closed to
- * needs_legal; Publish advances approved → published. External posting
- * (Ayrshare / WordPress) wires into the Publish step in later phases.
+ * needs_legal; Publish (/api/content/drafts/[id]/publish) re-gates and posts
+ * social drafts live via Ayrshare. WordPress long-form publishing lands next.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -451,10 +451,46 @@ export function DraftDrawer({
     }
   };
 
-  // Publish = advance approved → published. External posting (Ayrshare /
-  // WordPress) hangs off this step in later phases; today it advances the
-  // editorial status and refreshes the site inventory.
-  const publish = () => setDraftStage("published", "Published.");
+  // Publish = approved → published. The server re-runs the compliance gate and,
+  // for social-format drafts, actually posts via Ayrshare. A 502/400 means the
+  // external post failed and the draft stays approved (we never mark something
+  // published that didn't go out); a 422 means it was held at needs_legal.
+  const [publishing, setPublishing] = useState(false);
+  const publish = async () => {
+    if (!draftId) {
+      setMsg("No draft to publish yet.");
+      return;
+    }
+    setPublishing(true);
+    setMsg("Publishing…");
+    try {
+      const res = await fetch(`/api/content/drafts/${draftId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setStatus("published");
+        const urls: string[] = Array.isArray(data?.postUrls) ? data.postUrls : [];
+        setMsg(
+          data?.channel === "social"
+            ? `Published to social${urls[0] ? ` — ${urls[0]}` : "."}`
+            : "Published.",
+        );
+      } else if (res.status === 422) {
+        setStatus("needs_legal");
+        setMsg(data?.error ?? "Held by the compliance gate.");
+      } else {
+        setMsg(data?.error ?? "Publish failed — left as approved.");
+      }
+    } catch {
+      setMsg("Publish failed.");
+    } finally {
+      setPublishing(false);
+      onChanged();
+    }
+  };
 
   // Compliance verdict the gate stored on the draft (shown when held).
   const compliance = (draft?.metadata as Record<string, unknown> | undefined)
@@ -723,9 +759,10 @@ export function DraftDrawer({
                       <p className="mt-0.5 text-xs text-emerald-700">Signed off and compliance-cleared.</p>
                       <button
                         onClick={publish}
-                        className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8]"
+                        disabled={publishing}
+                        className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Publish
+                        {publishing ? "Publishing…" : "Publish"}
                       </button>
                       <button
                         onClick={() => setDraftStage("draft", "Sent back to draft.")}
@@ -734,8 +771,8 @@ export function DraftDrawer({
                         Send back to draft
                       </button>
                       <p className="mt-2 text-[10px] text-emerald-700/80">
-                        Social (Ayrshare) and WordPress posting wire into Publish next. For now it
-                        advances the editorial status and refreshes the site inventory.
+                        Social drafts post live via Ayrshare on Publish (with a final compliance
+                        check). Long-form publishing to WordPress lands next.
                       </p>
                     </div>
                   ) : (
