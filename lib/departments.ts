@@ -117,7 +117,6 @@ export const DEPARTMENTS: Department[] = [
     defaultOpen: false,
     items: [
       { label: "Local SEO / GBP", href: "/local-seo", icon: "⌖", status: "active" },
-      { label: "Local Listings", href: "/local", icon: "📍", status: "active" },
     ],
   },
   {
@@ -128,7 +127,6 @@ export const DEPARTMENTS: Department[] = [
     items: [
       { label: "Paid Ads", href: "/ads", icon: "💰", status: "active" },
       { label: "Email", href: "/email", icon: "✉", status: "active" },
-      { label: "Constant Contact", href: "/constant-contact", icon: "📨", status: "active" },
       { label: "Forms", href: "/forms", icon: "▤", status: "active" },
       { label: "Calls", href: "/calls", icon: "☎", status: "active" },
       { label: "Lead Response", href: "/lead-response", icon: "⚡", status: "active" },
@@ -146,7 +144,6 @@ export const DEPARTMENTS: Department[] = [
       { label: "Trends & Playbooks", href: "/social/trends", icon: "🔥", status: "active" },
       { label: "Community", href: "/community", icon: "💬", status: "active" },
       { label: "Reviews", href: "/reviews", icon: "★", status: "active" },
-      { label: "Request Reviews", href: "/reviews?tab=requests", icon: "✉️", status: "active" },
     ],
   },
   {
@@ -176,7 +173,6 @@ export const DEPARTMENTS: Department[] = [
       { label: "Content Directions", href: "/brand-voice", icon: "🧭", status: "active" },
       { label: "Image Generator", href: "/content/images", icon: "🖼", status: "active" },
       { label: "Practice Areas", href: "/settings/practice-areas", icon: "⚖", status: "active" },
-      { label: "Sales Coach", href: "/settings/sales-training", icon: "🎯", status: "active" },
     ],
   },
   {
