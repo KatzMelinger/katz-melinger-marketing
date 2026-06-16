@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { ContentNav } from "@/components/content-nav";
 import { KmBriefWizard } from "@/components/km-brief-wizard";
 import { formatNumber, SeoShell } from "@/components/seo-shell";
 
@@ -206,6 +207,9 @@ export default function SeoOpportunitiesPage() {
       title="SEO Opportunity Radar"
       subtitle="Filtered, scored, and classified keyword opportunities — junk and branded terms removed, already-covered terms hidden, and handled keywords stay gone."
     >
+      {/* Content Studio tab bar — Opportunities is a tab of the studio. */}
+      <ContentNav />
+
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiTile label="Actionable" value={counts?.actionable ?? 0} tone="emerald" />
         <KpiTile label="Filtered out" value={counts?.excluded ?? 0} tone="slate" />

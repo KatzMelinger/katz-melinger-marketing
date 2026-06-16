@@ -47,17 +47,16 @@ export const DEPARTMENTS: Department[] = [
     accent: "#185FA5",
     defaultOpen: true,
     items: [
-      { label: "Marketing copy", href: "/content", icon: "▤", status: "active" },
-      { label: "Website Pages", href: "/content/km", icon: "✎", status: "active" },
-      { label: "Batch Generator", href: "/content/batch", icon: "🧪", status: "active" },
-      { label: "Opportunities", href: "/seo/opportunities", icon: "✨", status: "active" },
+      // Content Studio is one surface with a shared tab bar (ContentNav):
+      // Marketing copy, SEO content, Multi-format batch, Intelligence, and the
+      // Opportunity Radar — so it needs one sidebar entry, not five.
+      { label: "Content Studio", href: "/content", icon: "▤", status: "active" },
       // The production line (Decisions, Briefs, Production Board, Publishing QA)
       // is reached from the Content Production page itself, so it needs only one
       // sidebar tab instead of five.
       { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
       { label: "Refresh Queue", href: "/content/refresh", icon: "♻", status: "active" },
       { label: "Cluster Map", href: "/content/site-map", icon: "🗺", status: "active" },
-      { label: "Intelligence", href: "/content/intelligence", icon: "💡", status: "active" },
       { label: "Drafts", href: "/content/drafts", icon: "📝", status: "active" },
       { label: "Sources", href: "/content/sources", icon: "📥", status: "active" },
     ],
@@ -101,8 +100,9 @@ export const DEPARTMENTS: Department[] = [
     accent: "#EA580C",
     defaultOpen: false,
     items: [
-      { label: "AEO", href: "/aeo", icon: "✦", status: "active" },
-      { label: "AI Search", href: "/ai-search", icon: "🤖", status: "active" },
+      // AEO (citation tracking) + AI Search (readiness score) share a tab bar
+      // (AiVisibilityNav) under one entry.
+      { label: "AEO & AI Search", href: "/aeo", icon: "✦", status: "active" },
       { label: "AI Referrals", href: "/ai/referrals", icon: "↗", status: "active" },
       { label: "Bot Crawls", href: "/ai/bot-traffic", icon: "🕷", status: "active" },
       { label: "llms.txt", href: "/llms-txt", icon: "📜", status: "active" },
@@ -151,14 +151,14 @@ export const DEPARTMENTS: Department[] = [
     accent: "#4F46E5",
     defaultOpen: false,
     items: [
-      { label: "Reporting", href: "/reporting", icon: "📑", status: "active" },
+      // Reporting (board-ready weekly/monthly export) is now a tab on /executive.
+      { label: "Executive & Reporting", href: "/executive", icon: "📈", status: "active" },
       { label: "Recommendations", href: "/recommendations", icon: "💡", status: "active" },
       { label: "Alerts", href: "/alerts", icon: "🔔", status: "active" },
       { label: "Website Analytics", href: "/analytics", icon: "▣", status: "active" },
       { label: "Attribution", href: "/attribution", icon: "⎔", status: "active" },
       { label: "Correlation", href: "/correlation", icon: "⇄", status: "active" },
       { label: "Clarity", href: "/clarity", icon: "🔥", status: "active" },
-      { label: "Executive", href: "/executive", icon: "📈", status: "active" },
       { label: "Marketing Spend", href: "/settings/marketing-spend", icon: "💵", status: "active" },
     ],
   },

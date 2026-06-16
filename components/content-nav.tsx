@@ -62,6 +62,18 @@ export function ContentNav() {
           </Link>
         );
       })}
+      {/* Opportunity Radar — the source of pre-filled briefs — is a Content
+          Studio tab. Not type-scoped, so it carries no ?type param. */}
+      <Link
+        href="/seo/opportunities"
+        className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-[1px] ${
+          isActive("/seo/opportunities")
+            ? "border-brand text-brand"
+            : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
+        }`}
+      >
+        Opportunities
+      </Link>
       <span className="mx-2 text-slate-300" aria-hidden>
         |
       </span>
@@ -84,14 +96,6 @@ export function ContentNav() {
           </Link>
         );
       })}
-
-      {/* Jump to the SEO Opportunity Radar — the source of pre-filled briefs. */}
-      <Link
-        href="/seo/opportunities"
-        className="ml-auto mb-1 inline-flex items-center gap-1 rounded-md bg-brand/10 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/15"
-      >
-        SEO Opportunity Radar ↗
-      </Link>
     </div>
   );
 }
