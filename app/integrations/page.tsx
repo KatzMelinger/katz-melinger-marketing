@@ -105,7 +105,14 @@ export default function IntegrationsPage() {
       const reason = params.get("reason") ?? "unknown";
       setBanner({ tone: "err", text: `Google Business Profile connect failed: ${reason}` });
     }
-    if (gbp) {
+    const canva = params.get("canva");
+    if (canva === "connected") {
+      setBanner({ tone: "ok", text: "Canva connected." });
+    } else if (canva === "error") {
+      const reason = params.get("reason") ?? "unknown";
+      setBanner({ tone: "err", text: `Canva connect failed: ${reason}` });
+    }
+    if (gbp || canva) {
       // Strip the params so a refresh doesn't re-show the banner.
       window.history.replaceState({}, "", "/integrations");
     }

@@ -13,8 +13,8 @@
 
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { ensureGrantedEmail } from "@/lib/google-oauth";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { canvaConnected, isCanvaOAuthConfigured } from "@/lib/canva-server";
 
 export const runtime = "nodejs";
 
@@ -367,17 +367,35 @@ export async function GET() {
   });
 
   const canvaEnv = envCheck(["CANVA_CLIENT_ID", "CANVA_CLIENT_SECRET"]);
-  const canvaConfigured = canvaEnv.missing.length === 0;
+  const canvaConfigured = isCanvaOAuthConfigured();
+  const canvaHasToken = canvaConfigured ? await canvaConnected() : false;
+  const canvaStatus: Status = !canvaConfigured
+    ? "missing_env"
+    : canvaHasToken
+      ? "connected"
+      : "needs_oauth";
   items.push({
     id: "canva",
     label: "Canva",
     category: "Content",
     ...canvaEnv,
-    status: canvaConfigured ? "needs_oauth" : "missing_env",
-    hint: canvaConfigured
-      ? "OAuth client configured. The Canva account connect flow is the next step — credentials are in place, ready to authorize."
-      : "To be set up. Create a Canva Connect app at canva.com/developers, then add CANVA_CLIENT_ID and CANVA_CLIENT_SECRET. Unlocks brand-template design generation for social and content.",
+    status: canvaStatus,
+    hint:
+      canvaStatus === "connected"
+        ? "Connected. The dashboard can pull brand templates and push generated designs for social and content."
+        : canvaStatus === "needs_oauth"
+          ? "OAuth client configured. Click Connect to authorize a Canva account."
+          : "To be set up. Create a Canva Connect app at canva.com/developers, then add CANVA_CLIENT_ID and CANVA_CLIENT_SECRET. Unlocks brand-template design generation for social and content.",
     feature_pages: ["/content/images", "/social"],
+    actions:
+      canvaStatus === "connected"
+        ? [
+            { label: "Reconnect", href: "/api/canva/oauth/start", tone: "primary" },
+            { label: "Disconnect", href: "/api/canva/oauth/disconnect", method: "POST", tone: "danger" },
+          ]
+        : canvaStatus === "needs_oauth"
+          ? [{ label: "Connect Canva", href: "/api/canva/oauth/start", tone: "primary" }]
+          : undefined,
   });
 
   return NextResponse.json({
