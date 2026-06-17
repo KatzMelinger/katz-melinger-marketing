@@ -36,13 +36,18 @@ type CachedHttpResponse = {
   expiresAt: number;
 };
 
-// GBP dev-tier quota is 10 req/min until production access is approved.
-// Bumping the positive cache to 5 min and negative to 1 min to stretch it
-// — location info doesn't change minute-to-minute and we don't want every
-// page view to burn quota.
-const MIN_REQUEST_GAP_MS = 1000;
-const DEFAULT_GET_CACHE_MS = 5 * 60_000;
+// GBP dev-tier quota is ~10 req/min until the production quota increase is
+// approved, so the strategy is "make far fewer calls and space them out"
+// rather than retry into the cap. Caches are generous because GBP data barely
+// changes minute-to-minute; account/location *discovery* is the chattiest and
+// most stable, so it gets the longest TTL (see cacheTtlMs).
+const MIN_REQUEST_GAP_MS = 1500;
+const DEFAULT_GET_CACHE_MS = 10 * 60_000;
 const NEGATIVE_GET_CACHE_MS = 60_000;
+// An inline retry never waits longer than this. A per-minute quota needs ~60s
+// to clear, which would hang the HTTP request — past this we surface the 429
+// to the UI cooldown instead. Only short, Google-specified waits retry inline.
+const MAX_INLINE_RETRY_WAIT_MS = 8_000;
 
 const responseCache = new Map<string, CachedHttpResponse>();
 const inFlightRequests = new Map<string, Promise<Response>>();
@@ -171,8 +176,36 @@ function formatHoursSummary(location: {
     .join(" · ");
 }
 
-function isRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status <= 599);
+/**
+ * Decide whether to retry inline and how long to wait first. Returns the delay
+ * in ms, or null to stop retrying (surface the response to the caller/UI).
+ *
+ * - 5xx: transient server errors → exponential backoff (honor a short
+ *   Retry-After if Google sent one).
+ * - 429: a per-minute quota needs ~60s to clear, which would hang the request,
+ *   so we only retry inline when Google gave an explicit SHORT Retry-After.
+ *   Otherwise we surface it and let the UI show its cooldown timer — retrying
+ *   into a per-minute cap just burns more quota.
+ */
+function retryPlan(res: Response, attempt: number): number | null {
+  const header = res.headers.get("retry-after");
+  const headerSec = header != null ? Number(header) : NaN;
+  const retryAfterMs =
+    Number.isFinite(headerSec) && headerSec > 0 ? headerSec * 1000 : null;
+
+  if (res.status === 429) {
+    if (retryAfterMs != null && retryAfterMs <= MAX_INLINE_RETRY_WAIT_MS) {
+      return Math.max(MIN_REQUEST_GAP_MS, retryAfterMs);
+    }
+    return null;
+  }
+  if (res.status >= 500 && res.status <= 599) {
+    const expo = 300 * Math.pow(2, attempt);
+    const delay = retryAfterMs ?? expo;
+    if (delay > MAX_INLINE_RETRY_WAIT_MS) return null;
+    return Math.max(MIN_REQUEST_GAP_MS, delay);
+  }
+  return null;
 }
 
 async function waitMs(ms: number): Promise<void> {
@@ -207,7 +240,9 @@ function copyHeaders(res: Response): Record<string, string> {
 
 function cacheTtlMs(url: string, status: number): number {
   if (status >= 400) return NEGATIVE_GET_CACHE_MS;
-  if (url.includes("/accounts") || url.includes("/locations")) return 5 * 60_000;
+  // Account/location discovery is the chattiest call and the most stable —
+  // which accounts/locations a firm has rarely changes. Cache it long.
+  if (url.includes("/accounts") || url.includes("/locations")) return 30 * 60_000;
   return DEFAULT_GET_CACHE_MS;
 }
 
@@ -239,24 +274,15 @@ function writeCachedResponse(key: string, url: string, res: Response, body: stri
   });
 }
 
-function retryDelayMs(res: Response, attempt: number): number {
-  const retryAfter = res.headers.get("retry-after");
-  if (retryAfter) {
-    const sec = Number(retryAfter);
-    if (Number.isFinite(sec) && sec > 0) return sec * 1000;
-  }
-  return 300 * Math.pow(2, attempt);
-}
-
 async function gbpFetchWithRetry(
   label: string,
   url: string,
   token: string,
   init?: RequestInit,
-  // Retries default to 0 — at GBP's 10 req/min dev quota, retrying just
-  // turns one over-quota call into three over-quota calls. We surface the
-  // 429 to the UI which shows a cooldown timer; the user retries by hand.
-  retries = 0,
+  // Up to 2 inline retries, but retryPlan() only acts on transient 5xx and on
+  // 429s that carry a short Retry-After — a per-minute quota still surfaces to
+  // the UI cooldown rather than burning more calls retrying into the cap.
+  retries = 2,
 ): Promise<Response> {
   const method = init?.method ?? "GET";
   const key = cacheKey(method, url);
@@ -274,8 +300,9 @@ async function gbpFetchWithRetry(
     await throttleBeforeGoogleCall();
     let res = await gbpFetch(label, url, token, init);
     let attempt = 0;
-    while (attempt < retries && isRetryableStatus(res.status)) {
-      const delay = Math.max(MIN_REQUEST_GAP_MS, retryDelayMs(res, attempt));
+    while (attempt < retries) {
+      const delay = retryPlan(res, attempt);
+      if (delay == null) break;
       await waitMs(delay);
       attempt += 1;
       await throttleBeforeGoogleCall();
