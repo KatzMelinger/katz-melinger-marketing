@@ -91,8 +91,10 @@ export default function SeoOpportunitiesPage() {
   const [showHandled, setShowHandled] = useState(false);
   const [wizardOpp, setWizardOpp] = useState<Opportunity | null>(null);
   const [scratchOpen, setScratchOpen] = useState(false);
-  const [showImport, setShowImport] = useState(false);
   const [listFilter, setListFilter] = useState<string>("all");
+  const [practiceFilter, setPracticeFilter] = useState<string>("all");
+  const [pageSize, setPageSize] = useState<number | "all">(20);
+  const [page, setPage] = useState(1);
   const [exclusionsOpen, setExclusionsOpen] = useState(false);
   const [exclusions, setExclusions] = useState<KeywordExclusion[]>([]);
 
@@ -134,6 +136,11 @@ export default function SeoOpportunitiesPage() {
   useEffect(() => {
     loadExclusions();
   }, [loadExclusions]);
+
+  // Any filter or page-size change resets to the first page.
+  useEffect(() => {
+    setPage(1);
+  }, [listFilter, practiceFilter, pageSize, showExcluded, showCovered, showHandled]);
 
   // Add a custom exclusion term. The API also flips matching existing rows to
   // excluded, so we refetch the list to reflect them leaving the actionable view.
@@ -199,8 +206,21 @@ export default function SeoOpportunitiesPage() {
   const listNames = Array.from(
     new Set(allRows.map((o) => o.listName).filter((n): n is string => !!n)),
   ).sort();
+  const practiceAreas = Array.from(
+    new Set(allRows.map((o) => o.practiceArea).filter((p): p is string => !!p)),
+  ).sort();
+
+  const filteredRows = allRows
+    .filter((o) => (listFilter === "all" ? true : o.listName === listFilter))
+    .filter((o) => (practiceFilter === "all" ? true : o.practiceArea === practiceFilter));
+
+  // Page-size + pager. "all" shows everything; otherwise slice to the page.
+  const total = filteredRows.length;
+  const pageCount = pageSize === "all" ? 1 : Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const start = pageSize === "all" ? 0 : (safePage - 1) * pageSize;
   const rows =
-    listFilter === "all" ? allRows : allRows.filter((o) => o.listName === listFilter);
+    pageSize === "all" ? filteredRows : filteredRows.slice(start, start + pageSize);
 
   return (
     <SeoShell
@@ -267,6 +287,36 @@ export default function SeoOpportunitiesPage() {
               </select>
             </label>
           )}
+          {practiceAreas.length > 0 && (
+            <label className="inline-flex items-center gap-2">
+              <span className="text-slate-500">Practice area:</span>
+              <select
+                value={practiceFilter}
+                onChange={(e) => setPracticeFilter(e.target.value)}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+              >
+                <option value="all">All practice areas</option>
+                {practiceAreas.map((p) => (
+                  <option key={p} value={p}>{PRACTICE_LABEL[p] ?? p}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="inline-flex items-center gap-2">
+            <span className="text-slate-500">Show:</span>
+            <select
+              value={String(pageSize)}
+              onChange={(e) =>
+                setPageSize(e.target.value === "all" ? "all" : Number(e.target.value))
+              }
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+            >
+              <option value="20">20</option>
+              <option value="40">40</option>
+              <option value="100">100</option>
+              <option value="all">All</option>
+            </select>
+          </label>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-slate-500">
@@ -279,12 +329,6 @@ export default function SeoOpportunitiesPage() {
             className="rounded-md border border-brand px-3 py-1.5 font-medium text-brand hover:bg-brand/5"
           >
             New brief from scratch
-          </button>
-          <button
-            onClick={() => setShowImport(true)}
-            className="rounded-md border border-brand px-3 py-1.5 font-medium text-brand hover:bg-brand/5"
-          >
-            Import SEMrush list
           </button>
           <button
             onClick={refresh}
@@ -328,8 +372,8 @@ export default function SeoOpportunitiesPage() {
               {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-500">
-                    No opportunities yet. Click <b>Refresh opportunities</b> to pull and filter the
-                    latest SEMrush gaps.
+                    No opportunities match. Adjust the filters above, or click{" "}
+                    <b>Refresh opportunities</b> to pull and filter the latest keyword gaps.
                   </td>
                 </tr>
               )}
@@ -434,6 +478,36 @@ export default function SeoOpportunitiesPage() {
         </div>
       </section>
 
+      {!loading && total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <span>
+            Showing {start + 1}–
+            {Math.min(start + (pageSize === "all" ? total : pageSize), total)} of {total}
+          </span>
+          {pageSize !== "all" && pageCount > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="rounded border border-slate-300 px-2 py-1 hover:border-brand disabled:opacity-40"
+              >
+                ← Prev
+              </button>
+              <span>
+                Page {safePage} / {pageCount}
+              </span>
+              <button
+                disabled={safePage >= pageCount}
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                className="rounded border border-slate-300 px-2 py-1 hover:border-brand disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {(wizardOpp || scratchOpen) && (
         <KmBriefWizard
           opportunity={wizardOpp ?? undefined}
@@ -447,146 +521,7 @@ export default function SeoOpportunitiesPage() {
         />
       )}
 
-      {showImport && (
-        <ImportModal
-          onClose={() => setShowImport(false)}
-          onImported={() => {
-            setShowImport(false);
-            fetchData();
-          }}
-        />
-      )}
     </SeoShell>
-  );
-}
-
-function ImportModal({
-  onClose,
-  onImported,
-}: {
-  onClose: () => void;
-  onImported: () => void;
-}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [listName, setListName] = useState("");
-  const [practiceArea, setPracticeArea] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ imported: number; excluded: number } | null>(null);
-
-  const submit = async () => {
-    if (!file || !listName.trim()) {
-      setError("Choose a CSV file and name the list.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("listName", listName.trim());
-      if (practiceArea) fd.append("practiceArea", practiceArea);
-      const res = await fetch("/api/seo/opportunities/import", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || "Import failed");
-      setResult({ imported: json.imported ?? 0, excluded: json.excluded ?? 0 });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">Import a SEMrush list</h3>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Upload a keyword export (Keyword Gap, Organic Research, or Position Tracking). Each
-              keyword is filtered, classified, and deduped against your live pages, then tagged with
-              the list name.
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100" aria-label="Close">×</button>
-        </div>
-
-        {result ? (
-          <div className="mt-5 space-y-3 text-center">
-            <div className="text-2xl">✓</div>
-            <p className="text-sm text-slate-700">
-              Imported <b>{result.imported}</b> keywords into &ldquo;{listName.trim()}&rdquo;
-              {result.excluded > 0 && <> ({result.excluded} filtered as junk/branded)</>}.
-            </p>
-            <button
-              onClick={onImported}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
-            >
-              Done
-            </button>
-          </div>
-        ) : (
-          <div className="mt-4 space-y-3">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-600">List name</span>
-              <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
-                placeholder="e.g. gap retaliation"
-                value={listName}
-                onChange={(e) => setListName(e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-600">
-                Practice area (optional — inferred per keyword if blank)
-              </span>
-              <select
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
-                value={practiceArea}
-                onChange={(e) => setPracticeArea(e.target.value)}
-              >
-                <option value="">Infer automatically</option>
-                <option value="employment">Employment</option>
-                <option value="collections">Collections</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-600">CSV file</span>
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand/10 file:px-3 file:py-1.5 file:text-brand"
-              />
-            </label>
-            {error && (
-              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {error}
-              </div>
-            )}
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                onClick={onClose}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submit}
-                disabled={busy}
-                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
-              >
-                {busy ? "Importing…" : "Import"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
