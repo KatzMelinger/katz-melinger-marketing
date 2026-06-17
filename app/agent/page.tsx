@@ -33,11 +33,13 @@ type Step =
 
 const STORAGE_KEY = "km_agent_conversation";
 
-const SUGGESTIONS = [
-  "What's trending in NY/NJ employment law this month?",
+// Shown until the live, system-derived suggestions load (and if that fetch
+// fails). The real list comes from GET /api/agent/suggestions.
+const FALLBACK_SUGGESTIONS = [
+  "What's trending in my practice areas this month?",
   "List my top 5 active recommendations by impact.",
   "Show tracked keywords that dropped in rank since last check.",
-  "Give me a TikTok playbook for the latest pregnancy-discrimination ruling.",
+  "What should we write next? Find and brief the top opportunities.",
   "What's in my AutoPilot queue waiting for approval?",
 ];
 
@@ -68,12 +70,34 @@ export default function AgentPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSteps, setLastSteps] = useState<Step[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Lets the Stop button abort an in-progress /api/agent request.
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setMessages(loadHistory());
+  }, []);
+
+  // Pull live, system-derived suggestions (rank drops, recommendations, the
+  // AutoPilot queue, open opportunities). Refreshes each time the page loads, so
+  // the list tracks the current state of the system. Falls back silently.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/agent/suggestions", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled || !j) return;
+        if (Array.isArray(j.suggestions) && j.suggestions.length > 0) {
+          setSuggestions(j.suggestions as string[]);
+        }
+      })
+      .catch(() => {
+        /* keep fallback */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -164,6 +188,27 @@ export default function AgentPage() {
         ) : null}
       </div>
 
+      {/* Keep suggestions reachable once a chat is underway. */}
+      {messages.length > 0 ? (
+        <details className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+          <summary className="cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800">
+            Suggestions
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => void send(s)}
+                className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:border-brand hover:text-brand"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
       <div
         ref={scrollRef}
         className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto pr-1"
@@ -171,10 +216,10 @@ export default function AgentPage() {
         {messages.length === 0 ? (
           <DashCard>
             <p className="text-sm text-slate-600 mb-3">
-              Try one of these to get started:
+              Suggestions based on what&apos;s happening right now:
             </p>
             <ul className="space-y-1.5">
-              {SUGGESTIONS.map((s) => (
+              {suggestions.map((s) => (
                 <li key={s}>
                   <button
                     type="button"
