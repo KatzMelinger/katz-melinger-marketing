@@ -62,6 +62,24 @@ const STAGES: { key: PipelineStatus; label: string }[] = [
   { key: "published", label: "Published" },
 ];
 
+// Soft quality floor: drafts scoring below these on the latest analysis trigger
+// an advisory warning at approval (the owner can still approve). Unlike the
+// compliance gate, this never blocks — it's a quality nudge, not a hard stop.
+const QUALITY_MIN = { seo: 75, aeo: 75, cash: 75 };
+
+/** Which of SEO/AEO/CASH on this analysis fall below the soft target. */
+function qualityShortfall(a: Analysis | null): { label: string; score: number }[] {
+  if (!a) return [];
+  const out: { label: string; score: number }[] = [];
+  if (typeof a.seo_score === "number" && a.seo_score < QUALITY_MIN.seo)
+    out.push({ label: "SEO", score: a.seo_score });
+  if (typeof a.aeo_score === "number" && a.aeo_score < QUALITY_MIN.aeo)
+    out.push({ label: "AEO", score: a.aeo_score });
+  if (typeof a.cash_score === "number" && a.cash_score < QUALITY_MIN.cash)
+    out.push({ label: "CASH", score: a.cash_score });
+  return out;
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   opportunity_quickwin: "SEMrush",
   opportunity_missing: "SEMrush",
@@ -454,6 +472,15 @@ export function DraftDrawer({
       setMsg("No draft to approve yet.");
       return;
     }
+    // Soft quality gate: warn (don't block) if SEO/AEO/CASH are below target.
+    const short = qualityShortfall(analysis);
+    if (short.length > 0) {
+      const lines = short.map((s) => `  • ${s.label} ${s.score} (target ${QUALITY_MIN[s.label.toLowerCase() as "seo" | "aeo" | "cash"]})`);
+      const ok = window.confirm(
+        `This draft is below your quality target:\n\n${lines.join("\n")}\n\nApprove anyway?`,
+      );
+      if (!ok) return;
+    }
     setApproving(true);
     setMsg("Running compliance check…");
     try {
@@ -844,6 +871,15 @@ export function DraftDrawer({
                       <p className="mt-0.5 text-xs text-emerald-700">
                         {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
                       </p>
+                      {qualityShortfall(analysis).length > 0 && (
+                        <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                          <span className="font-medium">Below quality target ({QUALITY_MIN.seo}):</span>{" "}
+                          {qualityShortfall(analysis)
+                            .map((s) => `${s.label} ${s.score}`)
+                            .join(" · ")}
+                          . You can still approve, or improve it first using the analysis findings below.
+                        </div>
+                      )}
                       <button
                         onClick={approve}
                         disabled={!canPublish || approving}
