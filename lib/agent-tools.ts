@@ -11,6 +11,18 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
+import { draftTopicToReview } from "./agent/draft-to-review";
+import type { FormatKey } from "./content-multiformat";
+
+/** Formats Peggy is allowed to draft from chat. */
+const ALLOWED_DRAFT_FORMATS: FormatKey[] = [
+  "blog",
+  "linkedin",
+  "twitter",
+  "facebook",
+  "instagram",
+  "email",
+];
 
 /** Shape Anthropic SDK expects for a tool. */
 export type ToolDef = {
@@ -233,6 +245,36 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "create_content_draft",
+    description:
+      "Write a full content draft for a topic and send it to the approval queue. The draft is generated in the firm's brand voice, scored, and run through the attorney-advertising compliance HARD GATE, then it lands on the Content Production board for the owner to review and approve. This NEVER publishes — it only creates a draft awaiting human approval. Use this when the user asks you to write/draft/create a post or article. After it returns, tell the user it's waiting for approval on the Content Production board and report the compliance result (note if it was held for legal review).",
+    input_schema: {
+      type: "object",
+      properties: {
+        topic: {
+          type: "string",
+          description:
+            "What the content should be about — a headline, keyword, or short description of the angle.",
+        },
+        format: {
+          type: "string",
+          description:
+            "Content format. One of: blog (default), linkedin, twitter, facebook, instagram, email.",
+        },
+        practiceArea: {
+          type: "string",
+          description: "Practice area for voice/compliance context (optional).",
+        },
+        targetKeywords: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional SEO keywords to weave in.",
+        },
+      },
+      required: ["topic"],
+    },
+  },
+  {
     name: "list_autopilot_queue",
     description:
       "List on-page SEO fixes currently in the AutoPilot queue for the firm's site — pending fixes awaiting approval, approved fixes waiting for the WP plugin to apply, or recently applied fixes.",
@@ -408,6 +450,54 @@ export async function dispatchTool(
       if (typeof input.topN === "number") payload.topN = input.topN;
       if (input.deep === false) payload.deep = false;
       return await postInternal(req, "/api/content/opportunity-pipeline", payload);
+    }
+
+    case "create_content_draft": {
+      const topic = typeof input.topic === "string" ? input.topic.trim() : "";
+      if (!topic) return { error: "topic is required" };
+
+      const requested =
+        typeof input.format === "string" ? input.format.trim().toLowerCase() : "blog";
+      const format = (ALLOWED_DRAFT_FORMATS as string[]).includes(requested)
+        ? (requested as FormatKey)
+        : "blog";
+
+      const targetKeywords = Array.isArray(input.targetKeywords)
+        ? input.targetKeywords.filter((k): k is string => typeof k === "string")
+        : undefined;
+
+      const outcome = await draftTopicToReview({
+        tenantId: await resolveTenantId(),
+        topic,
+        format,
+        practiceArea:
+          typeof input.practiceArea === "string" ? input.practiceArea : null,
+        targetKeywords,
+        originSource: "peggy",
+        notePrefix: "Created by Peggy (chat)",
+      });
+
+      if (outcome.error) return { error: outcome.error };
+
+      return {
+        draftId: outcome.draftId,
+        title: outcome.title,
+        format: outcome.format,
+        status: outcome.status,
+        awaitingApproval: outcome.status === "review",
+        heldForLegal: outcome.status === "needs_legal",
+        legalReviewRequired: outcome.legalReviewRequired,
+        compliance: outcome.compliance
+          ? {
+              score: outcome.compliance.score,
+              status: outcome.compliance.status,
+              highSeverityCount: outcome.compliance.highSeverityCount,
+              violations: outcome.compliance.violations,
+            }
+          : null,
+        reviewLocation:
+          "Content Production board (/content-production) — the Approve column.",
+      };
     }
 
     case "list_autopilot_queue": {

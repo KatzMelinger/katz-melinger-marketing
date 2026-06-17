@@ -42,6 +42,20 @@ export type Department = {
 
 export const DEPARTMENTS: Department[] = [
   {
+    // Sits first, directly under Dashboard: Peggy (the AI assistant) plus the
+    // Production Board, where everything Peggy or the autonomous agent creates
+    // lands for review/approval. Kept open by default so the inbox is one click
+    // from anywhere.
+    key: "ai-assistant",
+    label: "AI Assistant",
+    accent: "#8B5CF6",
+    defaultOpen: true,
+    items: [
+      { label: "Peggy", href: "/agent", icon: "💬", status: "active" },
+      { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
+    ],
+  },
+  {
     key: "seo-content",
     label: "SEO Content",
     accent: "#185FA5",
@@ -51,10 +65,6 @@ export const DEPARTMENTS: Department[] = [
       // Marketing copy, SEO content, Multi-format batch, Intelligence, and the
       // Opportunity Radar — so it needs one sidebar entry, not five.
       { label: "Content Studio", href: "/content", icon: "▤", status: "active" },
-      // The production line (Decisions, Briefs, Production Board, Publishing QA)
-      // is reached from the Content Production page itself, so it needs only one
-      // sidebar tab instead of five.
-      { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
       { label: "Refresh Queue", href: "/content/refresh", icon: "♻", status: "active" },
       { label: "Cluster Map", href: "/content/site-map", icon: "🗺", status: "active" },
       { label: "Drafts", href: "/content/drafts", icon: "📝", status: "active" },
@@ -168,7 +178,6 @@ export const DEPARTMENTS: Department[] = [
     accent: "#7C3AED",
     defaultOpen: false,
     items: [
-      { label: "Peggy", href: "/agent", icon: "💬", status: "active" },
       { label: "Content Directions", href: "/brand-voice", icon: "🧭", status: "active" },
       { label: "Image Generator", href: "/content/images", icon: "🖼", status: "active" },
       { label: "Practice Areas", href: "/settings/practice-areas", icon: "⚖", status: "active" },

@@ -81,6 +81,8 @@ Today is ${today}. You help the marketing team plan, execute, and review work ac
 
 When the user asks something answerable by a tool, use the tool — don't just guess. After tool results come back, summarize what you found in a way that's directly useful to a marketer (cite specific items, urgencies, rank changes, etc., rather than restating the JSON). When no tool fits, answer from your own reasoning with clear caveats.
 
+You can also WRITE content. When the user asks you to draft/write/create a post or article, use create_content_draft. It generates the draft in the firm's brand voice, runs the attorney-advertising compliance gate, and sends it to the Content Production board for the owner to review and approve — it never publishes. After it runs, tell the user the draft is waiting for approval there, and flag it if it was held for legal review.
+
 Keep responses focused. Default to short, scannable bullets unless the user asks for prose.`;
 
   const anthropic = getAnthropic();

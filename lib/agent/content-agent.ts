@@ -25,9 +25,7 @@ import {
   runOpportunityPipeline,
   type ScoredOpportunity,
 } from "@/lib/opportunity-pipeline";
-import { generateMultiFormat } from "@/lib/content-multiformat";
-import { analyzeDraft } from "@/lib/content-analysis";
-import { runComplianceGate, surfaceForFormat } from "@/lib/agent/compliance-filter";
+import { draftTopicToReview } from "@/lib/agent/draft-to-review";
 
 export type AgentItemAction =
   | "queued_for_review"
@@ -249,6 +247,10 @@ export async function runContentAgent(args: {
 /**
  * Draft one winner, analyze it, run the compliance hard gate, and persist the
  * outcome (status + linked pipeline row). Returns the item result.
+ *
+ * The generate → analyze → gate → persist work lives in the shared
+ * draftTopicToReview() helper so chat-created (Peggy) and agent-created content
+ * follow the identical path into the approval queue.
  */
 async function draftAndGate(args: {
   db: ReturnType<typeof getTenantJobDb>;
@@ -260,124 +262,37 @@ async function draftAndGate(args: {
 }): Promise<AgentItemResult> {
   const { db, tenantId, runId, winner } = args;
 
-  // 2. Draft — long-form blog article for this opportunity. generateMultiFormat
-  // accepts an explicit tenantId for background contexts and persists the draft
-  // (at the default 'initial_review' status, which we override below).
-  const batch = await generateMultiFormat({
+  const outcome = await draftTopicToReview({
+    db,
+    tenantId,
     topic: winner.keyword,
-    practiceArea: args.practiceArea ?? undefined,
-    formats: ["blog"],
+    practiceArea: args.practiceArea,
+    format: "blog",
     targetKeywords: winner.brief?.targetKeywords,
     seoBriefHeadings: winner.brief?.headings,
-    tenantId,
+    minComplianceScore: args.minComplianceScore,
     originSource: "agent",
-    originContext: { run_id: runId, packet_id: winner.packetId ?? null },
+    runId,
+    packetId: winner.packetId ?? null,
+    legalReviewRequired: winner.legalReviewRequired === true,
+    notePrefix: `Autonomous agent · worth ${winner.worthScore}`,
   });
 
-  const draft = batch.drafts.find((d) => d.format === "blog");
-  if (!draft) {
-    return {
-      keyword: winner.keyword,
-      draftId: null,
-      batchId: batch.batch_id,
-      worthScore: winner.worthScore,
-      action: "error",
-      error: "Generation returned no blog draft",
-    };
-  }
-
-  // 3. Analyze — full scorecard (persists to content_analyses internally).
-  // Non-fatal: a scorecard failure must not block the compliance gate.
-  try {
-    await analyzeDraft({
-      draftId: draft.id,
-      body: draft.body,
-      targetKeywords: winner.brief?.targetKeywords ?? [],
-      title: draft.title,
-      topic: winner.keyword,
-      format: "blog",
-      practiceArea: args.practiceArea,
-    });
-  } catch (err) {
-    console.warn(
-      `[content-agent] analyze failed for draft ${draft.id}:`,
-      err instanceof Error ? err.message : String(err),
-    );
-  }
-
-  // 4. Compliance HARD GATE.
-  const verdict = await runComplianceGate({
-    content: draft.body,
-    surface: surfaceForFormat("blog"),
-    practiceArea: args.practiceArea ?? undefined,
-    minScore: args.minComplianceScore,
-  });
-
-  // A research-packet legal flag is an independent hold reason.
-  const legalReviewRequired = winner.legalReviewRequired === true;
-  const pass = verdict.pass && !legalReviewRequired;
-  const newStatus = pass ? "review" : "needs_legal";
-
-  const complianceSummary = {
-    pass: verdict.pass,
-    status: verdict.status,
-    score: verdict.score,
-    highSeverityCount: verdict.highSeverityCount,
-    violations: verdict.violations.map((v) => ({
-      rule: v.rule,
-      severity: v.severity,
-      reason: v.reason,
-    })),
-    suggestedRewrite: verdict.suggestedRewrite,
-  };
-
-  // Persist status + audit metadata on the draft. Merge onto the metadata the
-  // generator already wrote so we don't clobber origin_source / model.
-  const mergedMetadata = {
-    ...(draft.metadata ?? {}),
-    source: "agent",
-    run_id: runId,
-    legal_review_required: legalReviewRequired,
-    compliance: complianceSummary,
-  };
-
-  const { error: updErr } = await db.raw
-    .from("content_drafts")
-    .update({ status: newStatus, metadata: mergedMetadata })
-    .eq("id", draft.id)
-    .eq("tenant_id", tenantId);
-  if (updErr) {
-    return {
-      keyword: winner.keyword,
-      draftId: draft.id,
-      batchId: batch.batch_id,
-      worthScore: winner.worthScore,
-      action: "error",
-      error: `Failed to set draft status: ${updErr.message}`,
-      compliance: complianceSummary,
-      legalReviewRequired,
-    };
-  }
-
-  // Mirror into the editorial pipeline so the work shows on the board and the
-  // idempotency check sees it next run. Fresh draft_id ⇒ a plain insert.
-  await db.insert("content_pipeline", {
-    title: draft.title ?? winner.keyword,
-    keywords: winner.keyword,
-    status: newStatus,
-    bucket: "bofu_education",
-    draft_id: draft.id,
-    notes: `Autonomous agent · worth ${winner.worthScore} · compliance ${verdict.score}`,
-  });
+  const action: AgentItemAction = outcome.error
+    ? "error"
+    : outcome.pass
+      ? "queued_for_review"
+      : "held_needs_legal";
 
   return {
     keyword: winner.keyword,
-    draftId: draft.id,
-    batchId: batch.batch_id,
+    draftId: outcome.draftId,
+    batchId: outcome.batchId ?? undefined,
     worthScore: winner.worthScore,
-    action: pass ? "queued_for_review" : "held_needs_legal",
-    legalReviewRequired,
-    compliance: complianceSummary,
+    action,
+    legalReviewRequired: outcome.legalReviewRequired,
+    compliance: outcome.compliance ?? undefined,
+    error: outcome.error,
   };
 }
 
