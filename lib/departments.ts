@@ -52,7 +52,6 @@ export const DEPARTMENTS: Department[] = [
     defaultOpen: true,
     items: [
       { label: "Peggy", href: "/agent", icon: "💬", status: "active" },
-      { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
     ],
   },
   {
@@ -65,6 +64,10 @@ export const DEPARTMENTS: Department[] = [
       // Marketing copy, SEO content, Multi-format batch, Intelligence, and the
       // Opportunity Radar — so it needs one sidebar entry, not five.
       { label: "Content Studio", href: "/content", icon: "▤", status: "active" },
+      // The production line (Decisions, Briefs, Production Board, Publishing QA)
+      // is reached from the Content Production page itself, so it needs only one
+      // sidebar tab instead of five.
+      { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
       { label: "Refresh Queue", href: "/content/refresh", icon: "♻", status: "active" },
       { label: "Cluster Map", href: "/content/site-map", icon: "🗺", status: "active" },
       { label: "Drafts", href: "/content/drafts", icon: "📝", status: "active" },

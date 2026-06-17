@@ -53,6 +53,7 @@ type Item = {
   rawStatus: string | null;
   keywords: string | null;
   suggestionId: string | null;
+  createdBy: "peggy" | "agent" | "manual";
   rankDrop?: number;
   currentRank?: number | null;
   previousRank?: number | null;
@@ -118,6 +119,7 @@ export default function ContentProductionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("new");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "peggy" | "agent">("all");
   const [wizardOpp, setWizardOpp] = useState<WizardOpportunity | null>(null);
   const [reviewItem, setReviewItem] = useState<DrawerItem | null>(null);
   const [running, setRunning] = useState(false);
@@ -171,13 +173,21 @@ export default function ContentProductionPage() {
   }, [data?.pillars]);
 
   const stages = data?.stages ?? [];
-  const newItems = (data?.items ?? []).filter((i) => i.tab === "new");
+  const allNewItems = (data?.items ?? []).filter((i) => i.tab === "new");
+  // Source filter applies to the New-content board (opportunity cards have no
+  // creator, so they only show under "All").
+  const newItems =
+    sourceFilter === "all"
+      ? allNewItems
+      : allNewItems.filter((i) => i.createdBy === sourceFilter);
   const existingItems = (data?.items ?? []).filter((i) => i.tab === "existing");
+  const peggyCount = allNewItems.filter((i) => i.createdBy === "peggy").length;
 
   // The owner's inbox: drafts that cleared the compliance gate and are waiting
   // for a human approve/publish. (needs_legal items are held, not "awaiting".)
-  const awaitingApproval = newItems.filter((i) => i.rawStatus === "review").length;
-  const heldForLegal = newItems.filter((i) => i.rawStatus === "needs_legal").length;
+  // Counted across all sources so the totals don't shift with the filter.
+  const awaitingApproval = allNewItems.filter((i) => i.rawStatus === "review").length;
+  const heldForLegal = allNewItems.filter((i) => i.rawStatus === "needs_legal").length;
 
   const onCreateBrief = (i: Item) => setWizardOpp(toWizardOpportunity(i));
   const onReview = (i: Item) => setReviewItem(toDrawerItem(i));
@@ -241,20 +251,44 @@ export default function ContentProductionPage() {
         <Counter label="Total tracked" value={(data?.items ?? []).length} />
       </section>
 
-      <div className="mb-4 flex gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
-              tab === t.id
-                ? "border-brand text-brand"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200">
+        <div className="flex gap-1">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+                tab === t.id
+                  ? "border-brand text-brand"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {tab === "new" && (
+          <div className="mb-1 flex items-center gap-1 text-xs">
+            <span className="mr-1 text-slate-400">Show:</span>
+            {([
+              { id: "all", label: "All" },
+              { id: "peggy", label: `Peggy${peggyCount ? ` (${peggyCount})` : ""}` },
+              { id: "agent", label: "Agent" },
+            ] as const).map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setSourceFilter(f.id)}
+                className={`rounded-full border px-2.5 py-1 font-medium transition-colors ${
+                  sourceFilter === f.id
+                    ? "border-brand bg-brand/10 text-brand"
+                    : "border-slate-300 text-slate-600 hover:border-brand hover:text-brand"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -662,9 +696,20 @@ function Card({
     <div className="rounded-md border border-slate-200 bg-white p-2 text-sm shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <span className="font-medium text-slate-800">{item.title}</span>
-        {item.source === "pipeline" && (
-          <span className="rounded bg-slate-100 px-1 text-[10px] uppercase text-slate-500">board</span>
-        )}
+        {item.source === "pipeline" &&
+          (item.createdBy === "peggy" ? (
+            <span className="shrink-0 rounded bg-violet-100 px-1.5 text-[10px] font-medium uppercase text-violet-700">
+              💬 Peggy
+            </span>
+          ) : item.createdBy === "agent" ? (
+            <span className="shrink-0 rounded bg-sky-100 px-1.5 text-[10px] font-medium uppercase text-sky-700">
+              ✨ Agent
+            </span>
+          ) : (
+            <span className="shrink-0 rounded bg-slate-100 px-1 text-[10px] uppercase text-slate-500">
+              board
+            </span>
+          ))}
       </div>
       {showUrl && item.url && <div className="mt-0.5 truncate text-xs text-slate-400">{item.url}</div>}
       <div className="mt-1.5 flex flex-wrap gap-1">

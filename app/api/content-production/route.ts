@@ -75,7 +75,7 @@ export async function GET() {
   const [{ data: pipe }, { data: tracked }] = await Promise.all([
     supabase
       .from("content_pipeline")
-      .select("id, title, keywords, status, bucket, url, draft_id, suggestion_id")
+      .select("id, title, keywords, status, bucket, url, draft_id, suggestion_id, notes")
       .order("updated_at", { ascending: false }),
     // Position-drop source for Optimize/Repurpose: tracked keywords whose rank
     // worsened. A "drop" means the rank NUMBER went up (e.g. #4 → #9). So
@@ -109,6 +109,10 @@ export async function GET() {
     rawStatus: string | null; // content_pipeline.status for DraftDrawer
     keywords: string | null;
     suggestionId: string | null; // brief_suggestions.id — the brief behind a brief-stage row
+    // Who created the pipeline row: Peggy (chat), the autonomous agent (cron),
+    // or a human (brief wizard / manual). Derived from the deterministic note
+    // prefixes draft-to-review.ts writes.
+    createdBy: "peggy" | "agent" | "manual";
     // Position-drop fields (source === "page" only)
     rankDrop?: number;
     currentRank?: number | null;
@@ -118,6 +122,12 @@ export async function GET() {
 
   // Pipeline items: the production stages (brief → published).
   for (const p of pipe ?? []) {
+    const note = ((p.notes as string) ?? "").toLowerCase();
+    const createdBy: Item["createdBy"] = note.startsWith("created by peggy")
+      ? "peggy"
+      : note.startsWith("autonomous agent")
+        ? "agent"
+        : "manual";
     items.push({
       id: p.id as string,
       title: (p.title as string) ?? (p.keywords as string) ?? "(untitled)",
@@ -138,6 +148,7 @@ export async function GET() {
       rawStatus: (p.status as string) ?? null,
       keywords: (p.keywords as string) ?? null,
       suggestionId: (p.suggestion_id as string) ?? null,
+      createdBy,
     });
   }
 
@@ -173,6 +184,7 @@ export async function GET() {
       rawStatus: null,
       keywords: null,
       suggestionId: null,
+      createdBy: "manual",
       rankDrop: drop,
       currentRank: cur,
       previousRank: prev,
