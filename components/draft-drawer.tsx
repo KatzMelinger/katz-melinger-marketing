@@ -341,6 +341,39 @@ export function DraftDrawer({
     setApplyingFindings(null);
   };
 
+  // Apply an internal link from the overlap check: turn the first plain-text
+  // mention of `term` in the body into a markdown link to the existing page, so
+  // the writer can "link, don't redefine" with one click. No AI step.
+  const applyOverlapLink = async (term: string, url: string) => {
+    if (!draft) return;
+    const source = draft.body ?? "";
+    if (source.includes(`](${url})`)) {
+      setMsg("That page is already linked in the draft.");
+      return;
+    }
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // First standalone occurrence not already inside a markdown link.
+    const re = new RegExp(`(?<!\\[)\\b(${esc})\\b`, "i");
+    if (!re.test(source)) {
+      setMsg(`Couldn't find "${term}" in the draft — add the link manually.`);
+      return;
+    }
+    const newBody = source.replace(re, `[$1](${url})`);
+    const res = await fetch(`/api/content/drafts/${draft.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: newBody }),
+    });
+    if (res.ok) {
+      setDraft({ ...draft, body: newBody });
+      setEditBody(newBody);
+      setMsg(`Linked "${term}" to the existing page.`);
+      onChanged();
+    } else {
+      setMsg("Failed to apply link.");
+    }
+  };
+
   // Apply a suggested title — a quick PATCH, no AI step.
   const applyTitle = async (newTitle: string) => {
     if (!draft) return;
@@ -916,6 +949,7 @@ export function DraftDrawer({
                     rerunning={analyzing}
                     onApplyFindings={(fs) => setApplyingFindings(fs)}
                     onApplyTitle={applyTitle}
+                    onApplyLink={applyOverlapLink}
                     currentTitle={draft.title}
                   />
                 </div>

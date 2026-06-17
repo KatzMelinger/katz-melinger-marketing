@@ -91,6 +91,7 @@ export function AnalysisCard({
   rerunning,
   onApplyFindings,
   onApplyTitle,
+  onApplyLink,
   currentTitle,
 }: {
   analysis: Analysis;
@@ -103,6 +104,9 @@ export function AnalysisCard({
   /** When provided, suggested titles get an inline Apply button that PATCHes
    *  the draft title to the picked option. */
   onApplyTitle?: (title: string) => void;
+  /** When provided, the overlap check shows an "Add link" button per existing
+   *  page that links the matched term to it in the draft body. */
+  onApplyLink?: (term: string, url: string) => void | Promise<void>;
   /** Current draft title — used to mark the active title in the picker. */
   currentTitle?: string | null;
 }) {
@@ -440,6 +444,7 @@ export function AnalysisCard({
           ...Object.keys(analysis.target_keyword_hits ?? {}),
           ...(currentTitle ? [currentTitle] : []),
         ]}
+        onApplyLink={onApplyLink}
       />
 
       {analysis.summary && (
@@ -457,13 +462,34 @@ export function AnalysisCard({
  * "link, don't redefine" recommendations. Decoupled from the main analysis
  * pipeline so it never slows a re-analyze.
  */
-function ContentOverlapPanel({ terms }: { terms: string[] }) {
+function ContentOverlapPanel({
+  terms,
+  onApplyLink,
+}: {
+  terms: string[];
+  onApplyLink?: (term: string, url: string) => void | Promise<void>;
+}) {
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
   const [matches, setMatches] = useState<
     { term: string; pages: { url: string; title: string | null }[] }[]
   >([]);
   const [error, setError] = useState<string | null>(null);
+  // Track which term→url link is being applied / has been applied.
+  const [applying, setApplying] = useState<string | null>(null);
+  const [appliedKeys, setAppliedKeys] = useState<Set<string>>(new Set());
+
+  const apply = async (term: string, url: string) => {
+    if (!onApplyLink) return;
+    const key = `${term}→${url}`;
+    setApplying(key);
+    try {
+      await onApplyLink(term, url);
+      setAppliedKeys((prev) => new Set(prev).add(key));
+    } finally {
+      setApplying(null);
+    }
+  };
 
   const run = async () => {
     setLoading(true);
@@ -518,19 +544,39 @@ function ContentOverlapPanel({ terms }: { terms: string[] }) {
             >
               <span className="font-medium text-amber-900">
                 &quot;{m.term}&quot; already covered — link, don&apos;t redefine:
-              </span>{" "}
-              {m.pages.map((p, j) => (
-                <a
-                  key={j}
-                  href={p.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-slate-700 underline-offset-2 hover:underline"
-                >
-                  {p.title ?? p.url}
-                  {j < m.pages.length - 1 ? ", " : ""}
-                </a>
-              ))}
+              </span>
+              <ul className="mt-1 space-y-1">
+                {m.pages.map((p, j) => {
+                  const key = `${m.term}→${p.url}`;
+                  const isApplied = appliedKeys.has(key);
+                  return (
+                    <li key={j} className="flex items-center justify-between gap-2">
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="min-w-0 flex-1 truncate text-slate-700 underline-offset-2 hover:underline"
+                      >
+                        {p.title ?? p.url}
+                      </a>
+                      {onApplyLink && (
+                        <button
+                          onClick={() => apply(m.term, p.url)}
+                          disabled={applying === key || isApplied}
+                          title={`Link "${m.term}" to this page in the draft body`}
+                          className="shrink-0 rounded border border-amber-400 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                        >
+                          {isApplied
+                            ? "✓ Linked"
+                            : applying === key
+                              ? "Linking…"
+                              : "Add link"}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </li>
           ))}
         </ul>
