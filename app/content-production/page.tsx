@@ -184,6 +184,7 @@ export default function ContentProductionPage() {
   );
   const existingItems = (data?.items ?? []).filter((i) => i.tab === "existing");
   const peggyCount = allNewItems.filter((i) => i.createdBy === "peggy").length;
+  const agentCount = allNewItems.filter((i) => i.createdBy === "agent").length;
 
   // The owner's inbox: drafts that cleared the compliance gate and are waiting
   // for a human approve/publish. (needs_legal items are held, not "awaiting".)
@@ -308,15 +309,30 @@ export default function ContentProductionPage() {
         </div>
         {tab === "new" && (
           <div className="mb-1 flex items-center gap-1 text-xs">
-            <span className="mr-1 text-slate-400">Show:</span>
+            <span className="mr-1 text-slate-400" title="Filter the board by who created each item">
+              Created by:
+            </span>
             {([
-              { id: "all", label: "All" },
-              { id: "peggy", label: `Peggy${peggyCount ? ` (${peggyCount})` : ""}` },
-              { id: "agent", label: "Agent" },
+              {
+                id: "all",
+                label: `Anyone (${allNewItems.length})`,
+                title: "Show everything on the board, no matter who created it",
+              },
+              {
+                id: "peggy",
+                label: `Peggy (${peggyCount})`,
+                title: "Show only drafts you asked Peggy to write in the chat",
+              },
+              {
+                id: "agent",
+                label: `Auto-agent (${agentCount})`,
+                title: "Show only drafts the scheduled content agent generated on its own",
+              },
             ] as const).map((f) => (
               <button
                 key={f.id}
                 onClick={() => setSourceFilter(f.id)}
+                title={f.title}
                 className={`rounded-full border px-2.5 py-1 font-medium transition-colors ${
                   sourceFilter === f.id
                     ? "border-brand bg-brand/10 text-brand"
@@ -336,6 +352,24 @@ export default function ContentProductionPage() {
         </div>
       )}
       {loading && <p className="text-sm text-slate-500">Loading…</p>}
+
+      {!loading && tab === "new" && newItems.length === 0 && (sourceFilter !== "all" || statusFilter !== "all") && (
+        <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-center text-sm text-slate-500">
+          No items match this filter
+          {sourceFilter === "peggy" && " — nothing created by Peggy yet. Ask Peggy in the chat to write something and it'll appear here."}
+          {sourceFilter === "agent" && " — the scheduled agent hasn't produced anything yet. Use “Run agent now” above to generate some."}
+          .{" "}
+          <button
+            onClick={() => {
+              setSourceFilter("all");
+              setStatusFilter("all");
+            }}
+            className="font-medium text-brand hover:underline"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
 
       {!loading && tab === "new" && (
         <div
