@@ -46,6 +46,18 @@ export function ContentNav() {
 
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 mb-6">
+      {/* Opportunity Radar — the source of pre-filled briefs — leads the Content
+          Studio tabs. Not type-scoped, so it carries no ?type param. */}
+      <Link
+        href="/seo/opportunities"
+        className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-[1px] ${
+          isActive("/seo/opportunities")
+            ? "border-brand text-brand"
+            : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
+        }`}
+      >
+        Opportunities
+      </Link>
       {TYPE_SCOPED_TABS.map((t) => {
         const active = isActive(t.href);
         return (
@@ -62,18 +74,6 @@ export function ContentNav() {
           </Link>
         );
       })}
-      {/* Opportunity Radar — the source of pre-filled briefs — is a Content
-          Studio tab. Not type-scoped, so it carries no ?type param. */}
-      <Link
-        href="/seo/opportunities"
-        className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-[1px] ${
-          isActive("/seo/opportunities")
-            ? "border-brand text-brand"
-            : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
-        }`}
-      >
-        Opportunities
-      </Link>
       <span className="mx-2 text-slate-300" aria-hidden>
         |
       </span>
