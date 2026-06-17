@@ -49,12 +49,17 @@ async function gbpOAuthState(): Promise<GBPState> {
   }
 }
 
-type Status = "connected" | "missing_env" | "needs_oauth" | "error";
+type Status =
+  | "connected"
+  | "missing_env"
+  | "needs_oauth"
+  | "needs_setup"
+  | "error";
 
 type Integration = {
   id: string;
   label: string;
-  category: "AI" | "Search" | "Social" | "Email" | "Calls" | "Database";
+  category: "AI" | "Search" | "Social" | "Email" | "Calls" | "Database" | "Content";
   status: Status;
   missing: string[];
   set: string[];
@@ -94,6 +99,24 @@ async function constantContactStatus(): Promise<Status> {
   }
 }
 
+async function wordpressStatus(): Promise<Status> {
+  // Token-based, not env-based: connected iff a non-revoked AutoPilot token
+  // exists for this tenant. The plugin uses that token to pull approved fixes.
+  const supabase = getSupabaseServer();
+  if (!supabase) return "needs_setup";
+  try {
+    const { data } = await supabase
+      .from("wp_autopilot_tokens")
+      .select("id")
+      .eq("tenant_id", await resolveTenantId())
+      .is("revoked_at", null)
+      .limit(1);
+    return data && data.length > 0 ? "connected" : "needs_setup";
+  } catch {
+    return "needs_setup";
+  }
+}
+
 function googleServiceAccountStatus(): Status {
   if (!present("GOOGLE_SERVICE_ACCOUNT_JSON")) return "missing_env";
   // Parseable?
@@ -109,6 +132,7 @@ function googleServiceAccountStatus(): Status {
 export async function GET() {
   const items: Integration[] = [];
   const gbp = await gbpOAuthState();
+  const wp = await wordpressStatus();
 
   // ---- AI providers ----
   items.push({
@@ -320,12 +344,49 @@ export async function GET() {
     feature_pages: ["/attribution", "/pipeline"],
   });
 
+  // ---- Content / publishing & design ----
+  items.push({
+    id: "wordpress",
+    label: "WordPress (KM AutoPilot plugin)",
+    category: "Content",
+    missing: [],
+    set: [],
+    status: wp,
+    hint:
+      wp === "connected"
+        ? "Connected. Approved on-page SEO fixes and long-form posts sync to the site via the KM AutoPilot plugin. Use Manage to add another site or revoke a token."
+        : "Not set up yet. Generate a per-site token and install the KM AutoPilot plugin on the WordPress site to start pushing approved fixes.",
+    feature_pages: ["/seo/technical"],
+    actions: [
+      {
+        label: wp === "connected" ? "Manage connection" : "Set up WordPress",
+        href: "/settings/wordpress",
+        tone: "primary",
+      },
+    ],
+  });
+
+  const canvaEnv = envCheck(["CANVA_CLIENT_ID", "CANVA_CLIENT_SECRET"]);
+  const canvaConfigured = canvaEnv.missing.length === 0;
+  items.push({
+    id: "canva",
+    label: "Canva",
+    category: "Content",
+    ...canvaEnv,
+    status: canvaConfigured ? "needs_oauth" : "missing_env",
+    hint: canvaConfigured
+      ? "OAuth client configured. The Canva account connect flow is the next step — credentials are in place, ready to authorize."
+      : "To be set up. Create a Canva Connect app at canva.com/developers, then add CANVA_CLIENT_ID and CANVA_CLIENT_SECRET. Unlocks brand-template design generation for social and content.",
+    feature_pages: ["/content/images", "/social"],
+  });
+
   return NextResponse.json({
     integrations: items,
     summary: {
       connected: items.filter((i) => i.status === "connected").length,
       missing_env: items.filter((i) => i.status === "missing_env").length,
       needs_oauth: items.filter((i) => i.status === "needs_oauth").length,
+      needs_setup: items.filter((i) => i.status === "needs_setup").length,
       error: items.filter((i) => i.status === "error").length,
       total: items.length,
     },

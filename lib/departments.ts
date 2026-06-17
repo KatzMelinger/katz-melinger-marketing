@@ -180,7 +180,6 @@ export const DEPARTMENTS: Department[] = [
     accent: "#475569",
     defaultOpen: false,
     items: [
-      { label: "Connect WordPress", href: "/settings/wordpress", icon: "🌐", status: "active", adminOnly: true },
       { label: "Integrations", href: "/integrations", icon: "🔌", status: "active", adminOnly: true },
       { label: "Users", href: "/admin/users", icon: "👥", status: "active", adminOnly: true },
       { label: "Settings", href: "/settings", icon: "⚙", status: "active", adminOnly: true },

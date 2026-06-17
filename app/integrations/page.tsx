@@ -14,12 +14,17 @@ import { useEffect, useState } from "react";
 
 import { ConnectionHealthBadge } from "@/components/connection-health-badge";
 
-type Status = "connected" | "missing_env" | "needs_oauth" | "error";
+type Status =
+  | "connected"
+  | "missing_env"
+  | "needs_oauth"
+  | "needs_setup"
+  | "error";
 
 type Integration = {
   id: string;
   label: string;
-  category: "AI" | "Search" | "Social" | "Email" | "Calls" | "Database";
+  category: "AI" | "Search" | "Social" | "Email" | "Calls" | "Database" | "Content";
   status: Status;
   missing: string[];
   set: string[];
@@ -35,12 +40,13 @@ type Payload = {
     connected: number;
     missing_env: number;
     needs_oauth: number;
+    needs_setup: number;
     error: number;
     total: number;
   };
 };
 
-const CATEGORY_ORDER: Integration["category"][] = ["Database", "AI", "Search", "Calls", "Email", "Social"];
+const CATEGORY_ORDER: Integration["category"][] = ["Database", "AI", "Search", "Content", "Calls", "Email", "Social"];
 
 function statusLabel(s: Status): string {
   switch (s) {
@@ -50,6 +56,8 @@ function statusLabel(s: Status): string {
       return "Missing env vars";
     case "needs_oauth":
       return "Needs OAuth";
+    case "needs_setup":
+      return "Needs setup";
     case "error":
       return "Error";
   }
@@ -62,6 +70,8 @@ function statusTone(s: Status): { dot: string; pill: string } {
     case "missing_env":
       return { dot: "bg-red-500", pill: "bg-red-50 text-red-700 border-red-200" };
     case "needs_oauth":
+      return { dot: "bg-amber-500", pill: "bg-amber-50 text-amber-700 border-amber-200" };
+    case "needs_setup":
       return { dot: "bg-amber-500", pill: "bg-amber-50 text-amber-700 border-amber-200" };
     case "error":
       return { dot: "bg-red-600", pill: "bg-red-100 text-red-800 border-red-300" };
@@ -148,11 +158,12 @@ export default function IntegrationsPage() {
       <ConnectionHealthBadge className="mb-6 max-w-md" defaultOpen />
 
       {data && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
           <SummaryTile label="Total" value={data.summary.total} />
           <SummaryTile label="Connected" value={data.summary.connected} tone="emerald" />
           <SummaryTile label="Missing env" value={data.summary.missing_env} tone="red" />
           <SummaryTile label="Needs OAuth" value={data.summary.needs_oauth} tone="amber" />
+          <SummaryTile label="Needs setup" value={data.summary.needs_setup} tone="amber" />
           <SummaryTile label="Errors" value={data.summary.error} tone="red" />
         </div>
       )}
