@@ -223,10 +223,11 @@ const perplexityProvider: AEOProvider = {
 //
 // We try a chain of models. 2.5-flash is the default, but it gets overloaded
 // during peak hours (503 "high demand"). When that happens we drop back to
-// 1.5-flash which has way more headroom. This gives us answers during spikes
-// instead of dead rows in the AEO dashboard.
+// 2.0-flash, which has more headroom. (The old 1.5-flash fallback was retired
+// by Google — it now 404s on v1beta generateContent.) This gives us answers
+// during spikes instead of dead rows in the AEO dashboard.
 
-const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-1.5-flash"] as const;
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"] as const;
 const GEMINI_MODEL = GEMINI_MODELS[0];
 
 async function callGemini(model: string, prompt: string, apiKey: string): Promise<Response> {
