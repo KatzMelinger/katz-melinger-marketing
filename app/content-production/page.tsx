@@ -120,6 +120,7 @@ export default function ContentProductionPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("new");
   const [sourceFilter, setSourceFilter] = useState<"all" | "peggy" | "agent">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "review" | "needs_legal">("all");
   const [wizardOpp, setWizardOpp] = useState<WizardOpportunity | null>(null);
   const [reviewItem, setReviewItem] = useState<DrawerItem | null>(null);
   const [running, setRunning] = useState(false);
@@ -174,12 +175,13 @@ export default function ContentProductionPage() {
 
   const stages = data?.stages ?? [];
   const allNewItems = (data?.items ?? []).filter((i) => i.tab === "new");
-  // Source filter applies to the New-content board (opportunity cards have no
-  // creator, so they only show under "All").
-  const newItems =
-    sourceFilter === "all"
-      ? allNewItems
-      : allNewItems.filter((i) => i.createdBy === sourceFilter);
+  // Source + status filters apply to the New-content board. (Opportunity cards
+  // have no creator/status, so they only show under "All".)
+  const newItems = allNewItems.filter(
+    (i) =>
+      (sourceFilter === "all" || i.createdBy === sourceFilter) &&
+      (statusFilter === "all" || i.rawStatus === statusFilter),
+  );
   const existingItems = (data?.items ?? []).filter((i) => i.tab === "existing");
   const peggyCount = allNewItems.filter((i) => i.createdBy === "peggy").length;
 
@@ -191,6 +193,13 @@ export default function ContentProductionPage() {
 
   const onCreateBrief = (i: Item) => setWizardOpp(toWizardOpportunity(i));
   const onReview = (i: Item) => setReviewItem(toDrawerItem(i));
+
+  // Clicking a counter filters the board to those items (and back off when the
+  // same one is clicked again). Filtering lives on the New-content tab.
+  const onFilterStatus = (s: "review" | "needs_legal") => {
+    setTab("new");
+    setStatusFilter((cur) => (cur === s ? "all" : s));
+  };
 
   return (
     <main className="mx-auto max-w-[1400px] px-6 py-6">
@@ -244,12 +253,42 @@ export default function ContentProductionPage() {
       </nav>
 
       <section className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Counter label="Awaiting your approval" value={awaitingApproval} tone="brand" />
-        <Counter label="Held for legal" value={heldForLegal} tone="amber" />
+        <Counter
+          label="Awaiting your approval"
+          value={awaitingApproval}
+          tone="brand"
+          active={statusFilter === "review"}
+          onClick={() => onFilterStatus("review")}
+        />
+        <Counter
+          label="Held for legal"
+          value={heldForLegal}
+          tone="amber"
+          active={statusFilter === "needs_legal"}
+          onClick={() => onFilterStatus("needs_legal")}
+        />
         <Counter label="New-content items" value={data?.counts.new ?? 0} />
         <Counter label="Published / existing" value={data?.counts.existing ?? 0} />
         <Counter label="Total tracked" value={(data?.items ?? []).length} />
       </section>
+
+      {statusFilter !== "all" && (
+        <div className="mb-4 flex items-center justify-between gap-2 rounded-md border border-brand/30 bg-brand/5 px-3 py-2 text-sm text-slate-700">
+          <span>
+            Showing only{" "}
+            <strong>
+              {statusFilter === "review" ? "items awaiting your approval" : "items held for legal"}
+            </strong>
+            .
+          </span>
+          <button
+            onClick={() => setStatusFilter("all")}
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:border-brand hover:text-brand"
+          >
+            Show all
+          </button>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200">
         <div className="flex gap-1">
@@ -648,10 +687,14 @@ function Counter({
   label,
   value,
   tone,
+  onClick,
+  active,
 }: {
   label: string;
   value: number;
   tone?: "amber" | "brand";
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const toneClass =
     tone === "amber"
@@ -659,8 +702,12 @@ function Counter({
       : tone === "brand" && value > 0
         ? "border-brand bg-brand/5"
         : "border-slate-200 bg-white";
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${toneClass}`}>
+  const interactive = onClick
+    ? "cursor-pointer transition-colors hover:border-brand hover:shadow-sm"
+    : "";
+  const activeClass = active ? "ring-2 ring-brand ring-offset-1" : "";
+  const inner = (
+    <>
       <div
         className={`text-xl font-bold ${
           tone === "brand" && value > 0 ? "text-brand" : "text-slate-900"
@@ -668,8 +715,23 @@ function Counter({
       >
         {value}
       </div>
-      <div className="text-xs text-slate-500">{label}</div>
-    </div>
+      <div className="flex items-center gap-1 text-xs text-slate-500">
+        {label}
+        {onClick && (
+          <span aria-hidden className="text-[10px] text-slate-400">
+            {active ? "✕ clear" : "▸ filter"}
+          </span>
+        )}
+      </div>
+    </>
+  );
+  const className = `rounded-lg border px-3 py-2 text-left ${toneClass} ${interactive} ${activeClass}`;
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className} aria-pressed={active}>
+      {inner}
+    </button>
+  ) : (
+    <div className={className}>{inner}</div>
   );
 }
 
