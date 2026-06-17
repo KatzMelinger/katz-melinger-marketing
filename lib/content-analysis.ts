@@ -152,14 +152,53 @@ function keywordDensity(words: string[]): Record<string, number> {
   );
 }
 
+// Words too generic to carry a keyword's meaning when matching by variant.
+const KW_STOPWORDS = new Set([
+  "the", "a", "an", "of", "in", "to", "for", "and", "or", "with", "on", "at",
+  "is", "it", "your", "you", "how", "what", "are", "ny", "nyc", "near", "me",
+]);
+
+// Light stem so derivational variants collapse together:
+//   "collection"/"collecting"/"collect" → "collect",
+//   "judgments" → "judgment", "enforcing"/"enforced" → "enforc".
+function kwStem(w: string): string {
+  return w
+    .replace(/ies$/, "y")
+    .replace(/(ions|ion|ing|ment|ers|er|ed|es|s)$/, "");
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Does the body cover this keyword in a close VARIANT (not the exact phrase)?
+ * True when every significant word of the keyword appears as a stem-prefix —
+ * so "collecting a judgment in New York" satisfies "judgment collection NY".
+ */
+function coveredByVariant(lc: string, term: string): boolean {
+  const words = term
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !KW_STOPWORDS.has(w));
+  if (words.length === 0) return false;
+  return words.every((w) => {
+    const stem = kwStem(w);
+    if (stem.length < 4) return new RegExp(`\\b${escapeRe(w)}\\b`).test(lc);
+    return new RegExp(`\\b${escapeRe(stem)}[a-z]*\\b`).test(lc);
+  });
+}
+
 function targetHits(body: string, targets: string[]): Record<string, number> {
   const lc = body.toLowerCase();
   const out: Record<string, number> = {};
   for (const t of targets) {
     if (!t) continue;
-    const re = new RegExp(`\\b${t.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
-    const matches = lc.match(re);
-    out[t] = matches?.length ?? 0;
+    const re = new RegExp(`\\b${escapeRe(t.toLowerCase())}\\b`, "g");
+    const exact = lc.match(re)?.length ?? 0;
+    // Exact phrase wins (keeps the over-stuffed signal). If the exact phrase is
+    // absent but the concept is covered in a variant, credit it as present (1)
+    // rather than flagging it "missing".
+    out[t] = exact > 0 ? exact : coveredByVariant(lc, t) ? 1 : 0;
   }
   return out;
 }

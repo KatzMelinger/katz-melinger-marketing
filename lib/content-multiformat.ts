@@ -137,8 +137,8 @@ function buildUserPrompt(args: {
       (args.seoBriefHeadings?.length ?? 0) +
       (args.competitorGaps?.length ?? 0) >
     0
-      ? `\n\nSEO GUIDANCE:
-${args.targetKeywords?.length ? `- Target keywords: ${args.targetKeywords.join(", ")}` : ""}
+      ? `\n\nSEO REQUIREMENTS:
+${args.targetKeywords?.length ? `- Target keywords — include EACH of these at least once, verbatim, woven into the prose naturally (headings or body). Do not keyword-stuff and do not merely paraphrase them away: ${args.targetKeywords.join(", ")}` : ""}
 ${args.seoBriefHeadings?.length ? `- Suggested headings: ${args.seoBriefHeadings.join(" | ")}` : ""}
 ${args.competitorGaps?.length ? `- Competitor gaps to address: ${args.competitorGaps.join(" | ")}` : ""}`
       : "";

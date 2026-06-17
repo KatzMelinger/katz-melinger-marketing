@@ -462,6 +462,25 @@ export function AnalysisCard({
  * "link, don't redefine" recommendations. Decoupled from the main analysis
  * pipeline so it never slows a re-analyze.
  */
+/** Friendly label for why a page is the recommended link target. */
+function pageTypeLabel(t?: string): string {
+  switch (t) {
+    case "pillar":
+      return "pillar page";
+    case "service_page":
+    case "practice_area":
+      return "service page";
+    case "cluster":
+      return "cluster page";
+    case "blog_post":
+      return "blog post";
+    case "case_result":
+      return "case result";
+    default:
+      return "";
+  }
+}
+
 function ContentOverlapPanel({
   terms,
   onApplyLink,
@@ -472,7 +491,7 @@ function ContentOverlapPanel({
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
   const [matches, setMatches] = useState<
-    { term: string; pages: { url: string; title: string | null }[] }[]
+    { term: string; pages: { url: string; title: string | null; page_type?: string }[] }[]
   >([]);
   const [error, setError] = useState<string | null>(null);
   // Track which term→url link is being applied / has been applied.
@@ -549,16 +568,29 @@ function ContentOverlapPanel({
                 {m.pages.map((p, j) => {
                   const key = `${m.term}→${p.url}`;
                   const isApplied = appliedKeys.has(key);
+                  // Pages arrive pre-ranked (pillar → service → cluster → blog →
+                  // case result), so the first one is the best link target.
+                  const recommended = j === 0;
                   return (
                     <li key={j} className="flex items-center justify-between gap-2">
-                      <a
-                        href={p.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-w-0 flex-1 truncate text-slate-700 underline-offset-2 hover:underline"
-                      >
-                        {p.title ?? p.url}
-                      </a>
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                        <a
+                          href={p.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="min-w-0 truncate text-slate-700 underline-offset-2 hover:underline"
+                        >
+                          {p.title ?? p.url}
+                        </a>
+                        {recommended && (
+                          <span
+                            title={`Best target${pageTypeLabel(p.page_type) ? ` — ${pageTypeLabel(p.page_type)}` : ""}`}
+                            className="shrink-0 rounded bg-emerald-100 px-1.5 text-[10px] font-medium uppercase text-emerald-700"
+                          >
+                            ★ Recommended{pageTypeLabel(p.page_type) ? ` · ${pageTypeLabel(p.page_type)}` : ""}
+                          </span>
+                        )}
+                      </span>
                       {onApplyLink && (
                         <button
                           onClick={() => apply(m.term, p.url)}
