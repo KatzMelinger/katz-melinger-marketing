@@ -40,6 +40,7 @@ type Opportunity = {
   flags: string[];
   existingUrl: string | null;
   status: string;
+  coverage: { badge: "published" | "draft"; label: string; status: string | null; href: string | null } | null;
   clusterId: string | null;
   clusterRole: string | null;
   clusterType: string | null;
@@ -625,6 +626,21 @@ function OppRow({
               title={o.existingUrl}
             >
               Covered ↗
+            </a>
+          )}
+          {o.coverage && (
+            <a
+              href={o.coverage.href ?? "/content-production"}
+              target={o.coverage.badge === "published" ? "_blank" : undefined}
+              rel="noreferrer"
+              title={`${o.coverage.label || "Existing content"} — view existing`}
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium hover:underline ${
+                o.coverage.badge === "published"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-blue-50 text-blue-700"
+              }`}
+            >
+              {o.coverage.badge === "published" ? "Published ↗" : "Draft exists ↗"}
             </a>
           )}
         </div>

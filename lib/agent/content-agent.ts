@@ -26,7 +26,7 @@ import {
   type ScoredOpportunity,
 } from "@/lib/opportunity-pipeline";
 import { draftTopicToReview } from "@/lib/agent/draft-to-review";
-import { loadExistingTargetSet, normalizeKeyword } from "@/lib/content-dedup";
+import { loadExistingTargetSet, semanticKey } from "@/lib/content-dedup";
 
 export type AgentItemAction =
   | "queued_for_review"
@@ -134,7 +134,7 @@ export async function runContentAgent(args: {
     for (const winner of pipeline.winners) {
       if (drafted >= maxItems) break;
 
-      const key = normalizeKeyword(winner.keyword);
+      const key = semanticKey(winner.keyword);
 
       if (winner.worthScore < minWorthScore) {
         skipped.push({

@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { loadCoverageMap, semanticKey, type CoverageMatch } from "@/lib/content-dedup";
 import { getTenantDb } from "@/lib/tenant-db";
 
 export const dynamic = "force-dynamic";
@@ -77,20 +78,37 @@ export async function GET(req: NextRequest) {
 
     const all = (data ?? []) as Row[];
 
+    // Registry coverage: a keyword that already has a draft / brief / board item /
+    // published page elsewhere (Content Studio, Peggy, the agent) is "already
+    // covered" even if its own opp.existing_url is empty. Loaded once and matched
+    // on the semantic key so word-order / abbreviation variants line up. Fail-soft:
+    // a registry hiccup must never hide real opportunities.
+    let coverageMap = new Map<string, CoverageMatch>();
+    try {
+      coverageMap = await loadCoverageMap(db.tenantId);
+    } catch {
+      /* fail soft — no registry annotation this load */
+    }
+    // The registry match for a row, excluding rows that already surface their own
+    // existing_url badge (so we don't double-badge the same coverage).
+    const registryCover = (r: Row): CoverageMatch | null =>
+      r.existing_url ? null : coverageMap.get(semanticKey(r.keyword)) ?? null;
+    const isCovered = (r: Row): boolean => !!r.existing_url || !!registryCover(r);
+
     const counts = {
       total: all.length,
-      actionable: all.filter((r) => !r.excluded && r.status === "new" && !r.existing_url).length,
+      actionable: all.filter((r) => !r.excluded && r.status === "new" && !isCovered(r)).length,
       excluded: all.filter((r) => r.excluded).length,
-      covered: all.filter((r) => !!r.existing_url && !r.excluded).length,
+      covered: all.filter((r) => isCovered(r) && !r.excluded).length,
       handled: all.filter((r) => HANDLED.has(r.status)).length,
     };
 
     const visible = all.filter((r) => {
       if (r.excluded && !showExcluded) return false;
       if (HANDLED.has(r.status) && !showHandled) return false;
-      // "Already covered" keywords are refresh candidates, not new opportunities —
-      // hidden unless explicitly revealed.
-      if (r.existing_url && !showCovered) return false;
+      // "Already covered" keywords (own URL or a registry match) are refresh
+      // candidates, not new opportunities — hidden unless explicitly revealed.
+      if (isCovered(r) && !showCovered) return false;
       return true;
     });
 
@@ -98,7 +116,9 @@ export async function GET(req: NextRequest) {
       all.map((r) => r.last_synced_at).filter(Boolean).sort().at(-1) ?? null;
 
     return NextResponse.json({
-      opportunities: visible.map((r) => ({
+      opportunities: visible.map((r) => {
+        const cov = registryCover(r);
+        return {
         id: r.id,
         keyword: r.keyword,
         source: r.source,
@@ -125,7 +145,17 @@ export async function GET(req: NextRequest) {
         clusterRole: r.cluster_role,
         clusterType: r.cluster_type,
         clusterPrimaryKeyword: r.cluster_primary_keyword,
-      })),
+        // Registry coverage for the row badge ("Draft exists" / "Published").
+        coverage: cov
+          ? {
+              badge: cov.badge,
+              label: cov.label,
+              status: cov.status ?? null,
+              href: cov.url ?? (cov.kind === "published" ? cov.id : "/content-production"),
+            }
+          : null,
+        };
+      }),
       counts,
       lastSyncedAt,
     });
