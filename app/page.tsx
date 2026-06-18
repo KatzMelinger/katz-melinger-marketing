@@ -116,8 +116,8 @@ async function Board() {
         </div>
       </DepartmentPanel>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-      {/* Row 1 — the three daily-driver departments, expanded. */}
+      <div className="grid grid-cols-1 gap-5">
+      {/* Rows 1-3 — the three daily-driver departments, expanded, full width. */}
       <DepartmentPanel
         panelKey="seo-content"
         index={1}
@@ -171,8 +171,8 @@ async function Board() {
         </div>
       </DepartmentPanel>
 
-      {/* Rows 2-3 — collapsed summary departments. Expanding reveals quick
-          links into that department's pages (sourced from the taxonomy). */}
+      {/* Rows 4-9 — summary departments, each full width. Expanding reveals
+          quick links into that department's pages (sourced from the taxonomy). */}
       <DepartmentPanel panelKey="ai-visibility" index={4} label={deptLabel("ai-visibility")} accent={ACCENT["ai-visibility"]} kpis={aiKpis} defaultExpanded>
         <DeptLinks deptKey="ai-visibility" />
       </DepartmentPanel>
@@ -257,8 +257,22 @@ function DetailTable({
           <tbody>
             {rows.map((r, i) => (
               <tr key={`${r.left}-${i}`} className="border-b border-slate-100 last:border-0">
-                <td className="truncate py-1.5 pr-2 text-slate-700">{r.left}</td>
-                <td className="py-1.5 text-right tabular-nums font-medium text-slate-900">{r.right}</td>
+                <td className="truncate py-1.5 pr-2 text-slate-700">
+                  {r.href ? (
+                    <a href={r.href} className="text-brand hover:underline">
+                      {r.left}
+                    </a>
+                  ) : (
+                    r.left
+                  )}
+                </td>
+                <td
+                  className={`py-1.5 text-right tabular-nums font-medium ${
+                    r.tone === "alert" ? "text-amber-600" : "text-slate-900"
+                  }`}
+                >
+                  {r.right}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -284,7 +298,7 @@ function ChartPlaceholder({ label }: { label: string }) {
 
 function BoardSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-5">
       {Array.from({ length: 9 }).map((_, i) => (
         <div key={i} className="h-40 animate-pulse rounded-xl border border-slate-200 bg-slate-50" />
       ))}

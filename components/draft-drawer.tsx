@@ -291,6 +291,20 @@ export function DraftDrawer({
   const autoPassCount = Object.values(qa).filter(Boolean).length;
   const manualPass = (legalReview ? 1 : 0) + (proofread ? 1 : 0);
   const qaTotal = `${autoPassCount + manualPass}/${Object.keys(qa).length + 2}`;
+
+  // HARD QA gate — these four completeness checks must pass (or be explicitly
+  // overridden) before approval. The other auto-checks (internal links, title
+  // length) stay advisory and don't block. This is a content-completeness gate,
+  // not the compliance gate — the owner can override with a deliberate tick.
+  const qaRequired: { key: keyof typeof qa; label: string }[] = [
+    { key: "metaDescription", label: "Meta description present" },
+    { key: "h1Keyword", label: "H1 contains primary keyword" },
+    { key: "pillarLink", label: "Pillar link present" },
+    { key: "wordCount", label: "Word count meets minimum" },
+  ];
+  const qaFailed = qaRequired.filter((c) => !qa[c.key]);
+  const qaGatePassed = qaFailed.length === 0;
+
   const canPublish = legalReview && proofread;
 
   async function runAnalysis(d: DraftRow) {
@@ -467,9 +481,18 @@ export function DraftDrawer({
   // Approve = the human sign-off. The server re-runs the compliance HARD gate;
   // a 422 means it was held at needs_legal (with violations), not approved.
   const [approving, setApproving] = useState(false);
+  const [qaOverride, setQaOverride] = useState(false);
   const approve = async () => {
     if (!draftId) {
       setMsg("No draft to approve yet.");
+      return;
+    }
+    // HARD QA gate: required completeness checks must pass unless overridden.
+    if (!qaGatePassed && !qaOverride) {
+      setMsg(
+        `QA checklist incomplete: ${qaFailed.map((c) => c.label).join(", ")}. ` +
+          `Fix these, or tick "Approve despite QA" to override.`,
+      );
       return;
     }
     // Soft quality gate: warn (don't block) if SEO/AEO/CASH are below target.
@@ -871,6 +894,25 @@ export function DraftDrawer({
                       <p className="mt-0.5 text-xs text-emerald-700">
                         {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
                       </p>
+                      {!qaGatePassed && (
+                        <div className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-800">
+                          <span className="font-medium">QA checklist incomplete — fix before approving:</span>
+                          <ul className="mt-1 list-disc pl-4">
+                            {qaFailed.map((c) => (
+                              <li key={c.key}>{c.label}</li>
+                            ))}
+                          </ul>
+                          <label className="mt-1.5 flex items-center gap-1.5 font-medium">
+                            <input
+                              type="checkbox"
+                              checked={qaOverride}
+                              onChange={(e) => setQaOverride(e.target.checked)}
+                              className="h-3.5 w-3.5"
+                            />
+                            Approve despite QA
+                          </label>
+                        </div>
+                      )}
                       {qualityShortfall(analysis).length > 0 && (
                         <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
                           <span className="font-medium">Below quality target ({QUALITY_MIN.seo}):</span>{" "}
@@ -882,9 +924,15 @@ export function DraftDrawer({
                       )}
                       <button
                         onClick={approve}
-                        disabled={!canPublish || approving}
+                        disabled={!canPublish || approving || (!qaGatePassed && !qaOverride)}
                         className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
-                        title={canPublish ? undefined : "Complete the manual checks first"}
+                        title={
+                          !canPublish
+                            ? "Complete the manual checks first"
+                            : !qaGatePassed && !qaOverride
+                              ? "QA checklist incomplete — fix the flagged items or override"
+                              : undefined
+                        }
                       >
                         {approving ? "Checking compliance…" : "Approve"}
                       </button>

@@ -5,12 +5,40 @@ Parts 1–3 (urgent fix, bugs, connections), one-click-at-approval, and the Part
 "fix soon" items are **done** (see git history around 2026-06-11 and the working
 notes). This file holds what was intentionally deferred so it isn't lost.
 
+> **STATUS — verified against code 2026-06-18.** Most of Part 4 has since
+> shipped. Code review confirmed: **#1 keyword grouper BUILT** (`lib/keyword-clustering.ts`,
+> `/api/seo/opportunities/cluster`, "Group into clusters" on `/seo/opportunities`),
+> **#2 cannibalization BUILT** (`lib/content-overlap.ts` + `/api/content/overlap-check`
+> + the `/seo/cannibalization` detective view), **#4 performance tracker BUILT**
+> (`lib/rank-history.ts`, `seo_rank_snapshots`, `components/rank-history-panel.tsx`),
+> **#5 WordPress publish BUILT** (pull-plugin model: `lib/wp-content-publish.ts`,
+> `/api/wp/content` + `/api/wp/content/applied`, `public/wp-plugin/km-autopilot.php`).
+> **Genuinely remaining: only #3 (QA checklist HARD gate — PARTIAL)** plus the new
+> cross-cutting **#0 (registry duplicate alert)** added below.
+
+## 0. Registry duplicate alert → Overview "Issues to fix" — REMAINING (recommended next)
+**What:** Surface a system-wide count of duplicate/overlapping content as a real
+alert in the home "Issues to fix" panel, linking to a filtered Production Board
+view of the conflicting items. The Overview already renders a **"Duplicate content"**
+row hardcoded to `—` (`app/page.tsx` ~line 152, fed by `lib/dashboard-snapshots.ts`
+~line 175 — *"doesn't have a single tidy endpoint yet — placeholder rows"*), so the
+slot exists and just needs data.
+**Why it matters:** Completes the Canonical Content Registry spec (Addition 3); the
+registry/semantic-match layer shipped 2026-06-18 (commit f7919c0) but the after-the-fact
+duplicate alert was deferred.
+**Likely touch points:** a tenant-scoped duplicate-COUNT function (wrap the
+`scripts/find-duplicates.ts` logic into a lib/route, reuse `semanticKey` from
+`lib/content-dedup.ts` for consistency) → feed `lib/dashboard-snapshots.ts` →
+make the row clickable to a filtered `/content-production` view. No count
+function/route exists today.
+
 **Build order:** strictly after Parts 1–3 are solid in production. Within Part 4,
 build top-to-bottom — the WordPress publish button is explicitly last.
 
 ---
 
-## 1. Intelligence layer — keyword grouper
+## 1. Intelligence layer — keyword grouper — ✅ BUILT (2026-06-17)
+Shipped: `lib/keyword-clustering.ts` (Claude pillar/standalone clustering) + `seo_opportunities` cluster_* columns + `/api/seo/opportunities/cluster` + "Group into clusters" button and PILLAR/STANDALONE rows on `/seo/opportunities`; "Create Cluster Brief" pre-loads members as secondary keywords.
 **What:** Group individual keywords into page-level decisions before they hit the
 Decisions queue. Diana's example: ~290 raw keywords should collapse into ~31 page
 decisions. `wrongful termination lawyer` + `wrongful termination lawyers` +
@@ -21,7 +49,8 @@ how near-duplicate pages (and cannibalization) get created in the first place.
 **Likely touch points:** a clustering step feeding `/api/seo/suggestions`; the
 Decisions UI (`app/content/decisions`); `lib/strategy-engine.ts`.
 
-## 2. Intelligence layer — cannibalization check (pre-surface)
+## 2. Intelligence layer — cannibalization check (pre-surface) — ✅ BUILT
+Shipped: generation-time overlap (`lib/content-overlap.ts` `detectContentOverlap` + `/api/content/overlap-check`, "link don't redefine" + one-click Add-link) and a detective `/seo/cannibalization` view off `cannibalization_snapshots`. NOTE: the explicit decision-time "route to Refresh Queue instead of proposing a new page" step is the one sub-piece not wired as its own gate (the dedup guard + overlap check cover the duplication risk).
 **What:** Before surfacing a keyword as a new Decision, check whether
 katzmelinger.com already has a page covering it. If yes, route it to the Refresh
 Queue instead of proposing a new page.
@@ -33,7 +62,8 @@ the *earlier* gate at decision time.
 **Likely touch points:** site inventory (`lib/site-inventory.ts`, `site_pages`),
 `app/content/refresh`, the suggestion-creation path.
 
-## 3. QA checklist automation
+## 3. QA checklist automation — ⚠ PARTIAL (the real remaining Part-4 item)
+The advisory analysis engine is fully built (`lib/content-analysis.ts`, `/api/content/drafts/[id]/analyze`: readability, AEO, SEO breakdown incl. headingStructure/keywordPlacement; soft 75/75/75 warning in the DraftDrawer). What's MISSING is the HARD gate: blocking pass/fail checks (meta description present, H1 contains primary keyword, pillar link present, min word count) surfaced on `/content/publishing-qa` / the DraftDrawer approve step. This is the one item that still needs building.
 **What:** When a pipeline item reaches QA (status `review`), automatically check:
 meta description present; H1 contains the primary keyword; pillar link present;
 word count meets the minimum. Surface pass/fail in the Publishing QA stage.
@@ -44,7 +74,8 @@ work is wiring those signals into a hard QA checklist on the board.
 **Reference:** `KM_Kenneth_Technical_Brief_June_2026.docx`
 **Likely touch points:** `app/content/publishing-qa`, reuse the analysis pipeline.
 
-## 4. Performance Tracker
+## 4. Performance Tracker — ✅ BUILT
+Shipped: `lib/rank-history.ts` (`writeRankSnapshots` on the daily tracked-keyword cron) + `seo_rank_snapshots` table + `/api/seo/rank-history` (180-day window) + `components/rank-history-panel.tsx` (Semrush-style visibility trend + competitor comparison) embedded on `/seo/keywords`.
 **What:** Track ranking position over time per published URL, show what moved the
 ranking, and feed insights back to Opportunities.
 **Why it matters:** Closes the loop from published content back to strategy.
@@ -53,7 +84,8 @@ ranking, and feed insights back to Opportunities.
 see memory `vendor-migration-and-agent-plan`), a new tracking table + cron, and
 `app/seo/opportunities`.
 
-## 5. WordPress publish button — BUILD LAST
+## 5. WordPress publish — ✅ BUILT (pull-plugin model, not REST push)
+Shipped: the Publish step queues approved long-form drafts (`metadata.wp_publish.queued`); `lib/wp-content-publish.ts` + `/api/wp/content` (plugin polls) + `/api/wp/content/applied` (plugin confirms → flips to published + site_pages ingest); plugin `public/wp-plugin/km-autopilot.php` v0.2.0. NOTE: chose the pull-plugin over WP REST push (no WP creds in the app). Still needs a live WP site to exercise end-to-end.
 **What:** One button sends an approved draft to WordPress via the REST API. Diana
 clicks once.
 **Why it matters:** Removes the final manual hand-off — the end of the
