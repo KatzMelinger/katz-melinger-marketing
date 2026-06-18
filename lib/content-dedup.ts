@@ -390,76 +390,154 @@ export type DuplicateCount = {
   groups: number;
   /** Redundant rows = sum over groups of (size − 1). */
   redundantRows: number;
-  /** Up to 10 example groups, for a future side-by-side view. */
+  /** Up to 10 example groups, for the side-by-side view. */
   samples: { table: "draft" | "brief" | "pipeline"; key: string; count: number }[];
 };
 
+export type DuplicateMember = {
+  id: string;
+  title: string;
+  status: string | null;
+  /** Where to open this item (draft viewer / decisions / board / live page). */
+  href: string | null;
+  createdAt: string | null;
+};
+
+export type DuplicateGroup = {
+  table: "draft" | "brief" | "pipeline";
+  /** Human source label for the column header. */
+  source: string;
+  /** Semantic key the members collapse to — the conflict heading. */
+  key: string;
+  members: DuplicateMember[];
+};
+
+const SOURCE_LABEL: Record<DuplicateGroup["table"], string> = {
+  draft: "Drafts",
+  brief: "Briefs (Decisions)",
+  pipeline: "Production Board",
+};
+
+function groupsOf<T>(rows: T[], keyOf: (r: T) => string): Map<string, T[]> {
+  const m = new Map<string, T[]>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    if (!k) continue;
+    const list = m.get(k) ?? [];
+    list.push(r);
+    m.set(k, list);
+  }
+  for (const [k, list] of m) if (list.length < 2) m.delete(k);
+  return m;
+}
+
+async function safeRows<T>(fn: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await fn();
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Count system-wide duplicate content for a tenant, for the Overview alert.
- * Scans WITHIN each table (a brief → its draft → its board row for the same
- * keyword is the normal happy path, NOT a duplicate — only repeats inside one
- * table are redundant) and groups by the registry semantic key, so word-order /
- * abbreviation variants collapse together. Fail-soft per table.
+ * List the duplicate GROUPS with their member items, for the side-by-side
+ * conflict view. Scans WITHIN each table (a brief → its draft → its board row
+ * for the same keyword is the normal happy path, NOT a duplicate — only repeats
+ * inside one table are redundant) and groups by the registry semantic key, so
+ * word-order / abbreviation variants collapse together. Fail-soft per table.
  */
-export async function countContentDuplicates(tenantId: string): Promise<DuplicateCount> {
+export async function listContentDuplicates(tenantId: string): Promise<DuplicateGroup[]> {
   const sb = getSupabaseAdmin();
 
-  const groupsOf = <T>(rows: T[], keyOf: (r: T) => string): Map<string, T[]> => {
-    const m = new Map<string, T[]>();
-    for (const r of rows) {
-      const k = keyOf(r);
-      if (!k) continue;
-      const list = m.get(k) ?? [];
-      list.push(r);
-      m.set(k, list);
-    }
-    for (const [k, list] of m) if (list.length < 2) m.delete(k);
-    return m;
-  };
-
-  const safe = async <T>(fn: () => Promise<T[]>): Promise<T[]> => {
-    try {
-      return await fn();
-    } catch {
-      return [];
-    }
-  };
-
-  const drafts = await safe(async () => {
-    const { data } = await sb.from("content_drafts").select("title, topic, format, status").eq("tenant_id", tenantId).limit(4000);
-    return ((data ?? []) as Array<{ title: string | null; topic: string | null; format: string | null; status: string | null }>).filter(
+  const drafts = await safeRows(async () => {
+    const { data } = await sb
+      .from("content_drafts")
+      .select("id, title, topic, format, status, created_at")
+      .eq("tenant_id", tenantId)
+      .limit(4000);
+    return ((data ?? []) as Array<{ id: string; title: string | null; topic: string | null; format: string | null; status: string | null; created_at: string | null }>).filter(
       (r) => (r.status ?? "").toLowerCase() !== "archived",
     );
   });
-  const briefs = await safe(async () => {
-    const { data } = await sb.from("brief_suggestions").select("primary_keyword, status").eq("tenant_id", tenantId).limit(4000);
-    return ((data ?? []) as Array<{ primary_keyword: string | null; status: string | null }>).filter(
+  const briefs = await safeRows(async () => {
+    const { data } = await sb
+      .from("brief_suggestions")
+      .select("id, primary_keyword, status, created_at")
+      .eq("tenant_id", tenantId)
+      .limit(4000);
+    return ((data ?? []) as Array<{ id: string; primary_keyword: string | null; status: string | null; created_at: string | null }>).filter(
       (r) => (r.status ?? "").toLowerCase() !== "rejected",
     );
   });
-  const pipeline = await safe(async () => {
-    const { data } = await sb.from("content_pipeline").select("title, keywords").eq("tenant_id", tenantId).limit(4000);
-    return (data ?? []) as Array<{ title: string | null; keywords: string | null }>;
+  const pipeline = await safeRows(async () => {
+    const { data } = await sb
+      .from("content_pipeline")
+      .select("id, title, keywords, status, url, created_at")
+      .eq("tenant_id", tenantId)
+      .limit(4000);
+    return (data ?? []) as Array<{ id: number; title: string | null; keywords: string | null; status: string | null; url: string | null; created_at: string | null }>;
   });
 
-  const draftGroups = groupsOf(drafts, (r) => {
+  const out: DuplicateGroup[] = [];
+
+  for (const [k, g] of groupsOf(drafts, (r) => {
     const sk = semanticKey(r.title || r.topic || "");
     return sk ? `${sk}::${(r.format ?? "").toLowerCase()}` : "";
-  });
-  const briefGroups = groupsOf(briefs, (r) => semanticKey(r.primary_keyword || ""));
-  const pipelineGroups = groupsOf(pipeline, (r) => semanticKey(r.title || r.keywords || ""));
+  })) {
+    out.push({
+      table: "draft",
+      source: SOURCE_LABEL.draft,
+      key: k.split("::")[0],
+      members: g.map((r) => ({
+        id: r.id,
+        title: r.title || r.topic || "(untitled)",
+        status: r.status,
+        href: `/content/drafts?id=${r.id}`,
+        createdAt: r.created_at,
+      })),
+    });
+  }
+  for (const [k, g] of groupsOf(briefs, (r) => semanticKey(r.primary_keyword || ""))) {
+    out.push({
+      table: "brief",
+      source: SOURCE_LABEL.brief,
+      key: k,
+      members: g.map((r) => ({
+        id: r.id,
+        title: r.primary_keyword || "(no keyword)",
+        status: r.status,
+        href: "/content/decisions",
+        createdAt: r.created_at,
+      })),
+    });
+  }
+  for (const [k, g] of groupsOf(pipeline, (r) => semanticKey(r.title || r.keywords || ""))) {
+    out.push({
+      table: "pipeline",
+      source: SOURCE_LABEL.pipeline,
+      key: k,
+      members: g.map((r) => ({
+        id: String(r.id),
+        title: r.title || r.keywords || "(untitled)",
+        status: r.status,
+        href: r.url || "/content-production",
+        createdAt: r.created_at,
+      })),
+    });
+  }
 
-  const redundant = (m: Map<string, unknown[]>) => [...m.values()].reduce((n, g) => n + (g.length - 1), 0);
+  return out;
+}
 
-  const samples: DuplicateCount["samples"] = [
-    ...[...draftGroups.entries()].map(([k, g]) => ({ table: "draft" as const, key: k.split("::")[0], count: g.length })),
-    ...[...briefGroups.entries()].map(([k, g]) => ({ table: "brief" as const, key: k, count: g.length })),
-    ...[...pipelineGroups.entries()].map(([k, g]) => ({ table: "pipeline" as const, key: k, count: g.length })),
-  ].slice(0, 10);
-
+/**
+ * Count system-wide duplicate content for a tenant, for the Overview alert.
+ * Derived from listContentDuplicates() so the scan logic lives in one place.
+ */
+export async function countContentDuplicates(tenantId: string): Promise<DuplicateCount> {
+  const groups = await listContentDuplicates(tenantId);
   return {
-    groups: draftGroups.size + briefGroups.size + pipelineGroups.size,
-    redundantRows: redundant(draftGroups) + redundant(briefGroups) + redundant(pipelineGroups),
-    samples,
+    groups: groups.length,
+    redundantRows: groups.reduce((n, g) => n + (g.members.length - 1), 0),
+    samples: groups.slice(0, 10).map((g) => ({ table: g.table, key: g.key, count: g.members.length })),
   };
 }

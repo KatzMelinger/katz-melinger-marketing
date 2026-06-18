@@ -16,21 +16,18 @@ notes). This file holds what was intentionally deferred so it isn't lost.
 > **Genuinely remaining: only #3 (QA checklist HARD gate — PARTIAL)** plus the new
 > cross-cutting **#0 (registry duplicate alert)** added below.
 
-## 0. Registry duplicate alert → Overview "Issues to fix" — REMAINING (recommended next)
-**What:** Surface a system-wide count of duplicate/overlapping content as a real
-alert in the home "Issues to fix" panel, linking to a filtered Production Board
-view of the conflicting items. The Overview already renders a **"Duplicate content"**
-row hardcoded to `—` (`app/page.tsx` ~line 152, fed by `lib/dashboard-snapshots.ts`
-~line 175 — *"doesn't have a single tidy endpoint yet — placeholder rows"*), so the
-slot exists and just needs data.
-**Why it matters:** Completes the Canonical Content Registry spec (Addition 3); the
-registry/semantic-match layer shipped 2026-06-18 (commit f7919c0) but the after-the-fact
-duplicate alert was deferred.
-**Likely touch points:** a tenant-scoped duplicate-COUNT function (wrap the
-`scripts/find-duplicates.ts` logic into a lib/route, reuse `semanticKey` from
-`lib/content-dedup.ts` for consistency) → feed `lib/dashboard-snapshots.ts` →
-make the row clickable to a filtered `/content-production` view. No count
-function/route exists today.
+## 0. Registry duplicate alert → Overview "Issues to fix" — ✅ BUILT (2026-06-18)
+Shipped, completing the Canonical Content Registry spec (Addition 3):
+- `countContentDuplicates` / `listContentDuplicates(tenantId)` in `lib/content-dedup.ts`
+  — scan within each table, group by `semanticKey` (so "labor attorney ny" ≡ "ny
+  labor attorney" ≡ "...lawyer"), fail-soft.
+- `lib/dashboard-snapshots.ts` computes the count server-side and the home
+  "Issues to fix" **"Duplicate content"** row is now a live amber alert (`app/page.tsx`).
+- The alert links to **`/content-production/duplicates`** — a side-by-side conflict
+  view (`app/content-production/duplicates/page.tsx`) listing each overlapping group
+  with its members next to each other (status + date + View link), so the user can
+  compare and decide before publishing.
+- Read-only `GET /api/content/duplicates` exposes the count for client use.
 
 **Build order:** strictly after Parts 1–3 are solid in production. Within Part 4,
 build top-to-bottom — the WordPress publish button is explicitly last.
