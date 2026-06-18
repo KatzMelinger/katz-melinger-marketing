@@ -52,6 +52,17 @@ type LinkPlanItem = { url: string; anchor: string; section: string };
 type LinkPlanFlag = { url: string; title: string | null; reason: string };
 type LinkPlan = { links: LinkPlanItem[]; flagged: LinkPlanFlag[] };
 
+/** The `existing` payload returned by the 409 duplicate guard. */
+type DuplicateExisting = { kind?: string; id?: string; label?: string; status?: string | null };
+
+/** Where "View existing" points: a published page links straight to its URL;
+ *  anything in flight (draft/brief/board) opens the Production Board. */
+function existingHref(e: DuplicateExisting | null): string | null {
+  if (!e) return null;
+  if (e.kind === "published" && e.id) return e.id; // id is the page URL
+  return "/content-production";
+}
+
 const CONTENT_TYPES: { id: KMContentType; label: string }[] = [
   { id: "practice_page", label: "Practice Page (commercial)" },
   { id: "blog_post", label: "Blog Post (informational)" },
@@ -149,6 +160,7 @@ export function KmBriefWizard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dupBlocked, setDupBlocked] = useState(false);
+  const [dupExisting, setDupExisting] = useState<DuplicateExisting | null>(null);
   const [dupLang, setDupLang] = useState<ContentLanguage>("en");
   const [doneDraftId, setDoneDraftId] = useState<string | null | undefined>(undefined);
 
@@ -313,6 +325,7 @@ export function KmBriefWizard({
   const generate = async (lang: ContentLanguage, force = false) => {
     setError(null);
     setDupBlocked(false);
+    setDupExisting(null);
     setLanguage(lang);
     const errs = validateBrief(brief);
     if (errs.length > 0) {
@@ -332,6 +345,7 @@ export function KmBriefWizard({
         if (briefRes.status === 409 && briefJson?.duplicate) {
           setDupLang(lang);
           setDupBlocked(true);
+          setDupExisting(briefJson.existing ?? null);
           setError(briefJson.error ?? "Already exists");
           return;
         }
@@ -359,6 +373,7 @@ export function KmBriefWizard({
         if (genRes.status === 409 && genJson?.duplicate) {
           setDupLang(lang);
           setDupBlocked(true);
+          setDupExisting(genJson.existing ?? null);
           setError(genJson.error ?? "Already exists");
           return;
         }
@@ -739,6 +754,16 @@ export function KmBriefWizard({
             {error && (
               <span className={`flex items-center gap-2 px-2 text-xs truncate ${dupBlocked ? "text-amber-700" : "text-red-600"}`}>
                 <span className="truncate">{error}</span>
+                {dupBlocked && existingHref(dupExisting) && (
+                  <a
+                    href={existingHref(dupExisting) as string}
+                    target={dupExisting?.kind === "published" ? "_blank" : undefined}
+                    rel="noreferrer"
+                    className="shrink-0 rounded border border-amber-400 px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100"
+                  >
+                    View existing
+                  </a>
+                )}
                 {dupBlocked && (
                   <button
                     onClick={() => generate(dupLang, true)}

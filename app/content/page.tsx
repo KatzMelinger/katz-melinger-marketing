@@ -13,6 +13,17 @@ const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
 const ACCENT = "#185FA5";
 
+/** The `existing` payload returned by the 409 duplicate guard. */
+type DuplicateExisting = { kind?: string; id?: string; label?: string; status?: string | null };
+
+/** Where "View existing" points: a published page links straight to its URL;
+ *  anything in flight (draft/brief/board) opens the Production Board. */
+function existingHref(e: DuplicateExisting | null): string | null {
+  if (!e) return null;
+  if (e.kind === "published" && e.id) return e.id; // id is the page URL
+  return "/content-production";
+}
+
 const DEFAULT_BRAND_VOICE =
   "Describe your firm's brand voice here: who you serve, your practice areas, your tone (e.g. professional but approachable), how you explain complex legal ideas to clients, and what sets you apart. The AI reads this before drafting anything.";
 
@@ -91,6 +102,7 @@ export default function ContentPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [dupBlocked, setDupBlocked] = useState(false);
+  const [dupExisting, setDupExisting] = useState<DuplicateExisting | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [brandVoice, setBrandVoice] = useState("");
   const [brandLoading, setBrandLoading] = useState(false);
@@ -185,6 +197,7 @@ export default function ContentPage() {
     setLoading(true);
     setErr(null);
     setDupBlocked(false);
+    setDupExisting(null);
     setSavedMsg(null);
     try {
       const body: Record<string, unknown> = {
@@ -213,7 +226,10 @@ export default function ContentPage() {
       if (!res.ok) {
         setErr(j.error ?? "Generation failed");
         // 409 = duplicate guard: offer an explicit "Create anyway" override.
-        if (res.status === 409 && j.duplicate) setDupBlocked(true);
+        if (res.status === 409 && j.duplicate) {
+          setDupBlocked(true);
+          setDupExisting(j.existing ?? null);
+        }
         return;
       }
       if (tab === "email") {
@@ -494,13 +510,25 @@ export default function ContentPage() {
               >
                 <p>{err}</p>
                 {dupBlocked ? (
-                  <button
-                    type="button"
-                    onClick={() => void generate(true)}
-                    className="mt-2 rounded-md border border-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
-                  >
-                    Create anyway
-                  </button>
+                  <div className="mt-2 flex items-center gap-2">
+                    {existingHref(dupExisting) ? (
+                      <a
+                        href={existingHref(dupExisting) as string}
+                        target={dupExisting?.kind === "published" ? "_blank" : undefined}
+                        rel="noreferrer"
+                        className="rounded-md border border-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                      >
+                        View existing{dupExisting?.status ? ` (${dupExisting.status})` : ""}
+                      </a>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void generate(true)}
+                      className="rounded-md border border-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                    >
+                      Create anyway
+                    </button>
+                  </div>
                 ) : null}
               </div>
             ) : null}

@@ -43,6 +43,89 @@ export function normalizeKeyword(s: string): string {
   return (s ?? "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Domain-aware token expansion so semantically identical keywords compare equal
+ * regardless of word order, abbreviation, or attorney/lawyer phrasing. The key
+ * is a normalized token; the value is the canonical token(s) it expands to.
+ * This is why "labor attorney ny", "ny labor attorney", and "labor lawyer new
+ * york" all resolve to the same target instead of three competing pages.
+ */
+const TOKEN_SYNONYMS: Record<string, string[]> = {
+  // geo abbreviations
+  ny: ["new", "york"],
+  nyc: ["new", "york", "city"],
+  nj: ["new", "jersey"],
+  ct: ["connecticut"],
+  usa: ["us"],
+  // legal-domain synonyms — collapse phrasing to one canonical token
+  lawyer: ["attorney"],
+  lawyers: ["attorney"],
+  attorneys: ["attorney"],
+  counsel: ["attorney"],
+  atty: ["attorney"],
+  attys: ["attorney"],
+  // common plurals we want to collapse
+  lawsuits: ["lawsuit"],
+  claims: ["claim"],
+  rights: ["right"],
+};
+
+/** Filler tokens that carry no disambiguating signal for keyword identity. */
+const STOPWORDS = new Set(["a", "an", "the", "in", "for", "of", "near", "me", "best", "top", "and"]);
+
+/** Expand one string into its canonical, stopword-stripped token list. */
+function expandTokens(s: string): string[] {
+  const out: string[] = [];
+  for (const tok of normalizeKeyword(s).split(" ")) {
+    if (!tok || STOPWORDS.has(tok)) continue;
+    const mapped = TOKEN_SYNONYMS[tok];
+    if (mapped) out.push(...mapped);
+    else out.push(tok);
+  }
+  return out;
+}
+
+/**
+ * Canonical key for a keyword: expanded, de-duplicated, sorted tokens joined.
+ * Word-order / abbreviation / attorney-lawyer invariant — two keywords with the
+ * same canonical key are the same search target.
+ */
+export function semanticKey(s: string): string {
+  return Array.from(new Set(expandTokens(s))).sort().join(" ");
+}
+
+/** Jaccard similarity (0..1) of two keywords' expanded token sets. */
+function tokenSetSimilarity(a: string, b: string): number {
+  const sa = new Set(expandTokens(a));
+  const sb = new Set(expandTokens(b));
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let inter = 0;
+  for (const t of sa) if (sb.has(t)) inter++;
+  return inter / (sa.size + sb.size - inter);
+}
+
+/**
+ * Match threshold for the fuzzy fallback. Configurable via env so it can be
+ * tuned without a deploy; defaults to a conservative 0.85 (near-identical token
+ * sets only — exact canonical-key equality is always a match regardless).
+ */
+const MATCH_THRESHOLD = (() => {
+  const raw = Number(process.env.CONTENT_DEDUP_MATCH_THRESHOLD);
+  return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.85;
+})();
+
+/**
+ * True when two keywords refer to the same search target: exact canonical-key
+ * equality, or token-set similarity at/above the configurable threshold.
+ */
+export function keywordsMatch(a: string, b: string, threshold = MATCH_THRESHOLD): boolean {
+  const ka = semanticKey(a);
+  const kb = semanticKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  return tokenSetSimilarity(a, b) >= threshold;
+}
+
 /** Build the user-facing message for a duplicate match. */
 export function duplicateMessage(d: DuplicateMatch): string {
   const where: Record<DuplicateKind, string> = {
@@ -77,7 +160,7 @@ export async function findExistingContent(args: {
       .limit(2000);
     for (const r of (data ?? []) as Array<{ id: string; title: string | null; topic: string | null; status: string | null }>) {
       if ((r.status ?? "").toLowerCase() === "archived") continue;
-      if (normalizeKeyword(r.topic ?? "") === target || normalizeKeyword(r.title ?? "") === target) {
+      if (keywordsMatch(r.topic ?? "", args.keyword) || keywordsMatch(r.title ?? "", args.keyword)) {
         return { kind: "draft", id: r.id, label: r.title || r.topic || target, status: r.status };
       }
     }
@@ -94,7 +177,7 @@ export async function findExistingContent(args: {
       .limit(2000);
     for (const r of (data ?? []) as Array<{ id: string; primary_keyword: string | null; status: string | null }>) {
       if ((r.status ?? "").toLowerCase() === "rejected") continue;
-      if (normalizeKeyword(r.primary_keyword ?? "") === target) {
+      if (keywordsMatch(r.primary_keyword ?? "", args.keyword)) {
         return { kind: "brief", id: r.id, label: r.primary_keyword || target, status: r.status };
       }
     }
@@ -110,7 +193,7 @@ export async function findExistingContent(args: {
       .eq("tenant_id", tid)
       .limit(2000);
     for (const r of (data ?? []) as Array<{ id: number; title: string | null; keywords: string | null; status: string | null }>) {
-      if (normalizeKeyword(r.title ?? "") === target || normalizeKeyword(r.keywords ?? "") === target) {
+      if (keywordsMatch(r.title ?? "", args.keyword) || keywordsMatch(r.keywords ?? "", args.keyword)) {
         return { kind: "pipeline", id: String(r.id), label: r.title || r.keywords || target, status: r.status };
       }
     }
@@ -133,12 +216,12 @@ export async function findExistingContent(args: {
       draft_id: string | null;
       brief_id: string | null;
     }>;
-    const self = rows.find((r) => normalizeKeyword(r.keyword) === target);
+    const self = rows.find((r) => keywordsMatch(r.keyword, args.keyword));
     if (self?.cluster_id) {
       const sibling = rows.find(
         (r) =>
           r.cluster_id === self.cluster_id &&
-          normalizeKeyword(r.keyword) !== target &&
+          !keywordsMatch(r.keyword, args.keyword) &&
           (r.draft_id || r.brief_id),
       );
       if (sibling) {
@@ -166,8 +249,8 @@ export async function findExistingContent(args: {
         .limit(2000);
       for (const p of (data ?? []) as Array<{ url: string; title: string | null; h1: string | null; topics: string[] | null }>) {
         const hay = normalizeKeyword(`${p.title ?? ""} ${p.h1 ?? ""} ${(p.topics ?? []).join(" ")}`);
-        // Title is an exact target, or the full multi-word phrase appears on the page.
-        if (normalizeKeyword(p.title ?? "") === target || (target.includes(" ") && hay.includes(target))) {
+        // Title is the same target, or the full multi-word phrase appears on the page.
+        if (keywordsMatch(p.title ?? "", args.keyword) || (target.includes(" ") && hay.includes(target))) {
           return { kind: "published", id: p.url, label: p.title || p.url, detail: p.url };
         }
       }
@@ -188,7 +271,7 @@ export async function loadExistingTargetSet(tenantId: string): Promise<Set<strin
   const sb = getSupabaseAdmin();
   const set = new Set<string>();
   const add = (s?: string | null) => {
-    const n = normalizeKeyword(s ?? "");
+    const n = semanticKey(s ?? "");
     if (n) set.add(n);
   };
 
@@ -221,4 +304,83 @@ export async function loadExistingTargetSet(tenantId: string): Promise<Set<strin
     /* fail soft */
   }
   return set;
+}
+
+/** A registry match keyed by semantic key — what's covering a given keyword. */
+export type CoverageMatch = {
+  kind: DuplicateKind;
+  /** "published" when the covering item is live, else "draft" (anything in flight). */
+  badge: "published" | "draft";
+  id: string;
+  label: string;
+  status?: string | null;
+  /** Direct URL when the cover is a published page. */
+  url?: string;
+};
+
+/** Kinds the user perceives as "live", so the row badges green not blue. */
+function coverageBadge(kind: DuplicateKind, status?: string | null): "published" | "draft" {
+  if (kind === "published") return "published";
+  return (status ?? "").toLowerCase() === "published" ? "published" : "draft";
+}
+
+/**
+ * Map of semantic key → what already covers it (draft / brief / board / published
+ * page / cluster sibling), for annotating a whole list at once — e.g. the
+ * Opportunities list, so each row knows whether it's already been actioned
+ * elsewhere without a per-row findExistingContent call. Published coverage wins
+ * over in-flight when both exist for the same key.
+ */
+export async function loadCoverageMap(tenantId: string): Promise<Map<string, CoverageMatch>> {
+  const sb = getSupabaseAdmin();
+  const map = new Map<string, CoverageMatch>();
+  // Only overwrite when the new match is "stronger" (published beats in-flight).
+  const put = (raw: string | null | undefined, m: CoverageMatch) => {
+    const key = semanticKey(raw ?? "");
+    if (!key) return;
+    const prev = map.get(key);
+    if (!prev || (m.badge === "published" && prev.badge !== "published")) map.set(key, m);
+  };
+
+  try {
+    const { data } = await sb.from("content_drafts").select("id, title, topic, status").eq("tenant_id", tenantId).limit(4000);
+    for (const r of (data ?? []) as Array<{ id: string; title: string | null; topic: string | null; status: string | null }>) {
+      if ((r.status ?? "").toLowerCase() === "archived") continue;
+      const m: CoverageMatch = { kind: "draft", badge: coverageBadge("draft", r.status), id: r.id, label: r.title || r.topic || "", status: r.status };
+      put(r.topic, m);
+      put(r.title, m);
+    }
+  } catch {
+    /* fail soft */
+  }
+  try {
+    const { data } = await sb.from("brief_suggestions").select("id, primary_keyword, status").eq("tenant_id", tenantId).limit(4000);
+    for (const r of (data ?? []) as Array<{ id: string; primary_keyword: string | null; status: string | null }>) {
+      if ((r.status ?? "").toLowerCase() === "rejected") continue;
+      put(r.primary_keyword, { kind: "brief", badge: "draft", id: r.id, label: r.primary_keyword || "", status: r.status });
+    }
+  } catch {
+    /* fail soft */
+  }
+  try {
+    const { data } = await sb.from("content_pipeline").select("id, title, keywords, url, status").eq("tenant_id", tenantId).limit(4000);
+    for (const r of (data ?? []) as Array<{ id: number; title: string | null; keywords: string | null; url: string | null; status: string | null }>) {
+      const m: CoverageMatch = { kind: "pipeline", badge: coverageBadge("pipeline", r.status), id: String(r.id), label: r.title || r.keywords || "", status: r.status, url: r.url ?? undefined };
+      put(r.title, m);
+      put(r.keywords, m);
+    }
+  } catch {
+    /* fail soft */
+  }
+  try {
+    const { data } = await sb.from("site_pages").select("url, title, h1").eq("tenant_id", tenantId).limit(4000);
+    for (const p of (data ?? []) as Array<{ url: string; title: string | null; h1: string | null }>) {
+      const m: CoverageMatch = { kind: "published", badge: "published", id: p.url, label: p.title || p.url, url: p.url, status: "published" };
+      put(p.title, m);
+      put(p.h1, m);
+    }
+  } catch {
+    /* fail soft */
+  }
+  return map;
 }
