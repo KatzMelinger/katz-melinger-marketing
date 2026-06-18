@@ -547,22 +547,30 @@ export function BrandVoiceWizard({
 
 type Avatar = {
   name: string;
+  snapshot: string;
   role: string;
   description: string;
   demographics: string;
   painPoints: string;
   goals: string;
   channels: string;
+  legalTriggers: string;
+  contentAngles: string;
+  keywordThemes: string;
 };
 
 const EMPTY_AVATAR: Avatar = {
   name: "",
+  snapshot: "",
   role: "",
   description: "",
   demographics: "",
   painPoints: "",
   goals: "",
   channels: "",
+  legalTriggers: "",
+  contentAngles: "",
+  keywordThemes: "",
 };
 
 export function AvatarsWizard({
@@ -631,12 +639,16 @@ export function AvatarsWizard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: a.name.trim(),
+            snapshot: a.snapshot.trim() || null,
             role: a.role.trim() || null,
             description: a.description.trim() || null,
             demographics: a.demographics.trim() || null,
             painPoints: a.painPoints.trim() || null,
             goals: a.goals.trim() || null,
             channels: a.channels.trim() || null,
+            legalTriggers: a.legalTriggers.trim() || null,
+            contentAngles: a.contentAngles.trim() || null,
+            keywordThemes: a.keywordThemes.trim() || null,
           }),
         });
         if (res.ok) saved += 1;
@@ -754,6 +766,13 @@ export function AvatarsWizard({
                     />
                   </BvField>
                 </div>
+                <BvField label="Snapshot (one-line summary)" full>
+                  <input
+                    className="bvw-inp"
+                    value={a.snapshot}
+                    onChange={(e) => update(idx, { snapshot: e.target.value })}
+                  />
+                </BvField>
                 <BvField label="Description" full>
                   <textarea
                     className="bvw-inp min-h-[60px]"
@@ -788,6 +807,30 @@ export function AvatarsWizard({
                       className="bvw-inp min-h-[52px]"
                       value={a.goals}
                       onChange={(e) => update(idx, { goals: e.target.value })}
+                    />
+                  </BvField>
+                </div>
+                <BvField label="Legal / content triggers" full>
+                  <textarea
+                    className="bvw-inp min-h-[52px]"
+                    placeholder="Legal claims / matter types this persona maps to — e.g. age discrimination, retaliation, severance review"
+                    value={a.legalTriggers}
+                    onChange={(e) => update(idx, { legalTriggers: e.target.value })}
+                  />
+                </BvField>
+                <div className="grid grid-cols-2 gap-3">
+                  <BvField label="Content angle seeds (AI hints)">
+                    <textarea
+                      className="bvw-inp min-h-[52px]"
+                      value={a.contentAngles}
+                      onChange={(e) => update(idx, { contentAngles: e.target.value })}
+                    />
+                  </BvField>
+                  <BvField label="Keyword theme seeds (AI hints)">
+                    <textarea
+                      className="bvw-inp min-h-[52px]"
+                      value={a.keywordThemes}
+                      onChange={(e) => update(idx, { keywordThemes: e.target.value })}
                     />
                   </BvField>
                 </div>

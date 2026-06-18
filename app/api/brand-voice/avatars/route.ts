@@ -1,8 +1,9 @@
 /**
  * /api/brand-voice/avatars
  *   GET    — list all target-audience avatars
- *   POST   — create one. Body: { name, role?, description?, demographics?,
- *            painPoints?, goals?, channels? }
+ *   POST   — create one. Body: { name, role?, snapshot?, description?,
+ *            demographics?, painPoints?, goals?, channels?, legalTriggers?,
+ *            contentAngles?, keywordThemes? }
  *   PATCH  — update one. Body: { id, ...same fields }
  *   DELETE — remove one. Body: { id }
  *
@@ -11,7 +12,9 @@
  * wants to attract.
  *
  * The richer fields (demographics, pain_points, goals, channels) require
- * the supabase/brand_voice_v2_schema.sql migration.
+ * the supabase/brand_voice_v2_schema.sql migration. The content-strategy
+ * fields (snapshot, legal_triggers, content_angles, keyword_themes) require
+ * the supabase/brand_voice_avatars_content_fields.sql migration.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,6 +24,7 @@ export const runtime = "nodejs";
 
 const MAX_NAME = 100;
 const MAX_ROLE = 200;
+const MAX_SNAPSHOT = 300;
 const MAX_LONG = 40000;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,11 +32,15 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type AvatarPayload = {
   name?: unknown;
   role?: unknown;
+  snapshot?: unknown;
   description?: unknown;
   demographics?: unknown;
   painPoints?: unknown;
   goals?: unknown;
   channels?: unknown;
+  legalTriggers?: unknown;
+  contentAngles?: unknown;
+  keywordThemes?: unknown;
 };
 
 function normalizeString(
@@ -63,11 +71,15 @@ function buildRow(
 
   const checks: { key: string; col: string; max: number }[] = [
     { key: "role", col: "role", max: MAX_ROLE },
+    { key: "snapshot", col: "snapshot", max: MAX_SNAPSHOT },
     { key: "description", col: "description", max: MAX_LONG },
     { key: "demographics", col: "demographics", max: MAX_LONG },
     { key: "painPoints", col: "pain_points", max: MAX_LONG },
     { key: "goals", col: "goals", max: MAX_LONG },
     { key: "channels", col: "channels", max: MAX_LONG },
+    { key: "legalTriggers", col: "legal_triggers", max: MAX_LONG },
+    { key: "contentAngles", col: "content_angles", max: MAX_LONG },
+    { key: "keywordThemes", col: "keyword_themes", max: MAX_LONG },
   ];
 
   for (const c of checks) {

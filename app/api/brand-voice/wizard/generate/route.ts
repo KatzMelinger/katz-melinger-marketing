@@ -126,12 +126,16 @@ Draft the brand-voice guide for this business. Call the save_brand_voice tool wi
 
 Draft 2-3 audience avatars (personas) for this business — genuinely distinct segments, not variations of one. Call the save_avatars tool. For each avatar:
 - name: short persona label (e.g. "Overworked Hourly Employee")
+- snapshot: ONE punchy line (under ~25 words) summarizing who this is and what they want — used as the quick reference everywhere.
 - role: one-line who-they-are
 - description: 2-4 sentences on their situation and what they need from this business
 - demographics: age range, location, income/job type — one line
 - painPoints: the problems and frustrations they face
 - goals: what they are trying to achieve
-- channels: where they spend attention (search, LinkedIn, Reddit, email, etc.)`,
+- channels: where they spend attention (search, LinkedIn, Reddit, email, etc.)
+- legalTriggers: the specific legal claims / matter types this persona maps to (e.g. "age discrimination, retaliation after a complaint, WARN Act, severance/release review"). Only if the business is in a legal or regulated field — otherwise leave empty.
+- contentAngles: 3-5 SEED content angles worth writing about for this persona, comma- or newline-separated. These are starting hints, not an exhaustive list.
+- keywordThemes: 3-5 SEED keyword themes this persona would search, comma- or newline-separated. Starting hints only.`,
       tool: {
         name: "save_avatars",
         description: "Save the drafted audience avatars.",
@@ -144,12 +148,16 @@ Draft 2-3 audience avatars (personas) for this business — genuinely distinct s
                 type: "object",
                 properties: {
                   name: { type: "string" },
+                  snapshot: { type: "string", description: "One line, under ~25 words." },
                   role: { type: "string" },
                   description: { type: "string" },
                   demographics: { type: "string" },
                   painPoints: { type: "string" },
                   goals: { type: "string" },
                   channels: { type: "string" },
+                  legalTriggers: { type: "string", description: "Legal claims / matter types, or empty if not a legal/regulated field." },
+                  contentAngles: { type: "string", description: "3-5 seed content angles." },
+                  keywordThemes: { type: "string", description: "3-5 seed keyword themes." },
                 },
                 required: ["name"],
               },
@@ -216,12 +224,16 @@ function normalizeAvatars(input: Record<string, unknown>) {
         .filter((a): a is Record<string, unknown> => !!a && typeof a === "object")
         .map((a) => ({
           name: str(a.name),
+          snapshot: str(a.snapshot),
           role: str(a.role),
           description: str(a.description),
           demographics: str(a.demographics),
           painPoints: str(a.painPoints),
           goals: str(a.goals),
           channels: str(a.channels),
+          legalTriggers: str(a.legalTriggers),
+          contentAngles: str(a.contentAngles),
+          keywordThemes: str(a.keywordThemes),
         }))
         .filter((a) => a.name)
     : [];
