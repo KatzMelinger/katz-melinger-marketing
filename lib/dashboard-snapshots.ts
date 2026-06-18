@@ -200,7 +200,7 @@ export async function getOnPageSnapshot(): Promise<OnPageSnapshot> {
         : {
             left: "Duplicate content",
             right: `${dupCount}`,
-            href: "/content-production",
+            href: "/content-production/duplicates",
             tone: "alert",
           };
 
