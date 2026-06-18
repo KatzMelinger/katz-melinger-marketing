@@ -24,7 +24,6 @@ import { KmBriefWizard, type WizardOpportunity } from "@/components/km-brief-wiz
 // The rest of the production line lives one click away from this page, so the
 // sidebar carries a single "Content Production" tab instead of five.
 const LINE_LINKS: { href: string; label: string; icon: string }[] = [
-  { href: "/content/decisions", label: "Content Decisions", icon: "✓" },
   { href: "/content/briefs", label: "Briefs", icon: "📋" },
   { href: "/content/pipeline", label: "Content Studio", icon: "▥" },
   { href: "/content/publishing-qa", label: "Publishing QA", icon: "🔍" },
