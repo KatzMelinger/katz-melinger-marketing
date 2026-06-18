@@ -44,6 +44,10 @@ type Row = {
   brief_id: string | null;
   draft_id: string | null;
   metrics: unknown;
+  cluster_id: string | null;
+  cluster_role: string | null;
+  cluster_type: string | null;
+  cluster_primary_keyword: string | null;
   last_synced_at: string | null;
   created_at: string;
 };
@@ -117,6 +121,10 @@ export async function GET(req: NextRequest) {
         briefId: r.brief_id,
         draftId: r.draft_id,
         metrics: r.metrics ?? {},
+        clusterId: r.cluster_id,
+        clusterRole: r.cluster_role,
+        clusterType: r.cluster_type,
+        clusterPrimaryKeyword: r.cluster_primary_keyword,
       })),
       counts,
       lastSyncedAt,

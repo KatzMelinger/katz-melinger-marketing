@@ -22,6 +22,7 @@ import { guardUser } from "@/lib/supabase-route";
 import { detectCannibalization } from "@/lib/cannibalization";
 import { listCompetitors, normalizeDomain } from "@/lib/seo-competitors";
 import { writeRankSnapshots } from "@/lib/rank-history";
+import { writeAuthoritySnapshots } from "@/lib/authority-history";
 import {
   getAIOverviewForKeyword,
   getDomainKeywords,
@@ -316,11 +317,31 @@ async function refreshTrackedKeywords(tenantId: string) {
       );
     }
 
+    // Append today's domain-authority snapshot for the firm + tracked
+    // competitors, building the authority-comparison trend series. Non-fatal and
+    // idempotent per day; each competitor is one cached backlinks-summary call.
+    let authoritySnapshotRows: number | null = null;
+    try {
+      const competitors = await listCompetitors(tenantId);
+      authoritySnapshotRows = await writeAuthoritySnapshots({
+        db,
+        capturedOn,
+        ownDomain: normalizeDomain(seoDomain),
+        competitors,
+      });
+    } catch (err) {
+      console.error(
+        "[seo/keywords/refresh] authority-history snapshot failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
     return {
       updated,
       keywords: refreshed ?? [],
       cannibalizationIssues,
       snapshotRows,
+      authoritySnapshotRows,
     };
   } catch (err) {
     console.error(

@@ -4,14 +4,21 @@
  * This is the shared draft → analyze → compliance-gate → persist path used by
  * BOTH the autonomous content agent (cron) and Peggy's chat `create_content_draft`
  * tool. Keeping it in one place guarantees chat-created and agent-created content
- * land in the SAME spot (the Content Production "Approve" column) and pass through
- * the SAME attorney-advertising hard gate.
+ * pass through the SAME attorney-advertising hard gate.
+ *
+ * Where a PASSING draft lands is caller-controlled via `landingStatus`:
+ *   - 'review' (default) → Content Production "Approve" column (cron agent).
+ *   - 'draft'            → "Draft" column, so a human reads it before Approve
+ *                          (Peggy chat — same review path as every other source).
+ * A HOLD always wins regardless: a compliance/legal failure forces 'needs_legal'.
  *
  * Outcome:
- *   - PASS → content_drafts.status = 'review'      (enters approval inbox)
+ *   - PASS → content_drafts.status = landingStatus ('review' | 'draft')
  *   - HOLD → content_drafts.status = 'needs_legal' (held; never auto-surfaced)
  *
- * It NEVER publishes — it always stops at the approval gate.
+ * The compliance gate ALSO re-runs at the approve step, so a draft landing in
+ * 'draft' is never published without passing the gate. It NEVER publishes here —
+ * it always stops before the approval gate.
  */
 
 import { getTenantJobDb } from "@/lib/tenant-db";
@@ -33,7 +40,7 @@ export type DraftGateOutcome = {
   batchId: string | null;
   title: string | null;
   format: FormatKey;
-  status: "review" | "needs_legal";
+  status: "review" | "draft" | "needs_legal";
   pass: boolean;
   legalReviewRequired: boolean;
   compliance: ComplianceSummary | null;
@@ -55,6 +62,13 @@ export async function draftTopicToReview(args: {
   seoBriefHeadings?: string[];
   /** Compliance gate threshold (0-100). */
   minComplianceScore?: number;
+  /**
+   * Where a PASSING draft lands. 'review' (default) drops it straight into the
+   * Approve column (autonomous cron agent). 'draft' lands it in the Draft column
+   * so a human reviews it first (Peggy chat). A HOLD always overrides to
+   * 'needs_legal'.
+   */
+  landingStatus?: "review" | "draft";
   /** Tagged on the draft + pipeline row so we know where it came from. */
   originSource?: string;
   runId?: string | null;
@@ -129,7 +143,12 @@ export async function draftTopicToReview(args: {
 
   const legalReviewRequired = args.legalReviewRequired === true;
   const pass = verdict.pass && !legalReviewRequired;
-  const newStatus: "review" | "needs_legal" = pass ? "review" : "needs_legal";
+  // A passing draft lands wherever the caller asked (Approve vs Draft column);
+  // a hold always forces needs_legal.
+  const landingStatus = args.landingStatus ?? "review";
+  const newStatus: "review" | "draft" | "needs_legal" = pass
+    ? landingStatus
+    : "needs_legal";
 
   const complianceSummary: ComplianceSummary = {
     pass: verdict.pass,

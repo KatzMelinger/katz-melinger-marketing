@@ -632,7 +632,12 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
                         </td>
                         <td className="px-4 py-3 text-xs opacity-70">{kw.practiceArea || "—"}</td>
                         <td className="px-4 py-3 text-xs opacity-70 max-w-[200px] truncate">{kw.contentSuggestion || "—"}</td>
-                        <td className="px-4 py-3"><TrackButton keyword={kw.keyword} practiceArea={kw.practiceArea} compact /></td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <TrackButton keyword={kw.keyword} practiceArea={kw.practiceArea} compact />
+                            <SendToOpportunitiesButton keyword={kw.keyword} searchVolume={kw.volume} compact />
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -818,6 +823,7 @@ function ExpandTab() {
                           <span className="text-sm">{item.keyword}</span>
                           <CopyButton text={item.keyword} />
                           <TrackButton keyword={item.keyword} compact />
+                          <SendToOpportunitiesButton keyword={item.keyword} searchVolume={item.volume} compact />
                         </div>
                         <div className="flex items-center gap-4 text-xs opacity-70">
                           <span>{item.volume?.toLocaleString() || "—"} /mo</span>
@@ -1012,6 +1018,7 @@ function GapsTab() {
                         <span className="font-medium text-sm">{ck.keyword}</span>
                         <CopyButton text={ck.keyword} />
                         <TrackButton keyword={ck.keyword} compact />
+                        <SendToOpportunitiesButton keyword={ck.keyword} searchVolume={ck.volume} competitor={ck.competitor ?? ck.domain} compact />
                       </div>
                       <div className="flex items-center gap-3 text-xs">
                         <span className="opacity-70">{ck.volume?.toLocaleString()} /mo</span>
@@ -1092,6 +1099,7 @@ function GapsTab() {
                           <span className="font-medium">{l.keyword}</span>
                           <CopyButton text={l.keyword} />
                           <TrackButton keyword={l.keyword} compact />
+                          <SendToOpportunitiesButton keyword={l.keyword} searchVolume={l.volume} compact />
                         </div>
                         <DifficultyBadge d={l.difficulty || 0} />
                       </div>
@@ -1382,5 +1390,73 @@ function TrackButton({
     <Button onClick={handleClick} disabled={state === "saving"} variant="outline" className="text-xs px-2 py-1">
       {state === "saving" ? <Spinner /> : state === "saved" ? <>✓ Tracked</> : <>+ Track</>}
     </Button>
+  );
+}
+
+/**
+ * Promotes a researched keyword into the SEO Opportunity Radar (source "manual")
+ * so it can follow the Create Brief → Production Board flow. Closes the dead-end
+ * where keywords found in research had nowhere to go but the tracked list.
+ */
+function SendToOpportunitiesButton({
+  keyword,
+  searchVolume,
+  competitor,
+  compact,
+}: {
+  keyword: string;
+  searchVolume?: number | null;
+  competitor?: string | null;
+  compact?: boolean;
+}) {
+  const [state, setState] = useState<"idle" | "saving" | "sent" | "exists" | "error">("idle");
+
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setState("saving");
+    try {
+      const res = await fetch("/api/seo/opportunities/from-research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keyword,
+          searchVolume: typeof searchVolume === "number" ? searchVolume : undefined,
+          competitor: competitor ?? undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const json = await res.json();
+      setState(json.alreadyExists ? "exists" : "sent");
+      setTimeout(() => setState("idle"), 2000);
+    } catch {
+      setState("error");
+      setTimeout(() => setState("idle"), 2000);
+    }
+  };
+
+  const label =
+    state === "saving" ? (
+      <Spinner />
+    ) : state === "sent" ? (
+      "✓ In Opportunities"
+    ) : state === "exists" ? (
+      "Already there"
+    ) : state === "error" ? (
+      "Failed"
+    ) : compact ? (
+      "→ Opportunities"
+    ) : (
+      "→ Send to Opportunities"
+    );
+
+  return (
+    <button
+      className="text-xs text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50 transition-colors whitespace-nowrap"
+      title="Add to the SEO Opportunity Radar so you can create a brief and draft from it"
+      onClick={handleClick}
+      disabled={state === "saving"}
+    >
+      {label}
+    </button>
   );
 }
