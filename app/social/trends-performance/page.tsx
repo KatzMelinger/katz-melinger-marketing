@@ -51,6 +51,7 @@ export default function TrendsPerformancePage() {
   const [suggestion, setSuggestion] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,6 +73,27 @@ export default function TrendsPerformancePage() {
       cancelled = true;
     };
   }, []);
+
+  async function suggest() {
+    setSuggesting(true);
+    setSavedMsg(null);
+    try {
+      const res = await fetch("/api/social/trends-performance/suggest", { method: "POST" });
+      const j = await res.json();
+      if (!res.ok) {
+        setSavedMsg(j.error ?? "Suggestion failed.");
+        return;
+      }
+      if (Array.isArray(j.topics) && j.topics.length) setTopics(j.topics as Topic[]);
+      if (typeof j.suggestion === "string" && j.suggestion) setSuggestion(j.suggestion);
+      setSavedMsg("Drafted by Claude — review and Save.");
+    } catch {
+      setSavedMsg("Suggestion failed.");
+    } finally {
+      setSuggesting(false);
+      setTimeout(() => setSavedMsg(null), 4000);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -192,6 +214,16 @@ export default function TrendsPerformancePage() {
                 </div>
                 <div className="flex items-center gap-3">
                   {savedMsg ? <span className="text-sm text-emerald-600">{savedMsg}</span> : null}
+                  <button
+                    type="button"
+                    onClick={() => void suggest()}
+                    disabled={suggesting || saving}
+                    className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    style={{ borderColor: ACCENT, color: ACCENT }}
+                    title="Draft trending topics + a next-month suggestion with Claude — you review and Save"
+                  >
+                    {suggesting ? "Thinking…" : "✦ Suggest with Claude"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => void save()}
