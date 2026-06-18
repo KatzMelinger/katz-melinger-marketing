@@ -141,11 +141,15 @@ export async function getFirmContext(tenantId?: string): Promise<string> {
       type AvatarRow = {
         name?: string | null;
         role?: string | null;
+        snapshot?: string | null;
         description?: string | null;
         demographics?: string | null;
         pain_points?: string | null;
         goals?: string | null;
         channels?: string | null;
+        legal_triggers?: string | null;
+        content_angles?: string | null;
+        keyword_themes?: string | null;
       };
       const list = avatarRows as AvatarRow[];
       const audiences = list
@@ -155,17 +159,33 @@ export async function getFirmContext(tenantId?: string): Promise<string> {
 
       const detailed = list.filter(
         (a) =>
-          a.description || a.demographics || a.pain_points || a.goals || a.channels,
+          a.snapshot ||
+          a.description ||
+          a.demographics ||
+          a.pain_points ||
+          a.goals ||
+          a.channels ||
+          a.legal_triggers ||
+          a.content_angles ||
+          a.keyword_themes,
       );
       if (detailed.length > 0) {
         context += `\nAudience details:\n`;
         for (const a of detailed) {
-          context += `- ${a.name}${a.role ? ` (${a.role})` : ""}:\n`;
+          // Lead with the one-line snapshot — compact and cheap; the full
+          // detail block below is the deep reference.
+          const head = a.snapshot ? ` — ${a.snapshot}` : "";
+          context += `- ${a.name}${a.role ? ` (${a.role})` : ""}${head}:\n`;
           if (a.description) context += `    Description: ${a.description}\n`;
           if (a.demographics) context += `    Demographics: ${a.demographics}\n`;
           if (a.pain_points) context += `    Pain points: ${a.pain_points}\n`;
           if (a.goals) context += `    Goals: ${a.goals}\n`;
           if (a.channels) context += `    Channels: ${a.channels}\n`;
+          if (a.legal_triggers) context += `    Legal triggers: ${a.legal_triggers}\n`;
+          // Angles & keyword themes are SEED hints, not the source of truth —
+          // label them so the model treats them as starting points, not limits.
+          if (a.content_angles) context += `    Content angle seeds: ${a.content_angles}\n`;
+          if (a.keyword_themes) context += `    Keyword theme seeds: ${a.keyword_themes}\n`;
         }
       }
     }

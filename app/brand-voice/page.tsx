@@ -57,12 +57,16 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 type Avatar = {
   id: string;
   name: string;
+  snapshot: string | null;
   role: string | null;
   description: string | null;
   demographics: string | null;
   pain_points: string | null;
   goals: string | null;
   channels: string | null;
+  legal_triggers: string | null;
+  content_angles: string | null;
+  keyword_themes: string | null;
   created_at: string;
 };
 
@@ -708,12 +712,16 @@ function AvatarsSection({
   const [wizardOpen, setWizardOpen] = useState(false);
   const EMPTY_DRAFT = {
     name: "",
+    snapshot: "",
     role: "",
     description: "",
     demographics: "",
     painPoints: "",
     goals: "",
     channels: "",
+    legalTriggers: "",
+    contentAngles: "",
+    keywordThemes: "",
   };
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [showMore, setShowMore] = useState(false);
@@ -726,12 +734,16 @@ function AvatarsSection({
     try {
       const payload = {
         name: draft.name.trim(),
+        snapshot: draft.snapshot.trim() || null,
         role: draft.role.trim() || null,
         description: draft.description.trim() || null,
         demographics: draft.demographics.trim() || null,
         painPoints: draft.painPoints.trim() || null,
         goals: draft.goals.trim() || null,
         channels: draft.channels.trim() || null,
+        legalTriggers: draft.legalTriggers.trim() || null,
+        contentAngles: draft.contentAngles.trim() || null,
+        keywordThemes: draft.keywordThemes.trim() || null,
       };
       const res = editingId
         ? await fetch("/api/brand-voice/avatars", {
@@ -764,12 +776,16 @@ function AvatarsSection({
   const handleEdit = (a: Avatar) => {
     setDraft({
       name: a.name,
+      snapshot: a.snapshot ?? "",
       role: a.role ?? "",
       description: a.description ?? "",
       demographics: a.demographics ?? "",
       painPoints: a.pain_points ?? "",
       goals: a.goals ?? "",
       channels: a.channels ?? "",
+      legalTriggers: a.legal_triggers ?? "",
+      contentAngles: a.content_angles ?? "",
+      keywordThemes: a.keyword_themes ?? "",
     });
     setEditingId(a.id);
     setShowMore(true);
@@ -870,6 +886,12 @@ function AvatarsSection({
                 onChange={(e) => setDraft({ ...draft, role: e.target.value })}
               />
             </div>
+            <input
+              className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              placeholder="Snapshot — one line summarizing who this is and what they want"
+              value={draft.snapshot}
+              onChange={(e) => setDraft({ ...draft, snapshot: e.target.value })}
+            />
             <textarea
               rows={4}
               className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
@@ -883,7 +905,8 @@ function AvatarsSection({
               onClick={() => setShowMore((v) => !v)}
               className="text-xs opacity-60 hover:opacity-100 underline"
             >
-              {showMore ? "Hide" : "Show"} more details (demographics, pain points, goals, channels)
+              {showMore ? "Hide" : "Show"} more details (demographics, pain points, goals,
+              channels, legal triggers, content seeds)
             </button>
 
             {showMore && (
@@ -927,6 +950,40 @@ function AvatarsSection({
                     onChange={(e) => setDraft({ ...draft, channels: e.target.value })}
                   />
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] opacity-70">Legal / content triggers</label>
+                  <textarea
+                    rows={2}
+                    className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    placeholder="Legal claims / matter types this persona maps to — e.g. age discrimination, retaliation, WARN Act, severance review"
+                    value={draft.legalTriggers}
+                    onChange={(e) => setDraft({ ...draft, legalTriggers: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] opacity-70">
+                    Content angle seeds <span className="opacity-60">(AI hints, regenerated on demand — not the source of truth)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    placeholder="e.g., executive severance review, age discrimination after restructuring, what to know before signing a release"
+                    value={draft.contentAngles}
+                    onChange={(e) => setDraft({ ...draft, contentAngles: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] opacity-70">
+                    Keyword theme seeds <span className="opacity-60">(AI hints — the opportunity engine still finds fresh ones)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    className="w-full bg-transparent border border-black/15 dark:border-white/15 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    placeholder="e.g., severance negotiation, pretext termination, protected leave, release of claims"
+                    value={draft.keywordThemes}
+                    onChange={(e) => setDraft({ ...draft, keywordThemes: e.target.value })}
+                  />
+                </div>
               </div>
             )}
 
@@ -961,8 +1018,15 @@ function AvatarRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetails =
-    avatar.demographics || avatar.pain_points || avatar.goals || avatar.channels;
+    avatar.demographics ||
+    avatar.pain_points ||
+    avatar.goals ||
+    avatar.channels ||
+    avatar.legal_triggers ||
+    avatar.content_angles ||
+    avatar.keyword_themes;
   const desc = avatar.description ?? "";
+  const snap = avatar.snapshot ?? "";
   const isLong = desc.length > 200 || desc.includes("\n") || hasDetails;
 
   return (
@@ -975,6 +1039,9 @@ function AvatarRow({
               <span className="text-xs opacity-70">· {avatar.role}</span>
             )}
           </div>
+          {snap && !expanded && (
+            <p className="text-xs opacity-80 italic mt-1 whitespace-pre-wrap">{snap}</p>
+          )}
           {desc && !expanded && (
             <p className="text-xs opacity-70 mt-1 line-clamp-2 whitespace-pre-wrap">
               {desc}
@@ -1008,6 +1075,7 @@ function AvatarRow({
       )}
       {expanded && (
         <div className="text-xs space-y-2 pt-1">
+          {snap && <DetailLine label="Snapshot" value={snap} />}
           {desc && (
             <DetailLine label="Description" value={desc} />
           )}
@@ -1015,6 +1083,9 @@ function AvatarRow({
           <DetailLine label="Pain points" value={avatar.pain_points} />
           <DetailLine label="Goals" value={avatar.goals} />
           <DetailLine label="Preferred channels" value={avatar.channels} />
+          <DetailLine label="Legal / content triggers" value={avatar.legal_triggers} />
+          <DetailLine label="Content angle seeds" value={avatar.content_angles} />
+          <DetailLine label="Keyword theme seeds" value={avatar.keyword_themes} />
         </div>
       )}
     </div>
