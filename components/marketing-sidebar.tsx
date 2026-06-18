@@ -20,7 +20,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { DEPARTMENTS, HOME_NAV_ITEM, type DeptItem } from "@/lib/departments";
+import { SIDEBAR_SECTIONS, HOME_NAV_ITEM, type DeptItem } from "@/lib/departments";
 import { usePersistentState, useHydrated } from "@/lib/use-persistent-state";
 import { APP_NAME } from "@/lib/app-config";
 import { useTenant } from "@/components/tenant-provider";
@@ -31,7 +31,7 @@ const STORAGE_GROUPS = "km_sidebar_groups";
 // Stable reference (computed once) so it can serve as the persistent-state
 // fallback without re-triggering snapshots on every render.
 const DEFAULT_GROUPS: Record<string, boolean> = Object.fromEntries(
-  DEPARTMENTS.map((d) => [d.key, d.defaultOpen]),
+  SIDEBAR_SECTIONS.map((d) => [d.key, d.defaultOpen]),
 );
 
 function isActive(pathname: string | null, href: string): boolean {
@@ -129,7 +129,7 @@ export function MarketingSidebar() {
           {!collapsed && <span className="truncate">{HOME_NAV_ITEM.label}</span>}
         </Link>
 
-        {DEPARTMENTS.map((dept) => {
+        {SIDEBAR_SECTIONS.map((dept) => {
           const open = collapsed || openGroups[dept.key];
           const visibleItems = dept.items.filter((it) => !it.adminOnly || isAdmin);
           if (visibleItems.length === 0) return null;
