@@ -30,18 +30,20 @@ type Stage = { kind: string; label: string; order: number };
 
 const DEFAULT_STAGES: Stage[] = [
   { kind: "opportunity", label: "Opportunity", order: 1 },
-  { kind: "brief", label: "Brief", order: 2 },
-  { kind: "draft", label: "Draft", order: 3 },
-  { kind: "approve", label: "Approve", order: 4 },
-  { kind: "published", label: "Published", order: 5 },
+  { kind: "draft", label: "Draft", order: 2 },
+  { kind: "approve", label: "Approve", order: 3 },
+  { kind: "published", label: "Published", order: 4 },
 ];
 
 // content_pipeline.status → the fixed stage vocabulary the board renders.
+// The kanban has four columns (Opportunity, Draft, Approve, Published). A brief
+// is pre-draft production work, so brief-status items fold into the Draft column
+// (their card still opens the DraftDrawer, which knows the brief status).
 // review (awaiting sign-off), needs_legal (held by the compliance gate), and
 // approved (signed off, awaiting publish) all live in the Approve column.
 const PIPE_TO_STAGE: Record<string, string> = {
   idea: "opportunity",
-  brief: "brief",
+  brief: "draft",
   draft: "draft",
   review: "approve",
   needs_legal: "approve",
@@ -60,10 +62,11 @@ export async function GET() {
     .select("workflow_stages, content_buckets, pillars")
     .maybeSingle();
 
-  const stages: Stage[] =
+  const stages: Stage[] = (
     Array.isArray(settings?.workflow_stages) && settings.workflow_stages.length
       ? [...settings.workflow_stages].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      : DEFAULT_STAGES;
+      : DEFAULT_STAGES
+  ).filter((s) => s.kind !== "brief"); // Brief column removed; brief items fold into Draft.
   const buckets = Array.isArray(settings?.content_buckets) ? settings.content_buckets : [];
   const pillars = Array.isArray(settings?.pillars)
     ? settings.pillars.map((p: { id: string; label: string }) => ({ id: p.id, label: p.label }))
