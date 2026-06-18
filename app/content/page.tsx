@@ -312,7 +312,9 @@ export default function ContentPage() {
         <ContentTypeTabs />
         <ContentNav />
 
-        <div className="grid gap-8 lg:grid-cols-2">
+        {/* Brief + preview sit side-by-side until generation begins, then the
+            preview takes the full width so the draft is comfortable to read. */}
+        <div className={`grid gap-8 ${loading || preview ? "lg:grid-cols-1" : "lg:grid-cols-2"}`}>
           <section className="space-y-4 rounded-xl border p-6" style={{ backgroundColor: CARD, borderColor: BORDER }}>
             {tab === "social" ? (
               <label className="block text-sm">
@@ -716,7 +718,7 @@ function PreviewPane({
       ) : null}
       {preview ? (
         <div
-          className="max-h-[480px] overflow-y-auto rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-800 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
+          className="max-h-[70vh] overflow-y-auto rounded border border-[#e2e8f0] bg-[#ffffff] p-4 text-sm text-slate-800 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
           dangerouslySetInnerHTML={{ __html: renderedHtml }}
         />
       ) : (
