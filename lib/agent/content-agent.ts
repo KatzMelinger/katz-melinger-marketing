@@ -26,6 +26,7 @@ import {
   type ScoredOpportunity,
 } from "@/lib/opportunity-pipeline";
 import { draftTopicToReview } from "@/lib/agent/draft-to-review";
+import { loadExistingTargetSet, normalizeKeyword } from "@/lib/content-dedup";
 
 export type AgentItemAction =
   | "queued_for_review"
@@ -133,7 +134,7 @@ export async function runContentAgent(args: {
     for (const winner of pipeline.winners) {
       if (drafted >= maxItems) break;
 
-      const key = winner.keyword.trim().toLowerCase();
+      const key = normalizeKeyword(winner.keyword);
 
       if (winner.worthScore < minWorthScore) {
         skipped.push({
@@ -296,18 +297,16 @@ async function draftAndGate(args: {
   };
 }
 
-/** Keywords already in flight (so we never re-draft the same topic). */
+/**
+ * Targets already in flight or published (so we never re-draft the same topic).
+ * Delegates to the shared dedup set, which spans drafts, briefs, the board, and
+ * published pages — not just content_pipeline — so the agent is aware of content
+ * created by Opportunities, Content Studio, and Peggy too.
+ */
 async function loadInflightKeywords(
   db: ReturnType<typeof getTenantJobDb>,
 ): Promise<Set<string>> {
-  const { data } = await db
-    .select("content_pipeline", "keywords")
-    .in("status", ["brief", "draft", "review", "needs_legal", "approved", "published"]);
-  const set = new Set<string>();
-  for (const row of (data ?? []) as unknown as { keywords: string | null }[]) {
-    if (row.keywords) set.add(row.keywords.trim().toLowerCase());
-  }
-  return set;
+  return loadExistingTargetSet(db.tenantId);
 }
 
 function buildSummary(args: {

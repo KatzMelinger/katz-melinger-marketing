@@ -16,6 +16,7 @@ import { getTenantClient } from "@/lib/tenant-db";
 import { normalizeLanguage } from "@/lib/content-language";
 import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
+import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -62,6 +63,23 @@ export async function POST(req: NextRequest) {
       { error: `formats[] required (one or more of: ${ALLOWED.join(", ")})` },
       { status: 400 },
     );
+  }
+
+  // Duplicate guard for a FRESH batch (a repurpose from a sourceId is an
+  // intentional reformat, so it's exempt). Override with { force: true }.
+  if (!body?.sourceId && body?.force !== true) {
+    const { tenantId } = await getTenantClient();
+    const dup = await findExistingContent({
+      tenantId,
+      keyword: body.topic,
+      secondaryKeywords: Array.isArray(body.targetKeywords) ? (body.targetKeywords as string[]) : [],
+    });
+    if (dup) {
+      return NextResponse.json(
+        { error: duplicateMessage(dup), duplicate: true, existing: dup },
+        { status: 409 },
+      );
+    }
   }
 
   // Optional per-format target runtime (podcast / video). Whitelist keys and

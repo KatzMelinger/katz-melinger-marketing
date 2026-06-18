@@ -148,6 +148,8 @@ export function KmBriefWizard({
 
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dupBlocked, setDupBlocked] = useState(false);
+  const [dupLang, setDupLang] = useState<ContentLanguage>("en");
   const [doneDraftId, setDoneDraftId] = useState<string | null | undefined>(undefined);
 
   const [linkPlan, setLinkPlan] = useState<LinkPlan | null>(null);
@@ -308,8 +310,9 @@ export function KmBriefWizard({
 
   const validationErrors = validateBrief(brief);
 
-  const generate = async (lang: ContentLanguage) => {
+  const generate = async (lang: ContentLanguage, force = false) => {
     setError(null);
+    setDupBlocked(false);
     setLanguage(lang);
     const errs = validateBrief(brief);
     if (errs.length > 0) {
@@ -322,9 +325,18 @@ export function KmBriefWizard({
       const briefRes = await fetch("/api/seo/briefs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief, language: lang }),
+        body: JSON.stringify({ brief, language: lang, force }),
       });
       const briefJson = await briefRes.json();
+      if (!briefRes.ok) {
+        if (briefRes.status === 409 && briefJson?.duplicate) {
+          setDupLang(lang);
+          setDupBlocked(true);
+          setError(briefJson.error ?? "Already exists");
+          return;
+        }
+        throw new Error(briefJson?.error ?? "Failed to save brief");
+      }
       const briefId = briefJson?.id ?? null;
 
       // 2. Mark the opportunity as briefed (only when seeded from one).
@@ -340,10 +352,16 @@ export function KmBriefWizard({
       const genRes = await fetch("/api/content/km-draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...brief, language: lang }),
+        body: JSON.stringify({ ...brief, language: lang, force }),
       });
       const genJson = await genRes.json();
       if (!genRes.ok) {
+        if (genRes.status === 409 && genJson?.duplicate) {
+          setDupLang(lang);
+          setDupBlocked(true);
+          setError(genJson.error ?? "Already exists");
+          return;
+        }
         throw new Error(
           genJson?.error
             ? `${genJson.error}${genJson.details ? `: ${genJson.details.join(", ")}` : ""}`
@@ -718,7 +736,20 @@ export function KmBriefWizard({
             >
               Previous
             </button>
-            {error && <span className="px-2 text-xs text-red-600 truncate">{error}</span>}
+            {error && (
+              <span className={`flex items-center gap-2 px-2 text-xs truncate ${dupBlocked ? "text-amber-700" : "text-red-600"}`}>
+                <span className="truncate">{error}</span>
+                {dupBlocked && (
+                  <button
+                    onClick={() => generate(dupLang, true)}
+                    disabled={generating}
+                    className="shrink-0 rounded border border-amber-400 px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    Create anyway
+                  </button>
+                )}
+              </span>
+            )}
             {step < STEPS.length - 1 ? (
               <button
                 onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}

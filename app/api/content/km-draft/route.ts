@@ -46,6 +46,7 @@ import {
 } from "@/lib/content-language";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
+import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,6 +156,23 @@ export async function POST(req: Request) {
 
   const brief = partial as KMPerPageBrief;
   const language = normalizeLanguage((body as Record<string, unknown>).language);
+
+  // Duplicate guard — never generate a second draft for a keyword/cluster that
+  // already has a draft, brief, board item, or published page. Manual override
+  // via { force: true }.
+  if ((body as Record<string, unknown>).force !== true) {
+    const dup = await findExistingContent({
+      tenantId: await resolveTenantId(),
+      keyword: brief.primaryKeyword,
+      secondaryKeywords: brief.secondaryKeywords ?? [],
+    });
+    if (dup) {
+      return NextResponse.json(
+        { error: duplicateMessage(dup), duplicate: true, existing: dup },
+        { status: 409 },
+      );
+    }
+  }
 
   // If this draft is being generated from a brief_suggestion, we'll advance the
   // matching Production Board row once the draft is saved (see linkPipelineDraft).
