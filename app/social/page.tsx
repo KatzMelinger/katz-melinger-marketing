@@ -134,6 +134,44 @@ export default async function SocialHubPage() {
 
   const cards: HubCard[] = [
     {
+      href: "/social/content-calendar",
+      label: "Content Calendar",
+      description:
+        "Monthly and weekly views of every scheduled and published post across all channels, color-coded by platform.",
+      metric: `${totalPostsThisMonth} this month`,
+    },
+    {
+      href: "/social/kpi-tracker",
+      label: "KPI Tracker",
+      description:
+        "Reach, engagement rate, followers, and per-channel metrics for the last 30 days.",
+      metric: avgEngagement != null ? `${avgEngagement.toFixed(2)}% eng.` : undefined,
+    },
+    {
+      href: "/social/trends-performance",
+      label: "Trends & Performance",
+      description:
+        "Best-performing formats and top posts from your data, plus audience demographics and trending topics you curate.",
+    },
+    {
+      href: "/social/hashtag-performance",
+      label: "Hashtag Performance",
+      description:
+        "Which Instagram tags drive real reach, which generic ones to drop, and a suggested set.",
+    },
+    {
+      href: "/social/best-time",
+      label: "Best Time to Post",
+      description:
+        "Engagement heatmap by day and hour (NY time) from your post history, with the top two slots highlighted.",
+    },
+    {
+      href: "/social/competitor-tracking",
+      label: "Competitor Tracking",
+      description:
+        "Benchmark competitor law-firm accounts on Instagram and LinkedIn, head-to-head vs Katz Melinger.",
+    },
+    {
       href: "/social/analytics",
       label: "Social Media Analytics",
       description:

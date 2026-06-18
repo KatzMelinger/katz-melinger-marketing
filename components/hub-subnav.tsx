@@ -53,6 +53,12 @@ const AI_ROUTES: Route[] = [
 
 const SOCIAL_ROUTES: Route[] = [
   { href: "/social", label: "Overview" },
+  { href: "/social/content-calendar", label: "Calendar" },
+  { href: "/social/kpi-tracker", label: "KPIs" },
+  { href: "/social/trends-performance", label: "Trends & Perf" },
+  { href: "/social/hashtag-performance", label: "Hashtags" },
+  { href: "/social/best-time", label: "Best Time" },
+  { href: "/social/competitor-tracking", label: "Competitors" },
   { href: "/social/analytics", label: "Analytics" },
   { href: "/social/trends", label: "Trends" },
   { href: "/community", label: "Community" },

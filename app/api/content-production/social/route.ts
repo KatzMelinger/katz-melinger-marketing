@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         for (const platform of p.platforms) {
           rows.push({
             platform,
-            body: p.draft.body,
+            content: p.draft.body,
             ayrshare_id: res.id ?? null,
             post_url: res.postIds?.find((x) => x.platform === platform)?.postUrl ?? null,
             status: "scheduled",

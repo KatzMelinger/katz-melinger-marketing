@@ -25,9 +25,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   }
 
+  // social_posts has no `title` column — fold the title into `content` so it
+  // isn't lost, and write the text to `content` (the real column, not `body`).
+  const content = title ? `${title}\n\n${textBody}` : textBody;
   const { data, error } = await sb
     .from("social_posts")
-    .insert({ platform, title, body: textBody, tenant_id: await resolveTenantId() })
+    .insert({ platform, content, tenant_id: await resolveTenantId() })
     .select("id")
     .maybeSingle();
 

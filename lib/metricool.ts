@@ -69,6 +69,30 @@ export async function getReels(network: string, options?: { from?: string; to?: 
   return metricoolFetch(`/v2/analytics/reels/${network}`, { from, to });
 }
 
+/**
+ * Hashtag volume lookup. Returns a large list of hashtags with their GLOBAL
+ * post counts (a competitiveness signal, e.g. #fall ≈ 67M posts) — NOT
+ * per-account performance. Used to flag over-competitive/generic tags.
+ */
+export async function getHashtags(network: string, options?: { from?: string; to?: string }) {
+  const { from, to } = options?.from && options?.to ? { from: options.from, to: options.to } : defaultDateRange();
+  return metricoolFetch("/v2/analytics/hashtags", { network, from, to });
+}
+
+/**
+ * Competitor accounts tracked for a network in Metricool (Settings → Competitors).
+ * Returns `[]` until competitor handles are added in the Metricool dashboard.
+ */
+export async function getCompetitors(network: string, options?: { from?: string; to?: string; timezone?: string; limit?: number }) {
+  const { from, to } = options?.from && options?.to ? { from: options.from, to: options.to } : defaultDateRange();
+  return metricoolFetch(`/v2/analytics/competitors/${network}`, {
+    from,
+    to,
+    timezone: options?.timezone ?? "America/New_York",
+    limit: String(options?.limit ?? 25),
+  });
+}
+
 export async function getStories(network: string, options?: { from?: string; to?: string }) {
   const { from, to } = options?.from && options?.to ? { from: options.from, to: options.to } : defaultDateRange();
   return metricoolFetch(`/v2/analytics/stories/${network}`, { from, to });
@@ -114,6 +138,8 @@ export async function getSocialOverview(options?: { from?: string; to?: string }
       totalImpressions: 0,
       totalReach: 0,
       totalEngagement: 0,
+      totalSaved: 0,
+      totalViews: 0,
     };
 
     try {
@@ -145,6 +171,8 @@ export async function getSocialOverview(options?: { from?: string; to?: string }
         networkData.totalImpressions += post.impressionsTotal || post.impressions || 0;
         networkData.totalReach += post.reach || 0;
         networkData.totalEngagement += post.engagement || 0;
+        networkData.totalSaved += post.saved || 0;
+        networkData.totalViews += post.views || post.video_views || 0;
       }
 
       networkData.posts = posts.slice(0, 10).map((post: any) => ({

@@ -162,7 +162,7 @@ export async function POST(
         {
           tenant_id: tenantId,
           platform,
-          body,
+          content: body,
           ayrshare_id: result.id ?? null,
           post_url: publishedUrl,
           status: "published",

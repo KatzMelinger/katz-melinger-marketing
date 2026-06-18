@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     const pid = result.postIds?.find((p) => p.platform === platform);
     return {
       platform,
-      body: post,
+      content: post,
       ayrshare_id: result.id ?? null,
       post_url: pid?.postUrl ?? null,
       status: scheduled ? "scheduled" : "published",
