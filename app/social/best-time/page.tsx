@@ -14,8 +14,8 @@ import { useEffect, useMemo, useState } from "react";
 import { MarketingNav } from "@/components/marketing-nav";
 import { DashCard, DashSpinner } from "@/components/dashboard-ui";
 
-type Cell = { day: number; hour: number; count: number; avgEngagement: number };
-type NetData = { key: string; totalPosts: number; placed: number; cells: Cell[]; top: Cell[] };
+type Cell = { day: number; hour: number; count: number; avgEngagement: number; benchmark?: boolean };
+type NetData = { key: string; totalPosts: number; placed: number; cells: Cell[]; top: Cell[]; benchmarked?: boolean };
 type Payload = { connected: boolean; error?: string; windowDays?: number; timezone?: string; networks: NetData[] };
 
 const ACCENT = "#185FA5";
@@ -94,7 +94,7 @@ export default function BestTimePage() {
           {data && data.networks.length > 0 ? (
             <div className="inline-flex overflow-hidden rounded-lg border border-[#e2e8f0]">
               {data.networks
-                .filter((n) => n.placed > 0)
+                .filter((n) => n.cells.length > 0)
                 .map((n) => (
                   <button
                     key={n.key}
@@ -116,7 +116,7 @@ export default function BestTimePage() {
           <div className="flex items-center gap-2 py-16 text-sm text-slate-500">
             <DashSpinner /> Loading heatmap…
           </div>
-        ) : !current || current.placed === 0 ? (
+        ) : !current || current.cells.length === 0 ? (
           <DashCard>
             <p className="text-sm text-slate-500">
               Not enough post history on this channel yet to compute a heatmap. Publish more, or pick another channel.
@@ -127,13 +127,18 @@ export default function BestTimePage() {
             {/* Top slots callout */}
             {current.top.length > 0 ? (
               <div className="rounded-xl border-l-4 p-4" style={{ borderColor: ACCENT, backgroundColor: "#f8fafc" }}>
-                <p className="text-sm font-semibold text-slate-800">Top {current.top.length} slot{current.top.length > 1 ? "s" : ""}</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  Top {current.top.length} slot{current.top.length > 1 ? "s" : ""}
+                  {current.benchmarked ? <span className="ml-2 font-normal text-amber-600">industry benchmark — low post history</span> : null}
+                </p>
                 <p className="mt-1 text-sm text-slate-600">
                   {current.top.map((c, i) => (
                     <span key={`${c.day}-${c.hour}`}>
                       {i > 0 ? " · " : ""}
                       <span className="font-semibold">{slotLabel(c)}</span>
-                      <span className="text-slate-400"> ({c.avgEngagement} avg eng · {c.count} post{c.count > 1 ? "s" : ""})</span>
+                      <span className="text-slate-400">
+                        {c.benchmark ? " (benchmark)" : ` (${c.avgEngagement} avg eng · ${c.count} post${c.count > 1 ? "s" : ""})`}
+                      </span>
                     </span>
                   ))}
                 </p>
@@ -159,19 +164,27 @@ export default function BestTimePage() {
                       {DAYS.map((_, day) => {
                         const cell = cellMap.get(`${day}-${h}`);
                         const isTop = topKeys.has(`${day}-${h}`);
+                        const isBench = !!cell?.benchmark;
                         const intensity = cell && max > 0 ? 0.12 + 0.88 * (cell.avgEngagement / max) : 0;
                         return (
                           <div
                             key={day}
                             title={
-                              cell
-                                ? `${DAYS[day]} ${hourLabel(h)} — ${cell.avgEngagement} avg engagement across ${cell.count} post(s)`
-                                : `${DAYS[day]} ${hourLabel(h)} — no posts`
+                              !cell
+                                ? `${DAYS[day]} ${hourLabel(h)} — no posts`
+                                : isBench
+                                  ? `${DAYS[day]} ${hourLabel(h)} — industry benchmark slot (no posts of your own here yet)`
+                                  : `${DAYS[day]} ${hourLabel(h)} — ${cell.avgEngagement} avg engagement across ${cell.count} post(s)`
                             }
                             className="m-0.5 flex h-8 items-center justify-center rounded text-[11px] font-medium"
                             style={{
-                              backgroundColor: cell ? `rgba(24,95,165,${intensity})` : "#f1f5f9",
-                              color: cell && intensity > 0.55 ? "#fff" : "#475569",
+                              backgroundColor: !cell
+                                ? "#f1f5f9"
+                                : isBench
+                                  ? `rgba(245,158,11,${intensity})`
+                                  : `rgba(24,95,165,${intensity})`,
+                              color: cell && !isBench && intensity > 0.55 ? "#fff" : "#475569",
+                              border: isBench ? "1px dashed #D97706" : undefined,
                               outline: isTop ? "2px solid #F59E0B" : "none",
                               outlineOffset: isTop ? "-2px" : undefined,
                             }}
@@ -187,6 +200,7 @@ export default function BestTimePage() {
               <p className="mt-3 text-xs text-slate-400">
                 Color = average engagement per post in that slot. ★ marks the top two. Based on {current.placed} posts;
                 slots backed by a single post are weak signals.
+                {current.benchmarked ? " Dashed amber cells are industry benchmarks shown because this channel has little post history yet." : ""}
               </p>
             </DashCard>
           </>

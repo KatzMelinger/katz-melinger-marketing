@@ -22,6 +22,29 @@ export const runtime = "nodejs";
 const NETWORKS = ["instagram", "facebook", "linkedin", "tiktok"] as const;
 const TZ = "America/New_York";
 
+// Below this many placed posts, a channel's own heatmap is too sparse to trust,
+// so we backfill empty slots with industry-benchmark best-times (day 0=Sun..6=Sat,
+// hour 24h, score relative). These are clearly flagged in the response/UI.
+const MIN_REAL_POSTS = 10;
+const BENCHMARKS: Record<string, Array<{ day: number; hour: number; score: number }>> = {
+  instagram: [
+    { day: 2, hour: 11, score: 10 }, { day: 3, hour: 13, score: 9 }, { day: 4, hour: 11, score: 8 },
+    { day: 3, hour: 11, score: 8 }, { day: 5, hour: 10, score: 6 }, { day: 1, hour: 12, score: 5 },
+  ],
+  facebook: [
+    { day: 3, hour: 11, score: 10 }, { day: 2, hour: 10, score: 9 }, { day: 4, hour: 13, score: 8 },
+    { day: 1, hour: 9, score: 6 }, { day: 5, hour: 12, score: 6 },
+  ],
+  linkedin: [
+    { day: 2, hour: 9, score: 10 }, { day: 3, hour: 10, score: 10 }, { day: 4, hour: 8, score: 9 },
+    { day: 2, hour: 12, score: 7 }, { day: 3, hour: 17, score: 6 },
+  ],
+  tiktok: [
+    { day: 4, hour: 19, score: 10 }, { day: 4, hour: 12, score: 9 }, { day: 2, hour: 9, score: 8 },
+    { day: 5, hour: 17, score: 7 }, { day: 3, hour: 11, score: 6 },
+  ],
+};
+
 type RawPost = {
   publishedAt?: { dateTime?: string; timezone?: string };
   created?: { dateTime?: string; timezone?: string };
@@ -106,12 +129,29 @@ export async function GET(request: Request) {
           cur.count += 1;
           acc.set(k, cur);
         }
-        const cells = [...acc.entries()].map(([k, v]) => {
+        const realCells = [...acc.entries()].map(([k, v]) => {
           const [day, hour] = k.split("-").map(Number);
-          return { day, hour, count: v.count, avgEngagement: Math.round(v.sum / v.count) };
+          return { day, hour, count: v.count, avgEngagement: Math.round(v.sum / v.count), benchmark: false };
         });
-        const top = [...cells].sort((a, b) => b.avgEngagement - a.avgEngagement).slice(0, 2);
-        return { key, totalPosts: posts.length, placed, cells, top };
+
+        // Sparse channel → backfill empty slots with benchmarks, and recommend
+        // the strongest benchmark slots as the top picks.
+        let cells = realCells;
+        let top = [...realCells].sort((a, b) => b.avgEngagement - a.avgEngagement).slice(0, 2);
+        let benchmarked = false;
+        if (placed < MIN_REAL_POSTS) {
+          benchmarked = true;
+          const have = new Set(realCells.map((c) => `${c.day}-${c.hour}`));
+          const bench = (BENCHMARKS[key] ?? [])
+            .filter((b) => !have.has(`${b.day}-${b.hour}`))
+            .map((b) => ({ day: b.day, hour: b.hour, count: 0, avgEngagement: b.score, benchmark: true }));
+          cells = [...realCells, ...bench];
+          top = [...(BENCHMARKS[key] ?? [])]
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 2)
+            .map((b) => ({ day: b.day, hour: b.hour, count: 0, avgEngagement: b.score, benchmark: true }));
+        }
+        return { key, totalPosts: posts.length, placed, cells, top, benchmarked };
       }),
     );
 
