@@ -12,6 +12,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
 import { draftTopicToReview } from "./agent/draft-to-review";
+import { findExistingContent, duplicateMessage } from "./content-dedup";
 import type { FormatKey } from "./content-multiformat";
 
 /** Formats Peggy is allowed to draft from chat. */
@@ -466,8 +467,24 @@ export async function dispatchTool(
         ? input.targetKeywords.filter((k): k is string => typeof k === "string")
         : undefined;
 
+      // Duplicate guard — Peggy is ALWAYS hard-blocked (no override): she must
+      // never create a second piece for a keyword/cluster that already exists.
+      const peggyTenantId = await resolveTenantId();
+      const dup = await findExistingContent({
+        tenantId: peggyTenantId,
+        keyword: topic,
+        secondaryKeywords: targetKeywords,
+      });
+      if (dup) {
+        return {
+          error: `Not created — ${duplicateMessage(dup)}. To avoid duplicates, open the existing item or refresh it instead of creating a new one.`,
+          duplicate: true,
+          existing: dup,
+        };
+      }
+
       const outcome = await draftTopicToReview({
-        tenantId: await resolveTenantId(),
+        tenantId: peggyTenantId,
         topic,
         format,
         practiceArea:

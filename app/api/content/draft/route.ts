@@ -20,6 +20,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
+import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +137,23 @@ export async function POST(req: Request) {
 
   if (!topic) {
     return NextResponse.json({ error: "topic required" }, { status: 400 });
+  }
+
+  // Duplicate guard — block creating a second piece for the same keyword/cluster
+  // across drafts, briefs, the board, published pages, and the keyword cluster.
+  // A manual user can override with { force: true } ("Create anyway").
+  if (o.force !== true) {
+    const dup = await findExistingContent({
+      tenantId: await resolveTenantId(),
+      keyword: topic,
+      secondaryKeywords: targetKeywords,
+    });
+    if (dup) {
+      return NextResponse.json(
+        { error: duplicateMessage(dup), duplicate: true, existing: dup },
+        { status: 409 },
+      );
+    }
   }
 
   const platforms =

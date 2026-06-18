@@ -15,6 +15,7 @@ import { normalizeLanguage } from "@/lib/content-language";
 import type { KMPerPageBrief } from "@/lib/km-content-system";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,6 +31,23 @@ export async function POST(req: NextRequest) {
       );
     }
     const language = normalizeLanguage(body?.language);
+
+    // Duplicate guard — don't open a second brief for a keyword/cluster that
+    // already has a brief, draft, board item, or published page. Override with
+    // { force: true }.
+    if (body?.force !== true) {
+      const dup = await findExistingContent({
+        tenantId: await resolveTenantId(),
+        keyword: brief.primaryKeyword,
+        secondaryKeywords: brief.secondaryKeywords ?? [],
+      });
+      if (dup) {
+        return NextResponse.json(
+          { error: duplicateMessage(dup), duplicate: true, existing: dup },
+          { status: 409 },
+        );
+      }
+    }
 
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase

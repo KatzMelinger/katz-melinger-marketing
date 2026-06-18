@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
+import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "format, topic, body required" }, { status: 400 });
   }
   const { supabase, tenantId } = await getTenantClient();
+
+  // Duplicate guard (override with { force: true }).
+  if (body?.force !== true) {
+    const dup = await findExistingContent({ tenantId, keyword: body.topic || body.title || "" });
+    if (dup) {
+      return NextResponse.json(
+        { error: duplicateMessage(dup), duplicate: true, existing: dup },
+        { status: 409 },
+      );
+    }
+  }
+
   const { data, error } = await supabase
     .from("content_drafts")
     .insert({

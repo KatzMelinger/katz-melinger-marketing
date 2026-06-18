@@ -90,6 +90,7 @@ export default function ContentPage() {
   const [emailSubject, setEmailSubject] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [dupBlocked, setDupBlocked] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [brandVoice, setBrandVoice] = useState("");
   const [brandLoading, setBrandLoading] = useState(false);
@@ -180,9 +181,10 @@ export default function ContentPage() {
     return () => clearTimeout(timer);
   }, [topic, practiceArea, loadSeoBrief]);
 
-  async function generate() {
+  async function generate(force = false) {
     setLoading(true);
     setErr(null);
+    setDupBlocked(false);
     setSavedMsg(null);
     try {
       const body: Record<string, unknown> = {
@@ -200,6 +202,7 @@ export default function ContentPage() {
       }
       if (tab === "social") body.platform = platform;
       if (tab === "email") body.campaign_type = campaignType;
+      if (force) body.force = true;
 
       const res = await fetch("/api/content/draft", {
         method: "POST",
@@ -209,6 +212,8 @@ export default function ContentPage() {
       const j = await res.json();
       if (!res.ok) {
         setErr(j.error ?? "Generation failed");
+        // 409 = duplicate guard: offer an explicit "Create anyway" override.
+        if (res.status === 409 && j.duplicate) setDupBlocked(true);
         return;
       }
       if (tab === "email") {
@@ -483,7 +488,22 @@ export default function ContentPage() {
               Generate with brand voice
             </label>
 
-            {err ? <p className="text-sm text-rose-300">{err}</p> : null}
+            {err ? (
+              <div
+                className={`rounded-lg border p-3 text-sm ${dupBlocked ? "border-amber-300 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700"}`}
+              >
+                <p>{err}</p>
+                {dupBlocked ? (
+                  <button
+                    type="button"
+                    onClick={() => void generate(true)}
+                    className="mt-2 rounded-md border border-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                  >
+                    Create anyway
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             <button
               type="button"
