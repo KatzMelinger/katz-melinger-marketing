@@ -152,6 +152,12 @@ export const DEPARTMENTS: Department[] = [
     accent: "#0D9488",
     defaultOpen: false,
     items: [
+      { label: "Content Calendar", href: "/social/content-calendar", icon: "🗓️", status: "active" },
+      { label: "KPI Tracker", href: "/social/kpi-tracker", icon: "📈", status: "active" },
+      { label: "Trends & Performance", href: "/social/trends-performance", icon: "📊", status: "active" },
+      { label: "Hashtag Performance", href: "/social/hashtag-performance", icon: "#️⃣", status: "active" },
+      { label: "Best Time to Post", href: "/social/best-time", icon: "⏰", status: "active" },
+      { label: "Competitor Tracking", href: "/social/competitor-tracking", icon: "🥊", status: "active" },
       { label: "Social Analytics", href: "/social/analytics", icon: "📊", status: "active" },
       { label: "Trends & Playbooks", href: "/social/trends", icon: "🔥", status: "active" },
       { label: "Community", href: "/community", icon: "💬", status: "active" },
