@@ -16,7 +16,7 @@
  * The per-row "Create Brief" KM wizard + generation land in Phase C.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { ContentNav } from "@/components/content-nav";
 import { KmBriefWizard } from "@/components/km-brief-wizard";
@@ -40,6 +40,10 @@ type Opportunity = {
   flags: string[];
   existingUrl: string | null;
   status: string;
+  clusterId: string | null;
+  clusterRole: string | null;
+  clusterType: string | null;
+  clusterPrimaryKeyword: string | null;
 };
 
 type KeywordExclusion = { id: string; term: string; reason: string | null };
@@ -56,6 +60,7 @@ const SOURCE_LABEL: Record<string, string> = {
   missing: "Missing target",
   longtail: "Long-tail",
   imported: "Imported",
+  manual: "Manual (research)",
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -90,7 +95,11 @@ export default function SeoOpportunitiesPage() {
   const [showCovered, setShowCovered] = useState(false);
   const [showHandled, setShowHandled] = useState(false);
   const [wizardOpp, setWizardOpp] = useState<Opportunity | null>(null);
+  const [wizardSecondary, setWizardSecondary] = useState<string[]>([]);
   const [scratchOpen, setScratchOpen] = useState(false);
+  const [clustering, setClustering] = useState(false);
+  const [clusterMsg, setClusterMsg] = useState<string | null>(null);
+  const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
   const [listFilter, setListFilter] = useState<string>("all");
   const [practiceFilter, setPracticeFilter] = useState<string>("all");
   const [pageSize, setPageSize] = useState<number | "all">(20);
@@ -184,6 +193,36 @@ export default function SeoOpportunitiesPage() {
     }
   };
 
+  const groupIntoClusters = async () => {
+    setClustering(true);
+    setClusterMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/seo/opportunities/cluster", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Clustering failed");
+      setClusterMsg(json.message ?? "Clustered.");
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Clustering failed");
+    } finally {
+      setClustering(false);
+    }
+  };
+
+  const openClusterBrief = (primary: Opportunity, members: Opportunity[]) => {
+    setWizardSecondary(members.map((m) => m.keyword));
+    setWizardOpp(primary);
+  };
+
+  const toggleCluster = (id: string) =>
+    setExpandedClusters((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const setStatus = async (id: string, status: string) => {
     setData((prev) =>
       prev
@@ -214,13 +253,40 @@ export default function SeoOpportunitiesPage() {
     .filter((o) => (listFilter === "all" ? true : o.listName === listFilter))
     .filter((o) => (practiceFilter === "all" ? true : o.practiceArea === practiceFilter));
 
-  // Page-size + pager. "all" shows everything; otherwise slice to the page.
-  const total = filteredRows.length;
+  // Fold clustered keywords into one "unit" per cluster (primary + members), so
+  // related keywords show as a single expandable row instead of competing rows.
+  // Unclustered keywords are their own single-member unit. Units keep the
+  // first-appearance order of the underlying (relevance-sorted) rows.
+  const units: { primary: Opportunity; members: Opportunity[] }[] = [];
+  const clusterIndex = new Map<string, number>();
+  for (const o of filteredRows) {
+    if (o.clusterId) {
+      let idx = clusterIndex.get(o.clusterId);
+      if (idx === undefined) {
+        idx = units.length;
+        clusterIndex.set(o.clusterId, idx);
+        units.push({ primary: o, members: [] });
+      }
+      const unit = units[idx];
+      if (o.clusterRole === "primary") {
+        // Promote: keep the existing display-primary as a member if it wasn't.
+        if (unit.primary.id !== o.id) unit.members.push(unit.primary);
+        unit.primary = o;
+      } else if (o.id !== unit.primary.id) {
+        unit.members.push(o);
+      }
+    } else {
+      units.push({ primary: o, members: [] });
+    }
+  }
+
+  // Page-size + pager operate on units. "all" shows everything.
+  const total = units.length;
   const pageCount = pageSize === "all" ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pageCount);
   const start = pageSize === "all" ? 0 : (safePage - 1) * pageSize;
-  const rows =
-    pageSize === "all" ? filteredRows : filteredRows.slice(start, start + pageSize);
+  const pageUnits =
+    pageSize === "all" ? units : units.slice(start, start + pageSize);
 
   return (
     <SeoShell
@@ -240,6 +306,11 @@ export default function SeoOpportunitiesPage() {
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
+        </div>
+      )}
+      {clusterMsg && (
+        <div className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm text-violet-700">
+          {clusterMsg}
         </div>
       )}
 
@@ -331,6 +402,14 @@ export default function SeoOpportunitiesPage() {
             New brief from scratch
           </button>
           <button
+            onClick={groupIntoClusters}
+            disabled={clustering}
+            title="Group related keywords into clusters so you build one page (or one pillar + supporting set) instead of competing pages."
+            className="rounded-md border border-violet-400 px-3 py-1.5 font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+          >
+            {clustering ? "Grouping…" : "Group into clusters"}
+          </button>
+          <button
             onClick={refresh}
             disabled={syncing}
             className="rounded-md bg-brand px-3 py-1.5 font-medium text-white hover:bg-brand/90 disabled:opacity-50"
@@ -369,7 +448,7 @@ export default function SeoOpportunitiesPage() {
                   </td>
                 </tr>
               )}
-              {!loading && rows.length === 0 && (
+              {!loading && pageUnits.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-500">
                     No opportunities match. Adjust the filters above, or click{" "}
@@ -377,102 +456,41 @@ export default function SeoOpportunitiesPage() {
                   </td>
                 </tr>
               )}
-              {rows.map((o) => (
-                <tr
-                  key={o.id}
-                  className={`border-b border-[#e2e8f0]/60 last:border-0 hover:bg-slate-50 ${
-                    o.excluded ? "opacity-60" : ""
-                  }`}
-                >
-                  <td className="py-2 pr-3">
-                    <span className="text-slate-900">{o.keyword}</span>
-                    {o.listName && (
-                      <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">
-                        {o.listName}
-                      </span>
-                    )}
-                    {o.excluded && o.excludeReason && (
-                      <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">
-                        {o.excludeReason}
-                      </span>
-                    )}
-                    {o.existingUrl && (
-                      <a
-                        href={o.existingUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 hover:underline"
-                        title={o.existingUrl}
-                      >
-                        Covered ↗
-                      </a>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className={`h-full ${relevanceTone(o.relevanceScore)}`}
-                          style={{ width: `${o.relevanceScore}%` }}
-                        />
-                      </div>
-                      <span className="tabular-nums text-xs text-slate-600">{o.relevanceScore}</span>
-                    </div>
-                  </td>
-                  <td className="py-2 pr-3 tabular-nums text-slate-700">
-                    {o.searchVolume != null ? formatNumber(o.searchVolume) : "—"}
-                  </td>
-                  <td className="py-2 pr-3">
-                    {o.recommendedContentType && (
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          TYPE_TONE[o.recommendedContentType] ?? "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {TYPE_LABEL[o.recommendedContentType] ?? o.recommendedContentType}
-                      </span>
-                    )}
-                    {o.practiceArea && (
-                      <span className="ml-1.5 text-[10px] text-slate-400">
-                        {PRACTICE_LABEL[o.practiceArea] ?? o.practiceArea}
-                      </span>
-                    )}
-                    <span className="ml-1.5 text-[10px] text-slate-300">
-                      · {SOURCE_LABEL[o.source] ?? o.source}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3">
-                    <StatusChip status={o.status} />
-                  </td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    {o.status === "dismissed" ? (
-                      <button
-                        onClick={() => setStatus(o.id, "new")}
-                        className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
-                      >
-                        ↺ Restore
-                      </button>
-                    ) : (
-                      <div className="inline-flex items-center gap-1.5">
-                        {!o.excluded && (
-                          <button
-                            onClick={() => setWizardOpp(o)}
-                            className="text-xs px-2.5 py-1 rounded bg-brand text-white font-medium hover:bg-brand/90"
-                          >
-                            Create Brief
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setStatus(o.id, "dismissed")}
-                          className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600"
-                        >
-                          ✕ Dismiss
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {pageUnits.map(({ primary, members }) => {
+                const hasCluster = members.length > 0;
+                const expanded = primary.clusterId
+                  ? expandedClusters.has(primary.clusterId)
+                  : false;
+                return (
+                  <Fragment key={primary.clusterId ?? primary.id}>
+                    <OppRow
+                      o={primary}
+                      cluster={
+                        hasCluster
+                          ? {
+                              type: primary.clusterType,
+                              memberCount: members.length,
+                              expanded,
+                              onToggle: () =>
+                                primary.clusterId && toggleCluster(primary.clusterId),
+                            }
+                          : null
+                      }
+                      onCreateBrief={() =>
+                        hasCluster
+                          ? openClusterBrief(primary, members)
+                          : setWizardOpp(primary)
+                      }
+                      onSetStatus={setStatus}
+                    />
+                    {hasCluster &&
+                      expanded &&
+                      members.map((m) => (
+                        <OppMemberRow key={m.id} o={m} onSetStatus={setStatus} />
+                      ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -511,8 +529,10 @@ export default function SeoOpportunitiesPage() {
       {(wizardOpp || scratchOpen) && (
         <KmBriefWizard
           opportunity={wizardOpp ?? undefined}
+          initialSecondaryKeywords={wizardOpp ? wizardSecondary : undefined}
           onClose={() => {
             setWizardOpp(null);
+            setWizardSecondary([]);
             setScratchOpen(false);
           }}
           onGenerated={() => {
@@ -522,6 +542,204 @@ export default function SeoOpportunitiesPage() {
       )}
 
     </SeoShell>
+  );
+}
+
+type ClusterMeta = {
+  type: string | null;
+  memberCount: number;
+  expanded: boolean;
+  onToggle: () => void;
+};
+
+/** One opportunity row. When `cluster` is set, it's the cluster's primary and
+ *  shows a PILLAR/STANDALONE badge + an expand toggle for its related keywords. */
+function OppRow({
+  o,
+  cluster,
+  onCreateBrief,
+  onSetStatus,
+}: {
+  o: Opportunity;
+  cluster: ClusterMeta | null;
+  onCreateBrief: () => void;
+  onSetStatus: (id: string, status: string) => void;
+}) {
+  const isPillar = cluster?.type === "pillar";
+  return (
+    <tr
+      className={`border-b border-[#e2e8f0]/60 last:border-0 hover:bg-slate-50 ${
+        o.excluded ? "opacity-60" : ""
+      }`}
+    >
+      <td className="py-2 pr-3">
+        <div className="flex items-center gap-2">
+          {cluster && (
+            <button
+              onClick={cluster.onToggle}
+              aria-label={cluster.expanded ? "Collapse cluster" : "Expand cluster"}
+              className="text-slate-400 hover:text-slate-700 text-xs w-4"
+            >
+              {cluster.expanded ? "▾" : "▸"}
+            </button>
+          )}
+          <span className="text-slate-900">{o.keyword}</span>
+          {cluster && (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                isPillar ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-600"
+              }`}
+              title={
+                isPillar
+                  ? "Pillar — build a pillar page plus a supporting content cluster"
+                  : "Standalone — one page covers this whole cluster"
+              }
+            >
+              {isPillar ? "PILLAR" : "STANDALONE"}
+            </span>
+          )}
+          {cluster && (
+            <button
+              onClick={cluster.onToggle}
+              className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100"
+            >
+              +{cluster.memberCount} related
+            </button>
+          )}
+          {o.listName && (
+            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700">
+              {o.listName}
+            </span>
+          )}
+          {o.excluded && o.excludeReason && (
+            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">
+              {o.excludeReason}
+            </span>
+          )}
+          {o.existingUrl && (
+            <a
+              href={o.existingUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 hover:underline"
+              title={o.existingUrl}
+            >
+              Covered ↗
+            </a>
+          )}
+        </div>
+      </td>
+      <td className="py-2 pr-3">
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className={`h-full ${relevanceTone(o.relevanceScore)}`}
+              style={{ width: `${o.relevanceScore}%` }}
+            />
+          </div>
+          <span className="tabular-nums text-xs text-slate-600">{o.relevanceScore}</span>
+        </div>
+      </td>
+      <td className="py-2 pr-3 tabular-nums text-slate-700">
+        {o.searchVolume != null ? formatNumber(o.searchVolume) : "—"}
+      </td>
+      <td className="py-2 pr-3">
+        {o.recommendedContentType && (
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+              TYPE_TONE[o.recommendedContentType] ?? "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {TYPE_LABEL[o.recommendedContentType] ?? o.recommendedContentType}
+          </span>
+        )}
+        {o.practiceArea && (
+          <span className="ml-1.5 text-[10px] text-slate-400">
+            {PRACTICE_LABEL[o.practiceArea] ?? o.practiceArea}
+          </span>
+        )}
+        <span className="ml-1.5 text-[10px] text-slate-300">
+          · {SOURCE_LABEL[o.source] ?? o.source}
+        </span>
+      </td>
+      <td className="py-2 pr-3">
+        <StatusChip status={o.status} />
+      </td>
+      <td className="py-2 text-right whitespace-nowrap">
+        {o.status === "dismissed" ? (
+          <button
+            onClick={() => onSetStatus(o.id, "new")}
+            className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+          >
+            ↺ Restore
+          </button>
+        ) : (
+          <div className="inline-flex items-center gap-1.5">
+            {!o.excluded && (
+              <button
+                onClick={onCreateBrief}
+                title={
+                  cluster
+                    ? "Create one brief for this cluster — related keywords pre-load as secondary keywords"
+                    : undefined
+                }
+                className="text-xs px-2.5 py-1 rounded bg-brand text-white font-medium hover:bg-brand/90"
+              >
+                {cluster ? "Create Cluster Brief" : "Create Brief"}
+              </button>
+            )}
+            <button
+              onClick={() => onSetStatus(o.id, "dismissed")}
+              className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600"
+            >
+              ✕ Dismiss
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+/** A clustered member keyword, shown indented under its primary when expanded.
+ *  Members fold into the primary's brief, so they have no Create Brief of their
+ *  own — just a Dismiss to drop a keyword from the cluster. */
+function OppMemberRow({
+  o,
+  onSetStatus,
+}: {
+  o: Opportunity;
+  onSetStatus: (id: string, status: string) => void;
+}) {
+  return (
+    <tr className="border-b border-[#e2e8f0]/40 last:border-0 bg-slate-50/40">
+      <td className="py-1.5 pr-3">
+        <div className="flex items-center gap-2 pl-6">
+          <span className="text-slate-400">↳</span>
+          <span className="text-slate-600">{o.keyword}</span>
+        </div>
+      </td>
+      <td className="py-1.5 pr-3">
+        <span className="tabular-nums text-xs text-slate-400">{o.relevanceScore}</span>
+      </td>
+      <td className="py-1.5 pr-3 tabular-nums text-slate-500">
+        {o.searchVolume != null ? formatNumber(o.searchVolume) : "—"}
+      </td>
+      <td className="py-1.5 pr-3 text-[10px] text-slate-400">
+        {o.recommendedContentType
+          ? TYPE_LABEL[o.recommendedContentType] ?? o.recommendedContentType
+          : ""}
+      </td>
+      <td className="py-1.5 pr-3 text-[10px] text-slate-400">in cluster</td>
+      <td className="py-1.5 text-right whitespace-nowrap">
+        <button
+          onClick={() => onSetStatus(o.id, "dismissed")}
+          className="text-[11px] px-2 py-0.5 rounded border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-600"
+        >
+          ✕ Drop
+        </button>
+      </td>
+    </tr>
   );
 }
 

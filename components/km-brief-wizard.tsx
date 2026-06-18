@@ -78,10 +78,17 @@ function titleCase(s: string): string {
 
 export function KmBriefWizard({
   opportunity,
+  initialSecondaryKeywords,
   onClose,
   onGenerated,
 }: {
   opportunity?: WizardOpportunity;
+  /**
+   * Pre-selected secondary keywords — used when creating a brief from a keyword
+   * CLUSTER, so the cluster's related keywords are woven into one page instead of
+   * spawning competing pages. Deduped against the primary keyword.
+   */
+  initialSecondaryKeywords?: string[];
   onClose: () => void;
   onGenerated: (draftId: string | null) => void;
 }) {
@@ -126,7 +133,11 @@ export function KmBriefWizard({
     metaTitle: opp.keyword ? `${titleCase(opp.keyword)}${firmSuffix}` : "",
     metaDescription: "",
     internalPillarLink: initialPillarUrl,
-    secondaryKeywords: [],
+    // Cluster members pre-load here (deduped against the primary), so a clustered
+    // opportunity becomes one page that covers all its related keywords.
+    secondaryKeywords: (initialSecondaryKeywords ?? [])
+      .map((k) => k.trim().toLowerCase())
+      .filter((k) => k && k !== opp.keyword.trim().toLowerCase()),
     cannibalizationConfirmed: false,
     specialInstructions: "",
   });

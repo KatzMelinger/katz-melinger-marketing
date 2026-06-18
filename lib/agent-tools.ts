@@ -475,6 +475,9 @@ export async function dispatchTool(
         targetKeywords,
         originSource: "peggy",
         notePrefix: "Created by Peggy (chat)",
+        // Peggy's drafts land in the Draft column so a human reads them before
+        // they reach Approve — the same review path as every other source.
+        landingStatus: "draft",
       });
 
       if (outcome.error) return { error: outcome.error };
@@ -484,7 +487,7 @@ export async function dispatchTool(
         title: outcome.title,
         format: outcome.format,
         status: outcome.status,
-        awaitingApproval: outcome.status === "review",
+        inDraftReview: outcome.status === "draft",
         heldForLegal: outcome.status === "needs_legal",
         legalReviewRequired: outcome.legalReviewRequired,
         compliance: outcome.compliance
@@ -496,7 +499,7 @@ export async function dispatchTool(
             }
           : null,
         reviewLocation:
-          "Content Production board (/content-production) — the Approve column.",
+          "Content Production board (/content-production) — the Draft column, ready for a human to review before Approve.",
       };
     }
 

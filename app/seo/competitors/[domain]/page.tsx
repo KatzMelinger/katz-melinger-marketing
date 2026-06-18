@@ -47,8 +47,11 @@ export default async function CompetitorDetailPage({ params }: Props) {
           <p className="text-xs uppercase tracking-wide text-slate-500">Ranking keywords</p>
           <p className="mt-2 text-2xl font-semibold">{formatNumber(data.keywordCount ?? 0)}</p>
         </article>
-        <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Authority score</p>
+        <article
+          className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4"
+          title="Relative trend, not an absolute number. Authority is derived from DataForSEO's domain rank and is most useful watched over time and compared against competitors."
+        >
+          <p className="text-xs uppercase tracking-wide text-slate-500">Authority</p>
           <p className="mt-2 text-2xl font-semibold">{formatNumber(data.backlinkOverview?.authorityScore ?? 0)}</p>
         </article>
         <article className="rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4">

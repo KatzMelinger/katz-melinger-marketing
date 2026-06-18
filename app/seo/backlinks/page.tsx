@@ -352,9 +352,9 @@ export default function SeoBacklinksPage() {
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
-          label="Authority score"
+          label="Authority"
           value={formatNumber(overview?.authorityScore ?? 0)}
-          hint="Tap for what this means"
+          hint="Relative trend — tap to learn more"
           active={drill === "overview"}
           onClick={() => openDrill("overview")}
         />
@@ -765,10 +765,15 @@ function AuthorityScoreExplainer({ score }: { score: number }) {
   const verdict =
     score >= 50 ? "strong" : score >= 30 ? "moderate" : score >= 20 ? "developing" : "weak";
   return (
-    <DrillCard title={`Authority Score: ${score} — ${verdict}`} onClose={() => {}}>
+    <DrillCard title={`Authority: ${score} — ${verdict}`} onClose={() => {}}>
       <p className="text-sm text-slate-700">
-        Semrush&apos;s Authority Score (0–100) summarizes overall domain quality based on
-        backlink profile strength, organic traffic estimates, and natural-link signals.
+        Authority (0–100) summarizes overall domain quality based on backlink profile
+        strength and natural-link signals, derived from DataForSEO&apos;s domain rank.
+      </p>
+      <p className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+        Read this as a <b>relative trend</b>, not an absolute number. Each provider scores
+        authority on its own proprietary scale, so it&apos;s most useful watched over time and
+        compared against competitors — not taken as a fixed grade.
       </p>
       <ul className="mt-3 ml-5 list-disc text-sm text-slate-700 space-y-1">
         <li>
