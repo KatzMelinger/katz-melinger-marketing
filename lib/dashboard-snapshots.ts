@@ -13,7 +13,9 @@
  * getRequestOrigin, so it must never be pulled into a Client Component).
  */
 
+import { countContentDuplicates } from "@/lib/content-dedup";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export type Kpi = {
   label: string;
@@ -26,7 +28,14 @@ export type Kpi = {
 };
 
 export type LabeledCount = { label: string; value: number };
-export type Row2 = { left: string; right: string };
+export type Row2 = {
+  left: string;
+  right: string;
+  /** When set, the row's label links here (e.g. an actionable issue). */
+  href?: string;
+  /** "alert" renders the right value in a warning tone (e.g. a live issue count). */
+  tone?: "alert";
+};
 
 export type SeoContentSnapshot = {
   kpis: Kpi[];
@@ -172,11 +181,33 @@ export async function getOnPageSnapshot(): Promise<OnPageSnapshot> {
     { label: "Visibility Score", value: tracked.length ? `${visibility}%` : SOON.value, soon: !tracked.length },
   ];
 
-  // "Issues to fix" doesn't have a single tidy endpoint yet — placeholder rows.
+  // "Issues to fix" — Technical/meta rows are still placeholders; the duplicate
+  // row is live off the registry duplicate scan. Computed directly (this runs in
+  // the authed server render, so we have the real tenant) rather than via the
+  // cookie-less internal fetch getJson uses.
+  let dupCount: number | null = null;
+  try {
+    const tenantId = await resolveTenantId();
+    dupCount = (await countContentDuplicates(tenantId)).groups;
+  } catch {
+    dupCount = null;
+  }
+  const duplicateRow: Row2 =
+    dupCount == null
+      ? { left: "Duplicate content", right: "—" }
+      : dupCount === 0
+        ? { left: "Duplicate content", right: "None" }
+        : {
+            left: "Duplicate content",
+            right: `${dupCount}`,
+            href: "/content-production",
+            tone: "alert",
+          };
+
   const issues: Row2[] = [
     { left: "Technical issues", right: "—" },
     { left: "Missing meta tags", right: "—" },
-    { left: "Duplicate content", right: "—" },
+    duplicateRow,
   ];
 
   return { kpis, topLandingPages, issues };
