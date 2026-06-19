@@ -13,6 +13,8 @@
  * getRequestOrigin, so it must never be pulled into a Client Component).
  */
 
+import { headers } from "next/headers";
+
 import { countContentDuplicates } from "@/lib/content-dedup";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { resolveTenantId } from "@/lib/tenant-context";
@@ -59,11 +61,16 @@ export type OffPageSnapshot = {
  * fetch means one slow integration degrades to a "Coming soon" placeholder
  * instead of stalling the entire board.
  */
-async function getJson<T>(path: string, timeoutMs = 4000): Promise<T | null> {
+async function getJson<T>(path: string, timeoutMs = 8000): Promise<T | null> {
   try {
     const base = await getRequestOrigin();
+    // Forward the caller's session cookie — without it these internal fetches are
+    // unauthenticated, so guarded routes 401 and RLS-scoped routes return zero
+    // rows, blanking the board even though the data exists.
+    const cookie = (await headers()).get("cookie") ?? "";
     const res = await fetch(`${base}${path}`, {
       cache: "no-store",
+      headers: cookie ? { cookie } : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return null;
