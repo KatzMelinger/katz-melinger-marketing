@@ -340,6 +340,9 @@ export const SIDEBAR_SECTIONS: Department[] = [
       { label: "Agent Coaching", href: "/coaching", icon: "🎯", status: "active" },
       { label: "Alerts", href: "/alerts", icon: "🔔", status: "active" },
       { label: "Clarity", href: "/clarity", icon: "🔥", status: "active" },
+      // In-app help: what every section does + a glossary. Generated from this
+      // same SIDEBAR_SECTIONS list, so it can't drift from the nav.
+      { label: "Guide", href: "/guide", icon: "📖", status: "active" },
     ],
   },
   {
