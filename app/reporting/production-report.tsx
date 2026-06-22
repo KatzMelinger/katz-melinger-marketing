@@ -184,7 +184,7 @@ export function ProductionReport({ period }: { period: PeriodKey }) {
           </div>
           <p className="text-xs text-slate-400">
             Manage the queue on the{" "}
-            <Link href="/content/pipeline" className="text-[#4F46E5] hover:underline print:no-underline">Production Board</Link>.
+            <Link href="/content-production" className="text-[#4F46E5] hover:underline print:no-underline">Production Board</Link>.
           </p>
         </Section>
       ) : null}

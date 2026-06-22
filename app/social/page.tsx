@@ -9,7 +9,7 @@
 import type { Metadata } from "next";
 
 import { HubShell, type HubCard, type HubKpi } from "@/components/hub-shell";
-import { getRequestOrigin } from "@/lib/request-origin";
+import { getRequestOrigin, serverFetch } from "@/lib/request-origin";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { APP_NAME } from "@/lib/app-config";
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 async function fetchJsonSafe<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await serverFetch(url);
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {

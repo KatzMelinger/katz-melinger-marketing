@@ -94,6 +94,7 @@ export async function addKeywordExclusion(
   const { data: updated } = await supabase
     .from("seo_opportunities")
     .update({ excluded: true, exclude_reason: customReason(term) })
+    .eq("tenant_id", tid)
     .ilike("keyword", `%${escapeLike(term)}%`)
     .eq("excluded", false)
     .select("id");
@@ -122,6 +123,7 @@ export async function removeKeywordExclusion(
   const { data: restored } = await supabase
     .from("seo_opportunities")
     .update({ excluded: false, exclude_reason: null })
+    .eq("tenant_id", tid)
     .eq("exclude_reason", customReason(term))
     .select("id");
 

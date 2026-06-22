@@ -9,6 +9,7 @@ import {
 } from "@/lib/gbp-http";
 import { getGoogleAccessToken } from "@/lib/google-access-token";
 import { describeServiceAccountJson } from "@/lib/google-service-account";
+import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,8 @@ function stripLocationPrefix(id: string): string {
 type Step = { step: string; ok: boolean; detail: unknown };
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const steps: Step[] = [];
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim() ?? "";
 

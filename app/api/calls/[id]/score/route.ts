@@ -59,6 +59,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       source: typeof c.source_name === "string" ? c.source_name : null,
     },
     supabase,
+    tenantId: tid,
   });
 
   if (!result.ok) {

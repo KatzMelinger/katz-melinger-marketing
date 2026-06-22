@@ -117,6 +117,7 @@ async function loadExisting(currentDraftId: string | null): Promise<ExistingItem
     const { data: snap } = await supabase
       .from("cannibalization_snapshots")
       .select("issues")
+      .eq("tenant_id", tid)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

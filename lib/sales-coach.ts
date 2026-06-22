@@ -179,6 +179,7 @@ export type ScoreCallParams = {
   rubricType?: RubricType; // if omitted, the model decides between intake/consultation
   callMetadata: CallMetadataForScoring;
   supabase: SupabaseClient | null;
+  tenantId?: string; // scope rubric overrides to this firm
 };
 
 export type ScoreCallOutcome =
@@ -195,7 +196,7 @@ export async function scoreCall(params: ScoreCallParams): Promise<ScoreCallOutco
   // it's the more demanding rubric; the model will still report rubric_type
   // and we re-run with the right rubric if it disagrees.
   const rubricType: RubricType = params.rubricType ?? "consultation";
-  const rubric = await loadRubric(params.supabase, rubricType);
+  const rubric = await loadRubric(params.supabase, rubricType, params.tenantId);
 
   const client = new Anthropic({ apiKey });
   const system = buildSystemBlocks(rubric);

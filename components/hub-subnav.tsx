@@ -35,14 +35,13 @@ const SEO_ROUTES: Route[] = [
   { href: "/keyword-research", label: "Keyword research" },
   { href: "/search-console", label: "Search Console" },
   { href: "/local-seo", label: "Local SEO" },
-  { href: "/local", label: "Local listings" },
   { href: "/seo/recent", label: "Recent" },
 ];
 
 const AI_ROUTES: Route[] = [
   { href: "/ai", label: "Overview" },
-  { href: "/aeo", label: "AEO" },
-  { href: "/ai-search", label: "AI search" },
+  { href: "/aeo", label: "AEO (Answer Engine Optimization)" },
+  { href: "/ai-search", label: "AI Search Optimization" },
   { href: "/llms-txt", label: "llms.txt" },
   { href: "/prompts", label: "Prompts" },
   { href: "/ai/referrals", label: "AI referrals" },
@@ -119,7 +118,8 @@ function resolveHub(pathname: string): HubKey | null {
   // /local-seo is in both SEO and Social hubs — pick SEO since that's where
   // the bulk of the routing context is.
   if (pathname === "/local-seo" || pathname.startsWith("/local-seo/")) return "seo";
-  // /local is the Local Listings manager — also part of the SEO hub.
+  // /local redirects to /local-seo (kept as a redirect for old bookmarks);
+  // resolve it to the SEO hub too so the subnav still renders during the hop.
   if (pathname === "/local" || pathname.startsWith("/local/")) return "seo";
 
   return null;

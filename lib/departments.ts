@@ -115,7 +115,7 @@ export const DEPARTMENTS: Department[] = [
     items: [
       // AEO (citation tracking) + AI Search (readiness score) share a tab bar
       // (AiVisibilityNav) under one entry.
-      { label: "AEO & AI Search", href: "/aeo", icon: "✦", status: "active" },
+      { label: "AEO (Answer Engine Optimization)", href: "/aeo", icon: "✦", status: "active" },
       { label: "AI Referrals", href: "/ai/referrals", icon: "↗", status: "active" },
       { label: "Bot Crawls", href: "/ai/bot-traffic", icon: "🕷", status: "active" },
       { label: "llms.txt", href: "/llms-txt", icon: "📜", status: "active" },
@@ -246,7 +246,7 @@ export const SIDEBAR_SECTIONS: Department[] = [
       { label: "Competitors", href: "/seo/competitors", icon: "⚔", status: "active" },
       { label: "Competitor Gaps", href: "/seo/competitor-gaps", icon: "▱", status: "active" },
       { label: "Search Console", href: "/search-console", icon: "🔍", status: "active" },
-      { label: "AEO & AI Search", href: "/aeo", icon: "✦", status: "active" },
+      { label: "AEO (Answer Engine Optimization)", href: "/aeo", icon: "✦", status: "active" },
       { label: "AI Referrals", href: "/ai/referrals", icon: "↗", status: "active" },
       { label: "Bot Crawls", href: "/ai/bot-traffic", icon: "🕷", status: "active" },
       { label: "llms.txt", href: "/llms-txt", icon: "📜", status: "active" },

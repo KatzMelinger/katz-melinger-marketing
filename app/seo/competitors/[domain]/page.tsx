@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { formatNumber, SeoShell } from "@/components/seo-shell";
-import { getRequestOrigin } from "@/lib/request-origin";
+import { getRequestOrigin, serverFetch } from "@/lib/request-origin";
 import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
@@ -32,9 +32,9 @@ export default async function CompetitorDetailPage({ params }: Props) {
   const { domain } = await params;
   const decoded = decodeURIComponent(domain);
   const base = await getRequestOrigin();
-  const res = await fetch(`${base}/api/seo/competitors/${encodeURIComponent(decoded)}`, {
-    cache: "no-store",
-  });
+  const res = await serverFetch(
+    `${base}/api/seo/competitors/${encodeURIComponent(decoded)}`,
+  );
   const data = (await res.json()) as CompetitorDetailResponse;
 
   return (

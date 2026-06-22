@@ -411,17 +411,22 @@ export type RubricRow = {
  *  the hardcoded defaults by `dimension_key`; new keys append. */
 export async function loadRubric(
   supabase: SupabaseClient | null,
-  rubricType: RubricType
+  rubricType: RubricType,
+  tenantId?: string,
 ): Promise<RubricDimension[]> {
   const defaults = ALL_RUBRICS.filter((r) => r.rubricType === rubricType);
   if (!supabase) return defaults;
 
-  const { data, error } = await supabase
+  // sales_rubric is service-role accessed (RLS bypassed), so scope by tenant
+  // here when a tenant is known, or one firm's rubric overrides leak into
+  // another's call scoring.
+  let query = supabase
     .from("sales_rubric")
     .select("*")
     .eq("rubric_type", rubricType)
-    .eq("active", true)
-    .order("sort_order");
+    .eq("active", true);
+  if (tenantId) query = query.eq("tenant_id", tenantId);
+  const { data, error } = await query.order("sort_order");
   if (error || !data || data.length === 0) return defaults;
 
   const overrides = new Map<string, RubricRow>();

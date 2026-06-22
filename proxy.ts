@@ -1,38 +1,69 @@
 /**
  * Auth proxy (formerly middleware).
  *
- * Runs on every dashboard request. Refreshes the Supabase session cookie if
- * needed, and redirects unauthenticated users to /login. Admin-only routes
- * are guarded server-side at the page level (not here) so we can show a
- * proper "Forbidden" page rather than a redirect.
+ * Runs on every request (pages AND /api/*). Refreshes the Supabase session
+ * cookie if needed, then enforces authentication:
+ *   - Pages: unauthenticated users are redirected to /login.
+ *   - API routes: unauthenticated callers get a 401 JSON response (DEFAULT-DENY)
+ *     unless the path is on the public API allowlist or the request carries a
+ *     valid CRON_SECRET bearer token. This closes the gap where ~150 /api routes
+ *     individually forgot to call guardUser(): the proxy is now the gate, and
+ *     each route's own guard (where present) is defense-in-depth.
  *
- * Skipped paths:
- *   - /login (the login page itself)
- *   - /signup (self-serve firm signup — reachable without a session)
- *   - /r/* (tracked review-request links clicked by recipients with no session)
- *   - /api/auth/* (signin/signout routes)
- *   - /api/google/oauth/* and /api/constant-contact/oauth/* (third-party
- *     redirects come back unauthenticated; the OAuth callbacks restrict
- *     themselves via state cookies / origin checks)
+ * Because the proxy now gates /api, Server Components must forward the user's
+ * session cookie on internal /api fetches — use serverFetch() from
+ * lib/request-origin.ts (and lib/dashboard-snapshots.ts already does).
+ *
+ * Admin-only routes are still guarded server-side at the page/route level so we
+ * can return a proper "Forbidden" rather than a redirect.
+ *
+ * Skipped (public) paths:
+ *   - Pages: /login, /signup, /reset-password, /auth/confirm, /r/*
+ *   - API: /api/auth (signin/signout), /api/signup (self-serve firm signup),
+ *     the per-provider OAuth prefixes (third-party redirects return
+ *     unauthenticated; callbacks restrict themselves via state cookies / origin
+ *     checks), /api/integrations/status (presence flags only), /api/ai-bots/ingest
+ *     (UA/HMAC-checked beacon), and /api/wp (WP plugin authenticates via its own
+ *     hashed X-KM-AutoPilot-Token).
  *   - Static assets (handled by the matcher below)
  */
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = [
+// Page routes reachable without a session.
+const PUBLIC_PAGE_PATHS = [
   "/login",
   "/signup", // self-serve firm signup — must be reachable without a session
   "/reset-password", // set-password form; gated on a session client-side
   "/auth/confirm", // recovery-link handler; visitor has no session yet
   "/r", // tracked review-request short links — recipients have no session
-  "/api/auth",
-  "/api/google/oauth",
-  "/api/constant-contact/oauth",
-  "/api/integrations/status", // safe: never exposes secret values, just presence flags
 ];
 
-function isPublic(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+// API routes reachable without a user session — each self-authenticates by
+// another mechanism (OAuth state, hashed plugin token, HMAC/UA beacon) or is
+// presence-only. Everything else under /api requires a logged-in session.
+const PUBLIC_API_PATHS = [
+  "/api/auth", // signin / signout
+  "/api/signup", // self-serve firm signup
+  "/api/google/oauth", // third-party OAuth redirect/callback
+  "/api/constant-contact/oauth",
+  "/api/canva/oauth",
+  "/api/integrations/status", // never exposes secret values, just presence flags
+  "/api/ai-bots/ingest", // crawler beacon (UA/HMAC checked in-route)
+  "/api/wp", // WP AutoPilot plugin — X-KM-AutoPilot-Token authenticated
+];
+
+function matchesPrefix(pathname: string, prefixes: string[]): boolean {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** True when an Authorization: Bearer <CRON_SECRET> header is present and valid.
+ *  Lets Vercel cron and other background callers (no session cookie) through;
+ *  the target route re-verifies the secret itself. Fails closed if unset. */
+function hasValidCronBearer(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) return false;
+  return req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
 export async function proxy(req: NextRequest) {
@@ -60,15 +91,34 @@ export async function proxy(req: NextRequest) {
     },
   });
 
+  const { pathname } = req.nextUrl;
+  const isApi = pathname === "/api" || pathname.startsWith("/api/");
+
+  // API allowlist + cron bearer bypass — checked BEFORE the session lookup so
+  // background callers (no cookie) and OAuth callbacks aren't rejected.
+  if (isApi) {
+    if (matchesPrefix(pathname, PUBLIC_API_PATHS) || hasValidCronBearer(req)) {
+      return res;
+    }
+  }
+
   // Refresh the session if there's one to refresh — silently writes the new
   // cookie via setAll above.
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (isPublic(req.nextUrl.pathname)) {
+  if (isApi) {
+    // DEFAULT-DENY: any non-public /api route requires a logged-in session.
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return res;
+  }
+
+  if (matchesPrefix(pathname, PUBLIC_PAGE_PATHS)) {
     // If they're already logged in and visiting /login, bounce them home.
-    if (user && req.nextUrl.pathname === "/login") {
+    if (user && pathname === "/login") {
       return NextResponse.redirect(new URL("/", req.url));
     }
     return res;
@@ -76,7 +126,7 @@ export async function proxy(req: NextRequest) {
 
   if (!user) {
     const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search);
+    loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -86,14 +136,12 @@ export async function proxy(req: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match every route except:
-     * - api/* — pages do server-side internal fetches to /api routes that
-     *   don't carry the user's session cookie; routing them through this
-     *   middleware would 302 to /login, the page would parse HTML as JSON,
-     *   and renders would silently fail. API routes handle their own
-     *   access (service-role for data; admin routes call requireAdmin).
+     * Match every route (INCLUDING /api/*, which the proxy now gates with
+     * default-deny) except static assets:
      * - _next/static, _next/image, favicon, images
+     * Server Components must forward the session cookie on internal /api calls
+     * (use serverFetch from lib/request-origin.ts) so their fetches aren't 401'd.
      */
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

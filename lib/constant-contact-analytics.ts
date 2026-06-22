@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { fetchCmsJson } from "@/lib/cms-server";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 import {
   ccAuthedFetch,
@@ -224,6 +225,7 @@ export async function recordSyncActivityServer(
     synced_count: synced,
     created_at: at,
     message: message ?? null,
+    tenant_id: await resolveTenantId(),
   });
 }
 
@@ -349,6 +351,7 @@ export async function fetchAnalyticsResponse(): Promise<NextResponse> {
       const { data: logData, error: logError } = await sbLog
         .from("constant_contact_sync_log")
         .select("id, list_id, synced_count, created_at, message")
+        .eq("tenant_id", await resolveTenantId())
         .order("created_at", { ascending: false })
         .limit(30);
 

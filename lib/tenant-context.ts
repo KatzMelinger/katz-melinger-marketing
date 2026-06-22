@@ -6,9 +6,20 @@
  * when there's no session (e.g. cron / background jobs) or no app_users row,
  * which keeps single-tenant behavior identical for existing users.
  *
- * NOTE: data isolation is NOT yet enforced at the DB layer — server queries
- * use the service-role client, which bypasses RLS. Callers must scope reads
- * and stamp writes with this tenant id until the enforcement layer lands.
+ * SECURITY: the default fallback means an UNAUTHENTICATED caller would resolve
+ * to the KM tenant. That's only safe because the auth proxy (proxy.ts) now
+ * default-denies /api/* without a session, so anonymous requests never reach a
+ * route that calls this. Server Components must forward the session cookie on
+ * internal /api fetches (use serverFetch from lib/request-origin.ts) so the
+ * logged-in user — and thus their real tenant — is visible here.
+ *
+ * RLS IS enforced for routes that use the authenticated client (getTenantDb /
+ * getTenantClient). Routes that use the service-role client bypass RLS, so they
+ * must still scope reads and stamp writes with this tenant id.
+ *
+ * TODO (when tenant onboarding lands): once every real user has an app_users
+ * row, make an authenticated-but-tenantless user fail closed instead of
+ * inheriting the KM tenant.
  */
 
 import { getSupabaseRouteClient } from "@/lib/supabase-route";

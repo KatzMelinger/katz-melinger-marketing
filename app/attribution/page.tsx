@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
 import { APP_NAME } from "@/lib/app-config";
+import { serverFetch } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -56,8 +57,8 @@ async function getRequestOrigin(): Promise<string> {
 export default async function AttributionPage() {
   const base = await getRequestOrigin();
   const [sumRes, funnelRes] = await Promise.all([
-    fetch(`${base}/api/callrail/summary`, { cache: "no-store" }),
-    fetch(`${base}/api/cms/funnel-by-source`, { cache: "no-store" }),
+    serverFetch(`${base}/api/callrail/summary`),
+    serverFetch(`${base}/api/cms/funnel-by-source`),
   ]);
 
   const summary = sumRes.ok ? ((await sumRes.json()) as CallSummary) : {};

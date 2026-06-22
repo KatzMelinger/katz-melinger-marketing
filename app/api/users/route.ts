@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("app_users")
     .select("user_id, email, role, status")
+    .eq("tenant_id", await resolveTenantId())
     .eq("status", "active")
     .order("email", { ascending: true });
 
