@@ -822,7 +822,6 @@ function Card({
             </span>
           )
         )}
-        {item.bucket && <span className="rounded bg-slate-100 px-1.5 text-[11px] text-slate-600">{item.bucket}</span>}
         {item.rankDrop != null && (
           <span className="rounded bg-red-50 px-1.5 text-[11px] text-red-700">
             ▼ {item.rankDrop} pos{item.currentRank != null ? ` (now #${item.currentRank})` : ""}

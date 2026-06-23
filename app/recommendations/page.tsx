@@ -411,6 +411,13 @@ function RecCard({
   onStatus: (s: StatusTab) => void;
   onDelete: () => void;
 }) {
+  // Recommendations that translate into a piece of content get a "Create
+  // content" action that opens Content Studio with the title prefilled as the
+  // topic. Social recs open the social composer; the rest open the blog/website
+  // generator. Technical/local recs aren't content, so they don't get it.
+  const canCreateContent = ["content", "seo", "aeo", "social"].includes(item.category);
+  const createType = item.category === "social" ? "social" : "website";
+  const createHref = `/content?type=${createType}&topic=${encodeURIComponent(item.title)}`;
   return (
     <div className="border border-slate-200 rounded-lg p-4 bg-white">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -429,6 +436,14 @@ function RecCard({
       </p>
 
       <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+        {canCreateContent && (
+          <a
+            href={createHref}
+            className="text-xs px-2.5 py-1 rounded bg-brand text-white font-medium hover:bg-brand/90"
+          >
+            ✍ Create content
+          </a>
+        )}
         {item.status !== "active" && (
           <button
             onClick={() => onStatus("active")}

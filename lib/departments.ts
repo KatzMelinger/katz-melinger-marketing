@@ -225,9 +225,10 @@ export const SIDEBAR_SECTIONS: Department[] = [
     accent: "#8B5CF6",
     defaultOpen: true,
     items: [
+      { label: "Opportunities", href: "/seo/opportunities", icon: "✨", status: "active" },
+      { label: "Recommendations", href: "/recommendations", icon: "💡", status: "active" },
       { label: "Peggy", href: "/agent", icon: "💬", status: "active" },
       { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
-      { label: "Recommendations", href: "/recommendations", icon: "💡", status: "active" },
       { label: "Recent Activity", href: "/seo/recent", icon: "🕒", status: "active" },
     ],
   },

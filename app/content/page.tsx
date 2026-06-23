@@ -91,7 +91,9 @@ export default function ContentPage() {
   // top-level type tab. "website" → blog form, "social" / "email" map 1:1.
   const tab: "blog" | "social" | "email" =
     contentType === "website" ? "blog" : contentType;
-  const [topic, setTopic] = useState("");
+  // Prefilled from `?topic=` when arriving from a "Create content" action
+  // (e.g. a recommendation card), so the generator opens ready to go.
+  const [topic, setTopic] = useState(() => searchParams.get("topic") ?? "");
   const [practiceArea, setPracticeArea] = useState("General");
   const [length, setLength] = useState<"short" | "medium" | "long">("medium");
   const [tone, setTone] = useState("Professional");
@@ -798,9 +800,12 @@ function PreviewPane({
         {copyStatus === "failed" && (
           <span className="text-xs text-red-700">Copy failed — your browser blocked clipboard access.</span>
         )}
-        <span className="ml-auto text-xs text-slate-400">
-          Drafts autosave to the library below.
-        </span>
+        <a
+          href={`/content/drafts?type=${tab === "blog" ? "website" : tab}`}
+          className="ml-auto text-xs font-medium text-brand hover:underline"
+        >
+          View saved drafts →
+        </a>
       </div>
     </section>
   );
