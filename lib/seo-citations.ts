@@ -247,3 +247,168 @@ Return ONLY the JSON object.`;
   const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
   return { canonical, findings };
 }
+
+// --- Audit by link (fetch each saved listing_url) --------------------------
+
+export interface LinkAuditResult {
+  source: string;
+  listing_url: string;
+  status: CitationStatus | string;
+  issues: string | null;
+  fetched: boolean; // false = couldn't read the page (likely bot-blocked)
+}
+
+const LINK_AUDIT_SYSTEM = `You verify whether a law firm's Name/Address/Phone (NAP) on a single directory/listing page matches the firm's canonical NAP. You are given the canonical NAP, the SOURCE name, and the readable text of that listing page. Extract the firm's Name/Address/Phone as they appear on the page and compare to canonical.
+
+Comparison rules:
+- Phone: compare digits only; formatting differences are NOT inconsistencies.
+- Address: "Suite"/"Ste", "Avenue"/"Ave", "NY"/"New York" are minor — treat as consistent unless the actual street, suite, city, or ZIP differs.
+- Name: entity suffixes (PLLC, LLP) matter; a different firm name is a real inconsistency.
+- status "consistent" = matches (allowing the tolerances above). "inconsistent" = a genuine difference. "missing" = the firm/NAP isn't on the page (a block page, login wall, or the listing simply isn't there).
+
+Return ONLY a JSON object, no markdown fences:
+{"nameFound": <string|null>, "addressFound": <string|null>, "phoneFound": <string|null>, "status": "consistent"|"inconsistent"|"missing", "issues": <string|null>}`;
+
+async function fetchListingText(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; KMDashboard/1.0)" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function auditOneListing(
+  source: string,
+  text: string,
+  canonical: CanonicalNap,
+): Promise<{
+  nameFound: string | null;
+  addressFound: string | null;
+  phoneFound: string | null;
+  status: CitationStatus;
+  issues: string | null;
+}> {
+  const truncated = text.length > MAX_AUDIT_CHARS ? text.slice(0, MAX_AUDIT_CHARS) : text;
+  const user = `CANONICAL NAP:
+- Name: ${canonical.name}
+- Address: ${canonical.address}
+- Phone: ${canonical.phone}
+
+SOURCE: ${source}
+
+LISTING PAGE TEXT:
+"""
+${truncated}
+"""
+
+Return ONLY the JSON object.`;
+  const response = await getAnthropic().messages.create({
+    model: KEYWORD_RESEARCH_MODEL,
+    max_tokens: 1000,
+    system: LINK_AUDIT_SYSTEM,
+    messages: [{ role: "user", content: user }],
+  });
+  const out = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const parsed = extractJSON<{
+    nameFound?: string | null;
+    addressFound?: string | null;
+    phoneFound?: string | null;
+    status?: string;
+    issues?: string | null;
+  }>(out);
+  const status = (["consistent", "inconsistent", "missing"].includes(parsed.status ?? "")
+    ? parsed.status
+    : "unverified") as CitationStatus;
+  return {
+    nameFound: parsed.nameFound ?? null,
+    addressFound: parsed.addressFound ?? null,
+    phoneFound: parsed.phoneFound ?? null,
+    status,
+    issues: parsed.issues ?? null,
+  };
+}
+
+/**
+ * Audit every saved citation that has a listing_url by FETCHING the link and
+ * AI-checking its NAP — no pasting. Updates each row in place. Directory sites
+ * that block bots (Yelp / Avvo / BBB) come back "unverified" with a note to
+ * paste that one instead.
+ */
+export async function auditCitationsByLinks(
+  tenantId?: string,
+): Promise<{ canonical: CanonicalNap; results: LinkAuditResult[] }> {
+  const tid = tenantId ?? (await resolveTenantId());
+  const canonical = await getCanonicalNap(tid);
+  const citations = (await listCitations(tid)).filter((c) => (c.listing_url ?? "").trim());
+
+  const results: LinkAuditResult[] = [];
+  for (const c of citations) {
+    const url = (c.listing_url as string).trim();
+    let text = "";
+    try {
+      text = await fetchListingText(url);
+    } catch (e) {
+      results.push({
+        source: c.source,
+        listing_url: url,
+        status: "unverified",
+        issues: `Could not read the listing automatically (${
+          e instanceof Error ? e.message : "blocked"
+        }). Paste the listing text to audit it.`,
+        fetched: false,
+      });
+      continue;
+    }
+    if (text.length < 50) {
+      results.push({
+        source: c.source,
+        listing_url: url,
+        status: "unverified",
+        issues:
+          "The page returned little readable text (likely bot-blocked). Paste the listing text instead.",
+        fetched: false,
+      });
+      continue;
+    }
+    try {
+      const f = await auditOneListing(c.source, text, canonical);
+      await updateCitation(
+        c.id,
+        {
+          nap_name: f.nameFound,
+          nap_address: f.addressFound,
+          nap_phone: f.phoneFound,
+          status: f.status,
+          issues: f.issues,
+        },
+        tid,
+      );
+      results.push({
+        source: c.source,
+        listing_url: url,
+        status: f.status,
+        issues: f.issues,
+        fetched: true,
+      });
+    } catch (e) {
+      results.push({
+        source: c.source,
+        listing_url: url,
+        status: "unverified",
+        issues: e instanceof Error ? e.message : "Audit failed.",
+        fetched: false,
+      });
+    }
+  }
+  return { canonical, results };
+}

@@ -70,6 +70,10 @@ export default function CitationsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newSource, setNewSource] = useState("");
+  const [auditingLinks, setAuditingLinks] = useState(false);
+  const [linkResults, setLinkResults] = useState<
+    { source: string; listing_url: string; status: string; issues: string | null; fetched: boolean }[]
+  >([]);
 
   const refresh = async () => {
     setLoading(true);
@@ -131,6 +135,31 @@ export default function CitationsPage() {
       setAuditing(false);
     }
   };
+
+  const runLinkAudit = async () => {
+    setAuditingLinks(true);
+    setError(null);
+    setLinkResults([]);
+    try {
+      const res = await fetch("/api/seo/citations/audit-links", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json?.error ?? "Audit failed");
+        return;
+      }
+      setLinkResults(json.results ?? []);
+      await refresh(); // pick up the updated statuses
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Audit failed");
+    } finally {
+      setAuditingLinks(false);
+    }
+  };
+
+  const linkedCount = useMemo(
+    () => citations.filter((c) => (c.listing_url ?? "").trim()).length,
+    [citations],
+  );
 
   const saveFinding = async (f: Finding) => {
     setBusy(f.source);
@@ -253,6 +282,57 @@ export default function CitationsPage() {
           <p className="text-xs uppercase tracking-wide text-slate-500">Missing / unverified</p>
           <p className="mt-2 text-2xl font-semibold text-amber-700">{formatNumber(counts.open)}</p>
         </article>
+      </section>
+
+      {/* Audit from saved links */}
+      <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Audit from saved links</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Re-checks every citation that has a listing URL by fetching the page
+              and comparing its NAP to canonical — no pasting. Some directories
+              (Yelp, Avvo, BBB) block bots; those come back “couldn’t read — paste
+              that one instead”.
+            </p>
+          </div>
+          <button
+            onClick={runLinkAudit}
+            disabled={auditingLinks || linkedCount === 0}
+            className="shrink-0 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
+            title={linkedCount === 0 ? "No citations have a listing URL yet" : undefined}
+          >
+            {auditingLinks
+              ? "Auditing… (1-3 min)"
+              : `Audit ${linkedCount} linked listing${linkedCount === 1 ? "" : "s"}`}
+          </button>
+        </div>
+        {linkResults.length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {linkResults.map((r, i) => (
+              <li
+                key={i}
+                className="flex items-start justify-between gap-3 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm"
+              >
+                <div className="min-w-0">
+                  <span className="font-medium text-slate-900">{r.source}</span>
+                  {r.issues && <p className="mt-0.5 text-xs text-slate-500">{r.issues}</p>}
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    r.status === "consistent"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : r.status === "inconsistent"
+                        ? "bg-red-50 text-red-700"
+                        : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {r.fetched ? statusLabel(r.status) : "couldn’t read"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {/* AI audit */}
