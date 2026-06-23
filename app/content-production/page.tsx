@@ -827,6 +827,11 @@ function Card({
             ▼ {item.rankDrop} pos{item.currentRank != null ? ` (now #${item.currentRank})` : ""}
           </span>
         )}
+        {item.rankDrop == null && item.currentRank != null && (
+          <span className="rounded bg-amber-50 px-1.5 text-[11px] text-amber-700">
+            rank #{item.currentRank}
+          </span>
+        )}
       </div>
       {(onCreateBrief && item.source === "opportunity") || (onReview && item.source === "pipeline") ? (
         <div className="mt-2">

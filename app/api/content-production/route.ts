@@ -86,8 +86,7 @@ export async function GET() {
     supabase
       .from("seo_keywords")
       .select("id, keyword, url, current_rank, previous_rank, search_volume, practice_area")
-      .not("current_rank", "is", null)
-      .not("previous_rank", "is", null),
+      .not("current_rank", "is", null),
   ]);
 
   type Item = {
@@ -155,15 +154,21 @@ export async function GET() {
     });
   }
 
-  // Position-drop pages → Optimize/Repurpose (existing tab). Dedupe by URL so a
-  // page already surfaced via an opportunity's existing_url isn't doubled.
+  // Low-scoring + slipped pages → Optimize/Repurpose (existing tab). A page is
+  // surfaced if it currently ranks poorly (worse than #LOW_RANK = off page 1) OR
+  // it dropped more than DROP positions. Dedupe by URL so a page already
+  // surfaced via an opportunity's existing_url isn't doubled.
+  const LOW_RANK = 10; // worse than #10 = off page 1 = "scoring low"
+  const DROP = 5; // dropped more than 5 positions
   const seenUrls = new Set(items.filter((i) => i.url).map((i) => (i.url as string).toLowerCase()));
   for (const t of tracked ?? []) {
     const cur = t.current_rank as number | null;
     const prev = t.previous_rank as number | null;
-    if (cur == null || prev == null) continue;
-    const drop = cur - prev; // positive = rank worsened
-    if (drop <= 5) continue; // only "dropped more than 5 positions"
+    if (cur == null) continue;
+    const drop = prev != null ? cur - prev : 0; // positive = rank worsened
+    const slipped = prev != null && drop > DROP;
+    const lowRank = cur > LOW_RANK;
+    if (!slipped && !lowRank) continue;
     const url = (t.url as string) ?? null;
     if (url && seenUrls.has(url.toLowerCase())) continue;
     if (url) seenUrls.add(url.toLowerCase());
@@ -188,7 +193,7 @@ export async function GET() {
       keywords: null,
       suggestionId: null,
       createdBy: "manual",
-      rankDrop: drop,
+      rankDrop: slipped ? drop : undefined,
       currentRank: cur,
       previousRank: prev,
     });
