@@ -88,6 +88,8 @@ export default function SiteMapPage() {
   const [view, setView] = useState<"inventory" | "optimize">("inventory");
   const [scoring, setScoring] = useState(false);
   const [scoreMsg, setScoreMsg] = useState<string | null>(null);
+  const [redraftingUrl, setRedraftingUrl] = useState<string | null>(null);
+  const [redraftMsg, setRedraftMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,6 +156,30 @@ export default function SiteMapPage() {
       setScoreMsg(e instanceof Error ? e.message : "scoring failed");
     } finally {
       setScoring(false);
+    }
+  }
+
+  async function redraft(p: SitePage) {
+    setRedraftingUrl(p.url);
+    setRedraftMsg(null);
+    try {
+      const res = await fetch("/api/content-production/update-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: p.url, title: p.title }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setRedraftMsg(json?.error ?? "Redraft failed");
+        return;
+      }
+      setRedraftMsg(
+        `Draft created for “${p.title ?? p.url}”. Review it on the Production Board.`,
+      );
+    } catch (e) {
+      setRedraftMsg(e instanceof Error ? e.message : "Redraft failed");
+    } finally {
+      setRedraftingUrl(null);
     }
   }
 
@@ -281,6 +307,15 @@ export default function SiteMapPage() {
             {STANDARD}). 🎉
           </div>
         ) : (
+          <>
+            {redraftMsg && (
+              <div className="mb-2 flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <span>{redraftMsg}</span>
+                <a href="/content-production" className="shrink-0 font-medium underline">
+                  Production Board →
+                </a>
+              </div>
+            )}
           <ul className="space-y-1.5">
             {optimizePages.map((p) => (
               <li
@@ -303,14 +338,24 @@ export default function SiteMapPage() {
                     <span className="truncate">{p.url}</span>
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                  <ScoreChip label="SEO" score={p.seo_score} />
-                  <ScoreChip label="AEO" score={p.aeo_score} />
-                  <ScoreChip label="CASH" score={p.cash_score} />
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <div className="flex flex-wrap items-center justify-end gap-1">
+                    <ScoreChip label="SEO" score={p.seo_score} />
+                    <ScoreChip label="AEO" score={p.aeo_score} />
+                    <ScoreChip label="CASH" score={p.cash_score} />
+                  </div>
+                  <button
+                    onClick={() => redraft(p)}
+                    disabled={redraftingUrl === p.url}
+                    className="rounded border border-brand px-2 py-0.5 text-[11px] font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
+                  >
+                    {redraftingUrl === p.url ? "Drafting…" : "Redraft →"}
+                  </button>
                 </div>
               </li>
             ))}
           </ul>
+          </>
         )
       ) : (
         <div className="space-y-6">

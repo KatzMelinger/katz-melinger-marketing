@@ -194,6 +194,34 @@ export default function ContentProductionPage() {
   const onCreateBrief = (i: Item) => setWizardOpp(toWizardOpportunity(i));
   const onReview = (i: Item) => setReviewItem(toDrawerItem(i));
 
+  // Redraft an existing page: fetch what's live, generate an improved draft onto
+  // the Production Board, and open it in the review drawer.
+  const [redraftingId, setRedraftingId] = useState<string | null>(null);
+  const redraft = async (item: Item) => {
+    if (!item.url) return;
+    setRedraftingId(item.id);
+    try {
+      const res = await fetch("/api/content-production/update-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: item.url, title: item.title }),
+      });
+      const j = await res.json();
+      if (res.ok && j?.draft_id) {
+        setReviewItem({
+          id: j.pipeline_id ?? 0,
+          draft_id: j.draft_id,
+          suggestion_id: null,
+          status: "draft",
+          title: j.title ?? item.title,
+          keywords: item.keywords ?? "",
+        });
+      }
+    } finally {
+      setRedraftingId(null);
+    }
+  };
+
   // Clicking a counter filters the board to those items (and back off when the
   // same one is clicked again). Filtering lives on the New-content tab.
   const onFilterStatus = (s: "review" | "needs_legal") => {
@@ -411,7 +439,14 @@ export default function ContentProductionPage() {
             {[...existingItems]
               .sort((a, b) => (b.rankDrop ?? 0) - (a.rankDrop ?? 0))
               .map((i) => (
-                <Card key={`${i.source}-${i.id}`} item={i} pillarLabel={pillarLabel} showUrl />
+                <Card
+                  key={`${i.source}-${i.id}`}
+                  item={i}
+                  pillarLabel={pillarLabel}
+                  showUrl
+                  onRedraft={redraft}
+                  redrafting={redraftingId === i.id}
+                />
               ))}
             {existingItems.length === 0 && (
               <p className="text-xs text-slate-400">No existing pages tracked yet.</p>
@@ -777,6 +812,8 @@ function Card({
   onGeneratePosts,
   posting,
   postMsg,
+  onRedraft,
+  redrafting,
 }: {
   item: Item;
   pillarLabel: (id: string | null) => string | null;
@@ -786,6 +823,8 @@ function Card({
   onGeneratePosts?: (item: Item) => void;
   posting?: boolean;
   postMsg?: string | null;
+  onRedraft?: (item: Item) => void;
+  redrafting?: boolean;
 }) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-2 text-sm shadow-sm">
@@ -853,6 +892,17 @@ function Card({
           )}
         </div>
       ) : null}
+      {onRedraft && item.source === "page" && item.url && (
+        <div className="mt-2">
+          <button
+            onClick={() => onRedraft(item)}
+            disabled={redrafting}
+            className="w-full rounded border border-brand px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
+          >
+            {redrafting ? "Drafting…" : "Redraft →"}
+          </button>
+        </div>
+      )}
       {onGeneratePosts && (
         <div className="mt-2">
           <button
