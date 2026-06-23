@@ -45,6 +45,12 @@ export type SitePage = {
   summary: string | null;
   pillar_locked: boolean;
   last_crawled_at: string | null;
+  // Per-page quality scores (Site Inventory "Optimize" tab). Null until scored
+  // by /api/content/site-inventory/score.
+  seo_score: number | null;
+  aeo_score: number | null;
+  cash_score: number | null;
+  scored_at: string | null;
   created_at: string;
   updated_at: string;
 };

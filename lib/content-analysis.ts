@@ -798,6 +798,32 @@ function formatToComplianceSurface(format: string | null): ContentSurface {
   return "blog";
 }
 
+/**
+ * Lightweight SEO/AEO/CASH scorer for an existing published page. Reuses the
+ * exact same scorers as analyzeDraft (heuristic SEO + AEO, AI-evaluated CASH)
+ * but skips the draft-only work — brand voice, linkability, title suggestions,
+ * compliance, and the content_analyses persistence. One AI call (CASH).
+ *
+ * Used by the Site Inventory monthly scoring job to flag low-scoring pages.
+ */
+export async function scorePageContent(args: {
+  body: string;
+  title?: string | null;
+  targetKeywords?: string[];
+}): Promise<{ seo: number; aeo: number; cash: number | null }> {
+  const body = args.body ?? "";
+  const aeo = heuristicAEO(body);
+  const seo = heuristicSEO({
+    body,
+    title: args.title ?? null,
+    format: "blog",
+    template: null,
+    targetKeywords: args.targetKeywords ?? [],
+  });
+  const cash = await cashScore(body);
+  return { seo: seo.score, aeo: aeo.score, cash: cash.score };
+}
+
 export async function analyzeDraft(args: {
   draftId: string;
   body: string;

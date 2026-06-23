@@ -21,6 +21,10 @@ type SitePage = {
   practice_area: string | null;
   topics: string[];
   last_crawled_at: string | null;
+  seo_score: number | null;
+  aeo_score: number | null;
+  cash_score: number | null;
+  scored_at: string | null;
 };
 
 const PILLARS: { id: string; label: string }[] = [
@@ -48,12 +52,42 @@ const TYPE_LABEL: Record<string, string> = {
   other: "Other",
 };
 
+// SEO/AEO/CASH cutoff — a page below this on ANY score shows up in Optimize.
+const STANDARD = 75;
+
+function belowStandard(p: {
+  seo_score: number | null;
+  aeo_score: number | null;
+  cash_score: number | null;
+}): boolean {
+  return [p.seo_score, p.aeo_score, p.cash_score].some(
+    (s) => s != null && s < STANDARD,
+  );
+}
+
+function ScoreChip({ label, score }: { label: string; score: number | null }) {
+  if (score == null) return null;
+  const ok = score >= STANDARD;
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+        ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+      }`}
+    >
+      {label} {score}
+    </span>
+  );
+}
+
 export default function SiteMapPage() {
   const [pages, setPages] = useState<SitePage[]>([]);
   const [loading, setLoading] = useState(true);
   const [crawling, setCrawling] = useState(false);
   const [crawlMsg, setCrawlMsg] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState("");
+  const [view, setView] = useState<"inventory" | "optimize">("inventory");
+  const [scoring, setScoring] = useState(false);
+  const [scoreMsg, setScoreMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,6 +128,35 @@ export default function SiteMapPage() {
     }
   }
 
+  async function scorePages() {
+    setScoring(true);
+    setScoreMsg(null);
+    try {
+      const res = await fetch("/api/content/site-inventory/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setScoreMsg(json?.error ?? "scoring failed");
+        return;
+      }
+      setScoreMsg(
+        `Scored ${json.scored} page${json.scored === 1 ? "" : "s"}` +
+          (json.failed ? `, ${json.failed} couldn't be read` : "") +
+          (json.remaining
+            ? `. ${json.remaining} still to score — run again or wait for the monthly pass.`
+            : "."),
+      );
+      load();
+    } catch (e) {
+      setScoreMsg(e instanceof Error ? e.message : "scoring failed");
+    } finally {
+      setScoring(false);
+    }
+  }
+
   async function setPillar(id: string, pillar: string) {
     await fetch("/api/content/site-inventory", {
       method: "PATCH",
@@ -126,6 +189,12 @@ export default function SiteMapPage() {
     ...(grouped.has("__unassigned__") ? ["__unassigned__"] : []),
   ];
 
+  const optimizePages = useMemo(
+    () => pages.filter((p) => p.scored_at && belowStandard(p)),
+    [pages],
+  );
+  const scoredCount = pages.filter((p) => p.scored_at).length;
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-6">
@@ -140,6 +209,24 @@ export default function SiteMapPage() {
           redefine it.
         </p>
       </header>
+
+      <div className="mb-4 flex gap-1 border-b border-slate-200">
+        {(["inventory", "optimize"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+              view === v
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {v === "inventory"
+              ? "Inventory"
+              : `Optimize${optimizePages.length ? ` (${optimizePages.length})` : ""}`}
+          </button>
+        ))}
+      </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-4">
         <button
@@ -161,8 +248,17 @@ export default function SiteMapPage() {
             </option>
           ))}
         </select>
+        <button
+          onClick={scorePages}
+          disabled={scoring}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+          title="Fetch each live page and grade SEO / AEO / CASH"
+        >
+          {scoring ? "Scoring… (1-3 min)" : "Score pages"}
+        </button>
         <span className="text-sm text-slate-500">{pages.length} pages indexed</span>
         {crawlMsg && <span className="text-xs text-slate-600">{crawlMsg}</span>}
+        {scoreMsg && <span className="text-xs text-slate-600">{scoreMsg}</span>}
       </div>
 
       {loading ? (
@@ -172,6 +268,50 @@ export default function SiteMapPage() {
           No pages indexed yet. Click <strong>Re-crawl sitemap</strong> to build
           the cluster map from your site's /sitemap.xml.
         </div>
+      ) : view === "optimize" ? (
+        scoredCount === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500">
+            No pages scored yet. Click <strong>Score pages</strong> to fetch and
+            grade your live pages on SEO, AEO, and CASH. This also runs
+            automatically once a month.
+          </div>
+        ) : optimizePages.length === 0 ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-10 text-center text-sm text-emerald-800">
+            All {scoredCount} scored pages meet your standard (SEO / AEO / CASH ≥{" "}
+            {STANDARD}). 🎉
+          </div>
+        ) : (
+          <ul className="space-y-1.5">
+            {optimizePages.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-slate-900 hover:underline"
+                  >
+                    {p.title ?? p.h1 ?? p.url}
+                  </a>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-slate-400">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">
+                      {TYPE_LABEL[p.page_type] ?? p.page_type}
+                    </span>
+                    <span className="truncate">{p.url}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                  <ScoreChip label="SEO" score={p.seo_score} />
+                  <ScoreChip label="AEO" score={p.aeo_score} />
+                  <ScoreChip label="CASH" score={p.cash_score} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
       ) : (
         <div className="space-y-6">
           {orderedKeys.map((key) => {
