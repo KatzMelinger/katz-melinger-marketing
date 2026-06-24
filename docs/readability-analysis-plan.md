@@ -58,8 +58,8 @@ Notes:
 ### 3.2 Shared Markdown→plaintext helper — `lib/readability/plaintext.ts`
 Strips headings, list markers, link/image syntax, code fences, emphasis. Returns `{ text, sentences[], paragraphs[], headings[] }` with source offsets so the editor can map a flagged sentence back to a character range. **This also fixes a latent bug:** `basicMetrics()` currently runs Flesch on raw Markdown, inflating counts. Route the existing metric through this helper too.
 
-### 3.3 Thresholds + status rollup — `lib/readability/config.ts`
-Proposed defaults (tune for legal tone in review — formal legal writing is inherently more passive/longer, so general-web/Yoast cutoffs will over-flag):
+### 3.3 Thresholds + status rollup — code defaults `lib/readability/config.ts`
+The shipped defaults (tune for legal tone in review — formal legal writing is inherently more passive/longer, so general-web/Yoast cutoffs will over-flag). These are the **fallback / seed** values; the live cutoffs are tenant-editable (see §3.4).
 
 | Metric | green | amber | red |
 |---|---|---|---|
@@ -72,6 +72,26 @@ Proposed defaults (tune for legal tone in review — formal legal writing is inh
 | FK grade level | ≤ 9 | 9–12 | > 12 |
 
 `overall_status` = **worst-of** the per-metric statuses (one red ⇒ red). Simple, predictable, explainable to Diana.
+
+### 3.4 Editable thresholds — tenant-configurable, no code change
+Diana/Kenneth can tune every cutoff above from the UI; the analysis engine reads the tenant's values (falling back to §3.3 code defaults). This mirrors the existing "Content Standards" pattern (State Rules / Disclaimers under **Brand voice & directions**), so it reuses conventions rather than inventing one.
+
+- **Table — `supabase/readability_thresholds_schema.sql`:** one row per tenant.
+  ```
+  readability_thresholds (
+    id         uuid pk default gen_random_uuid(),
+    tenant_id  uuid not null default '0000…0001' references public.tenants(id),
+    config     jsonb not null default '{}'::jsonb,  -- per-metric {green,amber,red} cutoffs
+    updated_at timestamptz not null default now(),
+    unique (tenant_id)
+  )
+  ```
+  Tenant-scoped like `state_compliance_rules`: RLS read for `authenticated`, writes stamp `tenant_id`, `touch_updated_at` trigger, idempotent + DB-target header. A single `config` JSONB blob (vs one column per cutoff) keeps the schema stable as metrics are added — same choice `key_rules jsonb` makes in `compliance_rules_schema.sql`.
+- **Store — `lib/readability/thresholds-store.ts`:** `getThresholds()` returns the tenant row deep-merged over `DEFAULT_THRESHOLDS` from §3.3 (so a partial/empty config still yields a full set, and newly-added metrics inherit defaults until edited); `saveThresholds(patch)` upserts; `resetThresholds()` clears to defaults. Reads auto-scope via `getTenantClient()`.
+- **Engine wiring:** `lib/content-analysis.ts` (and the §4 checks) take the resolved thresholds as a parameter; `analyzeDraft()` calls `getThresholds()` once per run. No hardcoded numbers in the check functions — they receive bands and emit statuses.
+- **UI — `components/readability-standards-manager.tsx`:** an editable table of the seven metrics with green/amber/red number inputs, validation (green < amber < red, or inverted for transition %), a **Reset to defaults** button, and a one-line "what this affects" note. Surface it as a **Readability standards** tab in the Content Standards section under `/brand-voice` (the "content direction" workspace), next to State Rules and Disclaimers — wired through a `/api/.../readability-thresholds` GET/PUT route following the existing rules-manager routes.
+
+Edited thresholds apply to the **next** analysis run (on Save or generation completion); a "Re-check readability" action lets Diana re-score an open draft immediately after changing a band.
 
 ---
 
@@ -118,4 +138,6 @@ The body is stored and round-tripped as **Markdown**. A true WYSIWYG (TipTap/Lex
 
 ## 8. Sequence summary
 
-Phase 0 (schema + plaintext helper + thresholds) → Phase 1 (Priority 1 end-to-end incl. Save trigger + CM6 highlighting) → Phases 2–5 (remaining checks on the same rails) → Phase 6 (board chips). Storage/threshold decisions move to the **front**, not the spec's Priority 6, because every check depends on them.
+Phase 0 (schema + plaintext helper + thresholds: code defaults `config.ts`, tenant table + store `thresholds-store.ts`, engine reads resolved values) → Phase 1 (Priority 1 end-to-end incl. Save trigger + CM6 highlighting) → Phases 2–5 (remaining checks on the same rails) → Phase 6 (board chips). Storage/threshold decisions move to the **front**, not the spec's Priority 6, because every check depends on them.
+
+The editable-thresholds **table + store** land in Phase 0 (the engine reads them from day one); the **manager UI** (`readability-standards-manager.tsx` under `/brand-voice`) can ship in Phase 0 or as an immediate fast-follow, since the engine works off code defaults until a tenant overrides them.
