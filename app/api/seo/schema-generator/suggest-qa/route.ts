@@ -19,11 +19,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { snapshotPage } from "@/lib/page-snapshot";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as { url?: unknown };
   const raw = typeof body.url === "string" ? body.url.trim() : "";
   if (!raw) {

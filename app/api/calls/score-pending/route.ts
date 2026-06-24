@@ -146,6 +146,7 @@ async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptio
         source: typeof c.source_name === "string" ? c.source_name : null,
       },
       supabase,
+      tenantId: (typeof c.tenant_id === "string" ? c.tenant_id : tenantId) ?? undefined,
     });
     if (!out.ok) {
       results.push({ id, ok: false, error: out.error });

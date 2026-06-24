@@ -17,11 +17,14 @@ import {
 import type { AISiteCrawlResult } from "@/lib/ai-crawler";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const crawlData = (await req.json()) as AISiteCrawlResult | null;
 

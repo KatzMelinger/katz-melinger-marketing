@@ -11,8 +11,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
-  { href: "/aeo", label: "AEO" },
-  { href: "/ai-search", label: "AI Search" },
+  { href: "/aeo", label: "AEO (Answer Engine Optimization)" },
+  { href: "/ai-search", label: "AI Search Optimization" },
 ];
 
 export function AiVisibilityNav() {

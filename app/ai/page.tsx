@@ -10,7 +10,7 @@
 import type { Metadata } from "next";
 
 import { HubShell, type HubCard, type HubKpi } from "@/components/hub-shell";
-import { getRequestOrigin } from "@/lib/request-origin";
+import { getRequestOrigin, serverFetch } from "@/lib/request-origin";
 import { APP_NAME } from "@/lib/app-config";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 
 async function fetchJsonSafe<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await serverFetch(url);
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
@@ -101,14 +101,14 @@ export default async function AiHubPage() {
   const cards: HubCard[] = [
     {
       href: "/aeo",
-      label: "Answer Engine Optimization",
+      label: "AEO (Answer Engine Optimization)",
       description:
         "Track how often the firm shows up in ChatGPT, Perplexity, Claude, and Gemini answers.",
       metric: aeoScore != null ? `${Math.round(aeoScore)} score` : undefined,
     },
     {
       href: "/ai-search",
-      label: "AI search visibility",
+      label: "AI Search Optimization",
       description:
         "Run prompts against major AI engines and see the firm's ranking across them.",
     },

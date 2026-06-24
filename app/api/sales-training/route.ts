@@ -26,6 +26,7 @@ import { ALL_RUBRICS, loadRubric } from "@/lib/sales-coach-rubric";
 import { ALL_SOPS } from "@/lib/sales-coach-sops";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,14 +49,22 @@ function deriveSectionCode(filename: string): string | null {
 type Json = Record<string, unknown>;
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const supabase = getSupabaseServer();
+  const tenantId = await resolveTenantId();
   const { data: materialsDb } = supabase
-    ? await supabase.from("sales_training_materials").select("*").eq("active", true).order("section_code")
+    ? await supabase
+        .from("sales_training_materials")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("active", true)
+        .order("section_code")
     : { data: null };
 
-  const intake = await loadRubric(supabase, "intake");
-  const consultation = await loadRubric(supabase, "consultation");
-  const callback = await loadRubric(supabase, "callback");
+  const intake = await loadRubric(supabase, "intake", tenantId);
+  const consultation = await loadRubric(supabase, "consultation", tenantId);
+  const callback = await loadRubric(supabase, "callback", tenantId);
 
   // The hardcoded SOPs are always available; the DB rows extend them.
   const materials = (materialsDb ?? []).length > 0
@@ -91,6 +100,7 @@ export async function POST(req: Request) {
   if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
+  const tenantId = await resolveTenantId();
 
   let form: FormData;
   try {
@@ -140,6 +150,7 @@ export async function POST(req: Request) {
 
       const sectionCode = sectionOverride || deriveSectionCode(file.name);
       const row = {
+        tenant_id: tenantId,
         file_name: file.name,
         doc_type: docType,
         section_code: sectionCode,
@@ -148,14 +159,17 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       };
 
-      // No DB unique key, so emulate upsert: an existing active row with the
-      // same section_code (or, lacking one, the same file_name) is replaced.
+      // No DB unique key, so emulate upsert: an existing active row in THIS
+      // tenant with the same section_code (or, lacking one, the same file_name)
+      // is replaced. Scoping by tenant_id keeps one firm's upload from matching
+      // and overwriting another firm's row.
       let existingId: string | null = null;
       const matchCol = sectionCode ? "section_code" : "file_name";
       const matchVal = sectionCode ?? file.name;
       const { data: existing } = await supabase
         .from("sales_training_materials")
         .select("id")
+        .eq("tenant_id", tenantId)
         .eq("active", true)
         .eq(matchCol, matchVal)
         .limit(1)
@@ -165,7 +179,11 @@ export async function POST(req: Request) {
       }
 
       const { error: writeErr } = existingId
-        ? await supabase.from("sales_training_materials").update(row).eq("id", existingId)
+        ? await supabase
+            .from("sales_training_materials")
+            .update(row)
+            .eq("tenant_id", tenantId)
+            .eq("id", existingId)
         : await supabase.from("sales_training_materials").insert(row);
 
       if (writeErr) {
@@ -199,6 +217,7 @@ export async function PUT(req: Request) {
   if (denied) return denied;
   const supabase = getSupabaseServer();
   if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
+  const tenantId = await resolveTenantId();
 
   let body: Json = {};
   try {
@@ -219,6 +238,7 @@ export async function PUT(req: Request) {
     typeof body.sort_order === "number" && Number.isFinite(body.sort_order) ? Math.floor(body.sort_order) : 0;
 
   const row = {
+    tenant_id: tenantId,
     rubric_type: rubricType,
     dimension_key: dimensionKey,
     dimension_name: typeof body.dimension_name === "string" ? body.dimension_name : dimensionKey,
@@ -228,9 +248,25 @@ export async function PUT(req: Request) {
     sop_reference: typeof body.sop_reference === "string" ? body.sop_reference : null,
     active: body.active === false ? false : true,
   };
-  const { error } = await supabase
+  // The sales_rubric unique key is (rubric_type, dimension_key) and does NOT
+  // include tenant_id, so a DB upsert(onConflict) would overwrite another
+  // tenant's row. Emulate a tenant-scoped upsert by hand instead.
+  const { data: existing } = await supabase
     .from("sales_rubric")
-    .upsert(row, { onConflict: "rubric_type,dimension_key" });
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("rubric_type", rubricType)
+    .eq("dimension_key", dimensionKey)
+    .limit(1)
+    .maybeSingle();
+  const { error } =
+    existing && typeof (existing as { id?: unknown }).id === "string"
+      ? await supabase
+          .from("sales_rubric")
+          .update(row)
+          .eq("tenant_id", tenantId)
+          .eq("id", (existing as { id: string }).id)
+      : await supabase.from("sales_rubric").insert(row);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return GET();
 }

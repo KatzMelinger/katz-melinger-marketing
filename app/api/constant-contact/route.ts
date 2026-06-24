@@ -15,6 +15,8 @@ import {
   recordSyncActivityServer,
 } from "@/lib/constant-contact-analytics";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { guardUser } from "@/lib/supabase-route";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +104,8 @@ function authFailure(message: string, details?: unknown) {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await guardUser();
+  if (denied) return denied;
   const action = request.nextUrl.searchParams.get("action");
   if (action === "lists") {
     return fetchContactListsResponse();
@@ -137,6 +141,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await sb
       .from("constant_contact_automation")
       .select("*")
+      .eq("tenant_id", await resolveTenantId())
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -219,6 +224,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: Request) {
+  const denied = await guardUser();
+  if (denied) return denied;
   let payload: unknown;
   try {
     payload = await request.json();
@@ -275,6 +282,7 @@ export async function POST(request: Request) {
       trigger_type: triggerRaw,
       email_sequence,
       active,
+      tenant_id: await resolveTenantId(),
     };
 
     const { data, error } = await sb

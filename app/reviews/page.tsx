@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { MarketingNav } from "@/components/marketing-nav";
 import { RechartsPie } from "@/components/recharts-pie";
 import { ReviewsTabs } from "@/components/reviews-tabs";
+import { serverFetch } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export default async function MarketingReviewsPage(
   let rows: ReviewRow[] = [];
   let errorMessage: string | null = null;
   try {
-    const res = await fetch(`${base}/api/reviews`, { cache: "no-store" });
+    const res = await serverFetch(`${base}/api/reviews`);
     const json = (await res.json()) as {
       reviews?: unknown;
       error?: string;

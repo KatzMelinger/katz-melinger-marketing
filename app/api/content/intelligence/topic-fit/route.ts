@@ -17,6 +17,7 @@ import { getFirmContext } from "@/lib/firm-context";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -103,9 +104,11 @@ Return JSON only:
     if (alertId) {
       try {
         const supabase = getSupabaseAdmin();
+        const tenantId = await resolveTenantId();
         const { data: existing } = await supabase
           .from("marketing_alerts")
           .select("payload")
+          .eq("tenant_id", tenantId)
           .eq("id", alertId)
           .single();
         const payload =
@@ -115,6 +118,7 @@ Return JSON only:
         await supabase
           .from("marketing_alerts")
           .update({ payload: { ...payload, topic_fit: result } })
+          .eq("tenant_id", tenantId)
           .eq("id", alertId);
       } catch {
         /* caching is best-effort — still return the analysis */

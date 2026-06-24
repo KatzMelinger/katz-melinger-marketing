@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
+import { guardUser } from "@/lib/supabase-route";
 import { listCompetitors, normalizeDomain } from "@/lib/seo-competitors";
 import { getBacklinkOverview } from "@/lib/seo-intelligence";
 import {
@@ -30,6 +31,8 @@ const HISTORY_DAYS = 180;
 const MAX_LIVE_COMPETITORS = 5;
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const db = await getTenantDb();
     const { seoDomain } = await getTenantConfig(db.tenantId);

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { guardUser } from "@/lib/supabase-route";
+
 export const dynamic = "force-dynamic";
 
 function maskSecret(value: string | undefined): string {
@@ -12,6 +14,8 @@ function maskSecret(value: string | undefined): string {
  * Safe snapshot of what the server sees (no raw token).
  */
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   const token = process.env.METRICOOL_API_TOKEN?.trim();
   const userId = process.env.METRICOOL_USER_ID?.trim();
   const blogId = process.env.METRICOOL_BLOG_ID?.trim();
