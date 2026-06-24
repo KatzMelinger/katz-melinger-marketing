@@ -90,6 +90,7 @@ export default function SiteMapPage() {
   const [scoreMsg, setScoreMsg] = useState<string | null>(null);
   const [redraftingUrl, setRedraftingUrl] = useState<string | null>(null);
   const [redraftMsg, setRedraftMsg] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<"worst" | "seo" | "aeo" | "cash">("worst");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,6 +222,21 @@ export default function SiteMapPage() {
   );
   const scoredCount = pages.filter((p) => p.scored_at).length;
 
+  const sortedOptimize = useMemo(() => {
+    const rank = (p: SitePage) => {
+      if (sortBy === "worst") {
+        const vals = [p.seo_score, p.aeo_score, p.cash_score].filter(
+          (s): s is number => s != null,
+        );
+        return vals.length ? Math.min(...vals) : 100; // lowest score = most urgent
+      }
+      const v =
+        sortBy === "seo" ? p.seo_score : sortBy === "aeo" ? p.aeo_score : p.cash_score;
+      return v == null ? Infinity : v; // unscored on this metric → bottom
+    };
+    return [...optimizePages].sort((a, b) => rank(a) - rank(b));
+  }, [optimizePages, sortBy]);
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-6">
@@ -316,8 +332,24 @@ export default function SiteMapPage() {
                 </a>
               </div>
             )}
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">Sort by:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+              >
+                <option value="worst">Worst score first</option>
+                <option value="seo">SEO score</option>
+                <option value="aeo">AEO score</option>
+                <option value="cash">CASH score</option>
+              </select>
+              <span className="text-xs text-slate-400">
+                {optimizePages.length} page(s) below 75
+              </span>
+            </div>
           <ul className="space-y-1.5">
-            {optimizePages.map((p) => (
+            {sortedOptimize.map((p) => (
               <li
                 key={p.id}
                 className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2"
