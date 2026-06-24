@@ -20,6 +20,11 @@ import Link from "next/link";
 
 import { DraftDrawer } from "@/components/draft-drawer";
 import { KmBriefWizard, type WizardOpportunity } from "@/components/km-brief-wizard";
+import {
+  RepurposeReviewDrawer,
+  requestRepurpose,
+  type RepurposeDraft,
+} from "@/components/repurpose-review-drawer";
 
 // The rest of the production line lives one click away from this page, so the
 // sidebar carries a single "Content Production" tab instead of five.
@@ -122,6 +127,9 @@ export default function ContentProductionPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "review" | "needs_legal">("all");
   const [wizardOpp, setWizardOpp] = useState<WizardOpportunity | null>(null);
   const [reviewItem, setReviewItem] = useState<DrawerItem | null>(null);
+  // Generated social variations awaiting human review before they're scheduled.
+  const [repurpose, setRepurpose] = useState<{ topic: string; drafts: RepurposeDraft[] } | null>(null);
+  const [repurposingId, setRepurposingId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
 
@@ -220,6 +228,25 @@ export default function ContentProductionPage() {
       }
     } finally {
       setRedraftingId(null);
+    }
+  };
+
+  // Repurpose an existing page into social variations, then open the review
+  // drawer so the human can edit/pick/schedule. Shared by the Optimize cards.
+  const repurposePage = async (item: Item) => {
+    setRepurposingId(item.id);
+    try {
+      const r = await requestRepurpose({
+        url: item.url,
+        title: item.title,
+        practiceArea: item.practiceArea,
+        keywords: item.keywords ? item.keywords.split(",").map((k) => k.trim()).filter(Boolean) : [],
+      });
+      if (r.ok && r.drafts?.length) {
+        setRepurpose({ topic: r.topic ?? item.title, drafts: r.drafts });
+      }
+    } finally {
+      setRepurposingId(null);
     }
   };
 
@@ -464,6 +491,8 @@ export default function ContentProductionPage() {
                   showUrl
                   onRedraft={redraft}
                   redrafting={redraftingId === i.id}
+                  onRepurpose={repurposePage}
+                  repurposing={repurposingId === i.id}
                 />
               ))}
             {existingItems.length === 0 && (
@@ -474,7 +503,7 @@ export default function ContentProductionPage() {
       )}
 
       {!loading && tab === "repurpose" && (
-        <RepurposePanel onReview={setReviewItem} />
+        <RepurposePanel onReview={setReviewItem} onRepurpose={setRepurpose} />
       )}
 
       {wizardOpp && (
@@ -493,6 +522,14 @@ export default function ContentProductionPage() {
           item={reviewItem}
           onClose={() => setReviewItem(null)}
           onChanged={load}
+        />
+      )}
+
+      {repurpose && (
+        <RepurposeReviewDrawer
+          topic={repurpose.topic}
+          drafts={repurpose.drafts}
+          onClose={() => setRepurpose(null)}
         />
       )}
     </main>
@@ -529,7 +566,13 @@ type OptPayload = { pages: OptPage[]; counts: { total: number; withOpportunities
  * fetches the live page and drafts an updated version (brand voice + matched
  * keywords + internal links), then opens it in the review drawer.
  */
-function RepurposePanel({ onReview }: { onReview: (i: DrawerItem) => void }) {
+function RepurposePanel({
+  onReview,
+  onRepurpose,
+}: {
+  onReview: (i: DrawerItem) => void;
+  onRepurpose: (s: { topic: string; drafts: RepurposeDraft[] }) => void;
+}) {
   const [data, setData] = useState<OptPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -595,25 +638,24 @@ function RepurposePanel({ onReview }: { onReview: (i: DrawerItem) => void }) {
     }
   };
 
-  // Repurpose the page into 3 brand-voice social posts on the Mon/Wed/Fri
-  // scheduler (the action that used to live on the old Repurpose tab).
+  // Repurpose the page into a spread of brand-voice social variations, then
+  // open the review drawer so the human edits/picks/schedules — nothing goes
+  // out sight-unseen.
   const generateSocial = async (p: OptPage) => {
     setSocialBusy(p.url);
     setMsg(null);
     try {
-      const res = await fetch("/api/content-production/social", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: p.title || p.url, practiceArea: p.practiceArea }),
-      });
-      const j = await res.json();
-      setMsg({
+      const r = await requestRepurpose({
         url: p.url,
-        tone: res.ok ? "ok" : "warn",
-        text: j?.message || j?.error || (res.ok ? "Posts generated." : "Failed to generate posts."),
+        title: p.title,
+        practiceArea: p.practiceArea,
+        keywords: p.matches.map((m) => m.keyword),
       });
-    } catch {
-      setMsg({ url: p.url, tone: "warn", text: "Failed to generate posts." });
+      if (r.ok && r.drafts?.length) {
+        onRepurpose({ topic: r.topic ?? p.title ?? p.url, drafts: r.drafts });
+      } else {
+        setMsg({ url: p.url, tone: "warn", text: r.error || "Failed to generate posts." });
+      }
     } finally {
       setSocialBusy(null);
     }
@@ -740,9 +782,9 @@ function RepurposePanel({ onReview }: { onReview: (i: DrawerItem) => void }) {
                 onClick={() => generateSocial(p)}
                 disabled={socialBusy === p.url}
                 className="mt-1.5 w-full rounded border border-slate-300 px-2 py-1 text-[12px] font-medium text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
-                title="Generate 3 brand-voice social posts and queue them on the Mon/Wed/Fri scheduler"
+                title="Generate brand-voice social variations (captions + carousel + short-video hook), then review, pick, and schedule them"
               >
-                {socialBusy === p.url ? "Generating posts…" : "Generate 3 social posts →"}
+                {socialBusy === p.url ? "Generating variations…" : "Repurpose into social →"}
               </button>
               <button
                 onClick={() => generateEmail(p)}
@@ -832,6 +874,8 @@ function Card({
   postMsg,
   onRedraft,
   redrafting,
+  onRepurpose,
+  repurposing,
 }: {
   item: Item;
   pillarLabel: (id: string | null) => string | null;
@@ -843,6 +887,8 @@ function Card({
   postMsg?: string | null;
   onRedraft?: (item: Item) => void;
   redrafting?: boolean;
+  onRepurpose?: (item: Item) => void;
+  repurposing?: boolean;
 }) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-2 text-sm shadow-sm">
@@ -911,7 +957,7 @@ function Card({
         </div>
       ) : null}
       {onRedraft && item.source === "page" && item.url && (
-        <div className="mt-2">
+        <div className="mt-2 space-y-1.5">
           <button
             onClick={() => onRedraft(item)}
             disabled={redrafting}
@@ -919,6 +965,16 @@ function Card({
           >
             {redrafting ? "Drafting…" : "Redraft →"}
           </button>
+          {onRepurpose && (
+            <button
+              onClick={() => onRepurpose(item)}
+              disabled={repurposing}
+              className="w-full rounded border border-slate-300 px-2 py-1 text-[12px] font-medium text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
+              title="Generate brand-voice social variations (captions + carousel + short-video hook), then review, pick, and schedule them"
+            >
+              {repurposing ? "Generating variations…" : "Repurpose into social →"}
+            </button>
+          )}
         </div>
       )}
       {onGeneratePosts && (

@@ -37,6 +37,7 @@ export type FormatKey =
   | "twitter"
   | "facebook"
   | "instagram"
+  | "carousel"
   | "email"
   | "podcast"
   | "video_short"
@@ -56,6 +57,8 @@ const FORMAT_INSTRUCTIONS: Record<FormatKey, string> = {
   twitter: "5-7 tweet thread. Tweet 1 is a hook (under 280 chars). Each subsequent tweet stands alone but builds the thread. Final tweet has a CTA. Use 1/ 2/ 3/ numbering at the start of each.",
   facebook: "200-280 word Facebook post. Conversational, accessible language. Opens with an attention-grabbing question or statement.",
   instagram: "Instagram caption: 150-220 words, 5-8 relevant hashtags at the end, line breaks for readability, opens with a hook.",
+  carousel:
+    "Instagram/LinkedIn carousel script. Slide 1 is a scroll-stopping hook. Then 5-8 content slides, each with a short bold headline and 1-2 supporting lines. The final slide is a clear CTA. Format each slide as 'Slide 1: ...' through 'Slide N: ...' on its own line. After the slides, add a 'Caption:' line with a posting caption under 150 words plus 3-5 hashtags.",
   email: "Email newsletter: a subject line (under 60 chars), preview text (under 110 chars), and 250-400 word body broken into short scannable sections with subheadings. Single clear CTA.",
   podcast: "5-7 minute solo podcast script: cold open hook (15-30 sec), intro, 3 main points with examples, recap, and call-to-action. Include speaker notes in [brackets] for tone shifts and pauses.",
   video_short:

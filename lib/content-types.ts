@@ -21,6 +21,7 @@ export type FormatKey =
   | "twitter"
   | "facebook"
   | "instagram"
+  | "carousel"
   | "email"
   | "podcast"
   | "video_short"
@@ -44,6 +45,7 @@ export const CONTENT_TYPE_FORMATS: Record<ContentTypeKey, FormatKey[]> = {
     "twitter",
     "facebook",
     "instagram",
+    "carousel",
     "podcast",
     "video_short",
     "video_long",
