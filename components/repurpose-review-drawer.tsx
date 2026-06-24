@@ -337,26 +337,32 @@ export function RepurposeReviewDrawer({
                     ))}
                   </select>
                 </label>
-                <label className="flex items-center gap-1 text-slate-500">
+                {/* Not wrapped in <label>: a label re-dispatches the click to a
+                    date/time input's picker icon, which makes the native picker
+                    open-then-close, so the field reads as frozen. Keep the text
+                    as a sibling span and associate via aria-label instead. */}
+                <span className="flex items-center gap-1 text-slate-500">
                   Date
                   <input
                     type="date"
+                    aria-label="Schedule date"
                     value={r.date}
                     onChange={(e) => patch(i, { date: e.target.value })}
                     disabled={!r.keep}
                     className="rounded-md border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-100"
                   />
-                </label>
-                <label className="flex items-center gap-1 text-slate-500">
+                </span>
+                <span className="flex items-center gap-1 text-slate-500">
                   Time
                   <input
                     type="time"
+                    aria-label="Schedule time"
                     value={r.time}
                     onChange={(e) => patch(i, { time: e.target.value })}
                     disabled={!r.keep}
                     className="rounded-md border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-100"
                   />
-                </label>
+                </span>
                 <span className="ml-auto text-[11px] text-slate-400">
                   {r.body.trim().length} chars
                 </span>
