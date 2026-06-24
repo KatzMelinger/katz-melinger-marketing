@@ -56,17 +56,27 @@ const PLATFORM_LABEL: Record<string, string> = {
   gmb: "Google Business",
 };
 
+type Slide = { n: number; headline: string; url: string };
+
 type Row = {
   draftId: string;
   format: string;
   label: string;
   kind: "caption" | "script";
   body: string;
+  /** Original generated script (carousel) — kept so slides can be (re)generated
+   *  even after `body` is replaced with the posting caption. */
+  script?: string;
   platform: string;
   platformOptions: string[];
   date: string; // yyyy-mm-dd (local)
   time: string; // HH:mm (local)
   keep: boolean;
+  // Carousel slide images, once generated.
+  slides?: Slide[];
+  mediaUrls?: string[];
+  genBusy?: boolean;
+  genMsg?: string | null;
 };
 
 function ymd(d: Date): string {
@@ -90,6 +100,7 @@ function buildRows(drafts: RepurposeDraft[]): Row[] {
       label: meta?.label ?? d.format,
       kind: meta?.kind ?? "caption",
       body: d.body,
+      script: d.format === "carousel" ? d.body : undefined,
       platform: platforms[0],
       platformOptions: platforms,
       date: ymd(cursor),
@@ -112,24 +123,59 @@ export function RepurposeReviewDrawer({
 }) {
   const [rows, setRows] = useState<Row[]>(() => buildRows(drafts));
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+  const [result, setResult] = useState<{ tone: "ok" | "warn"; text: string; recorded: boolean } | null>(
+    null,
+  );
+  // Per-post Ayrshare rejection reasons, keyed by draftId — shown inline on each
+  // post so a rejection is never invisible.
+  const [postErrors, setPostErrors] = useState<Map<string, string>>(new Map());
 
   const keepCount = useMemo(() => rows.filter((r) => r.keep && r.body.trim()).length, [rows]);
 
   const patch = (i: number, p: Partial<Row>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
 
+  // Carousel: turn the slide script into post-ready slide images. On success the
+  // post text becomes the caption and the slides ride along as media.
+  const generateSlides = async (i: number) => {
+    const row = rows[i];
+    patch(i, { genBusy: true, genMsg: null });
+    try {
+      const res = await fetch("/api/content-production/repurpose/carousel-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId: row.draftId, script: row.script ?? row.body }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        patch(i, { genBusy: false, genMsg: j?.error || "Slide generation failed." });
+        return;
+      }
+      patch(i, {
+        genBusy: false,
+        slides: j.slides as Slide[],
+        mediaUrls: j.urls as string[],
+        body: (j.caption as string)?.trim() || row.body,
+        genMsg: j.message || null,
+      });
+    } catch {
+      patch(i, { genBusy: false, genMsg: "Slide generation failed." });
+    }
+  };
+
   const schedule = async () => {
     const kept = rows.filter((r) => r.keep && r.body.trim());
     if (!kept.length) return;
     setBusy(true);
     setResult(null);
+    setPostErrors(new Map());
     try {
       const posts = kept.map((r) => ({
         draftId: r.draftId,
         format: r.format,
         platform: r.platform,
         body: r.body,
+        mediaUrls: r.mediaUrls ?? [],
         // Local date+time → UTC ISO for Ayrshare / scheduled_at.
         scheduleDate: new Date(`${r.date}T${r.time}`).toISOString(),
       }));
@@ -140,13 +186,28 @@ export function RepurposeReviewDrawer({
       });
       const j = await res.json();
       if (!res.ok) {
-        setResult({ tone: "warn", text: j?.error || "Scheduling failed." });
+        setResult({ tone: "warn", text: j?.error || "Scheduling failed.", recorded: false });
         return;
       }
-      setResult({ tone: j.scheduled > 0 ? "ok" : "warn", text: j.message || "Scheduled." });
+      // Surface each rejection reason on its post so failures aren't invisible.
+      const errs = new Map<string, string>();
+      for (const r of (j.results ?? []) as Array<{
+        draftId?: string | null;
+        status?: string;
+        error?: string;
+      }>) {
+        if (r.draftId && r.status === "failed") errs.set(r.draftId, r.error || "Rejected by Ayrshare.");
+      }
+      setPostErrors(errs);
+      const failed = (j.failed ?? 0) as number;
+      setResult({
+        tone: failed > 0 ? "warn" : "ok",
+        text: j.message || "Scheduled.",
+        recorded: !!j.ok,
+      });
       onScheduled?.();
     } catch {
-      setResult({ tone: "warn", text: "Scheduling failed." });
+      setResult({ tone: "warn", text: "Scheduling failed.", recorded: false });
     } finally {
       setBusy(false);
     }
@@ -215,6 +276,51 @@ export function RepurposeReviewDrawer({
                 className="w-full resize-y rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-800 focus:border-brand focus:outline-none disabled:bg-slate-100"
               />
 
+              {r.format === "carousel" && (
+                <div className="mt-2">
+                  {r.slides?.length ? (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {r.slides.map((s) => (
+                        <a
+                          key={s.url}
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`Slide ${s.n}: ${s.headline}`}
+                          className="shrink-0"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={s.url}
+                            alt={`Slide ${s.n}`}
+                            className="h-28 w-[90px] rounded-md border border-slate-200 object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400">
+                      Carousel script. Generate slide images to turn it into a post-ready carousel —
+                      the post text becomes the caption.
+                    </p>
+                  )}
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <button
+                      onClick={() => generateSlides(i)}
+                      disabled={!r.keep || r.genBusy}
+                      className="rounded border border-brand px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
+                    >
+                      {r.genBusy
+                        ? "Generating slides…"
+                        : r.slides?.length
+                          ? "Regenerate slide images"
+                          : "Generate slide images →"}
+                    </button>
+                    {r.genMsg && <span className="text-[11px] text-slate-500">{r.genMsg}</span>}
+                  </div>
+                </div>
+              )}
+
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                 <label className="flex items-center gap-1 text-slate-500">
                   Channel
@@ -255,6 +361,24 @@ export function RepurposeReviewDrawer({
                   {r.body.trim().length} chars
                 </span>
               </div>
+
+              {/* Instagram can't post text-only — Ayrshare will reject it without media. */}
+              {r.keep && r.platform === "instagram" && !r.mediaUrls?.length && (
+                <p className="mt-1.5 text-[11px] text-amber-700">
+                  Instagram needs an image.{" "}
+                  {r.format === "carousel"
+                    ? "Generate slide images above, "
+                    : "Add media or pick another channel, "}
+                  or this post will be rejected.
+                </p>
+              )}
+
+              {/* Why a post was rejected, surfaced from the schedule response. */}
+              {postErrors.get(r.draftId) && (
+                <p className="mt-1.5 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                  Rejected: {postErrors.get(r.draftId)}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -269,7 +393,7 @@ export function RepurposeReviewDrawer({
               }`}
             >
               {result.text}{" "}
-              {result.tone === "ok" && (
+              {result.recorded && (
                 <Link href="/social/content-calendar" className="font-medium underline">
                   Open the Content Calendar →
                 </Link>

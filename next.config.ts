@@ -10,6 +10,15 @@ const nextConfig: NextConfig = {
     // blowing past the heap we allocate via NODE_OPTIONS in package.json.
     cpus: 2,
   },
+  // @napi-rs/canvas is a native addon (carousel slide compositing). Keep it out
+  // of the server bundle so Next uses a native require instead of bundling it.
+  // (`sharp` is already auto-externalized by Next.)
+  serverExternalPackages: ["@napi-rs/canvas"],
+  // The carousel renderer reads bundled TTFs at runtime via fs; @vercel/nft
+  // can't see that statically, so include them in the route's server trace.
+  outputFileTracingIncludes: {
+    "/api/content-production/repurpose/carousel-images": ["assets/fonts/**/*"],
+  },
 };
 
 export default nextConfig;

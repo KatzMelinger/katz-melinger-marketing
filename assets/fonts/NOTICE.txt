@@ -1,0 +1,1 @@
+Liberation Sans (SIL OFL) bundled for server-side carousel text rendering.

@@ -38,6 +38,8 @@ type IncomingPost = {
   platform?: string;
   body?: string;
   scheduleDate?: string;
+  /** Slide/asset image URLs to attach (carousel). Must be public HTTPS. */
+  mediaUrls?: string[];
 };
 
 function isPlatform(p: unknown): p is AyrsharePlatform {
@@ -73,9 +75,11 @@ export async function POST(req: Request) {
   const ayrshareProfileKey = apiKey ? (await getTenantConfig(db.tenantId)).ayrshareProfileKey : null;
 
   const results: {
+    draftId: string | null;
     platform: string;
     scheduleDate: string;
     ok: boolean;
+    status: "scheduled" | "failed";
     viaAyrshare: boolean;
     error?: string;
   }[] = [];
@@ -86,6 +90,11 @@ export async function POST(req: Request) {
     const platform = p.platform as AyrsharePlatform;
     const content = p.body.trim();
     if (p.draftId) editedDrafts.set(p.draftId, content);
+
+    // Carousel / asset images to attach. Ayrshare requires public HTTPS URLs.
+    const mediaUrls = Array.isArray(p.mediaUrls)
+      ? p.mediaUrls.filter((u): u is string => typeof u === "string" && u.startsWith("https://"))
+      : [];
 
     let ayrshareId: string | null = null;
     let postUrl: string | null = null;
@@ -99,6 +108,7 @@ export async function POST(req: Request) {
           profileKey: ayrshareProfileKey,
           post: content,
           platforms: [platform],
+          mediaUrls: mediaUrls.length ? mediaUrls : undefined,
           scheduleDate: p.scheduleDate,
         });
         if (res.ok) {
@@ -113,23 +123,33 @@ export async function POST(req: Request) {
       }
     }
 
-    // Record on the calendar when it scheduled cleanly, or when Ayrshare isn't
-    // connected at all (planned post). A real Ayrshare failure is reported, not
-    // silently calendared as if it succeeded.
-    const recorded = viaAyrshare || !apiKey;
-    if (recorded) {
-      rows.push({
-        platform,
-        content,
-        ayrshare_id: ayrshareId,
-        post_url: postUrl,
-        status: "scheduled",
-        scheduled_at: p.scheduleDate,
-        published_at: null,
-        source_draft_id: p.draftId ?? null,
-      });
-    }
-    results.push({ platform, scheduleDate: p.scheduleDate, ok: recorded, viaAyrshare, error });
+    // Every post lands on the calendar so the workflow is never silently
+    // blocked. The status records what actually happened:
+    //   - "scheduled": accepted by Ayrshare (real ayrshare_id), OR Ayrshare
+    //     isn't connected at all so it's a planned post (no id) to publish later.
+    //   - "failed": Ayrshare is connected but rejected this post. We keep it on
+    //     the calendar (so intent is visible) and surface the reason to the UI
+    //     instead of dropping it on the floor.
+    const status: "scheduled" | "failed" = apiKey && !viaAyrshare ? "failed" : "scheduled";
+    rows.push({
+      platform,
+      content,
+      ayrshare_id: ayrshareId,
+      post_url: postUrl,
+      status,
+      scheduled_at: p.scheduleDate,
+      published_at: null,
+      source_draft_id: p.draftId ?? null,
+    });
+    results.push({
+      draftId: p.draftId ?? null,
+      platform,
+      scheduleDate: p.scheduleDate,
+      ok: status !== "failed",
+      status,
+      viaAyrshare,
+      error,
+    });
   }
 
   if (rows.length) await db.insert("social_posts", rows);
@@ -139,14 +159,25 @@ export async function POST(req: Request) {
     await db.from("content_drafts").update({ body: content }).eq("id", draftId);
   }
 
-  const scheduled = results.filter((r) => r.ok).length;
-  const message = apiKey
-    ? `${scheduled} of ${valid.length} post(s) scheduled. Review them on the Content Calendar.`
-    : `${scheduled} post(s) added to the Content Calendar as planned posts. Connect Ayrshare to auto-publish them at their scheduled times.`;
+  const scheduled = results.filter((r) => r.status === "scheduled").length;
+  const failed = results.filter((r) => r.status === "failed").length;
+
+  let message: string;
+  if (!apiKey) {
+    message = `${scheduled} post(s) added to the Content Calendar as planned posts. Connect Ayrshare to auto-publish them at their scheduled times.`;
+  } else if (failed === 0) {
+    message = `${scheduled} of ${valid.length} post(s) scheduled. Review them on the Content Calendar.`;
+  } else if (scheduled === 0) {
+    message = `Ayrshare rejected all ${failed} post(s) — see the reasons below. They're on the Content Calendar marked “failed”.`;
+  } else {
+    message = `${scheduled} of ${valid.length} post(s) scheduled. ${failed} were rejected by Ayrshare — see the reasons below.`;
+  }
 
   return NextResponse.json({
-    ok: scheduled > 0,
+    // Something always landed on the calendar; the drawer decides tone from `failed`.
+    ok: rows.length > 0,
     scheduled,
+    failed,
     total: valid.length,
     connected: !!apiKey,
     message,
