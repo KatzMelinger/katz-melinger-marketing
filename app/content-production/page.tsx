@@ -197,6 +197,7 @@ export default function ContentProductionPage() {
   // Redraft an existing page: fetch what's live, generate an improved draft onto
   // the Production Board, and open it in the review drawer.
   const [redraftingId, setRedraftingId] = useState<string | null>(null);
+  const [optSort, setOptSort] = useState<"rank" | "drop">("rank");
   const redraft = async (item: Item) => {
     if (!item.url) return;
     setRedraftingId(item.id);
@@ -431,13 +432,30 @@ export default function ContentProductionPage() {
 
       {!loading && tab === "optimize" && (
         <div>
-          <p className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-            Optimize — published pages that dropped in ranking (current vs previous tracked rank).{" "}
-            Showing {existingItems.length} existing page(s) currently tracked.
-          </p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            <span>
+              Optimize — published pages ranking low or that dropped (current vs previous
+              tracked rank). Showing {existingItems.length} page(s).
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">Sort by:</span>
+              <select
+                value={optSort}
+                onChange={(e) => setOptSort(e.target.value as typeof optSort)}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+              >
+                <option value="rank">Worst rank first</option>
+                <option value="drop">Biggest drop first</option>
+              </select>
+            </span>
+          </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {[...existingItems]
-              .sort((a, b) => (b.rankDrop ?? 0) - (a.rankDrop ?? 0))
+              .sort((a, b) =>
+                optSort === "drop"
+                  ? (b.rankDrop ?? 0) - (a.rankDrop ?? 0)
+                  : (b.currentRank ?? 0) - (a.currentRank ?? 0),
+              )
               .map((i) => (
                 <Card
                   key={`${i.source}-${i.id}`}
