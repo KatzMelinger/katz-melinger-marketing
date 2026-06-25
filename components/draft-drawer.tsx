@@ -1029,6 +1029,7 @@ export function DraftDrawer({
                 <div className="mt-4">
                   <AnalysisCard
                     analysis={analysis}
+                    body={body}
                     onRerun={() => runAnalysis(draft)}
                     rerunning={analyzing}
                     onApplyFindings={(fs) => setApplyingFindings(fs)}

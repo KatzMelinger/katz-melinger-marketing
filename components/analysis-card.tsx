@@ -20,12 +20,25 @@ import {
   DashPill,
   DashSpinner,
 } from "@/components/dashboard-ui";
+import { toPlaintext } from "@/lib/readability/plaintext";
+import { analyzeLengths } from "@/lib/readability/checks";
+import {
+  DEFAULT_THRESHOLDS,
+  type ReadabilityThresholds,
+  type Status,
+} from "@/lib/readability/config";
 
 export type Analysis = {
   readability_score: number;
   reading_grade_level: number;
   word_count: number;
   sentence_count: number;
+  // Readability detail (Phase 1). Optional so analyses persisted before the
+  // migration still satisfy the type.
+  readability_avg_sentence_length?: number | null;
+  readability_long_sentences_count?: number | null;
+  readability_long_paragraphs_count?: number | null;
+  readability_overall_status?: "green" | "amber" | "red" | null;
   keyword_density: Record<string, number>;
   target_keyword_hits: Record<string, number>;
   aeo_score: number;
@@ -93,10 +106,18 @@ export function AnalysisCard({
   onApplyTitle,
   onApplyLink,
   currentTitle,
+  body,
+  onSelectRange,
 }: {
   analysis: Analysis;
   onRerun?: () => void;
   rerunning?: boolean;
+  /** Draft Markdown — lets the readability panel recompute flagged ranges
+   *  client-side (same pure checks the server scored with). */
+  body?: string;
+  /** Called when a flagged sentence/paragraph is clicked, with its source
+   *  character range, so the editor can scroll to / select it. */
+  onSelectRange?: (start: number, end: number) => void;
   /** Called when the user invokes Apply — either via a single row's button
    *  or via "Apply N selected". The list contains one or more finding
    *  strings; the modal handles both shapes. */
@@ -218,7 +239,22 @@ export function AnalysisCard({
       </div>
       <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
         <Tile label="Words" value={analysis.word_count} />
+        <Tile
+          label="Avg sentence"
+          value={
+            analysis.readability_avg_sentence_length != null
+              ? `${analysis.readability_avg_sentence_length} words`
+              : "—"
+          }
+        />
+        <Tile label="Grade level" value={analysis.reading_grade_level} />
+        <Tile label="Sentences" value={analysis.sentence_count} />
       </div>
+      <ReadabilitySection
+        analysis={analysis}
+        body={body}
+        onSelectRange={onSelectRange}
+      />
       {seoBreakdown && (
         <div className="mt-4">
           <div className="text-xs font-medium text-slate-700 mb-2">SEO breakdown</div>
@@ -992,6 +1028,125 @@ function SeoPillar({ label, value }: { label: string; value: number }) {
         <span className="text-base font-semibold tabular-nums">{value}</span>
       </div>
       <div className="text-[10px] opacity-80">{label}</div>
+    </div>
+  );
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
+}
+
+function StatusChip({ status }: { status: Status | null | undefined }) {
+  if (!status) return null;
+  const meta = {
+    green: { label: "Good", cls: "border-emerald-300 bg-emerald-50 text-emerald-700" },
+    amber: { label: "Review", cls: "border-amber-300 bg-amber-50 text-amber-700" },
+    red: { label: "Needs work", cls: "border-red-300 bg-red-50 text-red-700" },
+  }[status];
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${meta.cls}`}>
+      {meta.label}
+    </span>
+  );
+}
+
+/**
+ * Readability detail (Phase 1: sentence/paragraph length). Summary counts come
+ * from the persisted analysis; when the draft `body` is available the flagged
+ * ranges are recomputed client-side with the SAME pure checks the server scored
+ * with, so clicking a flagged item can jump to it in the editor.
+ */
+function ReadabilitySection({
+  analysis,
+  body,
+  onSelectRange,
+}: {
+  analysis: Analysis;
+  body?: string;
+  onSelectRange?: (start: number, end: number) => void;
+}) {
+  const [thresholds, setThresholds] = useState<ReadabilityThresholds>(DEFAULT_THRESHOLDS);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/content/readability-thresholds")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active && d?.thresholds) setThresholds(d.thresholds as ReadabilityThresholds);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const flags = useMemo(
+    () => (body ? analyzeLengths(toPlaintext(body), thresholds) : null),
+    [body, thresholds],
+  );
+
+  const status = analysis.readability_overall_status ?? flags?.overallStatus ?? null;
+  const longSentences =
+    flags?.longSentencesCount ?? analysis.readability_long_sentences_count ?? null;
+  const longParagraphs =
+    flags?.longParagraphsCount ?? analysis.readability_long_paragraphs_count ?? null;
+
+  // Nothing to show: analysis predates the migration and we have no body to
+  // recompute from.
+  if (status === null && longSentences === null && longParagraphs === null) return null;
+
+  const flagged = flags
+    ? [
+        ...flags.longSentences.map((f) => ({ ...f, kind: "Sentence" as const })),
+        ...flags.longParagraphs.map((f) => ({ ...f, kind: "Paragraph" as const })),
+      ]
+    : [];
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="text-xs font-medium text-slate-700">Readability</div>
+        <StatusChip status={status} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <Tile label="Long sentences" value={longSentences ?? "—"} />
+        <Tile label="Long paragraphs" value={longParagraphs ?? "—"} />
+      </div>
+      {flagged.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {flagged.map((f, i) => (
+            <li key={`${f.kind}-${f.start}-${i}`}>
+              <button
+                type="button"
+                onClick={() => onSelectRange?.(f.start, f.end)}
+                disabled={!onSelectRange}
+                className={`w-full text-left text-xs rounded border px-2 py-1.5 flex items-start gap-2 ${
+                  f.severity === "red"
+                    ? "border-red-200 bg-red-50/60 hover:bg-red-50"
+                    : "border-amber-200 bg-amber-50/60 hover:bg-amber-50"
+                } ${onSelectRange ? "cursor-pointer" : "cursor-default"}`}
+                title={onSelectRange ? "Jump to this in the draft" : undefined}
+              >
+                <span
+                  className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${
+                    f.severity === "red" ? "bg-red-500" : "bg-amber-500"
+                  }`}
+                  aria-hidden
+                />
+                <span className="flex-1">
+                  <span className="text-slate-400 mr-1">{f.kind}</span>
+                  <span className="font-medium tabular-nums">{f.words}w</span>{" "}
+                  <span className="text-slate-600">{truncate(f.text, 110)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {body && flagged.length === 0 && (
+        <div className="mt-2 text-xs text-slate-500">
+          No long sentences or paragraphs flagged.
+        </div>
+      )}
     </div>
   );
 }

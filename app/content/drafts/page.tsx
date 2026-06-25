@@ -699,6 +699,7 @@ export default function DraftsPage() {
               {analysis && (
                 <AnalysisCard
                   analysis={analysis}
+                  body={selectedDraft.body}
                   onRerun={analyze}
                   rerunning={analyzing}
                   onApplyFindings={(fs) => setApplyingFindings(fs)}
