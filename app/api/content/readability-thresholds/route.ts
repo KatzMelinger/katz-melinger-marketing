@@ -11,21 +11,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-  getThresholds,
+  getThresholdsDetail,
   saveThresholds,
   resetThresholds,
 } from "@/lib/readability/thresholds-store";
-import {
-  DEFAULT_THRESHOLDS,
-  type ReadabilityMetric,
-} from "@/lib/readability/config";
+import { type ReadabilityMetric, DEFAULT_THRESHOLDS } from "@/lib/readability/config";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const thresholds = await getThresholds();
-    return NextResponse.json({ thresholds, defaults: DEFAULT_THRESHOLDS });
+    const { thresholds, base, register } = await getThresholdsDetail();
+    // `base` is the brand-voice-derived starting point; `register` says which
+    // voice profile drove it (formal | accessible | neutral).
+    return NextResponse.json({ thresholds, base, register });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to load thresholds";
     return NextResponse.json({ error: msg }, { status: 500 });

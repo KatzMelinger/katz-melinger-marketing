@@ -35,8 +35,20 @@ function orderingInvalid(t: MetricThreshold): boolean {
   return t.direction === "lower" ? t.green > t.amber : t.green < t.amber;
 }
 
+type Register = "formal" | "accessible" | "neutral";
+
+const REGISTER_COPY: Record<Register, string> = {
+  formal:
+    "Your brand voice reads formal/authoritative, so the bands are looser — longer sentences and more formal phrasing won't be over-flagged.",
+  accessible:
+    "Your brand voice reads concise/client-facing, so the bands are tighter — they push toward plainer, easier copy.",
+  neutral:
+    "No strong register detected in your brand voice yet, so balanced default bands are used. Add writing samples in Brand voice to sharpen this.",
+};
+
 export default function ReadabilityStandardsManager() {
   const [thresholds, setThresholds] = useState<ReadabilityThresholds | null>(null);
+  const [register, setRegister] = useState<Register>("neutral");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -49,8 +61,10 @@ export default function ReadabilityStandardsManager() {
     try {
       const res = await fetch("/api/content/readability-thresholds", { cache: "no-store" });
       const json = await res.json();
-      if (res.ok) setThresholds(json.thresholds as ReadabilityThresholds);
-      else setError(json.error ?? "Failed to load thresholds");
+      if (res.ok) {
+        setThresholds(json.thresholds as ReadabilityThresholds);
+        if (json.register) setRegister(json.register as Register);
+      } else setError(json.error ?? "Failed to load thresholds");
     } catch {
       setError("Failed to load thresholds");
     } finally {
@@ -107,7 +121,7 @@ export default function ReadabilityStandardsManager() {
       const json = await res.json();
       if (res.ok) {
         setThresholds(json.thresholds as ReadabilityThresholds);
-        setMessage("Reset to defaults.");
+        setMessage("Reset — now following your brand voice.");
       } else {
         setError(json.error ?? "Failed to reset");
       }
@@ -124,10 +138,14 @@ export default function ReadabilityStandardsManager() {
         <h2 className="text-sm font-semibold text-slate-800">Readability standards</h2>
         <p className="mt-1 text-xs text-slate-500">
           The green / amber / red bands the content readability checks score against.
-          Tune them for the firm&apos;s voice — legal writing runs longer and more
-          formal than general web copy, so the defaults will over-flag if left as-is.
-          Edits apply on the next analysis run.
+          These start from your <strong>brand voice</strong> automatically — any band
+          you don&apos;t override keeps tracking it as your voice evolves. Edits apply
+          on the next analysis run.
         </p>
+        <div className="mt-2 rounded-md border border-violet-200 bg-violet-50/60 px-3 py-2 text-xs text-violet-800">
+          <span className="font-medium">Following your brand voice ({register}).</span>{" "}
+          {REGISTER_COPY[register]}
+        </div>
       </div>
 
       {loading ? (
@@ -200,8 +218,9 @@ export default function ReadabilityStandardsManager() {
               onClick={reset}
               disabled={resetting}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:border-slate-400 disabled:opacity-60"
+              title="Clear your overrides and follow the brand-voice bands exactly"
             >
-              {resetting ? "Resetting…" : "Reset to defaults"}
+              {resetting ? "Resetting…" : "Reset to brand voice"}
             </button>
             {message && <span className="text-xs text-emerald-700">{message}</span>}
             {error && <span className="text-xs text-red-600">{error}</span>}

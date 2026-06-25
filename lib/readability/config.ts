@@ -111,18 +111,23 @@ type PartialMetric = Partial<Pick<MetricThreshold, "green" | "amber">>;
 type PartialThresholds = Partial<Record<ReadabilityMetric, PartialMetric | null | undefined>>;
 
 /**
- * Deep-merge a tenant's stored config over the code defaults. Only the green/
- * amber numbers are taken from the tenant; `direction` always comes from the
- * defaults. Non-numeric or missing values fall back per-field.
+ * Deep-merge a sparse override config over a base (the firm's brand-voice bands,
+ * or the code defaults). Only the green/amber numbers come from the override;
+ * `direction` always comes from the code defaults. Non-numeric/missing values
+ * fall back to the base per-field.
  */
-export function mergeThresholds(partial: PartialThresholds | null | undefined): ReadabilityThresholds {
+export function mergeThresholds(
+  partial: PartialThresholds | null | undefined,
+  base: ReadabilityThresholds = DEFAULT_THRESHOLDS,
+): ReadabilityThresholds {
   const out = {} as ReadabilityThresholds;
   for (const key of Object.keys(DEFAULT_THRESHOLDS) as ReadabilityMetric[]) {
     const def = DEFAULT_THRESHOLDS[key];
+    const baseMetric = base[key] ?? def;
     const p = partial?.[key];
     out[key] = {
-      green: typeof p?.green === "number" ? p.green : def.green,
-      amber: typeof p?.amber === "number" ? p.amber : def.amber,
+      green: typeof p?.green === "number" ? p.green : baseMetric.green,
+      amber: typeof p?.amber === "number" ? p.amber : baseMetric.amber,
       direction: def.direction,
     };
   }
