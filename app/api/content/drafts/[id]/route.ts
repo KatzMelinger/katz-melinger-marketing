@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantClient } from "@/lib/tenant-db";
+import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 
 export const runtime = "nodejs";
 
@@ -80,6 +81,29 @@ export async function PATCH(
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Re-run analysis on Save when the body changed — the "run on Save" half of
+  // the readability trigger (generation completion is wired separately). Runs in
+  // the background via after(), so the PATCH response doesn't wait on it.
+  if ("body" in (body ?? {}) && typeof patch.body === "string") {
+    const row = data as {
+      body: string;
+      title: string | null;
+      topic: string | null;
+      format: string | null;
+      template: string | null;
+      seo_brief: { targetKeywords?: string[] } | null;
+    };
+    scheduleDraftAnalysis({
+      draftId: id,
+      body: row.body,
+      title: row.title,
+      topic: row.topic,
+      format: row.format,
+      template: row.template,
+      targetKeywords: row.seo_brief?.targetKeywords ?? [],
+    });
+  }
 
   // Auto-refresh the site_pages cluster map when a draft is published. We
   // accept any of several metadata keys for the public URL, so as long as the

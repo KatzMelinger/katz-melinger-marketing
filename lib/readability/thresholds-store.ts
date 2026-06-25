@@ -9,6 +9,8 @@
  * analysis engine calls getThresholds() once per run from inside a route.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { getTenantClient } from "@/lib/tenant-db";
 import {
   DEFAULT_THRESHOLDS,
@@ -31,6 +33,27 @@ export async function getThresholds(): Promise<ReadabilityThresholds> {
   // Non-fatal: fall back to code defaults so analysis never breaks on a read.
   if (error) {
     console.warn("[readability] getThresholds read failed, using defaults:", error.message);
+    return DEFAULT_THRESHOLDS;
+  }
+  return mergeThresholds((data?.config ?? null) as StoredConfig | null);
+}
+
+/**
+ * Resolve thresholds for an explicit tenant using a caller-supplied client.
+ * For background / admin contexts (e.g. analyzeDraft via after()) that already
+ * hold a service-role client + tenantId and can't rely on RLS auto-scoping.
+ */
+export async function getThresholdsForTenant(
+  supabase: SupabaseClient,
+  tenantId: string,
+): Promise<ReadabilityThresholds> {
+  const { data, error } = await supabase
+    .from("readability_thresholds")
+    .select("config")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) {
+    console.warn("[readability] getThresholdsForTenant failed, using defaults:", error.message);
     return DEFAULT_THRESHOLDS;
   }
   return mergeThresholds((data?.config ?? null) as StoredConfig | null);

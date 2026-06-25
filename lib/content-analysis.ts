@@ -21,6 +21,10 @@ import {
   filterTitlesByCannibalization,
   type FilteredTitle,
 } from "./title-cannibalization";
+import { toPlaintext } from "./readability/plaintext";
+import { analyzeLengths } from "./readability/checks";
+import { getThresholdsForTenant } from "./readability/thresholds-store";
+import type { Status } from "./readability/config";
 
 const STOP_WORDS = new Set([
   "the","and","that","with","from","this","your","have","will","about","into",
@@ -72,6 +76,13 @@ export type ContentAnalysis = {
   reading_grade_level: number;
   word_count: number;
   sentence_count: number;
+  // Readability detail (Phase 1: sentence/paragraph length). Persisted summary
+  // counts + worst-of status; the flagged ranges for highlighting are recomputed
+  // client-side from the same pure checks, so they aren't stored here.
+  readability_avg_sentence_length: number;
+  readability_long_sentences_count: number;
+  readability_long_paragraphs_count: number;
+  readability_overall_status: Status;
   keyword_density: Record<string, number>;
   target_keyword_hits: Record<string, number>;
   aeo_score: number;
@@ -846,9 +857,16 @@ export async function analyzeDraft(args: {
   const supabase = getSupabaseAdmin();
   const tid = await resolveTenantId();
 
-  const { words, sentences, syllables } = basicMetrics(body);
+  // Parse Markdown → prose once, and run Flesch on the prose (not the raw
+  // markup — counting `**`, list bullets, and link URLs inflated the old score).
+  const plaintext = toPlaintext(body);
+  const { words, sentences, syllables } = basicMetrics(plaintext.text);
   const flesch = fleschReadingEase(words.length, sentences, syllables);
   const grade = fleschKincaidGrade(words.length, sentences, syllables);
+
+  // Sentence/paragraph length detail (Phase 1) against tenant-editable bands.
+  const thresholds = await getThresholdsForTenant(supabase, tid);
+  const lengths = analyzeLengths(plaintext, thresholds);
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
@@ -892,6 +910,10 @@ export async function analyzeDraft(args: {
     reading_grade_level: Math.round(grade * 10) / 10,
     word_count: words.length,
     sentence_count: sentences,
+    readability_avg_sentence_length: lengths.avgSentenceLength,
+    readability_long_sentences_count: lengths.longSentencesCount,
+    readability_long_paragraphs_count: lengths.longParagraphsCount,
+    readability_overall_status: lengths.overallStatus,
     keyword_density: keywordDensity(words),
     target_keyword_hits: targetHits(body, targetKeywords),
     aeo_score: aeo.score,
@@ -928,14 +950,35 @@ export async function analyzeDraft(args: {
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_conflicts_avoided;
 
   // Graceful column-degradation. If new columns aren't migrated yet, drop
-  // the offending fields and retry. Newest columns (compliance_*) drop first,
-  // then suggested_titles / suggested_images, then seo_/linkability_/
-  // outreach_angles, then CASH-era columns. Each retry strips one generation of
-  // columns. Stripping mutates `persistable` so later retries stay cumulative.
+  // the offending fields and retry. Newest columns (readability_* detail) drop
+  // first, then compliance_*, then suggested_titles / suggested_images, then
+  // seo_/linkability_/outreach_angles, then CASH-era columns. Each retry strips
+  // one generation of columns. Stripping mutates `persistable` so later retries
+  // stay cumulative.
   let { error } = await supabase.from("content_analyses").insert({ tenant_id: tid,
     draft_id: draftId,
     ...persistable,
   });
+  if (
+    error &&
+    /readability_(avg_sentence_length|long_sentences_count|long_paragraphs_count|overall_status)/.test(
+      error.message,
+    )
+  ) {
+    for (const k of [
+      "readability_avg_sentence_length",
+      "readability_long_sentences_count",
+      "readability_long_paragraphs_count",
+      "readability_overall_status",
+    ] as const) {
+      delete (persistable as Record<string, unknown>)[k];
+    }
+    const retry = await supabase.from("content_analyses").insert({ tenant_id: tid,
+      draft_id: draftId,
+      ...persistable,
+    });
+    error = retry.error;
+  }
   if (error && /compliance_/.test(error.message)) {
     for (const k of [
       "compliance_score",
