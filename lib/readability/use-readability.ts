@@ -12,8 +12,14 @@ import { toPlaintext } from "./plaintext";
 import {
   analyzeLengths,
   analyzePassive,
+  analyzeTransitions,
+  analyzeOpeners,
+  analyzeSubheadingGaps,
   type LengthAnalysis,
   type PassiveAnalysis,
+  type TransitionAnalysis,
+  type OpenerAnalysis,
+  type SubheadingAnalysis,
 } from "./checks";
 import { DEFAULT_THRESHOLDS, type ReadabilityThresholds } from "./config";
 
@@ -64,19 +70,35 @@ export function useReadabilityRanges(body: string | undefined): {
   ranges: ReadabilityHighlight[];
   lengths: LengthAnalysis | null;
   passive: PassiveAnalysis | null;
+  transitions: TransitionAnalysis | null;
+  openers: OpenerAnalysis | null;
+  subheadings: SubheadingAnalysis | null;
   thresholds: ReadabilityThresholds;
 } {
   const thresholds = useReadabilityThresholds();
   return useMemo(() => {
-    if (!body) return { ranges: [], lengths: null, passive: null, thresholds };
+    if (!body) {
+      return {
+        ranges: [],
+        lengths: null,
+        passive: null,
+        transitions: null,
+        openers: null,
+        subheadings: null,
+        thresholds,
+      };
+    }
     const pt = toPlaintext(body);
     const lengths = analyzeLengths(pt, thresholds);
     const passive = analyzePassive(pt, thresholds);
+    const transitions = analyzeTransitions(pt, thresholds);
+    const openers = analyzeOpeners(pt, thresholds);
+    const subheadings = analyzeSubheadingGaps(pt, thresholds);
     const ranges = [...lengths.longSentences, ...lengths.longParagraphs].map((f) => ({
       start: f.start,
       end: f.end,
       severity: f.severity,
     }));
-    return { ranges, lengths, passive, thresholds };
+    return { ranges, lengths, passive, transitions, openers, subheadings, thresholds };
   }, [body, thresholds]);
 }

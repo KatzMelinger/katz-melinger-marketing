@@ -13,6 +13,7 @@ import type { Plaintext, Sentence } from "./plaintext";
 import {
   classify,
   rollup,
+  TRANSITION_WORDS,
   type MetricThreshold,
   type ReadabilityThresholds,
   type Status,
@@ -192,4 +193,149 @@ export function analyzePassive(
 /** Status for a Flesch–Kincaid grade level against the tenant's band. */
 export function gradeStatus(grade: number, t: MetricThreshold): Status {
   return classify(grade, t);
+}
+
+// ---------------------------------------------------------------------------
+// Transition words (spec Priority 4)
+// ---------------------------------------------------------------------------
+
+// Longest phrases first so multi-word transitions win over their prefixes.
+const TRANSITIONS_BY_LENGTH = [...TRANSITION_WORDS].sort(
+  (a, b) => b.length - a.length,
+);
+
+/** A sentence "uses a transition" when its opening matches a transition phrase. */
+function opensWithTransition(text: string): boolean {
+  const head = text.toLowerCase().replace(/^[^a-z]+/, "");
+  for (const phrase of TRANSITIONS_BY_LENGTH) {
+    if (head === phrase || head.startsWith(`${phrase} `) || head.startsWith(`${phrase},`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export type TransitionAnalysis = {
+  /** Percentage of sentences opening with a transition (0–100). */
+  transitionPct: number;
+  transitionCount: number;
+  status: Status;
+};
+
+export function analyzeTransitions(
+  pt: Plaintext,
+  t: ReadabilityThresholds,
+): TransitionAnalysis {
+  const sentences = pt.sentences;
+  let count = 0;
+  for (const s of sentences) if (opensWithTransition(s.text)) count++;
+  const transitionPct = sentences.length
+    ? Math.round((count / sentences.length) * 1000) / 10
+    : 0;
+  return {
+    transitionPct,
+    transitionCount: count,
+    status: classify(transitionPct, t.transitionWordPct),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Consecutive sentence openers (spec Priority 5)
+// ---------------------------------------------------------------------------
+
+function firstWord(text: string): string {
+  const m = text.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/);
+  return m ? m[0] : "";
+}
+
+export type OpenerRun = { word: string; count: number; start: number; end: number };
+
+export type OpenerAnalysis = {
+  /** Runs of >=3 consecutive sentences sharing the same opening word. */
+  runs: OpenerRun[];
+  runsCount: number;
+  status: Status;
+};
+
+export function analyzeOpeners(
+  pt: Plaintext,
+  t: ReadabilityThresholds,
+): OpenerAnalysis {
+  const sentences = pt.sentences;
+  const runs: OpenerRun[] = [];
+  let i = 0;
+  while (i < sentences.length) {
+    const word = firstWord(sentences[i].text);
+    let j = i + 1;
+    while (j < sentences.length && word && firstWord(sentences[j].text) === word) j++;
+    const len = j - i;
+    if (word && len >= 3) {
+      runs.push({
+        word,
+        count: len,
+        start: sentences[i].start,
+        end: sentences[j - 1].end,
+      });
+    }
+    i = j;
+  }
+  return {
+    runs,
+    runsCount: runs.length,
+    status: classify(runs.length, t.consecutiveOpeners),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Subheading gaps (spec Priority 5)
+// ---------------------------------------------------------------------------
+
+export type SubheadingGap = { start: number; end: number; words: number };
+
+export type SubheadingAnalysis = {
+  gaps: SubheadingGap[];
+  /** Count of stretches whose word span exceeds the green threshold. */
+  gapCount: number;
+  maxGapWords: number;
+  status: Status;
+};
+
+/**
+ * Word spans between consecutive H2/H3 subheadings (plus the lead before the
+ * first and the tail after the last). A "gap" is a span over the green cutoff;
+ * status classifies the LARGEST span so one long unbroken stretch shows red.
+ */
+export function analyzeSubheadingGaps(
+  pt: Plaintext,
+  t: ReadabilityThresholds,
+): SubheadingAnalysis {
+  const band = t.subheadingGapWords;
+  // Boundaries: document start, each H2/H3 start, document end.
+  const subheadings = pt.headings.filter((h) => h.level >= 2);
+  const docStart = 0;
+  const docEnd = pt.paragraphs.length
+    ? Math.max(...pt.paragraphs.map((p) => p.end))
+    : 0;
+  const bounds = [docStart, ...subheadings.map((h) => h.start), docEnd].sort(
+    (a, b) => a - b,
+  );
+
+  const gaps: SubheadingGap[] = [];
+  let maxGapWords = 0;
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const segStart = bounds[i];
+    const segEnd = bounds[i + 1];
+    let words = 0;
+    for (const p of pt.paragraphs) {
+      if (p.start >= segStart && p.start < segEnd) words += p.wordCount;
+    }
+    maxGapWords = Math.max(maxGapWords, words);
+    if (words > band.green) gaps.push({ start: segStart, end: segEnd, words });
+  }
+  return {
+    gaps,
+    gapCount: gaps.length,
+    maxGapWords,
+    status: classify(maxGapWords, band),
+  };
 }

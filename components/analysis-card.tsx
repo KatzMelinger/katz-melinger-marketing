@@ -1068,7 +1068,8 @@ function ReadabilitySection({
   onSelectRange?: (start: number, end: number) => void;
   onReplaceRange?: (start: number, end: number, text: string) => void;
 }) {
-  const { lengths: flags, passive, thresholds } = useReadabilityRanges(body);
+  const { lengths: flags, passive, transitions, openers, subheadings, thresholds } =
+    useReadabilityRanges(body);
 
   const status = analysis.readability_overall_status ?? flags?.overallStatus ?? null;
   const longSentences =
@@ -1152,6 +1153,56 @@ function ReadabilitySection({
         </div>
       )}
 
+      {(transitions || openers || subheadings) && (
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+          {transitions && (
+            <StatusTile
+              label="Transitions"
+              value={`${transitions.transitionPct}%`}
+              status={transitions.status}
+              hint="Share of sentences opening with a transition word — higher reads smoother"
+            />
+          )}
+          {openers && (
+            <StatusTile
+              label="Repeated openers"
+              value={openers.runsCount}
+              status={openers.status}
+              hint="Runs of 3+ consecutive sentences starting with the same word"
+            />
+          )}
+          {subheadings && (
+            <StatusTile
+              label="Subheading gaps"
+              value={subheadings.gapCount}
+              status={subheadings.status}
+              hint={`Stretches over ${thresholds.subheadingGapWords.green} words without an H2/H3 (longest: ${subheadings.maxGapWords}w)`}
+            />
+          )}
+        </div>
+      )}
+
+      {openers && openers.runs.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {openers.runs.map((r, i) => (
+            <li key={`opener-${r.start}-${i}`}>
+              <button
+                type="button"
+                onClick={() => onSelectRange?.(r.start, r.end)}
+                disabled={!onSelectRange}
+                className={`w-full text-left text-xs rounded border border-amber-200 bg-amber-50/60 px-2 py-1.5 ${
+                  onSelectRange ? "cursor-pointer hover:bg-amber-50" : "cursor-default"
+                }`}
+                title={onSelectRange ? "Jump to this in the draft" : undefined}
+              >
+                <span className="font-medium tabular-nums">{r.count}</span> sentences in a
+                row start with <span className="font-medium">&ldquo;{r.word}&rdquo;</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {passive && (
         <PassiveSection
           passive={passive}
@@ -1159,6 +1210,32 @@ function ReadabilitySection({
           onReplaceRange={onReplaceRange}
         />
       )}
+    </div>
+  );
+}
+
+/** A compact value tile colored by readability status. */
+function StatusTile({
+  label,
+  value,
+  status,
+  hint,
+}: {
+  label: string;
+  value: number | string;
+  status: Status;
+  hint?: string;
+}) {
+  const cls =
+    status === "green"
+      ? "border-emerald-200 bg-emerald-50/60"
+      : status === "amber"
+        ? "border-amber-200 bg-amber-50/60"
+        : "border-red-200 bg-red-50/60";
+  return (
+    <div className={`rounded-md border px-2 py-1.5 ${cls}`} title={hint}>
+      <div className="text-sm font-semibold tabular-nums text-slate-800">{value}</div>
+      <div className="text-[10px] text-slate-500">{label}</div>
     </div>
   );
 }

@@ -63,6 +63,30 @@ export const DEFAULT_THRESHOLDS: ReadabilityThresholds = {
   fkGradeLevel: { green: 9, amber: 12, direction: "lower" },
 };
 
+/**
+ * Transition words/phrases (spec Priority 4). A sentence "uses a transition"
+ * when it opens with one of these. Longest phrases are matched first so
+ * "as a result" wins over "as". All lowercase; matched case-insensitively.
+ */
+export const TRANSITION_WORDS: string[] = [
+  // multi-word phrases first
+  "as a result", "as a consequence", "for this reason", "for example",
+  "for instance", "in addition", "in contrast", "in fact", "in other words",
+  "in conclusion", "in summary", "on the other hand", "on the contrary",
+  "even though", "even so", "as well as", "at the same time", "in particular",
+  "in short", "to summarize", "to conclude", "that is to say", "of course",
+  "above all", "after all", "by contrast", "by comparison", "in the meantime",
+  "more importantly", "first of all", "to begin with",
+  // single words
+  "however", "therefore", "moreover", "furthermore", "additionally",
+  "consequently", "nevertheless", "nonetheless", "meanwhile", "similarly",
+  "likewise", "accordingly", "thus", "hence", "besides", "instead", "indeed",
+  "ultimately", "subsequently", "conversely", "regardless", "notably",
+  "finally", "first", "firstly", "second", "secondly", "third", "thirdly",
+  "next", "then", "also", "although", "though", "because", "since", "while",
+  "whereas", "unless", "until", "afterward", "afterwards", "overall",
+];
+
 /** Classify a measured value into a status using one metric's bands. */
 export function classify(value: number, t: MetricThreshold): Status {
   if (t.direction === "lower") {
