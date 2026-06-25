@@ -22,9 +22,9 @@ import {
   type FilteredTitle,
 } from "./title-cannibalization";
 import { toPlaintext } from "./readability/plaintext";
-import { analyzeLengths } from "./readability/checks";
+import { analyzeLengths, analyzePassive, gradeStatus } from "./readability/checks";
 import { getThresholdsForTenant } from "./readability/thresholds-store";
-import type { Status } from "./readability/config";
+import { rollup, type Status } from "./readability/config";
 
 const STOP_WORDS = new Set([
   "the","and","that","with","from","this","your","have","will","about","into",
@@ -82,6 +82,7 @@ export type ContentAnalysis = {
   readability_avg_sentence_length: number;
   readability_long_sentences_count: number;
   readability_long_paragraphs_count: number;
+  readability_passive_voice_pct: number;
   readability_overall_status: Status;
   keyword_density: Record<string, number>;
   target_keyword_hits: Record<string, number>;
@@ -864,9 +865,22 @@ export async function analyzeDraft(args: {
   const flesch = fleschReadingEase(words.length, sentences, syllables);
   const grade = fleschKincaidGrade(words.length, sentences, syllables);
 
-  // Sentence/paragraph length detail (Phase 1) against tenant-editable bands.
+  // Readability detail against tenant-editable bands: length (Priority 1),
+  // passive voice (Priority 3), and grade level (Priority 2) folded into the
+  // worst-of overall status.
   const thresholds = await getThresholdsForTenant(supabase, tid);
   const lengths = analyzeLengths(plaintext, thresholds);
+  const passive = analyzePassive(plaintext, thresholds);
+  const gradeStat = gradeStatus(
+    Math.round(grade * 10) / 10,
+    thresholds.fkGradeLevel,
+  );
+  const readabilityOverall = rollup([
+    lengths.sentenceStatus,
+    lengths.paragraphStatus,
+    passive.status,
+    gradeStat,
+  ]);
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
@@ -913,7 +927,8 @@ export async function analyzeDraft(args: {
     readability_avg_sentence_length: lengths.avgSentenceLength,
     readability_long_sentences_count: lengths.longSentencesCount,
     readability_long_paragraphs_count: lengths.longParagraphsCount,
-    readability_overall_status: lengths.overallStatus,
+    readability_passive_voice_pct: passive.passivePct,
+    readability_overall_status: readabilityOverall,
     keyword_density: keywordDensity(words),
     target_keyword_hits: targetHits(body, targetKeywords),
     aeo_score: aeo.score,
@@ -961,7 +976,7 @@ export async function analyzeDraft(args: {
   });
   if (
     error &&
-    /readability_(avg_sentence_length|long_sentences_count|long_paragraphs_count|overall_status)/.test(
+    /readability_(avg_sentence_length|long_sentences_count|long_paragraphs_count|passive_voice_pct|overall_status)/.test(
       error.message,
     )
   ) {
@@ -969,6 +984,7 @@ export async function analyzeDraft(args: {
       "readability_avg_sentence_length",
       "readability_long_sentences_count",
       "readability_long_paragraphs_count",
+      "readability_passive_voice_pct",
       "readability_overall_status",
     ] as const) {
       delete (persistable as Record<string, unknown>)[k];

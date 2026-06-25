@@ -9,10 +9,11 @@
  * + same thresholds ⇒ same result, so the panel and the stored chip agree.
  */
 
-import type { Plaintext } from "./plaintext";
+import type { Plaintext, Sentence } from "./plaintext";
 import {
   classify,
   rollup,
+  type MetricThreshold,
   type ReadabilityThresholds,
   type Status,
 } from "./config";
@@ -99,4 +100,96 @@ export function analyzeLengths(
     paragraphStatus,
     overallStatus: rollup([sentenceStatus, paragraphStatus]),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Passive voice (spec Priority 3)
+// ---------------------------------------------------------------------------
+
+// Forms of "to be" that, followed by a past participle, signal passive voice.
+const BE_FORMS = new Set([
+  "is", "are", "was", "were", "be", "been", "being", "am", "get", "gets",
+  "got", "gotten",
+]);
+
+// Words that look like "be + participle" but are almost always adjectival or
+// otherwise not passive — keeps false positives down on legal copy.
+const NOT_PASSIVE_PARTICIPLES = new Set([
+  "interested", "concerned", "located", "limited", "related", "involved",
+  "experienced", "dedicated", "qualified", "licensed", "based", "supposed",
+  "used", "tired", "pleased", "needed",
+]);
+
+// Common irregular past participles (don't end in -ed).
+const IRREGULAR_PARTICIPLES = new Set([
+  "given", "taken", "made", "done", "seen", "known", "shown", "found", "held",
+  "brought", "bought", "caught", "taught", "thought", "sought", "told", "sold",
+  "paid", "said", "left", "kept", "built", "sent", "spent", "lost", "won",
+  "met", "led", "read", "set", "put", "cut", "hit", "let", "hurt", "cost",
+  "written", "driven", "broken", "chosen", "spoken", "stolen", "frozen",
+  "forgotten", "hidden", "beaten", "eaten", "fallen", "drawn", "thrown",
+  "grown", "blown", "flown", "worn", "torn", "born", "sworn", "dealt", "felt",
+  "meant", "heard", "understood", "withheld", "awarded", "filed", "served",
+]);
+
+function isPastParticiple(word: string): boolean {
+  const w = word.toLowerCase().replace(/[^a-z]/g, "");
+  if (!w || NOT_PASSIVE_PARTICIPLES.has(w)) return false;
+  if (IRREGULAR_PARTICIPLES.has(w)) return true;
+  // Regular participles end in -ed (but skip very short words like "red").
+  return w.length > 3 && w.endsWith("ed");
+}
+
+const PASSIVE_TOKEN_RE = /[A-Za-z]+(?:'[A-Za-z]+)?/g;
+
+/** Heuristic: a "to be" form followed within a few tokens by a past participle. */
+function sentenceIsPassive(text: string): boolean {
+  const tokens = text.toLowerCase().match(PASSIVE_TOKEN_RE);
+  if (!tokens) return false;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!BE_FORMS.has(tokens[i])) continue;
+    // Allow up to two intervening adverbs/words ("was clearly written").
+    for (let j = i + 1; j <= i + 3 && j < tokens.length; j++) {
+      if (isPastParticiple(tokens[j])) return true;
+      // "not"/adverbs may sit between; "by" after the participle is a strong
+      // signal but we don't require it.
+    }
+  }
+  return false;
+}
+
+export type PassiveSentence = { start: number; end: number; text: string };
+
+export type PassiveAnalysis = {
+  passiveSentences: PassiveSentence[];
+  /** Percentage of sentences in passive voice (0–100). */
+  passivePct: number;
+  status: Status;
+};
+
+/** Detect passive-voice sentences and the document-level passive percentage. */
+export function analyzePassive(
+  pt: Plaintext,
+  t: ReadabilityThresholds,
+): PassiveAnalysis {
+  const sentences: Sentence[] = pt.sentences;
+  const passiveSentences: PassiveSentence[] = [];
+  for (const s of sentences) {
+    if (sentenceIsPassive(s.text)) {
+      passiveSentences.push({ start: s.start, end: s.end, text: s.text });
+    }
+  }
+  const passivePct = sentences.length
+    ? Math.round((passiveSentences.length / sentences.length) * 1000) / 10
+    : 0;
+  return {
+    passiveSentences,
+    passivePct,
+    status: classify(passivePct, t.passiveVoicePct),
+  };
+}
+
+/** Status for a Flesch–Kincaid grade level against the tenant's band. */
+export function gradeStatus(grade: number, t: MetricThreshold): Status {
+  return classify(grade, t);
 }

@@ -20,7 +20,8 @@ import {
   DashPill,
   DashSpinner,
 } from "@/components/dashboard-ui";
-import { type Status } from "@/lib/readability/config";
+import { classify, type Status } from "@/lib/readability/config";
+import { type PassiveAnalysis } from "@/lib/readability/checks";
 import { useReadabilityRanges } from "@/lib/readability/use-readability";
 
 export type Analysis = {
@@ -33,6 +34,7 @@ export type Analysis = {
   readability_avg_sentence_length?: number | null;
   readability_long_sentences_count?: number | null;
   readability_long_paragraphs_count?: number | null;
+  readability_passive_voice_pct?: number | null;
   readability_overall_status?: "green" | "amber" | "red" | null;
   keyword_density: Record<string, number>;
   target_keyword_hits: Record<string, number>;
@@ -103,6 +105,7 @@ export function AnalysisCard({
   currentTitle,
   body,
   onSelectRange,
+  onReplaceRange,
 }: {
   analysis: Analysis;
   onRerun?: () => void;
@@ -113,6 +116,8 @@ export function AnalysisCard({
   /** Called when a flagged sentence/paragraph is clicked, with its source
    *  character range, so the editor can scroll to / select it. */
   onSelectRange?: (start: number, end: number) => void;
+  /** Replace a source character range with new text (passive-voice rewrites). */
+  onReplaceRange?: (start: number, end: number, text: string) => void;
   /** Called when the user invokes Apply — either via a single row's button
    *  or via "Apply N selected". The list contains one or more finding
    *  strings; the modal handles both shapes. */
@@ -249,6 +254,7 @@ export function AnalysisCard({
         analysis={analysis}
         body={body}
         onSelectRange={onSelectRange}
+        onReplaceRange={onReplaceRange}
       />
       {seoBreakdown && (
         <div className="mt-4">
@@ -1055,12 +1061,14 @@ function ReadabilitySection({
   analysis,
   body,
   onSelectRange,
+  onReplaceRange,
 }: {
   analysis: Analysis;
   body?: string;
   onSelectRange?: (start: number, end: number) => void;
+  onReplaceRange?: (start: number, end: number, text: string) => void;
 }) {
-  const { lengths: flags } = useReadabilityRanges(body);
+  const { lengths: flags, passive, thresholds } = useReadabilityRanges(body);
 
   const status = analysis.readability_overall_status ?? flags?.overallStatus ?? null;
   const longSentences =
@@ -1079,15 +1087,33 @@ function ReadabilitySection({
       ]
     : [];
 
+  // Priority 2: color-code the Flesch–Kincaid grade against the tenant band.
+  const gradeStatus = classify(analysis.reading_grade_level, thresholds.fkGradeLevel);
+
   return (
     <div className="mt-4">
       <div className="flex items-center gap-2 mb-2">
         <div className="text-xs font-medium text-slate-700">Readability</div>
         <StatusChip status={status} />
       </div>
-      <div className="grid grid-cols-2 gap-2 text-xs">
+      <div className="grid grid-cols-3 gap-2 text-xs">
         <Tile label="Long sentences" value={longSentences ?? "—"} />
         <Tile label="Long paragraphs" value={longParagraphs ?? "—"} />
+        <div
+          className={`rounded-md border px-2 py-1.5 ${
+            gradeStatus === "green"
+              ? "border-emerald-200 bg-emerald-50/60"
+              : gradeStatus === "amber"
+                ? "border-amber-200 bg-amber-50/60"
+                : "border-red-200 bg-red-50/60"
+          }`}
+          title="Flesch–Kincaid grade level — lower reads easier"
+        >
+          <div className="text-sm font-semibold tabular-nums text-slate-800">
+            {analysis.reading_grade_level}
+          </div>
+          <div className="text-[10px] text-slate-500">Grade level</div>
+        </div>
       </div>
       {flagged.length > 0 && (
         <ul className="mt-2 space-y-1">
@@ -1125,6 +1151,137 @@ function ReadabilitySection({
           No long sentences or paragraphs flagged.
         </div>
       )}
+
+      {passive && (
+        <PassiveSection
+          passive={passive}
+          onSelectRange={onSelectRange}
+          onReplaceRange={onReplaceRange}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Passive-voice list with one-click active-voice rewrites (spec Priority 3).
+ * Sends all flagged sentences to /api/content/passive-rewrite in one call, then
+ * shows each suggestion next to its original with an Apply button that replaces
+ * the sentence in place via onReplaceRange.
+ */
+function PassiveSection({
+  passive,
+  onSelectRange,
+  onReplaceRange,
+}: {
+  passive: PassiveAnalysis;
+  onSelectRange?: (start: number, end: number) => void;
+  onReplaceRange?: (start: number, end: number, text: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [applied, setApplied] = useState<Set<string>>(new Set());
+
+  const sentences = passive.passiveSentences;
+
+  const requestRewrites = async () => {
+    if (sentences.length === 0) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content/passive-rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sentences: sentences.map((s) => s.text) }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Rewrite failed");
+        return;
+      }
+      const map: Record<string, string> = {};
+      for (const r of json.rewrites ?? []) {
+        if (r?.original && r?.suggestion) map[r.original] = r.suggestion;
+      }
+      setSuggestions(map);
+    } catch {
+      setError("Rewrite failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="text-xs font-medium text-slate-700">Passive voice</div>
+        <StatusChip status={passive.status} />
+        <span className="text-[10px] text-slate-500 tabular-nums">
+          {passive.passivePct}% of sentences
+        </span>
+        {sentences.length > 0 && onReplaceRange && (
+          <button
+            type="button"
+            onClick={requestRewrites}
+            disabled={loading}
+            className="ml-auto text-xs px-2.5 py-1 rounded border border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-60 inline-flex items-center gap-1.5 font-medium"
+            title="Ask Claude to rewrite each passive sentence in active voice"
+          >
+            {loading ? <DashSpinner /> : <span aria-hidden>✨</span>}
+            {loading ? "Rewriting…" : "Suggest active rewrites"}
+          </button>
+        )}
+      </div>
+
+      {sentences.length === 0 ? (
+        <div className="text-xs text-slate-500">No passive-voice sentences detected.</div>
+      ) : (
+        <ul className="space-y-1.5">
+          {sentences.map((s, i) => {
+            const suggestion = suggestions[s.text];
+            const isApplied = applied.has(s.text);
+            const changed = suggestion && suggestion !== s.text;
+            return (
+              <li
+                key={`passive-${s.start}-${i}`}
+                className="rounded border border-slate-200 px-2 py-1.5 text-xs"
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectRange?.(s.start, s.end)}
+                  disabled={!onSelectRange}
+                  className={`text-left text-slate-600 ${onSelectRange ? "hover:text-slate-900 cursor-pointer" : "cursor-default"}`}
+                  title={onSelectRange ? "Jump to this in the draft" : undefined}
+                >
+                  {truncate(s.text, 140)}
+                </button>
+                {suggestion && (
+                  <div className="mt-1.5 flex items-start gap-2 rounded bg-emerald-50/70 border border-emerald-200 px-2 py-1">
+                    <span className="text-emerald-700 flex-1">
+                      {changed ? truncate(suggestion, 140) : "Already active — no change suggested."}
+                    </span>
+                    {changed && onReplaceRange && !isApplied && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onReplaceRange(s.start, s.end, suggestion);
+                          setApplied((prev) => new Set(prev).add(s.text));
+                        }}
+                        className="text-emerald-800 font-medium hover:underline shrink-0"
+                      >
+                        Apply
+                      </button>
+                    )}
+                    {isApplied && <span className="text-emerald-600 shrink-0">✓ applied</span>}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error && <div className="mt-1 text-xs text-red-600">{error}</div>}
     </div>
   );
 }

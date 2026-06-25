@@ -1038,6 +1038,12 @@ export function DraftDrawer({
                     analysis={analysis}
                     body={body}
                     onSelectRange={(s, e) => editorRef.current?.selectRange(s, e)}
+                    onReplaceRange={
+                      editing
+                        ? (s, e, t) =>
+                            setEditBody((prev) => prev.slice(0, s) + t + prev.slice(e))
+                        : undefined
+                    }
                     onRerun={() => runAnalysis(draft)}
                     rerunning={analyzing}
                     onApplyFindings={(fs) => setApplyingFindings(fs)}

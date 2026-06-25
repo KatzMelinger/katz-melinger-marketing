@@ -9,7 +9,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { toPlaintext } from "./plaintext";
-import { analyzeLengths, type LengthAnalysis } from "./checks";
+import {
+  analyzeLengths,
+  analyzePassive,
+  type LengthAnalysis,
+  type PassiveAnalysis,
+} from "./checks";
 import { DEFAULT_THRESHOLDS, type ReadabilityThresholds } from "./config";
 
 let cached: ReadabilityThresholds | null = null;
@@ -51,20 +56,27 @@ export type ReadabilityHighlight = {
   severity: "amber" | "red";
 };
 
-/** Flagged ranges (for editor highlighting) + the full length analysis. */
+/**
+ * Flagged ranges (for editor highlighting), the length analysis, the passive
+ * analysis, and the resolved thresholds — all from one parse + one fetch.
+ */
 export function useReadabilityRanges(body: string | undefined): {
   ranges: ReadabilityHighlight[];
   lengths: LengthAnalysis | null;
+  passive: PassiveAnalysis | null;
+  thresholds: ReadabilityThresholds;
 } {
   const thresholds = useReadabilityThresholds();
   return useMemo(() => {
-    if (!body) return { ranges: [], lengths: null };
-    const lengths = analyzeLengths(toPlaintext(body), thresholds);
+    if (!body) return { ranges: [], lengths: null, passive: null, thresholds };
+    const pt = toPlaintext(body);
+    const lengths = analyzeLengths(pt, thresholds);
+    const passive = analyzePassive(pt, thresholds);
     const ranges = [...lengths.longSentences, ...lengths.longParagraphs].map((f) => ({
       start: f.start,
       end: f.end,
       severity: f.severity,
     }));
-    return { ranges, lengths };
+    return { ranges, lengths, passive, thresholds };
   }, [body, thresholds]);
 }

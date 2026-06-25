@@ -707,6 +707,9 @@ export default function DraftsPage() {
                   analysis={analysis}
                   body={editBody}
                   onSelectRange={(s, e) => editorRef.current?.selectRange(s, e)}
+                  onReplaceRange={(s, e, t) =>
+                    setEditBody((prev) => prev.slice(0, s) + t + prev.slice(e))
+                  }
                   onRerun={analyze}
                   rerunning={analyzing}
                   onApplyFindings={(fs) => setApplyingFindings(fs)}
