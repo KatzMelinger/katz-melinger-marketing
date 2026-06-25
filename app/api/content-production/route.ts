@@ -102,6 +102,10 @@ export async function GET() {
     url: string | null;
     draftId: string | null;
     needsReview: boolean;
+    // Latest readability rollup for the linked draft (green/amber/red), so the
+    // card can show status without opening the full draft. Absent when no draft
+    // or no analysis yet (pipeline cards only).
+    readabilityStatus?: "green" | "amber" | "red" | null;
     // Inputs the existing components need when a card action opens them:
     // opportunity → KmBriefWizard; pipeline → DraftDrawer.
     intent: string | null;
@@ -121,6 +125,26 @@ export async function GET() {
     previousRank?: number | null;
   };
   const items: Item[] = [];
+
+  // Latest readability rollup per linked draft — one query for all pipeline
+  // cards. content_analyses has a row per analysis run, so take the newest per
+  // draft (rows arrive newest-first).
+  const draftIds = (pipe ?? [])
+    .map((p) => p.draft_id as string | null)
+    .filter((x): x is string => !!x);
+  const readabilityByDraft = new Map<string, "green" | "amber" | "red">();
+  if (draftIds.length) {
+    const { data: analyses } = await supabase
+      .from("content_analyses")
+      .select("draft_id, readability_overall_status, created_at")
+      .in("draft_id", draftIds)
+      .order("created_at", { ascending: false });
+    for (const a of analyses ?? []) {
+      const did = a.draft_id as string | null;
+      const st = a.readability_overall_status as "green" | "amber" | "red" | null;
+      if (did && st && !readabilityByDraft.has(did)) readabilityByDraft.set(did, st);
+    }
+  }
 
   // Pipeline items: the production stages (brief → published).
   for (const p of pipe ?? []) {
@@ -142,6 +166,9 @@ export async function GET() {
       bucket: (p.bucket as string) ?? null,
       url: (p.url as string) ?? null,
       draftId: (p.draft_id as string) ?? null,
+      readabilityStatus: p.draft_id
+        ? readabilityByDraft.get(p.draft_id as string) ?? null
+        : null,
       needsReview: false,
       intent: null,
       competitor: null,

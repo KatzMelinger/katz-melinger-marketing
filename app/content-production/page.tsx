@@ -58,6 +58,7 @@ type Item = {
   keywords: string | null;
   suggestionId: string | null;
   createdBy: "peggy" | "agent" | "manual";
+  readabilityStatus?: "green" | "amber" | "red" | null;
   rankDrop?: number;
   currentRank?: number | null;
   previousRank?: number | null;
@@ -914,6 +915,20 @@ function Card({
         {item.assetType && (
           <span className="rounded bg-blue-50 px-1.5 text-[11px] text-blue-700">
             {ASSET_LABEL[item.assetType] ?? item.assetType}
+          </span>
+        )}
+        {item.readabilityStatus && (
+          <span
+            className={`rounded px-1.5 text-[11px] ${
+              item.readabilityStatus === "green"
+                ? "bg-emerald-50 text-emerald-700"
+                : item.readabilityStatus === "amber"
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-red-50 text-red-700"
+            }`}
+            title="Readability status (latest analysis)"
+          >
+            📖 {item.readabilityStatus}
           </span>
         )}
         {item.needsReview ? (
