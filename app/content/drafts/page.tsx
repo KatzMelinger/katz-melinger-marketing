@@ -11,7 +11,9 @@
  *   - mark approved / archive
  */
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import MarkdownEditor, { type MarkdownEditorHandle } from "@/components/markdown-editor";
+import { useReadabilityRanges } from "@/lib/readability/use-readability";
 import {
   AnalysisCard,
   ApplySuggestionModal,
@@ -269,6 +271,8 @@ export default function DraftsPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [saving, setSaving] = useState(false);
+  const editorRef = useRef<MarkdownEditorHandle>(null);
+  const { ranges: readabilityRanges } = useReadabilityRanges(editBody);
   // Findings currently being processed by the Apply Suggestion modal. An
   // array of one or more — single-row Apply passes one, "Apply N selected"
   // passes the whole batch. Empty/null = modal closed.
@@ -666,12 +670,14 @@ export default function DraftsPage() {
                   </div>
                 </div>
                 {bodyView === "write" ? (
-                  <textarea
-                    value={editBody}
-                    onChange={(e) => setEditBody(e.target.value)}
-                    rows={20}
-                    className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm font-mono mt-1 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-                  />
+                  <div className="w-full rounded-md border border-slate-300 text-sm mt-1 overflow-hidden focus-within:ring-2 focus-within:ring-brand/30 focus-within:border-brand [&_.cm-editor]:max-h-[60vh] [&_.cm-content]:font-mono [&_.cm-content]:py-2 [&_.cm-content]:px-3">
+                    <MarkdownEditor
+                      ref={editorRef}
+                      value={editBody}
+                      onChange={setEditBody}
+                      ranges={readabilityRanges}
+                    />
+                  </div>
                 ) : (
                   <div
                     className={`w-full min-h-[20rem] max-h-[60vh] overflow-y-auto px-4 py-3 rounded-md border border-slate-300 bg-white text-sm text-slate-800 mt-1 ${PROSE_CLASS}`}
@@ -699,7 +705,8 @@ export default function DraftsPage() {
               {analysis && (
                 <AnalysisCard
                   analysis={analysis}
-                  body={selectedDraft.body}
+                  body={editBody}
+                  onSelectRange={(s, e) => editorRef.current?.selectRange(s, e)}
                   onRerun={analyze}
                   rerunning={analyzing}
                   onApplyFindings={(fs) => setApplyingFindings(fs)}

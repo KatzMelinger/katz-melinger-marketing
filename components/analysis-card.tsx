@@ -20,13 +20,8 @@ import {
   DashPill,
   DashSpinner,
 } from "@/components/dashboard-ui";
-import { toPlaintext } from "@/lib/readability/plaintext";
-import { analyzeLengths } from "@/lib/readability/checks";
-import {
-  DEFAULT_THRESHOLDS,
-  type ReadabilityThresholds,
-  type Status,
-} from "@/lib/readability/config";
+import { type Status } from "@/lib/readability/config";
+import { useReadabilityRanges } from "@/lib/readability/use-readability";
 
 export type Analysis = {
   readability_score: number;
@@ -1065,24 +1060,7 @@ function ReadabilitySection({
   body?: string;
   onSelectRange?: (start: number, end: number) => void;
 }) {
-  const [thresholds, setThresholds] = useState<ReadabilityThresholds>(DEFAULT_THRESHOLDS);
-  useEffect(() => {
-    let active = true;
-    fetch("/api/content/readability-thresholds")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (active && d?.thresholds) setThresholds(d.thresholds as ReadabilityThresholds);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const flags = useMemo(
-    () => (body ? analyzeLengths(toPlaintext(body), thresholds) : null),
-    [body, thresholds],
-  );
+  const { lengths: flags } = useReadabilityRanges(body);
 
   const status = analysis.readability_overall_status ?? flags?.overallStatus ?? null;
   const longSentences =

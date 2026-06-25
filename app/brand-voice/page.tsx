@@ -28,6 +28,7 @@ import { ResearchLibraries } from "@/components/research-libraries";
 import LegalLibrary from "@/components/legal-library";
 import StateRulesManager from "@/components/state-rules-manager";
 import DisclaimerLibrary from "@/components/disclaimer-library";
+import ReadabilityStandardsManager from "@/components/readability-standards-manager";
 
 type TabKey =
   | "settings"
@@ -39,7 +40,8 @@ type TabKey =
   | "research"
   | "legal"
   | "stateRules"
-  | "disclaimers";
+  | "disclaimers"
+  | "readabilityStandards";
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "settings", label: "Brand settings", icon: "🎙" },
@@ -52,6 +54,7 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "legal", label: "Legal Authority", icon: "⚖" },
   { key: "stateRules", label: "State Rules", icon: "🏛" },
   { key: "disclaimers", label: "Disclaimers", icon: "📎" },
+  { key: "readabilityStandards", label: "Readability standards", icon: "📏" },
 ];
 
 type Avatar = {
@@ -428,6 +431,7 @@ export default function BrandVoicePage() {
       {tab === "legal" && <LegalLibrary />}
       {tab === "stateRules" && <StateRulesManager />}
       {tab === "disclaimers" && <DisclaimerLibrary />}
+      {tab === "readabilityStandards" && <ReadabilityStandardsManager />}
     </div>
   );
 }

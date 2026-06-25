@@ -23,10 +23,12 @@
  * social drafts live via Ayrshare. WordPress long-form publishing lands next.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 
 import { DashSpinner, DashPill } from "@/components/dashboard-ui";
+import MarkdownEditor, { type MarkdownEditorHandle } from "@/components/markdown-editor";
+import { useReadabilityRanges } from "@/lib/readability/use-readability";
 import {
   AnalysisCard,
   ApplySuggestionModal,
@@ -266,6 +268,8 @@ export function DraftDrawer({
     [draft, briefOnly],
   );
   const body = editing ? editBody : (draft?.body ?? "");
+  const editorRef = useRef<MarkdownEditorHandle>(null);
+  const { ranges: readabilityRanges } = useReadabilityRanges(body);
   const renderedBody = useMemo(
     () =>
       body.trim()
@@ -765,11 +769,14 @@ export function DraftDrawer({
                       </button>
                     </div>
                   ) : editing ? (
-                    <textarea
-                      value={editBody}
-                      onChange={(e) => setEditBody(e.target.value)}
-                      className="h-[60vh] w-full resize-none px-4 py-3 font-mono text-sm leading-relaxed text-slate-800 focus:outline-none"
-                    />
+                    <div className="[&_.cm-editor]:max-h-[60vh] [&_.cm-content]:px-4 [&_.cm-content]:py-3 [&_.cm-content]:font-mono [&_.cm-content]:text-sm [&_.cm-content]:leading-relaxed">
+                      <MarkdownEditor
+                        ref={editorRef}
+                        value={editBody}
+                        onChange={setEditBody}
+                        ranges={readabilityRanges}
+                      />
+                    </div>
                   ) : (
                     <div
                       className={`max-h-[60vh] overflow-y-auto px-4 py-3 text-sm text-slate-800 ${PROSE_CLASS}`}
@@ -1030,6 +1037,7 @@ export function DraftDrawer({
                   <AnalysisCard
                     analysis={analysis}
                     body={body}
+                    onSelectRange={(s, e) => editorRef.current?.selectRange(s, e)}
                     onRerun={() => runAnalysis(draft)}
                     rerunning={analyzing}
                     onApplyFindings={(fs) => setApplyingFindings(fs)}
