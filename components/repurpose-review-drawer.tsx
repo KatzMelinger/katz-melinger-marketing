@@ -130,7 +130,14 @@ export function RepurposeReviewDrawer({
   // post so a rejection is never invisible.
   const [postErrors, setPostErrors] = useState<Map<string, string>>(new Map());
 
+  const [genAllBusy, setGenAllBusy] = useState(false);
+
   const keepCount = useMemo(() => rows.filter((r) => r.keep && r.body.trim()).length, [rows]);
+  // Kept carousels that still need slide images to be post-ready.
+  const carouselsNeedingImages = useMemo(
+    () => rows.filter((r) => r.format === "carousel" && r.keep && !r.slides?.length).length,
+    [rows],
+  );
 
   const patch = (i: number, p: Partial<Row>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
@@ -160,6 +167,21 @@ export function RepurposeReviewDrawer({
       });
     } catch {
       patch(i, { genBusy: false, genMsg: "Slide generation failed." });
+    }
+  };
+
+  // Generate slide images for every kept carousel that doesn't have them yet.
+  const generateAllSlides = async () => {
+    const idxs = rows
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r.format === "carousel" && r.keep && !r.slides?.length)
+      .map(({ i }) => i);
+    if (!idxs.length) return;
+    setGenAllBusy(true);
+    try {
+      await Promise.all(idxs.map((i) => generateSlides(i)));
+    } finally {
+      setGenAllBusy(false);
     }
   };
 
@@ -235,6 +257,23 @@ export function RepurposeReviewDrawer({
           </button>
         </header>
 
+        {carouselsNeedingImages > 0 && (
+          <div className="flex items-center justify-between gap-3 border-b border-brand/20 bg-brand/5 px-5 py-2.5">
+            <span className="text-sm text-slate-700">
+              🖼️ <strong>{carouselsNeedingImages}</strong> carousel
+              {carouselsNeedingImages > 1 ? "s" : ""} still{" "}
+              {carouselsNeedingImages > 1 ? "need" : "needs"} slide images to be post-ready.
+            </span>
+            <button
+              onClick={generateAllSlides}
+              disabled={genAllBusy}
+              className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {genAllBusy ? "Generating slide images…" : "Generate all slide images"}
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           {rows.map((r, i) => (
             <div
@@ -277,43 +316,60 @@ export function RepurposeReviewDrawer({
               />
 
               {r.format === "carousel" && (
-                <div className="mt-2">
+                <div
+                  className={`mt-2 rounded-md border p-2.5 ${
+                    r.slides?.length ? "border-slate-200 bg-slate-50" : "border-brand/40 bg-brand/5"
+                  }`}
+                >
                   {r.slides?.length ? (
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                      {r.slides.map((s) => (
-                        <a
-                          key={s.url}
-                          href={s.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={`Slide ${s.n}: ${s.headline}`}
-                          className="shrink-0"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={s.url}
-                            alt={`Slide ${s.n}`}
-                            className="h-28 w-[90px] rounded-md border border-slate-200 object-cover"
-                          />
-                        </a>
-                      ))}
-                    </div>
+                    <>
+                      <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-emerald-700">
+                        <span aria-hidden>✓</span> {r.slides.length} slide image
+                        {r.slides.length > 1 ? "s" : ""} attached — this posts as a carousel.
+                      </div>
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {r.slides.map((s) => (
+                          <a
+                            key={s.url}
+                            href={s.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Slide ${s.n}: ${s.headline}`}
+                            className="shrink-0"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={s.url}
+                              alt={`Slide ${s.n}`}
+                              className="h-28 w-[90px] rounded-md border border-slate-200 object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    </>
                   ) : (
-                    <p className="text-[11px] text-slate-400">
-                      Carousel script. Generate slide images to turn it into a post-ready carousel —
-                      the post text becomes the caption.
-                    </p>
+                    <div className="flex items-start gap-1.5 text-[12px] text-slate-700">
+                      <span aria-hidden>🖼️</span>
+                      <span>
+                        <strong>Make it post-ready.</strong> Turn this script into on-brand slide
+                        images — the post text becomes the caption.
+                      </span>
+                    </div>
                   )}
-                  <div className="mt-1.5 flex items-center gap-2">
+                  <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={() => generateSlides(i)}
                       disabled={!r.keep || r.genBusy}
-                      className="rounded border border-brand px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
+                      className={
+                        r.slides?.length
+                          ? "rounded border border-slate-300 px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
+                          : "rounded-md bg-brand px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
+                      }
                     >
                       {r.genBusy
-                        ? "Generating slides…"
+                        ? "Generating slide images…"
                         : r.slides?.length
-                          ? "Regenerate slide images"
+                          ? "Regenerate images"
                           : "Generate slide images →"}
                     </button>
                     {r.genMsg && <span className="text-[11px] text-slate-500">{r.genMsg}</span>}
