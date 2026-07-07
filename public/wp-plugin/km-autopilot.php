@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       KM AutoPilot
  * Plugin URI:        https://katzmelinger.com
- * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates posts from approved, compliance-cleared drafts.
- * Version:           0.3.0
+ * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates new posts OR updates an existing page in place (Redraft) from approved, compliance-cleared drafts.
+ * Version:           0.4.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Katz Melinger
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('KM_AUTOPILOT_VERSION', '0.3.0');
+define('KM_AUTOPILOT_VERSION', '0.4.0');
 define('KM_AUTOPILOT_OPTION', 'km_autopilot_settings');
 define('KM_AUTOPILOT_LOG_OPTION', 'km_autopilot_log');
 define('KM_AUTOPILOT_CRON_HOOK', 'km_autopilot_sync_cron');
@@ -372,10 +372,14 @@ function km_autopilot_publish_content() {
             $postarr['post_excerpt'] = sanitize_text_field($item['meta_description']);
         }
 
-        // Idempotency: reuse a post we already created for this draft (e.g. when
-        // a prior confirm failed) instead of creating a duplicate on retry.
+        // A Redraft carries the source page URL — update THAT page in place
+        // rather than creating a new post.
+        $update_url = !empty($item['update_url']) ? $item['update_url'] : '';
+
+        // Idempotency: reuse a post we already created/updated for this draft
+        // (e.g. when a prior confirm failed) instead of acting twice on retry.
         $existing = get_posts([
-            'post_type'   => 'post',
+            'post_type'   => 'any',
             'post_status' => 'any',
             'numberposts' => 1,
             'fields'      => 'ids',
@@ -384,6 +388,56 @@ function km_autopilot_publish_content() {
         ]);
         $post_id = !empty($existing) ? (int) $existing[0] : 0;
 
+        // Redraft (not yet handled): resolve the source URL to the live post and
+        // UPDATE it in place. We deliberately do NOT change post_status (the page
+        // stays live — forcing 'draft' would pull it offline) or post_name (keep
+        // the same URL). Only the body + SEO meta change.
+        if (!$post_id && $update_url) {
+            $resolved = url_to_postid($update_url);
+            if ($resolved) {
+                $post_id = (int) $resolved;
+                $update_arr = [
+                    'ID'           => $post_id,
+                    'post_title'   => $postarr['post_title'],
+                    'post_content' => $postarr['post_content'],
+                ];
+                if (!empty($postarr['post_excerpt'])) {
+                    $update_arr['post_excerpt'] = $postarr['post_excerpt'];
+                }
+                $res = wp_update_post($update_arr, true);
+                if (is_wp_error($res) || !$res) {
+                    $failed++;
+                    km_autopilot_log_event(
+                        'Content update failed for ' . $item['id'] . ' (post ' . $post_id . '): '
+                            . (is_wp_error($res) ? $res->get_error_message() : 'unknown'),
+                        ['draft_id' => $item['id'], 'wp_post_id' => $post_id, 'update_url' => $update_url]
+                    );
+                    continue;
+                }
+                update_post_meta($post_id, '_km_autopilot_draft_id', $item['id']);
+                if (!empty($item['meta_title'])) {
+                    km_autopilot_apply_meta_field($post_id, $item['meta_title'], '_yoast_wpseo_title', 'rank_math_title');
+                }
+                if (!empty($item['meta_description'])) {
+                    km_autopilot_apply_meta_field($post_id, $item['meta_description'], '_yoast_wpseo_metadesc', 'rank_math_description');
+                }
+                km_autopilot_log_event(
+                    'Updated existing page in place for ' . $item['id'] . ' (post ' . $post_id . ')',
+                    ['draft_id' => $item['id'], 'wp_post_id' => $post_id, 'update_url' => $update_url]
+                );
+            } else {
+                // Couldn't map the URL to a post — fail loudly rather than
+                // silently creating a duplicate at a new URL.
+                $failed++;
+                km_autopilot_log_event(
+                    'Redraft update skipped for ' . $item['id'] . ': could not resolve ' . $update_url . ' to a post.',
+                    ['draft_id' => $item['id'], 'update_url' => $update_url]
+                );
+                continue;
+            }
+        }
+
+        // New post: no existing draft-linked post and not an update-in-place.
         if (!$post_id) {
             $post_id = wp_insert_post($postarr, true);
             if (is_wp_error($post_id) || !$post_id) {

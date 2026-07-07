@@ -82,12 +82,11 @@ const FETCH_UA =
   "Mozilla/5.0 (compatible; MarketingDashboardPageOptimizer/0.1)";
 
 /**
- * Fetch a published page and return its main text content (tags stripped,
- * whitespace collapsed, capped). Used to ground the update-draft generator in
- * what's actually live today. Throws on a non-OK response so the caller can
- * surface "couldn't read the page" rather than silently writing from nothing.
+ * Fetch a published page and return the main-body HTML (chrome stripped,
+ * <main>/<article> preferred). Shared by fetchPageText and fetchPageOutline.
+ * Throws on a non-OK response so callers can surface "couldn't read the page".
  */
-export async function fetchPageText(url: string): Promise<string> {
+async function fetchTargetHtml(url: string): Promise<string> {
   const res = await fetch(url, {
     headers: { "User-Agent": FETCH_UA, Accept: "text/html" },
     signal: AbortSignal.timeout(15_000),
@@ -104,13 +103,48 @@ export async function fetchPageText(url: string): Promise<string> {
     .replace(/<footer[\s\S]*?<\/footer>/gi, " ");
   // Prefer <main> / <article> when present.
   const main = html.match(/<(main|article)\b[^>]*>([\s\S]*?)<\/\1>/i);
-  const target = main ? main[2] : html;
-  const text = target
+  return main ? main[2] : html;
+}
+
+function stripToText(html: string): string {
+  return html
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&#\d+;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return text.slice(0, 12_000);
+}
+
+/**
+ * Fetch a published page and return its main text content (tags stripped,
+ * whitespace collapsed, capped). Used to ground the update-draft generator in
+ * what's actually live today.
+ */
+export async function fetchPageText(url: string): Promise<string> {
+  const target = await fetchTargetHtml(url);
+  return stripToText(target).slice(0, 12_000);
+}
+
+export type PageOutline = {
+  /** Main-body plain text (as fetchPageText). */
+  text: string;
+  /** The page's heading outline, in document order. */
+  headings: { level: number; text: string }[];
+};
+
+/**
+ * Like fetchPageText, but also returns the heading outline (h1–h6). The Redraft
+ * Gap Audit uses the outline to tell which expected sections a page is missing.
+ */
+export async function fetchPageOutline(url: string): Promise<PageOutline> {
+  const target = await fetchTargetHtml(url);
+  const headings: { level: number; text: string }[] = [];
+  const re = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(target)) !== null) {
+    const text = stripToText(m[2]);
+    if (text) headings.push({ level: Number(m[1]), text: text.slice(0, 160) });
+  }
+  return { text: stripToText(target).slice(0, 12_000), headings };
 }

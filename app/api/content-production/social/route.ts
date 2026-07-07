@@ -26,7 +26,8 @@ import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { getAyrshareApiKey, postToAyrshare, type AyrsharePlatform } from "@/lib/ayrshare";
-import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
+import { generateSocialPosts } from "@/lib/content-social";
+import type { SocialFormatKey } from "@/lib/social-format-rules";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -52,16 +53,37 @@ export async function POST(req: Request) {
   const topic = (body.topic ?? "").trim();
   if (!topic) return NextResponse.json({ error: "topic is required" }, { status: 400 });
 
+  // Rule 1 — social posts are generated from an approved source, not a blank
+  // topic. Require the source content.
+  const sourceText = (body.sourceText ?? "").trim();
+  if (!sourceText) {
+    return NextResponse.json(
+      {
+        error:
+          "Social posts must be generated from an approved source (published blog, case result, legal update, or service page). Provide the source content, or create the post manually in Content Studio.",
+      },
+      { status: 422 },
+    );
+  }
+
   const db = await getTenantDb();
 
-  // 1) Generate the 3 posts in brand voice (saved to content_drafts).
-  const gen = await generateMultiFormat({
-    topic,
-    practiceArea: body.practiceArea ?? undefined,
-    formats: ["facebook", "linkedin", "instagram"] as FormatKey[],
-    sourceText: body.sourceText ?? undefined,
-    tenantId: db.tenantId,
-  });
+  // 1) Generate the 3 posts with the dedicated social generator (saved to
+  //    content_drafts). Length caps are enforced at generation.
+  let gen;
+  try {
+    gen = await generateSocialPosts({
+      source: { kind: "page", title: topic, text: sourceText },
+      formats: ["facebook", "linkedin", "instagram"] as SocialFormatKey[],
+      practiceArea: body.practiceArea ?? undefined,
+      tenantId: db.tenantId,
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Generation failed" },
+      { status: 500 },
+    );
+  }
   const byFormat = (f: string) => gen.drafts.find((d) => d.format === f) ?? gen.drafts[0];
 
   // 2) Map to Diana's distribution plan.

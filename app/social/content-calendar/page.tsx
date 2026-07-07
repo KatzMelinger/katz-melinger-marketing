@@ -17,6 +17,7 @@ import Link from "next/link";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import { DashCard, DashSpinner } from "@/components/dashboard-ui";
+import { SocialChecklistChips } from "@/components/social-checklist-chips";
 
 type CalendarItem = {
   id: string;
@@ -28,6 +29,18 @@ type CalendarItem = {
   sourceDraftId: string | null;
   lastError: string | null;
   hasMedia: boolean;
+  // Source tag + advisory checklist from the dedicated social generator (Phase 2).
+  // Present only on posts it produced; null for manual/legacy posts.
+  source: { kind: string; title: string; url: string | null; id: string | null } | null;
+  checklist: {
+    hookFormula: boolean;
+    withinCaps: boolean;
+    noDashesOrBannedOpeners: boolean;
+    statesSpelledOut: boolean;
+    softCta: boolean;
+    sensitiveToneApplied: boolean | null;
+    noDuplicateThisMonth: boolean | null;
+  } | null;
 };
 
 type View = "month" | "week";
@@ -585,6 +598,15 @@ function PostDetailDrawer({
               <strong>Rejected:</strong> {item.lastError}
             </div>
           )}
+
+          {item.source && (
+            <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Generated from this {item.source.kind.replace("_", " ")}:{" "}
+              <span className="font-medium text-slate-800">{item.source.title}</span>
+            </div>
+          )}
+
+          {item.checklist && <SocialChecklistChips checklist={item.checklist} />}
 
           <label className="block text-sm font-medium text-slate-700">
             Caption

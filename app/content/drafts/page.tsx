@@ -269,6 +269,9 @@ export default function DraftsPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
   // Findings currently being processed by the Apply Suggestion modal. An
   // array of one or more — single-row Apply passes one, "Apply N selected"
   // passes the whole batch. Empty/null = modal closed.
@@ -320,6 +323,7 @@ export default function DraftsPage() {
 
   useEffect(() => {
     setApproveMsg(null);
+    setSaveMsg(null);
     if (!selectedId) {
       setSelectedDraft(null);
       setAnalysis(null);
@@ -371,15 +375,32 @@ export default function DraftsPage() {
   const save = async () => {
     if (!selectedDraft) return;
     setSaving(true);
+    setSaveMsg(null);
     try {
       const res = await fetch(`/api/content/drafts/${selectedDraft.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: editTitle, body: editBody }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      // A failed PATCH used to be swallowed here: we set the draft from `data`
+      // (often an error payload) and reported nothing, so the user saw "success"
+      // on a save that never happened. Gate on res.ok and surface failures.
+      if (!res.ok) {
+        setSaveMsg({
+          ok: false,
+          text: data?.error ?? `Save failed (${res.status}). Not saved.`,
+        });
+        return;
+      }
       setSelectedDraft(data);
       refresh();
+      setSaveMsg({ ok: true, text: "Saved." });
+    } catch (e) {
+      setSaveMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : "Save failed. Not saved.",
+      });
     } finally {
       setSaving(false);
     }
@@ -685,6 +706,15 @@ export default function DraftsPage() {
                   <DashButton variant="outline" onClick={analyze} disabled={analyzing}>
                     {analyzing ? <DashSpinner /> : "Run analysis"}
                   </DashButton>
+                  {saveMsg && (
+                    <span
+                      className={`text-xs ${
+                        saveMsg.ok ? "text-emerald-700" : "text-red-600"
+                      }`}
+                    >
+                      {saveMsg.text}
+                    </span>
+                  )}
                 </div>
               </DashCard>
 

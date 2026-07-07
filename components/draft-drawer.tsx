@@ -164,6 +164,21 @@ function readBrief(draft: DraftRow): Brief {
   };
 }
 
+type RedraftAnalysis = {
+  contentType?: string;
+  detectedBy?: string;
+  missingSections?: string[];
+  missingKeywords?: string[];
+  notes?: string[];
+};
+
+/** The Redraft stages 1–2 result (only present on drafts from Redraft). */
+function readRedraftAnalysis(draft: DraftRow): RedraftAnalysis | null {
+  const meta = (draft.metadata ?? {}) as Record<string, unknown>;
+  const a = meta.redraft_analysis;
+  return a && typeof a === "object" ? (a as RedraftAnalysis) : null;
+}
+
 function Check({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -265,6 +280,7 @@ export function DraftDrawer({
     () => (draft ? readBrief(draft) : (briefOnly ?? ({} as Brief))),
     [draft, briefOnly],
   );
+  const redraft = useMemo(() => (draft ? readRedraftAnalysis(draft) : null), [draft]);
   const body = editing ? editBody : (draft?.body ?? "");
   const renderedBody = useMemo(
     () =>
@@ -685,6 +701,46 @@ export function DraftDrawer({
                 </div>
               )}
             </div>
+
+            {/* Redraft summary — what the Redraft flow detected + set out to fill.
+                Only present on drafts created via Redraft (page updates). */}
+            {redraft && (
+              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50/60 p-4">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
+                  Redraft summary
+                </div>
+                <p className="text-xs text-slate-700">
+                  Detected content type:{" "}
+                  <span className="font-medium">
+                    {(redraft.contentType ?? "").replace(/_/g, " ") || "unknown"}
+                  </span>
+                  {redraft.detectedBy ? (
+                    <span className="text-slate-500"> ({redraft.detectedBy})</span>
+                  ) : null}
+                </p>
+                {(redraft.missingSections?.length ?? 0) > 0 && (
+                  <p className="mt-1.5 text-xs text-slate-700">
+                    <span className="font-medium">Gaps filled:</span>{" "}
+                    {redraft.missingSections!.join("; ")}
+                  </p>
+                )}
+                {(redraft.missingKeywords?.length ?? 0) > 0 && (
+                  <p className="mt-1.5 text-xs text-slate-700">
+                    <span className="font-medium">Keywords added:</span>{" "}
+                    {redraft.missingKeywords!.join(", ")}
+                  </p>
+                )}
+                {(redraft.notes?.length ?? 0) > 0 && (
+                  <p className="mt-1.5 text-xs text-slate-500">{redraft.notes!.join(" ")}</p>
+                )}
+                {(redraft.missingSections?.length ?? 0) === 0 &&
+                  (redraft.missingKeywords?.length ?? 0) === 0 && (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      No structural gaps found — light voice/clarity improvements only.
+                    </p>
+                  )}
+              </div>
+            )}
 
             {/* SEO metadata bar — full width, on top */}
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">

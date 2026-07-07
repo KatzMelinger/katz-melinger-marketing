@@ -15,6 +15,9 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import { repurposeFormatMeta } from "@/lib/repurpose-formats";
+import { SocialChecklistChips } from "@/components/social-checklist-chips";
+// Type-only import — erased at build, so no server code reaches the client bundle.
+import type { SocialChecklist, SocialSource } from "@/lib/content-social";
 
 export type RepurposeDraft = {
   id: string;
@@ -23,6 +26,20 @@ export type RepurposeDraft = {
   body: string;
   metadata?: Record<string, unknown>;
 };
+
+/** Pull the source tag the generator stored on the draft (Rule 1). */
+function readSource(meta?: Record<string, unknown>): SocialSource | null {
+  const s = meta?.social_source;
+  if (s && typeof s === "object" && "title" in s) return s as SocialSource;
+  return null;
+}
+
+/** Pull the advisory Rule-10 checklist the generator stored on the draft. */
+function readChecklist(meta?: Record<string, unknown>): SocialChecklist | null {
+  const c = meta?.social_checklist;
+  if (c && typeof c === "object" && "withinCaps" in c) return c as SocialChecklist;
+  return null;
+}
 
 /** Kick off a repurpose run. Both the Repurpose panel and the Optimize cards
  *  use this, each managing their own busy/error state. */
@@ -72,6 +89,9 @@ type Row = {
   date: string; // yyyy-mm-dd (local)
   time: string; // HH:mm (local)
   keep: boolean;
+  // Source tag + advisory quality checklist from the generator (Rules 1 + 10).
+  source?: SocialSource | null;
+  checklist?: SocialChecklist | null;
   // Carousel slide images, once generated.
   slides?: Slide[];
   mediaUrls?: string[];
@@ -106,6 +126,8 @@ function buildRows(drafts: RepurposeDraft[]): Row[] {
       date: ymd(cursor),
       time: "09:00",
       keep: true,
+      source: readSource(d.metadata),
+      checklist: readChecklist(d.metadata),
     };
   });
 }
@@ -295,6 +317,14 @@ export function RepurposeReviewDrawer({
                       script
                     </span>
                   )}
+                  {r.source && (
+                    <span
+                      className="max-w-[220px] truncate rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
+                      title={`Generated from this ${r.source.kind.replace("_", " ")}: ${r.source.title}`}
+                    >
+                      ↳ from {r.source.kind.replace("_", " ")}: {r.source.title}
+                    </span>
+                  )}
                 </div>
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
                   <input
@@ -314,6 +344,12 @@ export function RepurposeReviewDrawer({
                 rows={Math.min(14, Math.max(5, Math.ceil(r.body.length / 70)))}
                 className="w-full resize-y rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-800 focus:border-brand focus:outline-none disabled:bg-slate-100"
               />
+
+              {/* Advisory quality checklist (Rule 10 + Rule 8). Length caps are
+                  enforced at generation; these flags inform the reviewer. */}
+              {r.checklist && (
+                <SocialChecklistChips checklist={r.checklist} className="mt-1.5" />
+              )}
 
               {r.format === "carousel" && (
                 <div
