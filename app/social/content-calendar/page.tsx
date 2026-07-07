@@ -12,7 +12,7 @@
  * only here — scheduling itself happens in the publish flow / scheduler.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import { MarketingNav } from "@/components/marketing-nav";
@@ -26,6 +26,8 @@ type CalendarItem = {
   date: string;
   postUrl: string | null;
   sourceDraftId: string | null;
+  lastError: string | null;
+  hasMedia: boolean;
 };
 
 type View = "month" | "week";
@@ -79,24 +81,26 @@ export default function ContentCalendarPage() {
   const [view, setView] = useState<View>("month");
   // The month/week the user is looking at (anchored to the 1st / any day in it).
   const [cursor, setCursor] = useState<Date>(() => new Date());
+  // The post whose detail/edit drawer is open.
+  const [selected, setSelected] = useState<CalendarItem | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/social/calendar", { cache: "no-store" });
+      const json = (await res.json()) as { items?: CalendarItem[]; error?: string };
+      if (json.error) setError(json.error);
+      setItems(json.items ?? []);
+    } catch {
+      setError("Failed to load the calendar.");
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    // Fetch on mount; setState happens in load() after the await, not synchronously.
     void (async () => {
-      try {
-        const res = await fetch("/api/social/calendar", { cache: "no-store" });
-        const json = (await res.json()) as { items?: CalendarItem[]; error?: string };
-        if (cancelled) return;
-        if (json.error) setError(json.error);
-        setItems(json.items ?? []);
-      } catch {
-        if (!cancelled) setError("Failed to load the calendar.");
-      }
+      await load();
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [load]);
 
   // Index posts by local YYYY-MM-DD for fast cell lookups.
   const byDay = useMemo(() => {
@@ -236,13 +240,24 @@ export default function ContentCalendarPage() {
             ) : items.length === 0 ? (
               <EmptyState />
             ) : view === "month" ? (
-              <MonthGrid cursor={cursor} byDay={byDay} today={today} />
+              <MonthGrid cursor={cursor} byDay={byDay} today={today} onSelect={setSelected} />
             ) : (
-              <WeekGrid cursor={cursor} byDay={byDay} today={today} />
+              <WeekGrid cursor={cursor} byDay={byDay} today={today} onSelect={setSelected} />
             )}
           </div>
         </DashCard>
       </main>
+
+      {selected && (
+        <PostDetailDrawer
+          item={selected}
+          onClose={() => setSelected(null)}
+          onChanged={async () => {
+            await load();
+            setSelected(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -266,25 +281,28 @@ function EmptyState() {
   );
 }
 
-function PostChip({ item }: { item: CalendarItem }) {
+function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: CalendarItem) => void }) {
   const ch = channelOf(item.platform);
   const scheduled = item.status === "scheduled";
-  const inner = (
-    <span
-      className="flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-[11px] font-medium text-white"
-      style={{ backgroundColor: ch.color, opacity: scheduled ? 0.85 : 1 }}
-      title={`${ch.label} · ${item.status}\n${item.body}`}
+  const failed = item.status === "failed";
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className="block w-full text-left"
+      title={`${ch.label} · ${item.status} — click to view / edit\n${item.body}`}
     >
-      {scheduled ? <span aria-hidden>🕒</span> : null}
-      <span className="truncate">{item.body || ch.label}</span>
-    </span>
-  );
-  return item.postUrl ? (
-    <a href={item.postUrl} target="_blank" rel="noopener noreferrer" className="block">
-      {inner}
-    </a>
-  ) : (
-    inner
+      <span
+        className="flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-[11px] font-medium text-white"
+        style={{
+          backgroundColor: failed ? "#dc2626" : ch.color,
+          opacity: scheduled ? 0.85 : 1,
+        }}
+      >
+        {failed ? <span aria-hidden>⚠</span> : scheduled ? <span aria-hidden>🕒</span> : null}
+        <span className="truncate">{item.body || ch.label}</span>
+      </span>
+    </button>
   );
 }
 
@@ -292,10 +310,12 @@ function MonthGrid({
   cursor,
   byDay,
   today,
+  onSelect,
 }: {
   cursor: Date;
   byDay: Map<string, CalendarItem[]>;
   today: Date;
+  onSelect: (item: CalendarItem) => void;
 }) {
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = startOfWeek(first);
@@ -336,7 +356,7 @@ function MonthGrid({
               </div>
               <div className="space-y-1">
                 {posts.slice(0, 4).map((p) => (
-                  <PostChip key={p.id} item={p} />
+                  <PostChip key={p.id} item={p} onSelect={onSelect} />
                 ))}
                 {posts.length > 4 ? (
                   <span className="block px-1 text-[11px] text-slate-400">
@@ -356,10 +376,12 @@ function WeekGrid({
   cursor,
   byDay,
   today,
+  onSelect,
 }: {
   cursor: Date;
   byDay: Map<string, CalendarItem[]>;
   today: Date;
+  onSelect: (item: CalendarItem) => void;
 }) {
   const weekStart = startOfWeek(cursor);
   const days = Array.from({ length: 7 }, (_, i) => new Date(weekStart.getTime() + i * DAY_MS));
@@ -417,7 +439,7 @@ function WeekGrid({
             {layout.map((c, i) => (
               <div key={i} className="min-h-[40px] space-y-1 border-b border-l border-[#e2e8f0] p-1">
                 {c.other.map((p) => (
-                  <WeekChip key={p.id} item={p} />
+                  <WeekChip key={p.id} item={p} onSelect={onSelect} />
                 ))}
               </div>
             ))}
@@ -438,7 +460,7 @@ function WeekGrid({
                   className="min-h-[44px] space-y-1 border-b border-l border-[#e2e8f0] p-1"
                 >
                   {posts.map((p) => (
-                    <WeekChip key={p.id} item={p} />
+                    <WeekChip key={p.id} item={p} onSelect={onSelect} />
                   ))}
                 </div>
               );
@@ -450,23 +472,229 @@ function WeekGrid({
   );
 }
 
-function WeekChip({ item }: { item: CalendarItem }) {
+function hhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Click-through detail for a calendar post: view the full caption + status, and
+ * for anything not yet published, edit the caption, reschedule the date/time, or
+ * delete/unschedule it. Published posts are read-only with a link out.
+ */
+function PostDetailDrawer({
+  item,
+  onClose,
+  onChanged,
+}: {
+  item: CalendarItem;
+  onClose: () => void;
+  onChanged: () => void | Promise<void>;
+}) {
+  const ch = channelOf(item.platform);
+  const editable = item.status !== "published";
+  const d0 = new Date(item.date);
+  const [content, setContent] = useState(item.body);
+  const [date, setDate] = useState(ymd(d0));
+  const [time, setTime] = useState(hhmm(d0));
+  const [busy, setBusy] = useState<null | "save" | "delete">(null);
+  const [msg, setMsg] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+
+  const save = async () => {
+    setBusy("save");
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/social/posts/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content,
+          scheduleDate: new Date(`${date}T${time}`).toISOString(),
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setMsg({ tone: "warn", text: j?.error || "Update failed." });
+        return;
+      }
+      await onChanged();
+    } catch {
+      setMsg({ tone: "warn", text: "Update failed." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm("Unschedule and remove this post?")) return;
+    setBusy("delete");
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/social/posts/${item.id}`, { method: "DELETE" });
+      const j = await res.json();
+      if (!res.ok) {
+        setMsg({ tone: "warn", text: j?.error || "Delete failed." });
+        return;
+      }
+      await onChanged();
+    } catch {
+      setMsg({ tone: "warn", text: "Delete failed." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
+      <div
+        className="flex h-full w-full max-w-lg flex-col bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-block h-3 w-3 rounded-full"
+              style={{ backgroundColor: ch.color }}
+            />
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">{ch.label} post</h2>
+              <span
+                className={`text-xs font-medium ${
+                  item.status === "failed"
+                    ? "text-red-600"
+                    : item.status === "scheduled"
+                      ? "text-slate-500"
+                      : "text-emerald-600"
+                }`}
+              >
+                {item.status}
+                {item.hasMedia ? " · has media" : ""}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-500 hover:border-slate-400"
+          >
+            Close
+          </button>
+        </header>
+
+        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          {item.status === "failed" && item.lastError && (
+            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <strong>Rejected:</strong> {item.lastError}
+            </div>
+          )}
+
+          <label className="block text-sm font-medium text-slate-700">
+            Caption
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              disabled={!editable}
+              rows={10}
+              className="mt-1 w-full resize-y rounded-md border border-slate-300 px-2.5 py-2 text-sm text-slate-800 focus:border-brand focus:outline-none disabled:bg-slate-100"
+            />
+          </label>
+
+          {editable && (
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <label className="flex items-center gap-1 text-slate-600">
+                Date
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-slate-600">
+                Time
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                />
+              </label>
+            </div>
+          )}
+
+          {item.hasMedia && (
+            <p className="text-xs text-slate-400">
+              This post has media attached (e.g. carousel slides). Its images are kept when you
+              reschedule; to change the images, re-run Repurpose.
+            </p>
+          )}
+
+          {item.postUrl && (
+            <a
+              href={item.postUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-sm font-medium text-brand hover:underline"
+            >
+              View the live post →
+            </a>
+          )}
+
+          {msg && (
+            <p
+              className={`rounded-md border px-3 py-2 text-sm ${
+                msg.tone === "warn"
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-emerald-300 bg-emerald-50 text-emerald-800"
+              }`}
+            >
+              {msg.text}
+            </p>
+          )}
+        </div>
+
+        {editable && (
+          <footer className="flex items-center justify-between gap-2 border-t border-slate-200 px-5 py-3">
+            <button
+              onClick={remove}
+              disabled={busy !== null}
+              className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              {busy === "delete" ? "Removing…" : "Delete / Unschedule"}
+            </button>
+            <button
+              onClick={save}
+              disabled={busy !== null}
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand/90 disabled:opacity-50"
+            >
+              {busy === "save" ? "Saving…" : "Save changes"}
+            </button>
+          </footer>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WeekChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: CalendarItem) => void }) {
   const ch = channelOf(item.platform);
   const d = new Date(item.date);
-  const inner = (
-    <span
-      className="block truncate rounded px-1.5 py-0.5 text-[11px] font-medium text-white"
-      style={{ backgroundColor: ch.color, opacity: item.status === "scheduled" ? 0.85 : 1 }}
-      title={`${ch.label} · ${fmtTime(d)} · ${item.status}\n${item.body}`}
+  const failed = item.status === "failed";
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className="block w-full text-left"
+      title={`${ch.label} · ${fmtTime(d)} · ${item.status} — click to view / edit\n${item.body}`}
     >
-      {fmtTime(d)} · {item.body || ch.label}
-    </span>
-  );
-  return item.postUrl ? (
-    <a href={item.postUrl} target="_blank" rel="noopener noreferrer" className="block">
-      {inner}
-    </a>
-  ) : (
-    inner
+      <span
+        className="block truncate rounded px-1.5 py-0.5 text-[11px] font-medium text-white"
+        style={{
+          backgroundColor: failed ? "#dc2626" : ch.color,
+          opacity: item.status === "scheduled" ? 0.85 : 1,
+        }}
+      >
+        {failed ? "⚠ " : ""}
+        {fmtTime(d)} · {item.body || ch.label}
+      </span>
+    </button>
   );
 }

@@ -29,6 +29,10 @@ export type CalendarItem = {
   date: string;
   postUrl: string | null;
   sourceDraftId: string | null;
+  /** Why a failed post was rejected (null unless status = failed). */
+  lastError: string | null;
+  /** Whether this post carries media (e.g. a carousel) — informs the editor. */
+  hasMedia: boolean;
 };
 
 export async function GET() {
@@ -37,13 +41,22 @@ export async function GET() {
 
   const db = await getTenantDb();
 
-  const { data, error } = await db
+  const cols =
+    "id, platform, content, status, scheduled_at, posted_at, published_at, created_at, post_url, source_draft_id";
+  // Prefer the richer columns; fall back if last_error/media_urls aren't migrated.
+  let res = await db
     .from("social_posts")
-    .select(
-      "id, platform, content, status, scheduled_at, posted_at, published_at, created_at, post_url, source_draft_id",
-    )
+    .select(`${cols}, last_error, media_urls`)
     .order("created_at", { ascending: false })
     .limit(1000);
+  if (res.error && /last_error|media_urls/i.test(res.error.message)) {
+    res = (await db
+      .from("social_posts")
+      .select(cols)
+      .order("created_at", { ascending: false })
+      .limit(1000)) as typeof res;
+  }
+  const { data, error } = res;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -58,6 +71,7 @@ export async function GET() {
         (r.posted_at as string | null) ??
         (r.created_at as string | null);
       if (!date) return null;
+      const media = r.media_urls;
       return {
         id: String(r.id ?? ""),
         platform: String(r.platform ?? "").toLowerCase(),
@@ -66,6 +80,8 @@ export async function GET() {
         date,
         postUrl: (r.post_url as string | null) ?? null,
         sourceDraftId: (r.source_draft_id as string | null) ?? null,
+        lastError: (r.last_error as string | null) ?? null,
+        hasMedia: Array.isArray(media) && media.length > 0,
       } satisfies CalendarItem;
     })
     .filter((x): x is CalendarItem => x !== null);

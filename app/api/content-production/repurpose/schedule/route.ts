@@ -26,6 +26,7 @@ import {
   AYRSHARE_PLATFORMS,
   getAyrshareApiKey,
   postToAyrshare,
+  requiresMedia,
   type AyrsharePlatform,
 } from "@/lib/ayrshare";
 
@@ -101,7 +102,12 @@ export async function POST(req: Request) {
     let viaAyrshare = false;
     let error: string | undefined;
 
-    if (apiKey) {
+    // Guaranteed-fail guard: media-required platforms (Instagram, TikTok, etc.)
+    // can't post text-only. Fail fast with a clear reason instead of spending an
+    // Ayrshare call to get code 139 back.
+    const blockedForMedia = requiresMedia(platform) && mediaUrls.length === 0;
+
+    if (apiKey && !blockedForMedia) {
       try {
         const res = await postToAyrshare({
           apiKey,
@@ -110,6 +116,8 @@ export async function POST(req: Request) {
           platforms: [platform],
           mediaUrls: mediaUrls.length ? mediaUrls : undefined,
           scheduleDate: p.scheduleDate,
+          // Long X posts (our threads) auto-split instead of being rejected >280.
+          twitterThread: platform === "twitter",
         });
         if (res.ok) {
           viaAyrshare = true;
@@ -121,6 +129,8 @@ export async function POST(req: Request) {
       } catch (e) {
         error = e instanceof Error ? e.message : "schedule failed";
       }
+    } else if (blockedForMedia) {
+      error = `${platform} requires an image or video — attach media (e.g. generate carousel slides) or choose a text channel like LinkedIn, Facebook, or X.`;
     }
 
     // Every post lands on the calendar so the workflow is never silently
@@ -130,7 +140,14 @@ export async function POST(req: Request) {
     //   - "failed": Ayrshare is connected but rejected this post. We keep it on
     //     the calendar (so intent is visible) and surface the reason to the UI
     //     instead of dropping it on the floor.
-    const status: "scheduled" | "failed" = apiKey && !viaAyrshare ? "failed" : "scheduled";
+    // Failed when Ayrshare rejected it, or we blocked it as a guaranteed fail.
+    // A planned post (no Ayrshare) with no block stays "scheduled".
+    const status: "scheduled" | "failed" = error ? "failed" : "scheduled";
+    if (error) {
+      console.error(
+        `[repurpose/schedule] ${platform} rejected (draft ${p.draftId ?? "—"}): ${error}`,
+      );
+    }
     rows.push({
       platform,
       content,
@@ -140,6 +157,8 @@ export async function POST(req: Request) {
       scheduled_at: p.scheduleDate,
       published_at: null,
       source_draft_id: p.draftId ?? null,
+      last_error: error ?? null,
+      media_urls: mediaUrls.length ? mediaUrls : null,
     });
     results.push({
       draftId: p.draftId ?? null,
@@ -152,7 +171,22 @@ export async function POST(req: Request) {
     });
   }
 
-  if (rows.length) await db.insert("social_posts", rows);
+  if (rows.length) {
+    const ins = await db.insert("social_posts", rows);
+    // Stay resilient if the new columns haven't been migrated yet: retry without
+    // them (reasons still return to the UI and are logged above).
+    if (ins.error && /last_error|media_urls/i.test(ins.error.message)) {
+      await db.insert(
+        "social_posts",
+        rows.map((r) => {
+          const copy = { ...r };
+          delete copy.last_error;
+          delete copy.media_urls;
+          return copy;
+        }),
+      );
+    }
+  }
 
   // Persist any edits back onto the source drafts (best-effort, RLS-scoped).
   for (const [draftId, content] of editedDrafts) {

@@ -33,6 +33,20 @@ export const AYRSHARE_PLATFORMS = [
 
 export type AyrsharePlatform = (typeof AYRSHARE_PLATFORMS)[number];
 
+/** Platforms that CANNOT publish a text-only post — Ayrshare rejects them
+ *  without an image or video. Used to block guaranteed failures before we
+ *  spend an API call. */
+export const MEDIA_REQUIRED_PLATFORMS: readonly AyrsharePlatform[] = [
+  "instagram",
+  "tiktok",
+  "youtube",
+  "pinterest",
+];
+
+export function requiresMedia(platform: string): boolean {
+  return (MEDIA_REQUIRED_PLATFORMS as readonly string[]).includes(platform);
+}
+
 export type AyrshareResult = {
   ok: boolean;
   status: "success" | "scheduled" | "error";
@@ -57,6 +71,9 @@ export async function postToAyrshare(input: {
   mediaUrls?: string[];
   /** UTC ISO `YYYY-MM-DDThh:mm:ssZ`; when set, the post is scheduled. */
   scheduleDate?: string;
+  /** Auto-split a long post into an X/Twitter thread instead of being rejected
+   *  for exceeding 280 chars. */
+  twitterThread?: boolean;
 }): Promise<AyrshareResult> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${input.apiKey}`,
@@ -70,6 +87,10 @@ export async function postToAyrshare(input: {
   };
   if (input.mediaUrls && input.mediaUrls.length > 0) body.mediaUrls = input.mediaUrls;
   if (input.scheduleDate) body.scheduleDate = input.scheduleDate;
+  // Ayrshare auto-threads a long post across tweets when thread is on.
+  if (input.twitterThread && input.platforms.includes("twitter")) {
+    body.twitterOptions = { thread: true, threadNumber: false };
+  }
 
   let data: Record<string, unknown> = {};
   let httpOk = false;
@@ -112,4 +133,42 @@ export async function postToAyrshare(input: {
     });
   }
   return result;
+}
+
+/**
+ * Delete a post from Ayrshare by its post id (deletes scheduled posts before
+ * they publish; also removes published posts where the platform allows). Used
+ * when the user unschedules or reschedules from the Content Calendar — a
+ * reschedule is delete + re-create, since Ayrshare can't edit in place.
+ */
+export async function deleteAyrsharePost(input: {
+  apiKey: string;
+  profileKey?: string | null;
+  id: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${input.apiKey}`,
+    "Content-Type": "application/json",
+  };
+  if (input.profileKey) headers["Profile-Key"] = input.profileKey;
+  try {
+    const res = await fetch(AYRSHARE_POST_URL, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({ id: input.id }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const ok = res.ok && data.status !== "error";
+    return ok
+      ? { ok: true }
+      : {
+          ok: false,
+          error:
+            (Array.isArray(data.errors) && (data.errors[0] as { message?: string })?.message) ||
+            `Ayrshare delete failed (${res.status})`,
+        };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Ayrshare delete request failed" };
+  }
 }
