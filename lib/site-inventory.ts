@@ -21,8 +21,18 @@ import { type KMPillar } from "@/lib/km-content-system";
 import { getPillars } from "@/lib/pillars-store";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; MarketingDashboardSiteInventory/0.1)";
-const MAX_PAGES = 300;
+const MAX_PAGES = 500;
 const FETCH_CONCURRENCY = 8;
+
+/** Cheap blog-post URL test (matches classifyTypeByUrl's blog rule). */
+function isBlogUrl(url: string): boolean {
+  try {
+    const p = new URL(url).pathname.toLowerCase();
+    return /\/blog\//.test(p) || /\/\d{4}\/\d{2}\//.test(p);
+  } catch {
+    return false;
+  }
+}
 
 export type SitePageType =
   | "blog_post"
@@ -291,10 +301,17 @@ export async function crawlSiteInventory(args?: {
   const base = `https://${domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
   const host = new URL(base).host.replace(/^www\./, "");
 
-  const urls = (await resolveSitemapUrls(base, host)).slice(
-    0,
-    args?.maxPages ?? MAX_PAGES,
+  // Blog posts dominate the sitemap — the WordPress sitemap index lists
+  // post-sitemap.xml FIRST and it's usually the largest (KM: 414 posts vs 130
+  // pages / 12 case results). A naive first-N slice fills entirely with blog
+  // posts and drops EVERY service/practice/result page, so the inventory looks
+  // "blog only" and the page-type filters find nothing. Order non-blog pages
+  // first (stable) so they're always indexed, then blog posts fill the remainder.
+  const discovered = await resolveSitemapUrls(base, host);
+  const ordered = [...discovered].sort(
+    (a, b) => Number(isBlogUrl(a)) - Number(isBlogUrl(b)),
   );
+  const urls = ordered.slice(0, args?.maxPages ?? MAX_PAGES);
   if (urls.length === 0) {
     return { crawled: 0, classified: 0, skipped: 0 };
   }
