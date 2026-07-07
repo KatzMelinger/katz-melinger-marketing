@@ -13,11 +13,13 @@ export async function getGoogleAccessToken(
   scopes: string[],
   tenantId?: string,
 ): Promise<{ token: string } | { error: string }> {
-  // For Business Profile we prefer the user-OAuth token (stored after the
-  // /api/google/oauth/start flow) since service accounts can't auto-accept
-  // GBP invitations. Falls through to service-account auth if no OAuth token
-  // is stored — that path will fail at the API call, but the error message
-  // is clearer when it does.
+  // For Business Profile we require the user-OAuth token (stored after the
+  // /api/google/oauth/start flow). We deliberately do NOT fall back to the
+  // service account here: a service account can't be granted access to a
+  // Business Profile listing, so that path only yields a confusing 403
+  // "caller does not have permission". When there's no usable OAuth token
+  // (never connected, or the refresh token expired), return an actionable
+  // "reconnect" error the UI can surface directly.
   if (scopes.includes(GBP_SCOPE)) {
     try {
       const oauth = await getValidAccessToken("gbp", tenantId);
@@ -29,8 +31,16 @@ export async function getGoogleAccessToken(
         }
         return { token: oauth.token };
       }
+      return {
+        error:
+          "Google Business Profile isn't connected, or its access token expired. Reconnect it on /integrations — click “Connect Google Business Profile” and sign in with the Google account that manages the listing.",
+      };
     } catch (err) {
-      console.warn("[GoogleAuth] OAuth token lookup failed, falling back to SA", err);
+      console.warn("[GoogleAuth] GBP OAuth token lookup failed", err);
+      return {
+        error:
+          "Google Business Profile token lookup failed. Reconnect it on /integrations, then try again.",
+      };
     }
   }
 
