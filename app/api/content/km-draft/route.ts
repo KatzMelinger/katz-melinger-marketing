@@ -33,6 +33,8 @@ import {
   type KMSearchIntent,
 } from "@/lib/km-content-system";
 import { guardUser } from "@/lib/supabase-route";
+import { stripEmDashes } from "@/lib/sanitize-content";
+import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getPillars } from "@/lib/pillars-store";
@@ -283,6 +285,21 @@ export async function POST(req: Request) {
     `- Statutes, deadlines, and figures are stated precisely or omitted — never guessed.\n` +
     `- The piece reads in KM's brand voice and ends with a clear next step / CTA.`;
 
+  // Sensitive topics (harassment, retaliation, discrimination, wrongful
+  // termination) get a tone override that leads with calm, human language before
+  // any legal reference. Prepended so it outranks the default brand voice for
+  // this piece. See lib/sensitive-topic.ts.
+  if (
+    isSensitiveTopic(
+      brief.primaryKeyword,
+      brief.secondaryKeywords,
+      brief.h1,
+      brief.faqQuestions,
+    )
+  ) {
+    userPrompt = `${SENSITIVE_TONE_OVERRIDE}\n\n===\n\n${userPrompt}`;
+  }
+
   // Per-tenant system prompt (Phase 2). Falls back to the code-defined
   // KM_SYSTEM_PROMPT for the default tenant via getTenantConfig.
   const tenantConfig = await getTenantConfig();
@@ -296,7 +313,10 @@ export async function POST(req: Request) {
     });
 
     const textBlock = msg.content.find((b) => b.type === "text");
-    const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
+    const rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
+    // Hard filter: strip em/en dashes the model let through despite the prompt
+    // rule, so one can never reach a saved draft. See lib/sanitize-content.ts.
+    const text = stripEmDashes(rawText);
 
     const draftId = await autosave(brief, text, language);
 

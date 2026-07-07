@@ -24,6 +24,7 @@ import {
   getAnthropic,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { stripEmDashes } from "@/lib/sanitize-content";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
@@ -158,10 +159,13 @@ Call the apply_edit tool with the complete updated body, a short summary of what
           })
         : null;
 
-    const updated_body =
+    // Hard filter: strip em/en dashes the model may reintroduce while rewriting.
+    // See lib/sanitize-content.ts.
+    const updated_body = stripEmDashes(
       typeof parsed?.updated_body === "string" && parsed.updated_body.trim()
         ? parsed.updated_body
-        : (draft.body as string);
+        : (draft.body as string),
+    );
     const summary =
       typeof parsed?.summary === "string" ? parsed.summary : "";
     const no_change =

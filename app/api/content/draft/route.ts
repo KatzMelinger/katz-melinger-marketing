@@ -16,6 +16,8 @@ import { buildSkillsContext } from "@/lib/content-skills";
 import { languageDirective, normalizeLanguage } from "@/lib/content-language";
 import { getFirmContext } from "@/lib/firm-context";
 import { guardUser } from "@/lib/supabase-route";
+import { stripEmDashes } from "@/lib/sanitize-content";
+import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
@@ -248,6 +250,13 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     return NextResponse.json({ error: "Invalid content_type" }, { status: 400 });
   }
 
+  // Sensitive topics (harassment, retaliation, discrimination, wrongful
+  // termination) get a tone override that leads with calm, human language before
+  // any legal reference. Prepended so it outranks the default tone/brand voice.
+  if (isSensitiveTopic(topic, targetKeywords)) {
+    userPrompt = `${SENSITIVE_TONE_OVERRIDE}\n\n${userPrompt}`;
+  }
+
   // Spanish (or any non-English) output directive — applies to every format.
   const langBlock = languageDirective(normalizeLanguage(o.language));
   if (langBlock) {
@@ -285,8 +294,13 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     });
 
     const textBlock = msg.content.find((b) => b.type === "text");
-    const text =
-      textBlock && textBlock.type === "text" ? textBlock.text : "";
+    // Hard filter: strip em/en dashes the model let through despite the prompt
+    // rule, before parsing/persisting. For email the subject/body are extracted
+    // from this sanitized text below, so they inherit the fix. Applies to blog
+    // and social here too. See lib/sanitize-content.ts.
+    const text = stripEmDashes(
+      textBlock && textBlock.type === "text" ? textBlock.text : "",
+    );
 
     // Autosave to the drafts library so every generation is recoverable.
     // Every draft gets a non-null title (policy: all content is titled).

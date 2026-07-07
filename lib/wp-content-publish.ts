@@ -29,11 +29,30 @@ export type WpContentItem = {
   meta_title: string;
   meta_description: string;
   format: string;
+  /**
+   * When set, this is an UPDATE of an already-published page at this URL (a
+   * Redraft), not a new post. The plugin resolves it to the existing WP post
+   * and updates that post in place (same URL/slug/status) instead of creating.
+   */
+  update_url: string | null;
 };
 
-/** A draft is WordPress-publishable when its surface is long-form ("blog"). */
+/** KM wizard long-form formats — pages/articles that publish to WordPress. */
+const KM_WORDPRESS_FORMATS = new Set([
+  "km_page_update", // Redraft of an existing page (update-in-place)
+  "km_blog_post",
+  "km_practice_page",
+  "km_case_result",
+]);
+
+/**
+ * A draft is WordPress-publishable when its surface is long-form ("blog") or it
+ * is one of the KM long-form page/article formats (which `surfaceForFormat`
+ * classifies as "other").
+ */
 export function isWordPressFormat(format: string | null | undefined): boolean {
-  return surfaceForFormat((format ?? "blog").toLowerCase()) === "blog";
+  const f = (format ?? "blog").toLowerCase();
+  return KM_WORDPRESS_FORMATS.has(f) || surfaceForFormat(f) === "blog";
 }
 
 function slugify(input: string): string {
@@ -94,6 +113,12 @@ export async function listApprovedWpContent(args: {
       async: false,
     }) as string;
 
+    // A Redraft carries the source page URL — that's the page to update in place.
+    const updateUrl =
+      typeof metadata?.source_url === "string" && metadata.source_url.trim()
+        ? metadata.source_url.trim()
+        : null;
+
     out.push({
       id: d.id as string,
       title,
@@ -102,6 +127,7 @@ export async function listApprovedWpContent(args: {
       meta_title: pickMeta(metadata, seoBrief, "metaTitle", "meta_title") || title,
       meta_description: pickMeta(metadata, seoBrief, "metaDescription", "meta_description"),
       format: ((d.format as string | null) ?? "blog").toLowerCase(),
+      update_url: updateUrl,
     });
   }
   return out;

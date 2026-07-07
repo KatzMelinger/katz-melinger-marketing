@@ -569,3 +569,83 @@ export async function suggestForCluster(input: ClusterInput): Promise<StrategyDe
 
   return { ...merged, brief };
 }
+
+// ---------- Lightweight metadata for non-wizard generation -----------------
+
+export type AutoSeoMetadata = {
+  metaTitle: string;
+  metaDescription: string;
+  urlSlug: string;
+  /** "" when no confident pillar match — left blank for human review, never guessed. */
+  pillarId: string;
+  searchIntent: KMSearchIntent;
+  practiceArea: KMPracticeArea;
+  secondaryKeywords: string[];
+  needsPillarReview: boolean;
+};
+
+/**
+ * Deterministically derive SEO metadata (meta title/description, URL slug, and
+ * a pillar) for content generated OUTSIDE the 5-step brief wizard — batch
+ * generation, the autonomous content agent, social, email.
+ *
+ * The wizard already auto-fills these via suggestForCluster → buildBriefSkeleton;
+ * every other path left them empty, so drafts arrived at Draft Review blocked on
+ * missing metadata. This mirrors the wizard's auto-fill using the same pure
+ * functions, minus the Claude edge-case call (cost + determinism). When the
+ * topic can't be confidently mapped to a pillar, pillarId is "" and
+ * needsPillarReview is true — left blank for Diana rather than guessed.
+ */
+export async function autoSeoMetadata(args: {
+  topic: string;
+  secondaryKeywords?: string[];
+  contentType?: KMContentType;
+  tenantId?: string;
+  pillars?: KMPillar[];
+}): Promise<AutoSeoMetadata> {
+  const input: ClusterInput = {
+    clusterName: args.topic,
+    primaryKeyword: args.topic,
+    secondaryKeywords: args.secondaryKeywords ?? [],
+  };
+  const practiceArea = inferPracticeArea(input);
+  const intent = inferIntent(input);
+
+  let pillarId = inferPillar(input, practiceArea, args.pillars);
+  // Same pillar/area validation suggestForCluster applies: an empty id is an
+  // intentional "needs human review" signal and is left as-is; a non-empty id
+  // that doesn't belong to the area is repaired to that area's hub.
+  const pool = practiceArea === "employment" ? EMPLOYMENT_PILLARS : COLLECTIONS_PILLARS;
+  if (pillarId && !pool.some((p) => p.id === pillarId)) {
+    pillarId = practiceArea === "employment" ? "employment-hub" : "collections-hub";
+  }
+
+  const cfg = await getTenantConfig(args.tenantId);
+  const decision: Omit<StrategyDecision, "brief"> = {
+    contentType: args.contentType ?? "blog_post",
+    practiceArea,
+    pillarId,
+    searchIntent: intent,
+    recommendedAction: "support_blog",
+    priority: "medium",
+    reasoning: "",
+    cannibalizationRisk: "unknown",
+    decisionSource: "rules",
+  };
+  const brief = buildBriefSkeleton(input, decision, {
+    firmName: cfg.firmName,
+    targetGeography: cfg.targetGeography,
+    isDefault: cfg.tenantId === DEFAULT_TENANT_ID,
+  });
+
+  return {
+    metaTitle: brief.metaTitle ?? "",
+    metaDescription: brief.metaDescription ?? "",
+    urlSlug: brief.urlSlug ?? "",
+    pillarId,
+    searchIntent: intent,
+    practiceArea,
+    secondaryKeywords: args.secondaryKeywords ?? [],
+    needsPillarReview: !pillarId,
+  };
+}

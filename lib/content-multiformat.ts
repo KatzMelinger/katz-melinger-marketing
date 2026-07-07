@@ -19,6 +19,10 @@ import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
 import { recordVendorUsage } from "./usage-meter";
 import { ANTI_AI_VOICE_RULES } from "./anti-ai-voice";
+import { stripEmDashes } from "./sanitize-content";
+import { autoSeoMetadata } from "./strategy-engine";
+import { getPillars } from "./pillars-store";
+import { sensitiveToneBlock } from "./sensitive-topic";
 import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
@@ -146,7 +150,16 @@ ${args.seoBriefHeadings?.length ? `- Suggested headings: ${args.seoBriefHeadings
 ${args.competitorGaps?.length ? `- Competitor gaps to address: ${args.competitorGaps.join(" | ")}` : ""}`
       : "";
 
-  return `Topic: ${args.topic}
+  // Sensitive topics (harassment, retaliation, discrimination, wrongful
+  // termination) get a tone override that leads with calm, human language before
+  // any legal reference. Prepended so it outranks the default brand voice.
+  const sensitiveBlock = sensitiveToneBlock(
+    args.topic,
+    args.targetKeywords,
+    args.seoBriefHeadings,
+  );
+
+  return `${sensitiveBlock}Topic: ${args.topic}
 Practice area: ${args.practiceArea ?? "General"}
 
 Generate the following formats:
@@ -301,12 +314,36 @@ export async function generateMultiFormat(args: {
 
   const draftRows: { id: string; format: FormatKey; title: string | null; body: string; metadata: Record<string, unknown> }[] = [];
 
+  // SEO metadata for the article format. Generated OUTSIDE the 5-step brief
+  // wizard, this path (batch, autonomous agent, repurpose) previously left every
+  // metadata field empty, so blog/service-page drafts arrived at Draft Review
+  // blocked on missing meta description + pillar. Derive them once from the topic
+  // so the blog draft is review-ready. Non-article formats don't carry page
+  // metadata. Fails soft — the draft still saves without it.
+  let seoMeta: Awaited<ReturnType<typeof autoSeoMetadata>> | null = null;
+  if (args.formats.includes("blog")) {
+    try {
+      seoMeta = await autoSeoMetadata({
+        topic: args.topic,
+        secondaryKeywords: args.targetKeywords,
+        tenantId: tid,
+        pillars: await getPillars(tid),
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   for (const format of args.formats) {
     const data = merged.formats?.[format];
     if (!data?.body) continue;
+    // Hard filter: strip em/en dashes the model let through despite the prompt
+    // rule, across every format, before persisting. See lib/sanitize-content.ts.
+    const cleanBody = stripEmDashes(data.body);
+    const cleanTitle = data.title ? stripEmDashes(data.title) : data.title;
     const metadata: Record<string, unknown> = {};
-    if (data.subject) metadata.subject = data.subject;
-    if (data.preview_text) metadata.preview_text = data.preview_text;
+    if (data.subject) metadata.subject = stripEmDashes(data.subject);
+    if (data.preview_text) metadata.preview_text = stripEmDashes(data.preview_text);
     if (data.hashtags) metadata.hashtags = data.hashtags;
     if (args.originSource) metadata.origin_source = args.originSource;
     if (args.originContext) metadata.origin_context = args.originContext;
@@ -321,17 +358,34 @@ export async function generateMultiFormat(args: {
         format,
         topic: args.topic,
         practice_area: args.practiceArea ?? null,
-        title: data.title ?? null,
-        body: data.body,
+        title: cleanTitle ?? null,
+        body: cleanBody,
         metadata,
         source_id: args.sourceId ?? null,
-        seo_brief: args.targetKeywords?.length || args.seoBriefHeadings?.length
-          ? {
-              targetKeywords: args.targetKeywords,
-              headings: args.seoBriefHeadings,
-              competitorGaps: args.competitorGaps,
-            }
-          : null,
+        seo_brief:
+          format === "blog" && seoMeta
+            ? {
+                targetKeywords: args.targetKeywords,
+                headings: args.seoBriefHeadings,
+                competitorGaps: args.competitorGaps,
+                // Auto-filled metadata (was empty on non-wizard paths).
+                primaryKeyword: args.topic,
+                metaTitle: seoMeta.metaTitle,
+                metaDescription: seoMeta.metaDescription,
+                urlSlug: seoMeta.urlSlug,
+                pillarId: seoMeta.pillarId,
+                searchIntent: seoMeta.searchIntent,
+                secondaryKeywords: seoMeta.secondaryKeywords,
+                // Blank pillar → surfaced for Diana to assign, never guessed.
+                needsPillarReview: seoMeta.needsPillarReview,
+              }
+            : args.targetKeywords?.length || args.seoBriefHeadings?.length
+              ? {
+                  targetKeywords: args.targetKeywords,
+                  headings: args.seoBriefHeadings,
+                  competitorGaps: args.competitorGaps,
+                }
+              : null,
         tenant_id: tid,
       })
       .select("id, format, title, body, metadata")

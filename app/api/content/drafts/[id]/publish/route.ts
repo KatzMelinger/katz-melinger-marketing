@@ -24,6 +24,7 @@ import {
   runComplianceGate,
   surfaceForFormat,
 } from "@/lib/agent/compliance-filter";
+import { isWordPressFormat } from "@/lib/wp-content-publish";
 import {
   AYRSHARE_PLATFORMS,
   getAyrshareApiKey,
@@ -66,7 +67,10 @@ export async function POST(
 
   const body = typeof draft.body === "string" ? draft.body : "";
   const format = ((draft.format as string | null) ?? "blog").toLowerCase();
-  const surface = surfaceForFormat(format);
+  // KM long-form page/article formats (including Redraft's km_page_update) publish
+  // to WordPress and get blog-level compliance, even though surfaceForFormat()
+  // buckets them as "other". Treat them as the blog surface here.
+  const surface = isWordPressFormat(format) ? "blog" : surfaceForFormat(format);
 
   // Compliance HARD gate — fail-closed to needs_legal. The body can be edited
   // after approval, so we re-check at the moment of publishing.
@@ -177,8 +181,12 @@ export async function POST(
     // Long-form → queue for the WordPress pull plugin instead of posting here.
     // The draft stays `approved`; the plugin creates the post and confirms via
     // /api/wp/content/applied, which flips it to published.
+    const prevMeta = (draft.metadata as Record<string, unknown> | null) ?? {};
+    // A Redraft carries source_url → the plugin updates that page in place.
+    const isUpdate =
+      typeof prevMeta.source_url === "string" && prevMeta.source_url.trim().length > 0;
     const queuedMetadata = {
-      ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+      ...prevMeta,
       wp_publish: { queued: true, queued_at: new Date().toISOString() },
     };
     await supabase
@@ -190,8 +198,9 @@ export async function POST(
       ok: true,
       status: "queued",
       channel: "wordpress",
-      message:
-        "Queued for WordPress — the site plugin will publish it on its next sync.",
+      message: isUpdate
+        ? "Queued for WordPress — the site plugin will update the existing page in place on its next sync."
+        : "Queued for WordPress — the site plugin will publish it on its next sync.",
     });
   }
 

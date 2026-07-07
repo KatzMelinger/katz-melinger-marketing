@@ -18,9 +18,10 @@ import { NextResponse } from "next/server";
 
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
-import { generateMultiFormat } from "@/lib/content-multiformat";
+import { generateSocialPosts } from "@/lib/content-social";
 import { fetchPageText } from "@/lib/page-optimizer";
 import { REPURPOSE_FORMAT_KEYS } from "@/lib/repurpose-formats";
+import type { SocialFormatKey } from "@/lib/social-format-rules";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -40,9 +41,6 @@ export async function POST(req: Request) {
   const url = str(body.url);
   const title = str(body.title);
   const practiceArea = str(body.practiceArea);
-  const keywords = Array.isArray(body.keywords)
-    ? (body.keywords as unknown[]).filter((k): k is string => typeof k === "string" && k.trim().length > 0)
-    : [];
 
   const topic = title || url;
   if (!topic) {
@@ -51,26 +49,38 @@ export async function POST(req: Request) {
 
   const db = await getTenantDb();
 
-  // Ground the variations in the live page when we have a URL and no pasted
-  // source. Fails soft — if the page can't be fetched we still generate from
-  // the topic/keywords rather than erroring the whole run.
+  // Ground the variations in the live page. Social generation is source-required
+  // (Rule 1): the source is the page being repurposed, so we need its text. Use
+  // the pasted source when provided, else fetch the live page.
   let sourceText = str(body.sourceText) || undefined;
   if (!sourceText && url) {
     try {
       sourceText = await fetchPageText(url);
     } catch {
-      /* topic-only generation */
+      /* handled below — source is required */
     }
+  }
+  if (!sourceText?.trim()) {
+    return NextResponse.json(
+      {
+        error:
+          "Couldn't read the source page to repurpose. Paste the source content or check the URL — social posts must be generated from an approved source.",
+      },
+      { status: 422 },
+    );
   }
 
   let gen;
   try {
-    gen = await generateMultiFormat({
-      topic,
+    gen = await generateSocialPosts({
+      source: {
+        kind: "page",
+        title: topic,
+        text: sourceText,
+        url: url || null,
+      },
+      formats: REPURPOSE_FORMAT_KEYS as SocialFormatKey[],
       practiceArea: practiceArea || undefined,
-      formats: REPURPOSE_FORMAT_KEYS,
-      targetKeywords: keywords.length ? keywords : undefined,
-      sourceText,
       originSource: "repurpose",
       originContext: url ? { url } : null,
       tenantId: db.tenantId,
