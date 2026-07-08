@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Position history & visibility — the Semrush-style "Position Tracking" view.
+ * Position history & visibility — the DataForSEO-style "Position Tracking" view.
  *
  * Two pieces, both backed by /api/seo/rank-history (the seo_rank_snapshots
  * time-series the daily refresh cron appends to):

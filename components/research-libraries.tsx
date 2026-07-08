@@ -11,7 +11,7 @@
  *   - Research Packets             (Run Research Layer → packet → feeds KM Brief)
  *
  * The packet runner pulls matching legal sources + runs the live connectors
- * (Semrush, Search Console, Autocomplete, Reddit, YouTube), has Claude
+ * (DataForSEO, Search Console, Autocomplete, Reddit, YouTube), has Claude
  * synthesize FAQs/statutes/angles, and stores a packet you can hand to the
  * KM Brief Generator.
  *

@@ -4,7 +4,7 @@
  *   ?limit=N          default: 50, max 200
  *
  * Powers the "New (30d)" and "Lost (30d)" drill-down panels on the
- * backlinks page. "Lost" is a proxy — Semrush doesn't expose a dedicated
+ * backlinks page. "Lost" is a proxy — DataForSEO doesn't expose a dedicated
  * lost-backlinks endpoint on this plan, so we sort by last_seen ascending
  * to surface the backlinks the crawler hasn't refreshed recently.
  */

@@ -1,6 +1,6 @@
 /**
- * DataForSEO Backlinks API wrappers — the replacement for the Semrush
- * Analytics backlinks reports used in lib/seo-intelligence.ts.
+ * DataForSEO Backlinks API wrappers — backlink summary, referring domains, and
+ * the backlinks list, consumed by lib/seo-intelligence.ts.
  *
  * NOTE ON SCHEMA VERIFICATION: these field mappings follow DataForSEO's
  * documented Backlinks API response shapes. They couldn't be verified against a
@@ -10,7 +10,7 @@
  * DataForSEO-reachable network to confirm the field names, then adjust here.
  *
  * DataForSEO "rank" is a 0-1000 score; we scale it to a 0-100 authority-style
- * number to match the shape the UI expects from the old Semrush AScore.
+ * number to match the shape the UI expects from the domain-authority score.
  */
 
 import { cachedDataForSeoPost } from "./dataforseo-cache";

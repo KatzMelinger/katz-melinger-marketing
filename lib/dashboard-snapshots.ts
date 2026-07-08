@@ -57,7 +57,7 @@ export type OffPageSnapshot = {
 
 /**
  * Fetch JSON with a hard timeout. The board aggregates many departments, some
- * of which call slow external integrations (Semrush, Metricool). A bounded
+ * of which call slow external integrations (DataForSEO, Metricool). A bounded
  * fetch means one slow integration degrades to a "Coming soon" placeholder
  * instead of stalling the entire board.
  */

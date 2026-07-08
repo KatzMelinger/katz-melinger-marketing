@@ -13,7 +13,7 @@ export default function SeoRouteError({
   // A ChunkLoadError means the browser is holding HTML from an older
   // deployment and tried to fetch a JS chunk that the current deployment
   // rotated out (content-hashed filenames change every build). It is NOT a
-  // data/Semrush failure. Recover by hard-reloading once — guarded by a
+  // data/DataForSEO failure. Recover by hard-reloading once — guarded by a
   // sessionStorage flag so a genuinely-missing chunk can't loop forever.
   const isChunkError =
     error.name === "ChunkLoadError" ||

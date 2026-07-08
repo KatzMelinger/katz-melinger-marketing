@@ -79,7 +79,7 @@ const DEFAULT_TARGET_KEYWORDS = [
 ];
 
 /**
- * Domains that Semrush surfaces as "organic competitors" by keyword overlap
+ * Domains that DataForSEO surfaces as "organic competitors" by keyword overlap
  * but that aren't real competitors a law firm can benchmark against: legal
  * directories, Q&A/aggregator sites, government, and reference sources. We
  * strip these from auto-detect so the suggested-competitor list is actual
@@ -182,7 +182,7 @@ export async function getDomainOrganicKeywords(
   domain: string,
   limit = 100,
 ): Promise<KeywordRow[]> {
-  // Migrated off Semrush: reuses the already-validated DataForSEO
+  // Reuses the already-validated DataForSEO
   // ranked_keywords wrapper (same one cannibalization + the refresh cron use),
   // mapped to the KeywordRow shape. This single repoint also moves
   // getKeywordGapVsCompetitor(s), getTrackedKeywordPerformance, and the
@@ -238,7 +238,7 @@ export async function getTrendingKeywords(
   const seedPhrases = seeds.slice(0, 4).filter(Boolean);
   if (seedPhrases.length === 0) return [];
 
-  // DataForSEO Labs related_keywords (replaces Semrush phrase_related). The
+  // DataForSEO Labs related_keywords. The
   // trend score is derived from each keyword's monthly_searches series.
   const perSeed = await Promise.all(
     seedPhrases.map((seed) => getDfsRelatedKeywords(seed, 30).catch(() => [])),
@@ -317,7 +317,7 @@ export async function getTrackedKeywordPerformance(
 }> {
   if (domain === DEFAULT_SEO_DOMAIN) domain = await tenantDomain(tenantId);
   const targets = await getTargetKeywords(tenantId);
-  // Pull up to 1000 keywords (Semrush per-request max) so targets that rank
+  // Pull up to 1000 keywords (DataForSEO per-request max) so targets that rank
   // outside the top-120-by-traffic still get picked up via exact match.
   const rows = await getDomainOrganicKeywords(domain, 1000);
   const byKeyword = new Map(rows.map((row) => [row.keyword.toLowerCase(), row]));
@@ -378,7 +378,7 @@ export async function getTrackedKeywordPerformance(
     .filter((item) => item.position <= 0)
     .map((item) => item.keyword);
 
-  // Real trending + long-tail from Semrush phrase reports, seeded from the
+  // Real trending + long-tail from DataForSEO keyword reports, seeded from the
   // firm's target keywords. Both fail soft to [] so a phrase-report outage
   // never takes down the whole tracker.
   const [trendingKeywords, longTailSuggestions] = await Promise.all([
@@ -478,7 +478,7 @@ export async function getBacklinkOverview(domain = DEFAULT_SEO_DOMAIN): Promise<
   followRatio: number;
 }> {
   if (domain === DEFAULT_SEO_DOMAIN) domain = await tenantDomain();
-  // DataForSEO Backlinks summary (replaces Semrush backlinks_overview). Its
+  // DataForSEO Backlinks summary. Its
   // 0-1000 "rank" is scaled to a 0-100 authority-style score; follow ratio is
   // derived from the referring-domain follow/nofollow split.
   const s = await getBacklinkSummary(safeDomain(domain));
@@ -493,7 +493,7 @@ export async function getBacklinkOverview(domain = DEFAULT_SEO_DOMAIN): Promise<
 
 export async function getBacklinkDomains(domain = DEFAULT_SEO_DOMAIN): Promise<BacklinkDomain[]> {
   if (domain === DEFAULT_SEO_DOMAIN) domain = await tenantDomain();
-  // DataForSEO referring_domains (replaces Semrush backlinks_refdomains).
+  // DataForSEO referring_domains.
   // Toxicity is read from DataForSEO's backlinks_spam_score (0-100) when
   // present; authority is the 0-1000 rank scaled to 0-100.
   const rows = await getReferringDomains(safeDomain(domain), 30);
@@ -544,7 +544,7 @@ function domainOf(url: string): string {
  *
  * `sort` controls which axis we sort by:
  *   - "first_seen_desc" → newest backlinks (default; powers "New 30d")
- *   - "last_seen_asc"   → backlinks Semrush hasn't seen recently (proxy
+ *   - "last_seen_asc"   → backlinks DataForSEO hasn't seen recently (proxy
  *                         for lost / decaying links; powers "Lost 30d")
  */
 export async function getRecentBacklinks(
@@ -554,7 +554,7 @@ export async function getRecentBacklinks(
   if (domain === DEFAULT_SEO_DOMAIN) domain = await tenantDomain();
   const sort = options.sort ?? "first_seen_desc";
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
-  // DataForSEO backlinks list (replaces Semrush backlinks). one_per_domain so
+  // DataForSEO backlinks list. one_per_domain so
   // the New/Lost panels show distinct referring sources.
   const rows = await getBacklinksList(safeDomain(domain), {
     limit,
@@ -600,7 +600,7 @@ export async function getOrganicCompetitors(
   }>
 > {
   if (domain === DEFAULT_SEO_DOMAIN) domain = await tenantDomain();
-  // DataForSEO Labs competitors_domain (replaces Semrush domain_organic_organic).
+  // DataForSEO Labs competitors_domain.
   const rows = await getDfsOrganicCompetitors(safeDomain(domain), limit);
   return rows
     // Drop directories/aggregators/gov so suggestions are real firms only.

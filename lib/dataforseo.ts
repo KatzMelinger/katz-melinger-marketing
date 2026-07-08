@@ -16,7 +16,7 @@
  *                                (keyword_info.monthly_searches)
  *
  * Geography: DataForSEO uses numeric location_code + ISO language_code instead
- * of Semrush's "us" database string. We default to United States / English; the
+ * of DataForSEO's "us" database string. We default to United States / English; the
  * legacy `database` parameter is accepted for signature-compatibility and
  * ignored.
  */
@@ -91,9 +91,8 @@ function mapOrderBy(
 
 /**
  * Keywords the domain currently ranks for in Google's organic results.
- * Replacement for Semrush's domain_organic report.
- *
- * Note: unlike Semrush's domain_organic (which left difficulty null), DataForSEO
+ * *
+ * Note: unlike DataForSEO's domain_organic (which left difficulty null), DataForSEO
  * returns keyword difficulty inline, so `difficulty` is populated here.
  */
 export async function getDomainKeywords(
@@ -141,8 +140,7 @@ export async function getDomainKeywords(
 
 /**
  * Keyword difficulty (0-100) for one or more phrases.
- * Replacement for Semrush's phrase_kdi report.
- * Returns a map of lowercase keyword -> difficulty.
+ * * Returns a map of lowercase keyword -> difficulty.
  */
 export async function getKeywordDifficulty(
   phrases: string[],
@@ -178,8 +176,7 @@ export async function getKeywordDifficulty(
 
 /**
  * Search volume / CPC / competition for arbitrary phrases (including ones the
- * domain doesn't rank for). Replacement for Semrush's phrase_these report.
- * Returns a map of lowercase keyword -> metrics.
+ * domain doesn't rank for). * Returns a map of lowercase keyword -> metrics.
  */
 export async function getPhraseMetrics(
   phrases: string[],
@@ -220,7 +217,7 @@ export async function getPhraseMetrics(
 
 /**
  * 12-month search-interest trend for a keyword, from keyword_overview's
- * keyword_info.monthly_searches array. Replacement for Semrush's phrase_this
+ * keyword_info.monthly_searches array. Replacement for DataForSEO's phrase_this
  * (Td) trend. Returns monthly absolute search volumes (oldest first), the
  * headline search volume, and a derived direction.
  */
@@ -256,7 +253,7 @@ export async function getKeywordTrend(
     const searchVolume = toNum(info?.search_volume);
 
     // monthly_searches: [{ year, month, search_volume }], most-recent first.
-    // Reverse to oldest-first to match the Semrush trend convention.
+    // Reverse to oldest-first to match the DataForSEO trend convention.
     const monthly: Array<{ year: number; month: number; search_volume: number | null }> =
       Array.isArray(info?.monthly_searches) ? info.monthly_searches : [];
     const trend = monthly
@@ -328,7 +325,7 @@ export async function getLiveRank(
 /**
  * Look up a single keyword on the firm's domain — used by the "add tracked
  * keyword" flow to populate initial rank / volume / difficulty / url.
- * Same logic as the Semrush version: try the ranked set first, fall back to
+ * Same logic as the DataForSEO version: try the ranked set first, fall back to
  * phrase metrics + difficulty if the domain doesn't rank for it.
  */
 export async function lookupKeywordRanking(
@@ -453,8 +450,7 @@ export async function getAIOverviewForKeyword(
 }
 
 // ============================================================================
-// Competitor + related-keyword wrappers (replace Semrush domain_organic_organic
-// / phrase_related / phrase_questions). Field paths follow DataForSEO Labs'
+// Competitor + related-keyword wrappers. Field paths follow DataForSEO Labs'
 // documented shapes; parsing is defensive. Validate with
 // scripts/dfs-schema-probe.mjs from a DataForSEO-reachable network.
 // ============================================================================
@@ -477,7 +473,7 @@ function monthlyTrendScore(monthly: unknown): number {
 }
 
 /**
- * Organic competitors for a domain. Replacement for Semrush
+ * Organic competitors for a domain. Replacement for DataForSEO
  * domain_organic_organic. `intersections` = number of shared ranking keywords.
  */
 export async function getOrganicCompetitors(

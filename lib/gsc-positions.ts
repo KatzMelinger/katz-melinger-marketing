@@ -4,7 +4,7 @@
  * Feeds the cannibalization step the real position that splits Optimize
  * (ranks > 20) from Update (top 20). Degrades to an empty map whenever GSC
  * isn't connected (no service account / OAuth token) or the query fails, so the
- * pipeline transparently falls back to the SEMrush rank.
+ * pipeline transparently falls back to the DataForSEO rank.
  */
 
 import { getGoogleAccessToken } from "./google-access-token";

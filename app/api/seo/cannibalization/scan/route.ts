@@ -2,7 +2,7 @@
  * POST /api/seo/cannibalization/scan
  * Body: { domain?: string }
  *
- * Pulls Semrush data, detects cannibalization, persists a snapshot, fires
+ * Pulls DataForSEO data, detects cannibalization, persists a snapshot, fires
  * alerts for high/medium severity issues, and returns the result.
  */
 

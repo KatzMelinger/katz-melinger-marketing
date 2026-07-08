@@ -2,7 +2,7 @@
  * /api/seo/tracked-keywords
  *   GET  — list all tracked keywords, ordered oldest first
  *   POST — add a new tracked keyword. Auto-populates current rank, volume,
- *          difficulty, and URL from Semrush at insert time.
+ *          difficulty, and URL from DataForSEO at insert time.
  *
  * Note: this is at /api/seo/tracked-keywords (not /api/seo/keywords) because
  * the latter is already used by the SEO Overview page for competitor gap
@@ -139,10 +139,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to add keyword" }, { status: 500 });
     }
 
-    // Note: DataForSEO is read-only (no campaign-management API), so the old
-    // Semrush Position Tracking two-way push is dropped. Rank tracking is
-    // pull-only — the daily refresh cron reads ranks via ranked_keywords +
-    // a live-SERP fallback.
+    // Note: DataForSEO is read-only (no campaign-management API), so there is no
+    // two-way position-tracking push. Rank tracking is pull-only — the daily
+    // refresh cron reads ranks via ranked_keywords + a live-SERP fallback.
 
     return NextResponse.json(data, { status: 201 });
   } catch (err: any) {

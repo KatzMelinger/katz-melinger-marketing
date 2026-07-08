@@ -1,7 +1,7 @@
 /**
  * GET /api/seo/rank-history
  *
- * Serves the position-history time-series for the Semrush-style "Position
+ * Serves the position-history time-series for the DataForSEO-style "Position
  * Tracking" view: a visibility trend line per domain (firm + competitors) and
  * the per-keyword ranks needed for date-over-date comparison columns.
  *

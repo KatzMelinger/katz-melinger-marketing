@@ -3,7 +3,7 @@
  * before writing."
  *
  * NOTE: distinct from lib/cannibalization.ts, which is the SEO keyword
- * cannibalization detector (Semrush ranked-URL based). This one works off the
+ * cannibalization detector (DataForSEO ranked-URL based). This one works off the
  * site_pages cluster map and is about *content duplication* — e.g. a glossary
  * section redefining "quid pro quo" when a dedicated blog post already exists.
  *

@@ -2,9 +2,9 @@
  * Opportunity → Brief pipeline (the "Auto-Opportunity Engine").
  *
  * Chains the pieces that already exist into one ranked, validated report:
- *   1. SOURCE   — pull keyword opportunities from Semrush (competitor gaps +
+ *   1. SOURCE   — pull keyword opportunities from DataForSEO (competitor gaps +
  *                 missing targets + long-tail suggestions).
- *   2. VALIDATE — for each, pull the real 12-month Semrush trend + volume and
+ *   2. VALIDATE — for each, pull the real 12-month DataForSEO trend + volume and
  *                 compute a transparent "worth it?" score (demand + trend + gap).
  *   3. RESEARCH — for the top winners, build a Research Packet (legal-authority
  *                 match + People-Also-Ask + confidence + legal-review flag).
@@ -121,7 +121,7 @@ export async function runOpportunityPipeline(args: {
   const deep = args.deep !== false;
   const practiceArea = args.practiceArea ?? null;
 
-  // Resolve the tenant's own Semrush domain (per-tenant, not the global
+  // Resolve the tenant's own SEO domain (per-tenant, not the global
   // katzmelinger.com constant) so the pipeline is correct under multi-tenancy.
   const { tenantId, seoDomain } = await getTenantConfig();
 

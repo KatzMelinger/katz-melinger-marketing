@@ -6,7 +6,7 @@
  * Two columns:
  *   - Tracked competitors (left): inline add form + click-through to detail
  *     + remove button per row
- *   - Top 10 organic competitors from Semrush (right): one-click "Track"
+ *   - Top 10 organic competitors from DataForSEO (right): one-click "Track"
  *     for each, with already-tracked status shown
  *
  * Tracked domains persist in Supabase (seo_tracked_competitors) so adds

@@ -3,7 +3,7 @@
  *
  * Given a topic (+ optional practice area / primary keyword) it:
  *   1. Pulls matching curated Legal Authority sources.
- *   2. Runs the live People-Ask connectors in parallel (Semrush, GSC,
+ *   2. Runs the live People-Ask connectors in parallel (DataForSEO, GSC,
  *      Autocomplete, Reddit, YouTube).
  *   3. Optionally captures the live results into the People Ask library.
  *   4. Asks Claude (tool-use) to synthesize suggested FAQs, statutes to
