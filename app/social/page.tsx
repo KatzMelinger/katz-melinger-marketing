@@ -141,6 +141,13 @@ export default async function SocialHubPage() {
       metric: `${totalPostsThisMonth} this month`,
     },
     {
+      href: "/social/report",
+      label: "Monthly Report",
+      description:
+        "Client-ready monthly recap: Facebook, Instagram, and LinkedIn views, reach, engagement, and follower growth vs the prior month — with a one-click PDF download.",
+      metric: "Month-over-month",
+    },
+    {
       href: "/social/kpi-tracker",
       label: "KPI Tracker",
       description:
