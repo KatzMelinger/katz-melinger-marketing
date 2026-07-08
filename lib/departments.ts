@@ -319,6 +319,7 @@ export const SIDEBAR_SECTIONS: Department[] = [
       { label: "Backlinks", href: "/seo/backlinks", icon: "🔗", status: "active" },
       { label: "Link Strategy", href: "/seo/link-strategy", icon: "🧩", status: "active" },
       { label: "Social Analytics", href: "/social/analytics", icon: "📊", status: "active" },
+      { label: "Monthly Social Report", href: "/social/report", icon: "🧾", status: "active" },
       { label: "Calls", href: "/calls", icon: "☎", status: "active" },
       { label: "Lead Response", href: "/lead-response", icon: "⚡", status: "active" },
       { label: "Sales Pipeline", href: "/pipeline", icon: "▥", status: "active" },
