@@ -44,6 +44,10 @@
     {
       "path": "/api/content/site-inventory/score",
       "schedule": "0 7 1 * *"
+    },
+    {
+      "path": "/api/social/report/snapshot",
+      "schedule": "0 8 1 * *"
     }
   ]
 }

@@ -119,6 +119,79 @@ const NETWORKS: NetworkConfig[] = [
   { name: "TikTok", key: "tiktok", metrics: ["followers_count", "video_views"], hasFollowers: true },
 ];
 
+export type MonthlyPlatformMetrics = {
+  network: string; // display name, e.g. "Facebook"
+  key: string; // metricool network key, e.g. "facebook"
+  impressions: number; // views / impressions
+  reach: number; // reach / unique viewers
+  engagement: number; // interactions (likes + comments + shares)
+  clicks: number | null; // clicks & visits — not exposed by Metricool post analytics
+  netNewFollowers: number | null; // follower change across the range
+  totalFollowers: number | null; // follower count at the end of the range
+  posts: number;
+};
+
+/**
+ * Per-platform totals for an explicit date range (used for one calendar month).
+ * Unlike getSocialOverview this also derives net-new followers from the follower
+ * timeline (last value − first value in the range) so the Monthly Report can show
+ * follower growth. `clicks` stays null: Metricool's post analytics don't expose
+ * profile visits / page views, so we report "not available" rather than invent it.
+ */
+export async function getMonthlyMetrics(from: string, to: string): Promise<MonthlyPlatformMetrics[]> {
+  const results: MonthlyPlatformMetrics[] = [];
+
+  for (const network of NETWORKS) {
+    const row: MonthlyPlatformMetrics = {
+      network: network.name,
+      key: network.key,
+      impressions: 0,
+      reach: 0,
+      engagement: 0,
+      clicks: null,
+      netNewFollowers: null,
+      totalFollowers: null,
+      posts: 0,
+    };
+
+    try {
+      const metric = FOLLOWER_METRIC[network.key] || "followers";
+      const followerData = await getTimeline(network.key, metric, "account", { from, to });
+      // values are newest-first (see getSocialOverview), so [0] is the end of the
+      // range and the last entry is the start.
+      const values: any[] = followerData?.data?.[0]?.values || [];
+      if (values.length > 0) {
+        row.totalFollowers = values[0].value;
+        if (values.length > 1) {
+          row.netNewFollowers = values[0].value - values[values.length - 1].value;
+        }
+      }
+    } catch (e: any) {
+      logger.warn({ network: network.key, error: e.message }, "Monthly metrics: follower fetch failed");
+    }
+
+    try {
+      const postsData = await getPosts(network.key, { from, to });
+      const posts: any[] = postsData?.data || [];
+      row.posts = posts.length;
+      for (const post of posts) {
+        const likes = post.likes || 0;
+        const comments = post.comments || post.comment || 0;
+        const shares = post.shares || 0;
+        row.impressions += post.impressionsTotal || post.impressions || 0;
+        row.reach += post.reach || 0;
+        row.engagement += likes + comments + shares;
+      }
+    } catch (e: any) {
+      logger.warn({ network: network.key, error: e.message }, "Monthly metrics: posts fetch failed");
+    }
+
+    results.push(row);
+  }
+
+  return results;
+}
+
 export async function getSocialOverview(options?: { from?: string; to?: string }) {
   const { from, to } = options?.from && options?.to ? { from: options.from, to: options.to } : defaultDateRange();
 
