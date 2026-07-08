@@ -1,12 +1,11 @@
 /**
- * DataForSEO helper for Huraqan — the replacement for lib/semrush.ts.
+ * DataForSEO helper for Huraqan — the SEO data provider for keyword ranks,
+ * research, competitors, backlinks, live SERP checks, and AI Overview tracking.
  *
- * Mirrors the public surface of lib/semrush.ts (same function names, same return
- * shapes) so downstream callers — lib/seo-intelligence.ts, lib/opportunity-
- * pipeline.ts, lib/research-packet.ts, the tracked-keyword routes — swap their
- * import path and little else.
+ * Consumed by lib/seo-intelligence.ts, lib/opportunity-pipeline.ts,
+ * lib/research-packet.ts, and the tracked-keyword routes.
  *
- * Key differences from Semrush, all hidden behind these functions:
+ * Notes on the DataForSEO Labs API, all hidden behind these functions:
  *   - Auth is HTTP Basic (login:password), sent as a header by the cache layer.
  *   - Requests are POST + JSON; responses are JSON (no semicolon-CSV parsing).
  *   - Data comes from the DataForSEO Labs API (Google database):
@@ -25,7 +24,7 @@
 import { cachedDataForSeoPost } from "./dataforseo-cache";
 
 // ============================================================================
-// Constants — mirror SEMRUSH_DOMAIN / SEMRUSH_DATABASE
+// Constants — default target domain + DataForSEO location/language codes
 // ============================================================================
 
 export const DATAFORSEO_DOMAIN = "katzmelinger.com";
@@ -34,7 +33,7 @@ export const DATAFORSEO_LOCATION_CODE = 2840;
 export const DATAFORSEO_LANGUAGE_CODE = "en";
 
 // ============================================================================
-// Types — structurally identical to SemrushKeywordRow for drop-in swap
+// Types — the canonical ranked-keyword row shape used across the SEO layer
 // ============================================================================
 
 export type DataForSeoKeywordRow = {
@@ -87,7 +86,7 @@ function mapOrderBy(
 }
 
 // ============================================================================
-// Public API — mirrors lib/semrush.ts
+// Public API
 // ============================================================================
 
 /**

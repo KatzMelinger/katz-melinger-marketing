@@ -174,13 +174,16 @@ export async function GET() {
 
   // ---- Search / SEO ----
   items.push({
-    id: "semrush",
-    label: "Semrush",
+    id: "dataforseo",
+    label: "DataForSEO",
     category: "Search",
-    ...envCheck(["SEMRUSH_API_KEY"]),
-    status: present("SEMRUSH_API_KEY") ? "connected" : "missing_env",
-    hint: "Required for SEO data — keyword ranks, backlinks, competitors, cannibalization detection.",
-    feature_pages: ["/seo", "/seo/keywords", "/seo/backlinks", "/seo/cannibalization", "/correlation"],
+    ...envCheck(["DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"]),
+    status:
+      present("DATAFORSEO_LOGIN") && present("DATAFORSEO_PASSWORD")
+        ? "connected"
+        : "missing_env",
+    hint: "Required for SEO data — keyword ranks, keyword research, backlinks, competitors, cannibalization detection, live SERP checks, and AI Overview citation tracking. Uses HTTP Basic auth (login + password) from your DataForSEO account.",
+    feature_pages: ["/seo", "/seo/keywords", "/seo/backlinks", "/seo/cannibalization", "/keyword-research", "/correlation"],
   });
   const gsaStatus = googleServiceAccountStatus();
   items.push({

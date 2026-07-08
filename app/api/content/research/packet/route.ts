@@ -21,7 +21,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const VALID_SOURCES: PeopleAskSourceType[] = [
-  "semrush",
+  "dataforseo",
   "search_console",
   "autocomplete",
   "reddit",

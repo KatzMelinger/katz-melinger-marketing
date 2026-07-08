@@ -76,7 +76,7 @@ export default function SeoRouteError({
         <h1 className="text-2xl font-semibold">SEO page failed to render</h1>
         <p className="text-sm text-slate-600">
           This route deployed correctly but threw while rendering. Most often this is an upstream
-          data source (for example Semrush) rejecting the request.
+          data source (for example DataForSEO) rejecting the request.
         </p>
         <pre className="overflow-x-auto rounded-md border border-[#e2e8f0] bg-[#ffffff] p-4 text-xs text-amber-700">
           {error.message}

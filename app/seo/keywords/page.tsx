@@ -202,9 +202,9 @@ export default function SeoKeywordsPage() {
         );
         setCompetitors(Array.isArray(comp?.trackedDomains) ? comp.trackedDomains : []);
         const suggestions: Array<{ domain: string; tracked?: boolean }> = Array.isArray(
-          comp?.suggestedFromSemrush,
+          comp?.suggestedCompetitors,
         )
-          ? comp.suggestedFromSemrush
+          ? comp.suggestedCompetitors
           : [];
         setSuggestedCompetitors(
           suggestions.filter((s) => !s.tracked).map((s) => s.domain).slice(0, 8),

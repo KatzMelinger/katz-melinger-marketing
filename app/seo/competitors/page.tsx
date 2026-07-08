@@ -27,8 +27,8 @@ type SuggestedCompetitor = {
 
 type Payload = {
   trackedDomains: string[];
-  semrushCompetitors: { domain: string; commonKeywords: number; estimatedTraffic: number }[];
-  suggestedFromSemrush: SuggestedCompetitor[];
+  organicCompetitors: { domain: string; commonKeywords: number; estimatedTraffic: number }[];
+  suggestedCompetitors: SuggestedCompetitor[];
 };
 
 export default function SeoCompetitorsPage() {
@@ -86,12 +86,12 @@ export default function SeoCompetitorsPage() {
     }
   };
 
-  const suggested = useMemo(() => (data?.suggestedFromSemrush ?? []).slice(0, 10), [data]);
+  const suggested = useMemo(() => (data?.suggestedCompetitors ?? []).slice(0, 10), [data]);
 
   return (
     <SeoShell
       title="Competitor Analysis"
-      subtitle="Manage tracked competitor domains and discover top organic competitors from Semrush."
+      subtitle="Manage tracked competitor domains and discover top organic competitors from DataForSEO."
     >
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -107,15 +107,15 @@ export default function SeoCompetitorsPage() {
           </p>
         </article>
         <article className="rounded-xl border border-[#e2e8f0] bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Suggested by Semrush</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Suggested competitors</p>
           <p className="mt-2 text-2xl font-semibold">
-            {formatNumber(data?.suggestedFromSemrush.length ?? 0)}
+            {formatNumber(data?.suggestedCompetitors.length ?? 0)}
           </p>
         </article>
         <article className="rounded-xl border border-[#e2e8f0] bg-white p-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">Source</p>
           <p className="mt-2 text-sm text-slate-700">
-            Tracking persists in Supabase. Add manually or one-click from Semrush suggestions.
+            Tracking persists in Supabase. Add manually or one-click from suggested competitors.
           </p>
         </article>
       </section>
@@ -186,11 +186,11 @@ export default function SeoCompetitorsPage() {
           </ul>
         </article>
 
-        {/* Suggested by Semrush */}
+        {/* Suggested competitors */}
         <article className="rounded-xl border border-[#e2e8f0] bg-white p-5">
           <h2 className="text-lg font-semibold">Top 10 organic competitors</h2>
           <p className="mt-1 text-xs text-slate-500">
-            From Semrush's organic-competitors report. One click to start tracking — already-tracked
+            From DataForSEO's organic-competitors report. One click to start tracking — already-tracked
             domains are marked.
           </p>
 
@@ -198,7 +198,7 @@ export default function SeoCompetitorsPage() {
             {loading && !data && <li className="text-sm text-slate-500">Loading…</li>}
             {suggested.length === 0 && !loading && (
               <li className="text-sm text-slate-500">
-                Semrush returned no organic-competitor data.
+                DataForSEO returned no organic-competitor data.
               </li>
             )}
             {suggested.map((c) => (

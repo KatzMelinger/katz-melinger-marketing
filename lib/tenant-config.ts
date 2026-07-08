@@ -1,7 +1,7 @@
 /**
  * Per-tenant configuration reader (Phase 2).
  *
- * Single place that resolves "what are this tenant's settings?" — Semrush
+ * Single place that resolves "what are this tenant's settings?" — SEO
  * domain, GSC site URL, firm contact, content pillars, practice areas, and
  * the content-generation system prompt. Reads the tenant_settings row and
  * falls back to the existing hardcoded constants whenever a field is null,
@@ -14,8 +14,16 @@
 
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId, DEFAULT_TENANT_ID } from "@/lib/tenant-context";
-import { SEMRUSH_DOMAIN, SEMRUSH_DATABASE } from "@/lib/semrush";
 import { getGscSiteUrl } from "@/lib/gsc-site-url";
+
+/**
+ * Default primary domain for SEO data when a tenant hasn't set one. Also used
+ * as a provider-neutral sentinel by the SEO intelligence + cannibalization
+ * helpers: functions default their `domain` arg to this, then swap in the
+ * resolved per-tenant domain, so callers passing an explicit competitor domain
+ * are unaffected.
+ */
+export const DEFAULT_SEO_DOMAIN = "katzmelinger.com";
 import {
   ALL_KM_PILLARS,
   KM_SYSTEM_PROMPT,
@@ -28,7 +36,6 @@ export type PracticeAreaOption = { id: string; label: string };
 export type TenantConfig = {
   tenantId: string;
   seoDomain: string;
-  semrushDatabase: string;
   gscSiteUrl: string;
   firmName: string;
   firmAddress: string;
@@ -84,7 +91,6 @@ const EMPTY_FALLBACK = {
 
 type SettingsRow = {
   seo_domain: string | null;
-  semrush_database: string | null;
   gsc_site_url: string | null;
   firm_name: string | null;
   firm_address: string | null;
@@ -125,8 +131,7 @@ export async function getTenantConfig(tenantId?: string): Promise<TenantConfig> 
 
   return {
     tenantId: id,
-    seoDomain: row?.seo_domain || SEMRUSH_DOMAIN,
-    semrushDatabase: row?.semrush_database || SEMRUSH_DATABASE,
+    seoDomain: row?.seo_domain || DEFAULT_SEO_DOMAIN,
     gscSiteUrl: row?.gsc_site_url || getGscSiteUrl(),
     firmName: row?.firm_name || fb.firmName,
     firmAddress: row?.firm_address || fb.firmAddress,

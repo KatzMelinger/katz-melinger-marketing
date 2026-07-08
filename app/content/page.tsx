@@ -419,7 +419,7 @@ export default function ContentPage() {
 
             <div className="rounded border border-[#e2e8f0] bg-[#ffffff] p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-slate-500">SEO keyword assistant (Semrush + competitor gaps)</p>
+                <p className="text-xs text-slate-500">SEO keyword assistant (keyword data + competitor gaps)</p>
                 <button
                   type="button"
                   onClick={() => void loadSeoBrief(topic, practiceArea)}

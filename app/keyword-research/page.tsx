@@ -307,7 +307,7 @@ export default function KeywordResearchPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Keyword Research</h1>
         <p className="text-sm opacity-70 mt-1">
           AI-powered keyword discovery, cluster expansion, competitive gap analysis,
-          and live rank tracking via Semrush.
+          and live rank tracking via DataForSEO.
         </p>
       </div>
 

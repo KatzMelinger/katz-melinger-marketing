@@ -89,7 +89,7 @@ const LEGAL_TYPES = ["statute", "regulation", "agency", "case_law", "internal_pa
 const AUTHORITY_LEVELS = ["primary", "secondary", "tertiary"];
 const REVIEW_STATUSES = ["unverified", "verified", "needs_review", "archived"];
 const LIVE_SOURCES = [
-  { id: "semrush", label: "Semrush questions" },
+  { id: "dataforseo", label: "DataForSEO questions" },
   { id: "search_console", label: "Search Console" },
   { id: "autocomplete", label: "Google Autocomplete" },
   { id: "reddit", label: "Reddit" },
@@ -461,7 +461,7 @@ function PeopleAskLibrary() {
             onChange={(e) => setFilter(e.target.value)}
           >
             <option value="">All sources</option>
-            {["manual", "semrush", "search_console", "autocomplete", "reddit", "youtube", "paa"].map(
+            {["manual", "dataforseo", "search_console", "autocomplete", "reddit", "youtube", "paa"].map(
               (s) => (
                 <option key={s} value={s}>
                   {s}
@@ -497,7 +497,7 @@ function PeopleAskLibrary() {
                 value={editing.source_type ?? "manual"}
                 onChange={(e) => setEditing({ ...editing, source_type: e.target.value })}
               >
-                {["manual", "paa", "autocomplete", "semrush", "search_console", "reddit", "youtube", "avvo", "justia", "quora", "competitor"].map(
+                {["manual", "paa", "autocomplete", "dataforseo", "search_console", "reddit", "youtube", "avvo", "justia", "quora", "competitor"].map(
                   (t) => (
                     <option key={t} value={t}>
                       {t}

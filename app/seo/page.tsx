@@ -81,7 +81,7 @@ export default async function SeoHubPage() {
     {
       label: "Authority score",
       value: authorityScore.toString(),
-      hint: "Semrush domain authority",
+      hint: "Domain authority score",
       tone: authorityScore >= 30 ? "emerald" : "amber",
     },
     {
