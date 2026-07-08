@@ -5,7 +5,7 @@
  * GET /api/seo/opportunities/sync
  *   (Vercel Cron trigger — requires Authorization: Bearer ${CRON_SECRET})
  *
- * Refreshes the seo_opportunities table from SEMrush: pulls competitor gaps +
+ * Refreshes the seo_opportunities table from DataForSEO: pulls competitor gaps +
  * missing targets + long-tail suggestions, runs the relevance filter
  * (lib/keyword-filter), and UPSERTS each keyword (idempotent on `keyword`).
  *
@@ -97,7 +97,7 @@ async function logPipeline(
 /**
  * Vercel Cron auth — Vercel injects `Authorization: Bearer ${CRON_SECRET}` on
  * scheduled invocations when CRON_SECRET is set. Reject anything else so the
- * cron URL can't be abused as a public, SEMrush-spending refresh button.
+ * cron URL can't be abused as a public, API-credit-spending refresh button.
  */
 function isAuthorizedCron(req: NextRequest): boolean {
   const expected = process.env.CRON_SECRET;
@@ -134,7 +134,7 @@ async function runSyncForTenant(tenantId: string) {
   // Tracks how far the pipeline got, so a failure log says where it stopped.
   let step = "source";
   try {
-    // Firm-specific config (Semrush domain etc.) instead of a hardcoded constant.
+    // Firm-specific config (SEO domain etc.) instead of a hardcoded constant.
     const { seoDomain, gscSiteUrl } = await getTenantConfig(tenantId);
     const competitors = await listCompetitors(tenantId);
     const customExclusions = await listExclusionTerms(tenantId);
@@ -208,7 +208,7 @@ async function runSyncForTenant(tenantId: string) {
     counts.candidates = candidates.length;
     if (candidates.length === 0) {
       await logPipeline(db, "done", "success", null, counts, startedAt);
-      return { synced: 0, message: "No candidates returned from SEMrush." };
+      return { synced: 0, message: "No candidates returned from DataForSEO." };
     }
 
     // Preserve user-acted statuses: fetch this tenant's existing rows.
@@ -233,7 +233,7 @@ async function runSyncForTenant(tenantId: string) {
 
     // Step 3 inputs: live content-age (WordPress REST) + real positions (GSC).
     // Both are best-effort — a site without /wp-json or an unconnected GSC just
-    // yields an empty map, and labels fall back to the SEMrush rank.
+    // yields an empty map, and labels fall back to the DataForSEO rank.
     step = "cannibalize";
     const [wpModified, gscPositions] = await Promise.all([
       fetchWordPressModifiedMap(seoDomain).catch(() => new Map<string, string>()),
@@ -266,7 +266,7 @@ async function runSyncForTenant(tenantId: string) {
 
       // Step 3 (cannibalization): Create / Optimize / Update. Prefers the real
       // GSC position + WordPress content-age (matched by normalized URL);
-      // deriveActionLabel falls back to the SEMrush rank when either is absent.
+      // deriveActionLabel falls back to the DataForSEO rank when either is absent.
       const existingUrl = coveredByKeyword.get(c.keyword) ?? null;
       const normUrl = existingUrl ? normalizeUrlForMatch(existingUrl) : null;
       const gscPosition = normUrl ? gscPositions.get(normUrl) ?? null : null;
@@ -335,7 +335,7 @@ async function runSyncForTenant(tenantId: string) {
     // Step 4: persist competitor gaps — one row per keyword × best competitor.
     // A gap is "confirmed" when the competitor ranks 1-20 and we don't rank or
     // rank 21+. Powers the deduplicated page-decision count and the confirmed-
-    // gap scorecard without a live SEMrush call on read.
+    // gap scorecard without a live DataForSEO call on read.
     step = "gaps";
     const gapRows = gaps
       .filter((g) => (g.domain ?? "").length > 0)

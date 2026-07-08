@@ -1,6 +1,6 @@
 /**
  * GET /api/seo/keywords/trend?keyword=…
- *   Real 12-month search-interest trend for a keyword from Semrush (Td column).
+ *   Real 12-month search-interest trend for a keyword from DataForSEO (Td column).
  *   Returns { keyword, searchVolume, trend: number[], direction }.
  *   This is the legitimate trend signal — the /content/intelligence/trends
  *   endpoint is AI-suggested, not live data.

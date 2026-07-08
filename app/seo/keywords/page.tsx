@@ -5,7 +5,7 @@
  *
  * Adds previous position + position delta (movement arrow), CPC, traffic
  * value, competition, URL the keyword ranks for, plus column sorting and
- * a search filter. Data comes from /api/seo/keywords backed by Semrush
+ * a search filter. Data comes from /api/seo/keywords backed by DataForSEO
  * domain_organic.
  */
 
@@ -119,7 +119,7 @@ export default function SeoKeywordsPage() {
   const [practiceFilter, setPracticeFilter] = useState<Practice | "all">("all");
 
   // Latest cannibalization snapshot (keyword → the 2+ of OUR URLs competing for
-  // it). Read-only from the persisted scan — no Semrush spend. Used to suggest a
+  // it). Read-only from the persisted scan — no DataForSEO spend. Used to suggest a
   // next action per competitor-gap keyword (new URL vs optimize vs de-cannibalize).
   const [cannibalIssues, setCannibalIssues] = useState<
     Array<{ keyword: string; urls: { url: string; position: number }[]; severity: string }>
@@ -133,7 +133,7 @@ export default function SeoKeywordsPage() {
 
   // Target keyword management — persisted in Supabase via
   // /api/seo/keywords/targets. The tracker table below shows one row per
-  // target, populated with Semrush position/volume/KD data.
+  // target, populated with DataForSEO position/volume/KD data.
   const [targets, setTargets] = useState<string[]>([]);
   // AI Overview presence per tracked keyword (from seo_keywords.ai_overview_*),
   // keyed by lowercased keyword. Populated by the keyword refresh (Goal C).
@@ -145,7 +145,7 @@ export default function SeoKeywordsPage() {
   const [targetError, setTargetError] = useState<string | null>(null);
 
   // Tracked-competitor management — persisted in Supabase via
-  // /api/seo/competitors. `suggested` is the Semrush auto-detected list
+  // /api/seo/competitors. `suggested` is the DataForSEO auto-detected list
   // (directories already filtered out server-side) for one-click add.
   const [competitors, setCompetitors] = useState<string[]>([]);
   const [suggestedCompetitors, setSuggestedCompetitors] = useState<string[]>([]);
@@ -202,9 +202,9 @@ export default function SeoKeywordsPage() {
         );
         setCompetitors(Array.isArray(comp?.trackedDomains) ? comp.trackedDomains : []);
         const suggestions: Array<{ domain: string; tracked?: boolean }> = Array.isArray(
-          comp?.suggestedFromSemrush,
+          comp?.suggestedCompetitors,
         )
-          ? comp.suggestedFromSemrush
+          ? comp.suggestedCompetitors
           : [];
         setSuggestedCompetitors(
           suggestions.filter((s) => !s.tracked).map((s) => s.domain).slice(0, 8),
@@ -273,9 +273,9 @@ export default function SeoKeywordsPage() {
     }
   };
 
-  // (Removed) "Push to Semrush" — DataForSEO is a read-only data API with no
+  // (Removed) "Push to DataForSEO" — DataForSEO is a read-only data API with no
   // campaign/position-tracking product to push keywords into, so the two-way
-  // Semrush sync no longer applies. Rank tracking is pull-only via the refresh.
+  // DataForSEO sync no longer applies. Rank tracking is pull-only via the refresh.
 
   const addCompetitor = async (domain: string, source: "manual" | "suggested" = "manual") => {
     const trimmed = domain.trim();

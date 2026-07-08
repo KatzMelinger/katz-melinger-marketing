@@ -81,10 +81,11 @@ function qualityShortfall(a: Analysis | null): { label: string; score: number }[
 }
 
 const SOURCE_LABEL: Record<string, string> = {
-  opportunity_quickwin: "SEMrush",
-  opportunity_missing: "SEMrush",
-  opportunity_longtail: "SEMrush",
-  semrush: "SEMrush",
+  opportunity_quickwin: "DataForSEO",
+  opportunity_missing: "DataForSEO",
+  opportunity_longtail: "DataForSEO",
+  semrush: "DataForSEO",
+  dataforseo: "DataForSEO",
   competitor_gap: "Competitor gap",
   keyword_tracker: "Keyword tracker",
   imported: "Imported",

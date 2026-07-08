@@ -1,7 +1,7 @@
 /**
  * POST /api/seo/backlinks/strategy
  *
- * Crawls the firm's outbound link profile, pulls existing Semrush
+ * Crawls the firm's outbound link profile, pulls existing DataForSEO
  * competitor data, and generates a Claude-powered link-building plan:
  * specific outreach categories, target organizations, email templates,
  * reciprocal link ideas, content-for-links suggestions, and a 3-month

@@ -347,7 +347,7 @@ export const GUIDE_ENTRIES: Record<string, GuideEntry> = {
   },
   "/integrations": {
     whatItIs:
-      "A health dashboard for every external service (Semrush, GA4, Google Ads, Metricool, and more) with setup status.",
+      "A health dashboard for every external service (DataForSEO, GA4, Google Ads, Metricool, and more) with setup status.",
     howToUse:
       "Check each integration's status, see what env vars are missing, and follow the setup steps to unlock features.",
   },

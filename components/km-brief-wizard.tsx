@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * KM SEO Brief Wizard — the 5-step brief builder (modeled on the SEMrush
- * content-brief flow) that fixes the Opportunity Radar's broken "Create".
+ * KM SEO Brief Wizard — the 5-step content-brief builder that fixes the
+ * Opportunity Radar's broken "Create".
  *
  * Unlike the old generic path, this produces a full KMPerPageBrief and generates
  * via /api/content/km-draft — so the output follows KM's real rules (the

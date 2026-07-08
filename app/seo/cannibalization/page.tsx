@@ -9,7 +9,7 @@
  * top 10, medium if top 20, low otherwise), and surfaces each keyword with
  * the competing URLs + their positions + a "fix" suggestion.
  *
- * Re-scanning pulls fresh data from Semrush. High/medium issues automatically
+ * Re-scanning pulls fresh data from DataForSEO. High/medium issues automatically
  * post to the alerts inbox.
  */
 

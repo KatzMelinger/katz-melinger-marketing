@@ -1,5 +1,5 @@
 /**
- * GET    /api/seo/competitors             — tracked + Semrush-suggested
+ * GET    /api/seo/competitors             — tracked + DataForSEO-suggested
  * POST   /api/seo/competitors             — body: { domain, source? }
  * DELETE /api/seo/competitors?domain=…    — remove a tracked competitor
  */
@@ -15,23 +15,23 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const { tenantId, seoDomain } = await getTenantConfig();
-    const [semrushCompetitors, trackedDomains] = await Promise.all([
+    const [organicCompetitors, trackedDomains] = await Promise.all([
       getOrganicCompetitors(seoDomain, 20),
       listCompetitors(tenantId),
     ]);
 
     const trackedSet = new Set(trackedDomains);
-    const suggestedFromSemrush = semrushCompetitors.map((c) => ({
+    const suggestedCompetitors = organicCompetitors.map((c) => ({
       ...c,
       tracked: trackedSet.has(c.domain),
     }));
 
     return NextResponse.json({
       trackedDomains,
-      semrushCompetitors,
-      suggestedFromSemrush,
+      organicCompetitors,
+      suggestedCompetitors,
       // Legacy field kept for backwards compatibility.
-      suggestedDomains: semrushCompetitors.slice(0, 8).map((item) => item.domain),
+      suggestedDomains: organicCompetitors.slice(0, 8).map((item) => item.domain),
     });
   } catch (e) {
     return NextResponse.json(

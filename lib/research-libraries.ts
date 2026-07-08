@@ -45,7 +45,7 @@ export type LegalAuthoritySource = {
 export type PeopleAskSourceType =
   | "paa"
   | "autocomplete"
-  | "semrush"
+  | "dataforseo"
   | "search_console"
   | "reddit"
   | "youtube"

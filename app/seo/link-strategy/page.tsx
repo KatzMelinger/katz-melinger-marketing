@@ -3,7 +3,7 @@
 /**
  * Link-building strategy.
  *
- * Different from /seo/backlinks (which shows the Semrush incoming-link
+ * Different from /seo/backlinks (which shows the DataForSEO incoming-link
  * profile). This page does outbound analysis + AI-generated outreach plan:
  * what categories of sites to pitch, specific targets, email templates,
  * reciprocal link opportunities, content-for-links ideas, and a 3-month

@@ -1,5 +1,5 @@
 /**
- * Rank-history time-series — the data behind the Semrush-style "Position
+ * Rank-history time-series — the data behind the DataForSEO-style "Position
  * Tracking" view (visibility trend chart + date-over-date comparison columns).
  *
  * Two responsibilities:
@@ -12,7 +12,7 @@
  * Visibility metric: the average organic CTR across all tracked keywords for a
  * domain on a given day, as a percentage. A domain that ranks #1 for every
  * keyword approaches ~32%; one that ranks nowhere sits at 0%. It moves with the
- * rankings, which is all the trend line needs — it is NOT Semrush's proprietary
+ * rankings, which is all the trend line needs — it is NOT DataForSEO's proprietary
  * visibility score, just a comparable CTR-weighted share.
  */
 

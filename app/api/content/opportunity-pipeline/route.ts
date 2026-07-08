@@ -2,7 +2,7 @@
  * POST /api/content/opportunity-pipeline
  *   Body: { practiceArea?, competitor?, topN?, maxCandidates?, deep? }
  *
- * Runs the full Opportunity → Brief pipeline: source Semrush opportunities →
+ * Runs the full Opportunity → Brief pipeline: source DataForSEO opportunities →
  * validate with real trend data + score → research-packet (legal + PAA) + brief
  * the top winners. Returns a ranked report. Heavy (Claude + connectors), so it
  * deep-processes only the top `topN` (default 3).

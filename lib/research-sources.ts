@@ -7,7 +7,7 @@
  * them in parallel and merges.
  *
  * Sources:
- *   - Semrush question keywords  (uses existing SEMRUSH_API_KEY)
+ *   - DataForSEO question keywords  (uses existing DATAFORSEO_LOGIN/PASSWORD)
  *   - Search Console queries     (uses existing GBP/Google OAuth, webmasters scope)
  *   - Google Autocomplete        (free public endpoint)
  *   - Reddit                     (public search.json, no key; may be IP-limited)
@@ -59,11 +59,15 @@ function dedupe(items: RawAskItem[]): RawAskItem[] {
 }
 
 // ---------------------------------------------------------------------------
-// Semrush — check volume on question-stem variants of the topic.
+// DataForSEO — check volume on question-stem variants of the topic.
 // ---------------------------------------------------------------------------
-export async function semrushQuestions(topic: string): Promise<ConnectorResult> {
-  if (!process.env.SEMRUSH_API_KEY?.trim()) {
-    return { source: "semrush", items: [], note: "SEMRUSH_API_KEY not set" };
+export async function dataForSeoQuestions(topic: string): Promise<ConnectorResult> {
+  if (!process.env.DATAFORSEO_LOGIN?.trim() || !process.env.DATAFORSEO_PASSWORD?.trim()) {
+    return {
+      source: "dataforseo",
+      items: [],
+      note: "DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD not set",
+    };
   }
   const phrases = QUESTION_STEMS.map((stem) => `${stem} ${topic}`.toLowerCase());
   try {
@@ -73,21 +77,21 @@ export async function semrushQuestions(topic: string): Promise<ConnectorResult> 
       if (m.volume > 0) {
         items.push({
           content: phrase,
-          source_type: "semrush",
+          source_type: "dataforseo",
           metric: { volume: m.volume, cpc: m.cpc, competition: m.competition },
         });
       }
     }
     return {
-      source: "semrush",
+      source: "dataforseo",
       items: dedupe(items),
       note: items.length === 0 ? "no question variants with volume" : null,
     };
   } catch (err) {
     return {
-      source: "semrush",
+      source: "dataforseo",
       items: [],
-      note: err instanceof Error ? err.message : "semrush failed",
+      note: err instanceof Error ? err.message : "dataforseo failed",
     };
   }
 }
@@ -326,7 +330,7 @@ export async function youtubeQuestions(topic: string): Promise<ConnectorResult> 
 export async function gatherLiveSources(
   topic: string,
   enabled: PeopleAskSourceType[] = [
-    "semrush",
+    "dataforseo",
     "search_console",
     "autocomplete",
     "reddit",
@@ -334,7 +338,7 @@ export async function gatherLiveSources(
   ],
 ): Promise<ConnectorResult[]> {
   const jobs: Promise<ConnectorResult>[] = [];
-  if (enabled.includes("semrush")) jobs.push(semrushQuestions(topic));
+  if (enabled.includes("dataforseo")) jobs.push(dataForSeoQuestions(topic));
   if (enabled.includes("search_console"))
     jobs.push(searchConsoleQuestions(topic));
   if (enabled.includes("autocomplete")) jobs.push(googleAutocomplete(topic));
