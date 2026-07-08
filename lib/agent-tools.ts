@@ -77,7 +77,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "find_trending_topics",
     description:
-      "AI-SUGGESTED topic ideas in NY/NJ employment law (urgency, angle, platforms), based on the model's training knowledge — NOT live trend data, and it can be wrong about what's actually current. To validate real demand for a specific keyword, use check_keyword_trend (real Semrush data) instead.",
+      "AI-SUGGESTED topic ideas in NY/NJ employment law (urgency, angle, platforms), based on the model's training knowledge — NOT live trend data, and it can be wrong about what's actually current. To validate real demand for a specific keyword, use check_keyword_trend (real DataForSEO data) instead.",
     input_schema: {
       type: "object",
       properties: {
@@ -145,7 +145,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "list_tracked_keywords",
     description:
-      "List the keywords currently being tracked for rank in Semrush. Returns each keyword with practice area, current rank, previous rank, search volume, and difficulty.",
+      "List the keywords currently being tracked for rank in DataForSEO. Returns each keyword with practice area, current rank, previous rank, search volume, and difficulty.",
     input_schema: {
       type: "object",
       properties: {
@@ -159,7 +159,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "refresh_tracked_keywords",
     description:
-      "Refresh rank data for all tracked keywords by hitting Semrush. Moves current_rank into previous_rank and writes the latest rank, search volume, and difficulty. Use this when the user asks about rank drops/wins and last_checked_at is stale (more than ~24 hours old) or current_rank is null on keywords you'd expect to rank. Returns the refreshed list.",
+      "Refresh rank data for all tracked keywords by hitting DataForSEO. Moves current_rank into previous_rank and writes the latest rank, search volume, and difficulty. Use this when the user asks about rank drops/wins and last_checked_at is stale (more than ~24 hours old) or current_rank is null on keywords you'd expect to rank. Returns the refreshed list.",
     input_schema: {
       type: "object",
       properties: {},
@@ -168,7 +168,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "get_keyword_opportunities",
     description:
-      "Pull NEW keyword opportunities from Semrush (real data): quick wins (keywords a competitor outranks us for, scored), target keywords we don't yet rank for, long-tail question suggestions, and high-authority link gaps. This is Step 1 of the content-opportunity workflow — use it to find topics worth creating pages for.",
+      "Pull NEW keyword opportunities from DataForSEO (real data): quick wins (keywords a competitor outranks us for, scored), target keywords we don't yet rank for, long-tail question suggestions, and high-authority link gaps. This is Step 1 of the content-opportunity workflow — use it to find topics worth creating pages for.",
     input_schema: {
       type: "object",
       properties: {
@@ -183,7 +183,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "check_keyword_trend",
     description:
-      "Check a keyword's REAL 12-month search-interest trend from Semrush. Returns monthly trend values, search volume, and direction (rising/stable/falling/unknown). Use this to validate whether an opportunity has growing or fading demand — the 'is it worth it?' check. Prefer this over find_trending_topics for demand validation.",
+      "Check a keyword's REAL 12-month search-interest trend from DataForSEO. Returns monthly trend values, search volume, and direction (rising/stable/falling/unknown). Use this to validate whether an opportunity has growing or fading demand — the 'is it worth it?' check. Prefer this over find_trending_topics for demand validation.",
     input_schema: {
       type: "object",
       properties: {
@@ -195,7 +195,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "generate_research_packet",
     description:
-      "Build a Research Packet for a topic — the legal-accuracy + demand-validation step. It matches the curated Legal Authority library, gathers People-Also-Ask questions from live sources (Semrush, Search Console, Autocomplete, Reddit, YouTube), checks overlap with existing pages, and synthesizes suggested FAQs, statutes to cite, content angles, a source-confidence score, and whether legal review is required. Saves the packet and returns it. Run this BEFORE recommending or briefing a page so content is legally grounded.",
+      "Build a Research Packet for a topic — the legal-accuracy + demand-validation step. It matches the curated Legal Authority library, gathers People-Also-Ask questions from live sources (DataForSEO, Search Console, Autocomplete, Reddit, YouTube), checks overlap with existing pages, and synthesizes suggested FAQs, statutes to cite, content angles, a source-confidence score, and whether legal review is required. Saves the packet and returns it. Run this BEFORE recommending or briefing a page so content is legally grounded.",
     input_schema: {
       type: "object",
       properties: {
@@ -225,7 +225,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "run_opportunity_pipeline",
     description:
-      "Run the full Opportunity → Brief pipeline in one shot: source Semrush keyword opportunities, validate each with REAL trend + volume data and a transparent 'worth it?' score, then for the top winners build a Research Packet (legal-authority match + People-Also-Ask + confidence + legal-review flag) and an SEO content brief. Returns a ranked report. This is the end-to-end content-opportunity workflow — use it when asked 'what should we write next?' or to find + vet + brief opportunities automatically.",
+      "Run the full Opportunity → Brief pipeline in one shot: source DataForSEO keyword opportunities, validate each with REAL trend + volume data and a transparent 'worth it?' score, then for the top winners build a Research Packet (legal-authority match + People-Also-Ask + confidence + legal-review flag) and an SEO content brief. Returns a ranked report. This is the end-to-end content-opportunity workflow — use it when asked 'what should we write next?' or to find + vet + brief opportunities automatically.",
     input_schema: {
       type: "object",
       properties: {
