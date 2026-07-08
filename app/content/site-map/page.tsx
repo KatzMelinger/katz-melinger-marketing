@@ -216,11 +216,14 @@ export default function SiteMapPage() {
     ...(grouped.has("__unassigned__") ? ["__unassigned__"] : []),
   ];
 
+  // Optimize honors the page-type filter too (it reads `filtered`, not `pages`),
+  // so choosing e.g. "Service" narrows the Optimize list, its count, and the tab
+  // badge to that type. Cleared filter = all pages, as before.
   const optimizePages = useMemo(
-    () => pages.filter((p) => p.scored_at && belowStandard(p)),
-    [pages],
+    () => filtered.filter((p) => p.scored_at && belowStandard(p)),
+    [filtered],
   );
-  const scoredCount = pages.filter((p) => p.scored_at).length;
+  const scoredCount = filtered.filter((p) => p.scored_at).length;
 
   const sortedOptimize = useMemo(() => {
     const rank = (p: SitePage) => {
