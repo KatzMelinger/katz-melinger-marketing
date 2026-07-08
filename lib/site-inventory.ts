@@ -21,7 +21,11 @@ import { type KMPillar } from "@/lib/km-content-system";
 import { getPillars } from "@/lib/pillars-store";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; MarketingDashboardSiteInventory/0.1)";
-const MAX_PAGES = 500;
+// Kept at 300: the crawl fetches title/h1 for every URL + classifies via Claude
+// in one request, and >300 overran the serverless time limit (returned a non-JSON
+// error page). With the non-blog-first ordering below, 300 already covers the
+// full set of service/practice/result pages (~200) plus a blog sample.
+const MAX_PAGES = 300;
 const FETCH_CONCURRENCY = 8;
 
 /** Cheap blog-post URL test (matches classifyTypeByUrl's blog rule). */
