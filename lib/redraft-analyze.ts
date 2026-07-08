@@ -186,3 +186,80 @@ export function gapReportPromptBlock(report: GapReport): string {
   }
   return lines.join("\n");
 }
+
+// ---------- Headings: preserve strong ones, improve weak ones --------------
+
+/**
+ * Show the page's CURRENT heading outline and instruct purposeful heading
+ * changes: keep headings that already work verbatim, only rewrite one when it
+ * clearly improves SEO (H1 should carry the primary keyword; vague headings made
+ * specific), and add new headings only for the gaps. Without this the generator
+ * sees only stripped text and rebuilds headings blind.
+ */
+export function headingGuidanceBlock(outline: PageOutline, primaryKeyword: string): string {
+  const kw = primaryKeyword.trim();
+  if (!outline.headings.length) {
+    return `CURRENT HEADINGS: none detected. Add a clear H1${kw ? ` that includes "${kw}"` : ""} and scannable H2/H3 section headings.`;
+  }
+  const list = outline.headings
+    .map((h) => `${"#".repeat(Math.min(Math.max(h.level, 1), 3))} ${h.text}`)
+    .join("\n");
+  return `CURRENT HEADINGS — the page's existing structure. Preserve it:
+${list}
+
+HEADING RULES:
+- Reuse each existing heading's EXACT text when it is already clear and relevant. Do NOT reword a heading that already works.
+- Only change a heading when it measurably improves SEO: the H1 should contain the primary keyword${kw ? ` ("${kw}")` : ""}; replace vague headings (e.g. "Overview", "Introduction", "More Information") with specific, descriptive ones.
+- Keep the existing sections and their order. Add NEW headings ONLY for the missing sections listed above.`;
+}
+
+/** Extract Markdown ATX headings (#, ##, ###…) from generated content. */
+export function parseMarkdownHeadings(md: string): { level: number; text: string }[] {
+  const out: { level: number; text: string }[] = [];
+  for (const line of (md ?? "").split(/\r?\n/)) {
+    const m = line.match(/^(#{1,6})\s+(.*\S)\s*$/);
+    if (m) out.push({ level: m[1].length, text: m[2].replace(/#+\s*$/, "").replace(/\s+/g, " ").trim() });
+  }
+  return out;
+}
+
+export type HeadingChangeSummary = {
+  before: number;
+  after: number;
+  /** Original headings whose text still appears in the redraft. */
+  kept: number;
+  h1Before: string | null;
+  h1After: string | null;
+  h1Changed: boolean;
+  /** New section headings (H2+) present after but not before. Excludes the H1. */
+  added: string[];
+};
+
+const normHeading = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+
+/** Compare the original page's headings against the redraft's headings. */
+export function summarizeHeadingChanges(
+  before: { level: number; text: string }[],
+  after: { level: number; text: string }[],
+): HeadingChangeSummary {
+  const beforeSet = new Set(before.map((h) => normHeading(h.text)));
+  const afterSet = new Set(after.map((h) => normHeading(h.text)));
+  // Added = new H2+ sections. The H1 is reported separately (h1Changed) so a
+  // reworded H1 isn't double-counted as an "added" heading.
+  const added = after
+    .filter((h) => h.level >= 2 && !beforeSet.has(normHeading(h.text)))
+    .map((h) => h.text);
+  const kept = before.filter((h) => afterSet.has(normHeading(h.text))).length;
+  const h1Before = before.find((h) => h.level === 1)?.text ?? null;
+  const h1After = after.find((h) => h.level === 1)?.text ?? null;
+  return {
+    before: before.length,
+    after: after.length,
+    kept,
+    h1Before,
+    h1After,
+    h1Changed: !!h1Before && !!h1After && normHeading(h1Before) !== normHeading(h1After),
+    added,
+  };
+}

@@ -29,7 +29,14 @@ import { getFirmContext } from "@/lib/firm-context";
 import { buildSkillsContext } from "@/lib/content-skills";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { fetchPageOutline } from "@/lib/page-optimizer";
-import { detectContentType, auditGaps, gapReportPromptBlock } from "@/lib/redraft-analyze";
+import {
+  detectContentType,
+  auditGaps,
+  gapReportPromptBlock,
+  headingGuidanceBlock,
+  parseMarkdownHeadings,
+  summarizeHeadingChanges,
+} from "@/lib/redraft-analyze";
 import { autoSeoMetadata } from "@/lib/strategy-engine";
 import { getPillars } from "@/lib/pillars-store";
 
@@ -139,11 +146,12 @@ export async function POST(req: Request) {
     (title ? `Title: ${title}\n` : "") +
     `--- current content (extracted from the live page) ---\n${pageText}\n--- end current content ---\n\n` +
     `${gapReportPromptBlock(gapReport)}\n\n` +
+    `${headingGuidanceBlock(outline, title)}\n\n` +
     `UPDATE INSTRUCTIONS\n` +
     `- Preserve sections that are already accurate and on-topic. Do NOT rewrite them wholesale — light voice/clarity edits only.\n` +
     `- ADD the missing sections and keywords listed above, in the firm's brand voice and to its audiences (see FIRM CONTEXT).\n` +
     `- Keep every factual, legal, and numeric statement accurate. Do NOT invent statutes, deadlines, figures, or case results — if the live page doesn't support a claim, leave it out.\n` +
-    `- Keep the structure scannable: H2/H3 headings, short sentences, plain English, and a clear next-step CTA.\n` +
+    `- Follow the HEADING RULES above: keep strong headings verbatim, improve weak ones for SEO, add headings only for the gaps.\n` +
     keywordBlock +
     linkBlock +
     `\n\nOutput: the full updated page in Markdown only. Start with the H1.`;
@@ -171,6 +179,14 @@ export async function POST(req: Request) {
   if (!updatedBody.trim()) {
     return NextResponse.json({ error: "The model returned an empty draft." }, { status: 502 });
   }
+
+  // Heading changes: compare the live page's headings against the redraft's, so
+  // the reviewer can see the H1/section changes at a glance (kept vs improved vs
+  // added) rather than diffing by eye.
+  const headingChanges = summarizeHeadingChanges(
+    outline.headings,
+    parseMarkdownHeadings(updatedBody),
+  );
 
   // Stage 3 metadata: fill meta title/description/slug/pillar (the old redraft
   // left these empty, so WordPress push + the drawer had nothing). Reuses the
@@ -213,6 +229,7 @@ export async function POST(req: Request) {
           missingSections: gapReport.missingSections,
           missingKeywords: gapReport.missingKeywords,
           notes: gapReport.notes,
+          headingChanges,
         },
         km_brief: {
           primaryKeyword: title || url,
@@ -309,6 +326,7 @@ export async function POST(req: Request) {
       missingSections: gapReport.missingSections,
       missingKeywords: gapReport.missingKeywords,
       notes: gapReport.notes,
+      headingChanges,
     },
   });
 }

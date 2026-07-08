@@ -170,6 +170,15 @@ type RedraftAnalysis = {
   missingSections?: string[];
   missingKeywords?: string[];
   notes?: string[];
+  headingChanges?: {
+    before?: number;
+    after?: number;
+    kept?: number;
+    h1Before?: string | null;
+    h1After?: string | null;
+    h1Changed?: boolean;
+    added?: string[];
+  };
 };
 
 /** The Redraft stages 1–2 result (only present on drafts from Redraft). */
@@ -729,6 +738,30 @@ export function DraftDrawer({
                     <span className="font-medium">Keywords added:</span>{" "}
                     {redraft.missingKeywords!.join(", ")}
                   </p>
+                )}
+                {redraft.headingChanges && (
+                  <div className="mt-1.5 text-xs text-slate-700">
+                    <span className="font-medium">Headings:</span>{" "}
+                    {redraft.headingChanges.kept ?? 0} of{" "}
+                    {redraft.headingChanges.before ?? 0} kept
+                    {(redraft.headingChanges.added?.length ?? 0) > 0
+                      ? ` · ${redraft.headingChanges.added!.length} added`
+                      : ""}
+                    {redraft.headingChanges.h1Changed ? " · H1 improved for SEO" : ""}
+                    {redraft.headingChanges.h1Changed && redraft.headingChanges.h1After ? (
+                      <span
+                        className="block text-slate-500"
+                        title={`Before: ${redraft.headingChanges.h1Before ?? "—"}`}
+                      >
+                        H1 → “{redraft.headingChanges.h1After}”
+                      </span>
+                    ) : null}
+                    {(redraft.headingChanges.added?.length ?? 0) > 0 ? (
+                      <span className="block text-slate-500">
+                        Added: {redraft.headingChanges.added!.join("; ")}
+                      </span>
+                    ) : null}
+                  </div>
                 )}
                 {(redraft.notes?.length ?? 0) > 0 && (
                   <p className="mt-1.5 text-xs text-slate-500">{redraft.notes!.join(" ")}</p>
