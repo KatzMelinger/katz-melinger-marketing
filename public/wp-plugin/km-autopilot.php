@@ -3,7 +3,7 @@
  * Plugin Name:       KM AutoPilot
  * Plugin URI:        https://katzmelinger.com
  * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates new posts OR updates an existing page in place (Redraft) from approved, compliance-cleared drafts.
- * Version:           0.4.0
+ * Version:           0.5.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Katz Melinger
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('KM_AUTOPILOT_VERSION', '0.4.0');
+define('KM_AUTOPILOT_VERSION', '0.5.0');
 define('KM_AUTOPILOT_OPTION', 'km_autopilot_settings');
 define('KM_AUTOPILOT_LOG_OPTION', 'km_autopilot_log');
 define('KM_AUTOPILOT_CRON_HOOK', 'km_autopilot_sync_cron');
@@ -63,6 +63,12 @@ function km_autopilot_get_settings() {
         // 'publish' = post goes live on confirm; 'draft' = created as a WP draft
         // for a human to publish in WP (the dashboard still marks it handed-off).
         'content_status'  => 'draft',
+        // E-E-A-T: optional "reviewed by" attorney, added as reviewedBy on
+        // Yoast's Article schema (YMYL trust signal). Opt-in — a blank name
+        // means the schema filter does nothing.
+        'reviewer_name'   => '',
+        'reviewer_title'  => '',
+        'reviewer_url'    => '',
     ];
     return wp_parse_args(get_option(KM_AUTOPILOT_OPTION, []), $defaults);
 }
@@ -229,6 +235,31 @@ add_action('wp_head', function () {
     echo "\n<!-- KM AutoPilot schema -->\n";
     echo '<script type="application/ld+json">' . wp_kses_post($schema) . '</script>' . "\n";
 }, 99);
+
+// E-E-A-T: add a "reviewed by" attorney to Yoast's Article schema. Yoast owns
+// the Article node, so we augment it IN PLACE via its filter rather than
+// emitting a competing script (which would duplicate). Opt-in — does nothing
+// unless a reviewer name is configured in settings, and no-ops when Yoast is
+// not installed (the filter simply never fires).
+add_filter('wpseo_schema_article', function ($data) {
+    if (!is_array($data)) {
+        return $data;
+    }
+    $settings = km_autopilot_get_settings();
+    $name = isset($settings['reviewer_name']) ? trim($settings['reviewer_name']) : '';
+    if ($name === '') {
+        return $data;
+    }
+    $reviewer = ['@type' => 'Person', 'name' => $name];
+    if (!empty($settings['reviewer_title'])) {
+        $reviewer['jobTitle'] = $settings['reviewer_title'];
+    }
+    if (!empty($settings['reviewer_url'])) {
+        $reviewer['url'] = $settings['reviewer_url'];
+    }
+    $data['reviewedBy'] = $reviewer;
+    return $data;
+});
 
 // -----------------------------------------------------------------------------
 // Failure write-back — tell the dashboard a fix could not be applied so the row
@@ -515,6 +546,9 @@ add_action('admin_init', function () {
             $out['content_status']  = (isset($input['content_status']) && $input['content_status'] === 'publish')
                 ? 'publish'
                 : 'draft';
+            $out['reviewer_name']   = isset($input['reviewer_name']) ? sanitize_text_field(trim($input['reviewer_name'])) : '';
+            $out['reviewer_title']  = isset($input['reviewer_title']) ? sanitize_text_field(trim($input['reviewer_title'])) : '';
+            $out['reviewer_url']    = isset($input['reviewer_url']) ? esc_url_raw(trim($input['reviewer_url'])) : '';
             return $out;
         },
     ]);
@@ -586,6 +620,29 @@ function km_autopilot_render_settings_page() {
                             <option value="publish" <?php selected($settings['content_status'], 'publish'); ?>>Publish immediately (fully autonomous)</option>
                         </select>
                         <p class="description">The dashboard has already gated each draft on approval + compliance. "Draft" creates the post for a final human publish in WP.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="km_reviewer_name">Reviewed by (E-E-A-T)</label></th>
+                    <td>
+                        <input type="text" id="km_reviewer_name" name="<?php echo esc_attr(KM_AUTOPILOT_OPTION); ?>[reviewer_name]"
+                               value="<?php echo esc_attr($settings['reviewer_name']); ?>" class="regular-text" placeholder="Jane Attorney, Esq." />
+                        <p class="description">Attorney who reviews content. Added as <code>reviewedBy</code> on Yoast's Article schema for YMYL trust. Leave blank to disable.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="km_reviewer_title">Reviewer title</label></th>
+                    <td>
+                        <input type="text" id="km_reviewer_title" name="<?php echo esc_attr(KM_AUTOPILOT_OPTION); ?>[reviewer_title]"
+                               value="<?php echo esc_attr($settings['reviewer_title']); ?>" class="regular-text" placeholder="Partner, Katz Melinger PLLC" />
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="km_reviewer_url">Reviewer profile URL</label></th>
+                    <td>
+                        <input type="url" id="km_reviewer_url" name="<?php echo esc_attr(KM_AUTOPILOT_OPTION); ?>[reviewer_url]"
+                               value="<?php echo esc_attr($settings['reviewer_url']); ?>" class="regular-text" placeholder="https://katzmelinger.com/attorneys/..." />
+                        <p class="description">Optional. The reviewer's bio page.</p>
                     </td>
                 </tr>
             </table>
