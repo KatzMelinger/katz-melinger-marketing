@@ -32,6 +32,15 @@ export type LinkPlanInput = {
   practiceArea?: KMPracticeArea;
   /** The page being written (so it never links to itself). */
   excludeUrl?: string;
+  /**
+   * How many candidate pages to take per matched term. Default 1 (only the
+   * best-ranked page per term) — the conservative behavior the brief→draft and
+   * multi-format generators rely on. The redraft flow raises this so a page
+   * with a sparse pillar still surfaces enough site-wide candidates.
+   */
+  perTermLimit?: number;
+  /** Cap on total outbound links returned (pillar up-link included). Unbounded by default. */
+  maxLinks?: number;
 };
 
 export type LinkPlanFlag = {
@@ -75,33 +84,44 @@ export async function buildLinkPlan(input: LinkPlanInput): Promise<LinkPlan> {
   const links: KMInternalLink[] = [];
   const flagged: LinkPlanFlag[] = [];
   const seen = new Set<string>();
+  const perTermLimit = Math.max(1, input.perTermLimit ?? 1);
 
   for (const match of overlap?.matches ?? []) {
-    const top = match.pages[0];
-    if (!top) continue;
-    const path = normalizePath(top.url);
-    if (excludePath && path === excludePath) continue;
-
     // Cannibalization: an existing page already targets our primary keyword.
+    // Flag the best-ranked such page and never offer any page for this term.
     if (normalize(match.term) === primaryNorm) {
-      if (!flagged.some((f) => normalizePath(f.url) === path)) {
-        flagged.push({
-          url: top.url,
-          title: top.title,
-          reason:
-            "Targets the same primary keyword — excluded from the link plan to avoid cannibalization.",
-        });
+      const top = match.pages[0];
+      if (top) {
+        const path = normalizePath(top.url);
+        const isExcluded = excludePath !== null && path === excludePath;
+        if (!isExcluded && !flagged.some((f) => normalizePath(f.url) === path)) {
+          flagged.push({
+            url: top.url,
+            title: top.title,
+            reason:
+              "Targets the same primary keyword — excluded from the link plan to avoid cannibalization.",
+          });
+        }
       }
       continue;
     }
 
-    if (seen.has(path)) continue;
-    seen.add(path);
-    links.push({
-      url: top.url,
-      anchor: top.title?.trim() || titleCase(match.term),
-      section: sectionForPageType(top.page_type),
-    });
+    // Otherwise take up to perTermLimit on-topic pages for this term, best
+    // ranked first, skipping the page itself and anything already added.
+    let taken = 0;
+    for (const page of match.pages) {
+      if (taken >= perTermLimit) break;
+      const path = normalizePath(page.url);
+      if (excludePath && path === excludePath) continue;
+      if (seen.has(path)) continue;
+      seen.add(path);
+      links.push({
+        url: page.url,
+        anchor: page.title?.trim() || titleCase(match.term),
+        section: sectionForPageType(page.page_type),
+      });
+      taken++;
+    }
   }
 
   // Always include the assigned pillar (known-live, required up-link).
@@ -124,7 +144,14 @@ export async function buildLinkPlan(input: LinkPlanInput): Promise<LinkPlan> {
     }
   }
 
-  return { links, flagged };
+  // Cap total links if requested — keeps the pillar (index 0) and the
+  // best-ranked candidates, so a large inventory can't over-stuff a page.
+  const capped =
+    input.maxLinks && links.length > input.maxLinks
+      ? links.slice(0, input.maxLinks)
+      : links;
+
+  return { links: capped, flagged };
 }
 
 /**

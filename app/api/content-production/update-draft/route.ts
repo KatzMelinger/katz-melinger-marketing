@@ -39,6 +39,12 @@ import {
 } from "@/lib/redraft-analyze";
 import { autoSeoMetadata } from "@/lib/strategy-engine";
 import { getPillars } from "@/lib/pillars-store";
+import {
+  buildLinkPlan,
+  approvedLinkPlanBlock,
+  suggestOrphanLinkers,
+  type LinkPlan,
+} from "@/lib/internal-links";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -92,21 +98,43 @@ export async function POST(req: Request) {
   const detected = await detectContentType(outline, url);
   const gapReport = auditGaps(outline, detected, keywords);
 
-  // 2. Allowed internal links — confirmed live pages in the same pillar. The
-  //    generator may use ONLY these, so it can't invent internal URLs.
-  let linkCandidates: { url: string; anchor: string }[] = [];
-  if (pillarId) {
-    const { data: related } = await supabase
-      .from("site_pages")
-      .select("url, title, h1")
-      .eq("tenant_id", tenantId)
-      .eq("pillar", pillarId)
-      .neq("url", url)
-      .limit(8);
-    linkCandidates = ((related ?? []) as { url: string; title: string | null; h1: string | null }[]).map(
-      (r) => ({ url: r.url, anchor: (r.title || r.h1 || r.url).slice(0, 80) }),
-    );
+  // 2. Allowed internal links — site-wide bidirectional discovery over the
+  //    cluster map (site_pages), NOT just the assigned pillar. buildLinkPlan
+  //    finds confirmed live pages this page should link to (outbound), always
+  //    includes the pillar up-link, and flags same-primary-keyword pages as
+  //    cannibalization; suggestOrphanLinkers finds existing pages that should
+  //    link back to this one (inbound). The generator may use ONLY the outbound
+  //    links, so it can't invent internal URLs. Previously this pulled only
+  //    same-pillar pages, so an empty pillar (e.g. Severance) yielded zero links.
+  // Enrich the topical term set with the page's own H2/H3 headings so discovery
+  // has real signal even when the caller passes few keywords (H1 is excluded —
+  // it's the page's own title). Deduped, non-trivial headings only.
+  const headingTerms = Array.from(
+    new Set(
+      outline.headings
+        .filter((h) => h.level >= 2 && h.level <= 3)
+        .map((h) => h.text.trim())
+        .filter((t) => t.length >= 4),
+    ),
+  ).slice(0, 12);
+
+  let linkPlan: LinkPlan;
+  try {
+    linkPlan = await buildLinkPlan({
+      primaryKeyword: title || url,
+      secondaryKeywords: keywords,
+      faqQuestions: headingTerms,
+      pillarId: pillarId || undefined,
+      excludeUrl: url,
+      // Redraft-specific: cast wider than the generators (up to 3 pages per
+      // term) but cap the plan at 8 so an updated page isn't over-linked.
+      perTermLimit: 3,
+      maxLinks: 8,
+    });
+  } catch {
+    linkPlan = { links: [], flagged: [] };
   }
+  const inbound = await suggestOrphanLinkers(url).catch(() => null);
 
   // 3. Known firm information — same brand voice the analyzer scores against,
   //    plus the firm's trained content directions.
@@ -119,10 +147,7 @@ export async function POST(req: Request) {
   ]);
 
   const linkBlock =
-    linkCandidates.length > 0
-      ? `\n\nAPPROVED INTERNAL LINKS — you may add ONLY these (confirmed live pages). Use natural anchor text and place each where it fits. Do NOT invent any other internal link:\n` +
-        linkCandidates.map((l) => `- ${l.anchor} → ${l.url}`).join("\n")
-      : "";
+    linkPlan.links.length > 0 ? `\n\n${approvedLinkPlanBlock(linkPlan.links)}` : "";
 
   const keywordBlock =
     keywords.length > 0
@@ -235,8 +260,16 @@ export async function POST(req: Request) {
           primaryKeyword: title || url,
           secondaryKeywords: keywords,
           pillarId: resolvedPillar,
-          internalPillarLink: linkCandidates[0]?.url ?? null,
-          internalLinks: linkCandidates.map((l) => ({ url: l.url, anchor: l.anchor, section: "Body" })),
+          internalPillarLink: linkPlan.links[0]?.url ?? null,
+          internalLinks: linkPlan.links,
+        },
+        // Bidirectional link discovery, surfaced for the reviewer: outbound
+        // links the redraft placed, inbound pages that should link back here,
+        // and cannibalization flags (same-primary-keyword pages, excluded).
+        internal_links: {
+          outbound: linkPlan.links,
+          inbound: inbound?.sources ?? [],
+          flagged: linkPlan.flagged,
         },
       },
       seo_brief: {
@@ -327,6 +360,13 @@ export async function POST(req: Request) {
       missingKeywords: gapReport.missingKeywords,
       notes: gapReport.notes,
       headingChanges,
+    },
+    // Two lists per the spec: outbound (this page links out) + inbound (existing
+    // pages that should link back), plus cannibalization flags.
+    internal_links: {
+      outbound: linkPlan.links,
+      inbound: inbound?.sources ?? [],
+      flagged: linkPlan.flagged,
     },
   });
 }
