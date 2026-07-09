@@ -35,6 +35,7 @@ import {
   renderReadabilityRules,
 } from "@/lib/readability";
 import { matchCurrentFact, renderCurrentFactsBlock } from "@/lib/current-facts";
+import { getCurrentFacts } from "@/lib/current-facts-store";
 import { fetchPageOutline } from "@/lib/page-optimizer";
 import {
   detectContentType,
@@ -172,7 +173,9 @@ export async function POST(req: Request) {
   // Current verified statutory figures relevant to this page (matched against
   // the live text + keywords). The refresh path previously injected no reference
   // facts, so a stale wage/threshold had nothing authoritative to correct it.
-  const factsBlock = renderCurrentFactsBlock(`${title} ${keywords.join(" ")} ${pageText}`);
+  // Read from the staff-editable store (falls back to code-seeded defaults).
+  const currentFacts = await getCurrentFacts(tenantId);
+  const factsBlock = renderCurrentFactsBlock(`${title} ${keywords.join(" ")} ${pageText}`, currentFacts);
   const factsSection = factsBlock ? `\n\n${factsBlock}` : "";
 
   const userPrompt =
@@ -272,7 +275,7 @@ export async function POST(req: Request) {
   // time-sensitive figure and attach the authoritative current value where known,
   // so the reviewer verifies it before approval (hard QA gate in the drawer).
   const freshnessFlags = findTimeSensitiveFacts(updatedBody).map((f) => {
-    const cf = matchCurrentFact(f);
+    const cf = matchCurrentFact(f, currentFacts);
     return cf
       ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
       : { ...f };
