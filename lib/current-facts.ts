@@ -62,20 +62,28 @@ export const CURRENT_FACTS: CurrentFact[] = [
 
 const norm = (s: string) => s.toLowerCase();
 
-/** Facts whose keywords appear in the given text (keywords ∪ the draft body). */
-export function relevantFacts(text: string): CurrentFact[] {
+/**
+ * Facts whose keywords appear in the given text. `facts` defaults to the
+ * code-seeded list; the DB-backed store (lib/current-facts-store.ts) passes the
+ * live, staff-edited list instead.
+ */
+export function relevantFacts(text: string, facts: CurrentFact[] = CURRENT_FACTS): CurrentFact[] {
   const hay = norm(text ?? "");
-  return CURRENT_FACTS.filter((f) => f.keywords.some((k) => hay.includes(norm(k))));
+  return facts.filter((f) => f.keywords.some((k) => hay.includes(norm(k))));
 }
 
 /**
  * Prompt block of authoritative current figures. Pass the draft body / keywords
- * to scope it to relevant facts; with no argument, includes all.
+ * to scope it to relevant facts; with no scope, includes all. `facts` defaults
+ * to the code-seeded list; callers with the live list pass it explicitly.
  */
-export function renderCurrentFactsBlock(scopeText?: string): string {
-  const facts = scopeText ? relevantFacts(scopeText) : CURRENT_FACTS;
-  if (facts.length === 0) return "";
-  const lines = facts.map(
+export function renderCurrentFactsBlock(
+  scopeText?: string,
+  facts: CurrentFact[] = CURRENT_FACTS,
+): string {
+  const scoped = scopeText ? relevantFacts(scopeText, facts) : facts;
+  if (scoped.length === 0) return "";
+  const lines = scoped.map(
     (f) => `- ${f.label}: ${f.value} (${f.jurisdiction}), effective ${f.effectiveDate}.`,
   );
   return [
@@ -93,12 +101,15 @@ export function renderCurrentFactsBlock(scopeText?: string): string {
  * the reviewer sees the correct value. Matches on the sentence's keywords, not
  * the number, so an outdated "$16.50" still maps to the right fact.
  */
-export function matchCurrentFact(flag: { match?: string; sentence?: string }): CurrentFact | null {
+export function matchCurrentFact(
+  flag: { match?: string; sentence?: string },
+  facts: CurrentFact[] = CURRENT_FACTS,
+): CurrentFact | null {
   const hay = norm(`${flag?.sentence ?? ""} ${flag?.match ?? ""}`);
   if (!hay.trim()) return null;
   // Prefer the fact with the most keyword hits in the sentence.
   let best: { fact: CurrentFact; hits: number } | null = null;
-  for (const f of CURRENT_FACTS) {
+  for (const f of facts) {
     const hits = f.keywords.filter((k) => hay.includes(norm(k))).length;
     if (hits > 0 && (!best || hits > best.hits)) best = { fact: f, hits };
   }

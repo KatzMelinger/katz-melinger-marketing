@@ -41,6 +41,7 @@ import {
   renderReadabilityRules,
 } from "@/lib/readability";
 import { matchCurrentFact, renderCurrentFactsBlock } from "@/lib/current-facts";
+import { getCurrentFacts } from "@/lib/current-facts-store";
 import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
 import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic";
@@ -295,7 +296,9 @@ export async function POST(req: Request) {
     `- The piece reads in KM's brand voice and ends with a clear next step / CTA.`;
 
   // Current verified statutory figures — inject so the draft uses correct,
-  // dated values instead of guessing or repeating stale numbers.
+  // dated values instead of guessing or repeating stale numbers. Read from the
+  // staff-editable store (falls back to the code-seeded defaults).
+  const currentFacts = await getCurrentFacts(knownInfoTenantId);
   const factsBlock = renderCurrentFactsBlock(
     [
       brief.primaryKeyword,
@@ -303,6 +306,7 @@ export async function POST(req: Request) {
       brief.h1,
       ...(brief.faqQuestions ?? []),
     ].join(" "),
+    currentFacts,
   );
   if (factsBlock) userPrompt += `\n\n---\n${factsBlock}`;
 
@@ -427,7 +431,7 @@ export async function POST(req: Request) {
     // deadlines) so the reviewer verifies them before approval. Attach the
     // authoritative current value where one is known. Hard QA gate in the drawer.
     const freshnessFlags = findTimeSensitiveFacts(text).map((f) => {
-      const cf = matchCurrentFact(f);
+      const cf = matchCurrentFact(f, currentFacts);
       return cf
         ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
         : { ...f };
