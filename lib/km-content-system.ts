@@ -279,6 +279,50 @@ export function getKmStructure(
 }
 
 /**
+ * Render the required section scaffold for a content type + practice area as an
+ * explicit, ordered H2/H3 instruction block for the generation user prompt.
+ *
+ * This is what turns KM_STRUCTURES from wizard decoration into a real generation
+ * input: the generator receives the exact ordered section list (not just "follow
+ * the system prompt"), which is what makes the AEO/GEO scaffold enforced rather
+ * than optional. Pairs with checkStructure() in lib/structure-check.ts, the
+ * post-generation backstop.
+ */
+export function renderStructureBlock(
+  contentType: KMContentType,
+  practiceArea: KMPracticeArea,
+): string {
+  const sections = getKmStructure(contentType, practiceArea);
+  const label = KM_CONTENT_TYPE_LABELS[contentType];
+  const lines: string[] = [];
+  lines.push(
+    `REQUIRED SECTION STRUCTURE — write the ${label} using EXACTLY these sections, ` +
+      `in this order. Do not merge, drop, or reorder them. Each section is its own ` +
+      `H2 ("## ") heading unless noted below. Open every section with one direct, ` +
+      `factual sentence that stands alone as an answer (AEO):`,
+  );
+  for (const s of sections) lines.push(`${s.n}. ${s.heading}`);
+  lines.push("");
+  lines.push(
+    `Structure formatting rules:\n` +
+      `- The H1 is the page title (one "# " heading). The introduction follows the ` +
+      `H1 directly, with no separate heading.\n` +
+      `- "Page Setup" is planning only. Do NOT output it as a visible section or heading.\n` +
+      `- The FAQ section is an H2; every FAQ question is an H3 ("### ") whose answer's ` +
+      `FIRST sentence directly answers the question.`,
+  );
+  if (contentType === "practice_page") {
+    lines.push(
+      `- "How Your Case or Matter Gets Handled" uses three H3 subheadings ` +
+        `(Negotiated Settlement; Agency or Court Proceedings; Litigation or Enforcement).\n` +
+        `- The statute of limitations / enforcement window is its OWN H2 section, ` +
+        `never buried inside the FAQ.`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
  * Renders a filled brief as the user-prompt text. Pairs with
  * KM_SYSTEM_PROMPT (the system-level instruction set).
  */
@@ -327,7 +371,9 @@ export function buildBriefUserPrompt(brief: KMPerPageBrief): string {
     lines.push(`Special instructions: ${brief.specialInstructions.trim()}`);
   }
   lines.push("");
-  lines.push("Output: full content in Markdown. Use the structure specified in the system prompt for this content type and practice area. Verify against the Section 11 self-check before returning.");
+  lines.push(renderStructureBlock(brief.contentType, brief.practiceArea));
+  lines.push("");
+  lines.push("Output: full content in Markdown, using the required section structure above with a proper H1/H2/H3 hierarchy. Verify against the Section 11 self-check before returning.");
   return lines.join("\n");
 }
 
@@ -424,7 +470,7 @@ Existing Collections Supporting Pages (do not duplicate topics):
 
 Practice Page — Targets commercial intent. The searcher wants to hire a lawyer. Every section moves toward a consultation. 2,000 to 2,500 words. 15 required sections.
 
-Blog Post — Targets informational intent. The searcher wants to understand a situation. Educates and routes traffic to a pillar page. 1,500 words minimum. 12 sections for employment. 11 sections for collections.
+Blog Post — Targets informational intent. The searcher wants to understand a situation. Educates and routes traffic to a pillar page. 1,500 words minimum. 12 sections for employment. 12 sections for collections.
 
 Case Result — Targets proof intent. The searcher wants evidence the firm gets outcomes. Focuses on strategy and result. Links up to a pillar page. 800 to 1,200 words. 8 sections.
 

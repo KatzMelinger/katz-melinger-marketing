@@ -44,5 +44,5 @@ POSITIVE RULES:
 - Use contractions: don't, you'll, isn't, won't, they're.
 - When in doubt, cut a word.
 - Don't open with the topic phrase ("Wage theft is a serious issue…"). Open with a fact, a question, or a scene.
-- Names and numbers earn trust. Use them where you can (e.g., "NY Labor Law §195", "$15.50/hour minimum wage in NYC as of 2026").
+- Names and numbers earn trust. Use them where you can (e.g., "NY Labor Law §195"). For any time-sensitive figure (a wage rate, salary threshold, or filing deadline), state it only from a verified current source and never carry a dated figure forward without confirming it is still accurate.
 `;

@@ -26,12 +26,15 @@ import {
   buildBriefUserPrompt,
   KM_CONTENT_TYPE_LABELS,
   KM_HUB_LINKS,
+  renderStructureBlock,
   validateBrief,
   type KMContentType,
   type KMPerPageBrief,
   type KMPracticeArea,
   type KMSearchIntent,
 } from "@/lib/km-content-system";
+import { checkStructure, type StructureCheck } from "@/lib/structure-check";
+import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
 import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic";
@@ -316,9 +319,56 @@ export async function POST(req: Request) {
     const rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
     // Hard filter: strip em/en dashes the model let through despite the prompt
     // rule, so one can never reach a saved draft. See lib/sanitize-content.ts.
-    const text = stripEmDashes(rawText);
+    let text = stripEmDashes(rawText);
 
-    const draftId = await autosave(brief, text, language);
+    // Structure enforcement backstop: verify the required section scaffold is
+    // present. If sections are missing, run ONE additive repair pass (add only
+    // the missing sections, keep what works — mirrors the redraft additive
+    // pattern), then re-check and keep the repair only if it didn't regress.
+    let structureCheck: StructureCheck = checkStructure(
+      text,
+      brief.contentType,
+      brief.practiceArea,
+    );
+    if (!structureCheck.passed) {
+      try {
+        const repairPrompt =
+          `The draft below is missing required sections for a ${KM_CONTENT_TYPE_LABELS[brief.contentType]}. ` +
+          `Add ONLY the missing sections in their correct positions and keep every existing ` +
+          `section intact. Do NOT rewrite, shorten, or reorder sections that already work.\n\n` +
+          `Missing: ${structureCheck.missing.join("; ")}\n\n` +
+          renderStructureBlock(brief.contentType, brief.practiceArea) +
+          `\n\nReturn the COMPLETE corrected article in Markdown (H1/H2/H3), nothing else.\n\n` +
+          `===== CURRENT DRAFT =====\n${text}`;
+        const repair = await getAnthropic().messages.create({
+          model: CONTENT_LONG_FORM_MODEL,
+          max_tokens: maxTokens,
+          system: cachedSystemPrompt(tenantConfig.systemPrompt),
+          messages: [{ role: "user", content: repairPrompt }],
+        });
+        const rb = repair.content.find((b) => b.type === "text");
+        const repaired = rb && rb.type === "text" ? stripEmDashes(rb.text) : "";
+        if (repaired.trim()) {
+          const recheck = checkStructure(repaired, brief.contentType, brief.practiceArea);
+          if (recheck.passed || recheck.missing.length < structureCheck.missing.length) {
+            text = repaired;
+            structureCheck = recheck;
+          }
+        }
+      } catch {
+        /* repair is best-effort; fall through with the original draft + failed check */
+      }
+    }
+
+    // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
+    // deadlines) so the reviewer verifies them before approval. Hard QA gate for
+    // legal content — enforced in the draft drawer.
+    const freshnessFlags = findTimeSensitiveFacts(text);
+
+    const draftId = await autosave(brief, text, language, {
+      structure_check: { missing: structureCheck.missing, passed: structureCheck.passed },
+      freshness: { flags: freshnessFlags },
+    });
 
     // Connection: advance the Production Board row this draft belongs to.
     // Without this, the board never learns a draft was created (draft_id stays
@@ -434,6 +484,7 @@ async function autosave(
   brief: KMPerPageBrief,
   body: string,
   language: ContentLanguage,
+  extraMeta: Record<string, unknown> = {},
 ): Promise<string | null> {
   const supabase = getSupabaseServer();
   if (!supabase) return null;
@@ -457,6 +508,7 @@ async function autosave(
           km_content_type: KM_CONTENT_TYPE_LABELS[brief.contentType],
           hub_link: KM_HUB_LINKS[brief.practiceArea],
           language,
+          ...extraMeta,
         },
         seo_brief: {
           primaryKeyword: brief.primaryKeyword,

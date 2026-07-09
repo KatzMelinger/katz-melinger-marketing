@@ -28,6 +28,7 @@ import { getTenantConfig } from "@/lib/tenant-config";
 import { getFirmContext } from "@/lib/firm-context";
 import { buildSkillsContext } from "@/lib/content-skills";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
+import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { fetchPageOutline } from "@/lib/page-optimizer";
 import {
   detectContentType,
@@ -213,6 +214,12 @@ export async function POST(req: Request) {
     parseMarkdownHeadings(updatedBody),
   );
 
+  // Freshness: a refresh is exactly where stale statutory figures (wage rates,
+  // thresholds, deadlines) get silently carried forward. Flag every
+  // time-sensitive figure so the reviewer verifies it before approval (hard QA
+  // gate for legal content — enforced in the draft drawer).
+  const freshnessFlags = findTimeSensitiveFacts(updatedBody);
+
   // Stage 3 metadata: fill meta title/description/slug/pillar (the old redraft
   // left these empty, so WordPress push + the drawer had nothing). Reuses the
   // wizard's deterministic derivation. Prefer an explicitly-passed pillar.
@@ -246,6 +253,8 @@ export async function POST(req: Request) {
         source_url: url,
         update_keywords: keywords,
         pillar_id: resolvedPillar,
+        // Time-sensitive figures the reviewer must verify before approval.
+        freshness: { flags: freshnessFlags },
         // Stages 1–2 result, surfaced so the reviewer sees what the redraft
         // detected and which gaps it set out to fill.
         redraft_analysis: {

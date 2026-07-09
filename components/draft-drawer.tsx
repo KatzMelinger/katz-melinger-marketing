@@ -35,7 +35,7 @@ import {
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 
 const PROSE_CLASS =
-  "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-[#185FA5] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2";
+  "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2";
 
 const PILLAR_LABEL: Record<string, string> = Object.fromEntries(
   ALL_KM_PILLARS.map((p) => [p.id, p.label]),
@@ -188,6 +188,39 @@ function readRedraftAnalysis(draft: DraftRow): RedraftAnalysis | null {
   return a && typeof a === "object" ? (a as RedraftAnalysis) : null;
 }
 
+/**
+ * The post-generation structure check (lib/structure-check.ts). Present on KM
+ * drafts. When present and not passed, it's a HARD QA gate (missing required
+ * sections). Absent = older draft with no check → don't gate.
+ */
+function readStructureCheck(
+  draft: DraftRow | null,
+): { passed: boolean; missing: string[] } | null {
+  if (!draft) return null;
+  const meta = (draft.metadata ?? {}) as Record<string, unknown>;
+  const s = meta.structure_check;
+  if (!s || typeof s !== "object") return null;
+  const o = s as Record<string, unknown>;
+  return {
+    passed: o.passed === true,
+    missing: Array.isArray(o.missing) ? (o.missing as string[]) : [],
+  };
+}
+
+type FreshnessFlagMeta = { kind?: string; match?: string; sentence?: string };
+
+/**
+ * Time-sensitive figures flagged at generation/refresh (lib/freshness-check.ts).
+ * When any exist, approval is gated on the reviewer confirming them.
+ */
+function readFreshness(draft: DraftRow | null): FreshnessFlagMeta[] {
+  if (!draft) return [];
+  const meta = (draft.metadata ?? {}) as Record<string, unknown>;
+  const f = meta.freshness as Record<string, unknown> | undefined;
+  const flags = f?.flags;
+  return Array.isArray(flags) ? (flags as FreshnessFlagMeta[]) : [];
+}
+
 function Check({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -237,6 +270,13 @@ export function DraftDrawer({
   const [generating, setGenerating] = useState(false);
   // Findings the reviewer chose to apply — opens the AI rewrite/diff modal.
   const [applyingFindings, setApplyingFindings] = useState<string[] | null>(null);
+  // Reviewer confirmation that flagged time-sensitive figures are current.
+  const [freshnessAck, setFreshnessAck] = useState(false);
+  // Live link-verification counts (Cluster-Map membership) for the QA gate.
+  const [linkVerify, setLinkVerify] = useState<
+    { total: number; confirmed: number; unverified: number } | null
+  >(null);
+  const [linksOpen, setLinksOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -285,6 +325,29 @@ export function DraftDrawer({
     };
   }, [draftId, suggestionId]);
 
+  // Verify internal links against the Cluster Map (site_pages ∪ pillars ∪ hubs)
+  // for the QA gate + panel. Re-runs when the body changes (e.g. after an edit).
+  useEffect(() => {
+    if (!draftId || !draft?.body) {
+      setLinkVerify(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/content/drafts/${draftId}/verify-links`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && d?.counts) setLinkVerify(d.counts);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [draftId, draft?.body]);
+
   const brief = useMemo(
     () => (draft ? readBrief(draft) : (briefOnly ?? ({} as Brief))),
     [draft, briefOnly],
@@ -302,6 +365,10 @@ export function DraftDrawer({
   const wordCount =
     analysis?.word_count ?? (draft?.body ? draft.body.trim().split(/\s+/).filter(Boolean).length : 0);
 
+  // Post-generation gates read off the draft metadata.
+  const structureCheck = readStructureCheck(draft);
+  const freshnessFlags = readFreshness(draft);
+
   // Automatic QA checks — computed from the linked record + latest analysis.
   const metaTitle = brief.metaTitle || item.title;
   const primaryKw = (brief.primaryKeyword || "").toLowerCase();
@@ -309,7 +376,12 @@ export function DraftDrawer({
     metaDescription: !!brief.metaDescription,
     h1Keyword: !!primaryKw && (draft?.title ?? item.title).toLowerCase().includes(primaryKw),
     pillarLink: !!(brief.internalPillarLink || brief.pillarId),
-    internalLinks: (brief.internalLinks?.length ?? 0) > 0,
+    // Passes when 3+ internal links resolve to live Cluster-Map pages and none
+    // are unverified. Null (still checking) reads as not-yet-passed (advisory).
+    internalLinks: !!linkVerify && linkVerify.confirmed >= 3 && linkVerify.unverified === 0,
+    // Absent structure check (older drafts) is treated as passing so it can't
+    // retroactively block; present-and-failed blocks (added to qaRequired below).
+    structure: structureCheck ? structureCheck.passed : true,
     wordCount: wordCount >= 600,
     titleLen: metaTitle.length > 0 && metaTitle.length <= 60,
   };
@@ -327,6 +399,11 @@ export function DraftDrawer({
     { key: "pillarLink", label: "Pillar link present" },
     { key: "wordCount", label: "Word count meets minimum" },
   ];
+  // Required section structure is a hard gate only when the draft carries a
+  // structure check (KM generator). A failed check means sections are missing.
+  if (structureCheck) {
+    qaRequired.push({ key: "structure", label: "Required section structure present" });
+  }
   const qaFailed = qaRequired.filter((c) => !qa[c.key]);
   const qaGatePassed = qaFailed.length === 0;
 
@@ -520,6 +597,15 @@ export function DraftDrawer({
       );
       return;
     }
+    // HARD gate for time-sensitive figures: a refresh must not carry stale wage
+    // rates / thresholds / deadlines forward. Block until the reviewer confirms.
+    if (freshnessFlags.length > 0 && !freshnessAck && !qaOverride) {
+      setMsg(
+        `Verify the ${freshnessFlags.length} time-sensitive figure${freshnessFlags.length === 1 ? "" : "s"} ` +
+          `(wage rates, thresholds, deadlines) and tick "Time-sensitive figures verified" before approving.`,
+      );
+      return;
+    }
     // Soft quality gate: warn (don't block) if SEO/AEO/CASH are below target.
     const short = qualityShortfall(analysis);
     if (short.length > 0) {
@@ -653,7 +739,7 @@ export function DraftDrawer({
                     i < currentStage
                       ? "bg-emerald-50 text-emerald-700"
                       : i === currentStage
-                        ? "bg-[#185FA5] text-white"
+                        ? "bg-brand text-white"
                         : "bg-slate-100 text-slate-500"
                   }`}
                 >
@@ -697,13 +783,13 @@ export function DraftDrawer({
               </div>
               {draft && (
                 <div className="flex items-center gap-1.5">
-                  <button onClick={copyBody} className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5]">
+                  <button onClick={copyBody} className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-brand hover:text-brand">
                     Copy
                   </button>
                   <button
                     onClick={() => draft && runAnalysis(draft)}
                     disabled={analyzing}
-                    className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-[#185FA5] hover:text-[#185FA5] disabled:opacity-50"
+                    className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:border-brand hover:text-brand disabled:opacity-50"
                   >
                     {analyzing ? "Analyzing…" : "Run analysis"}
                   </button>
@@ -780,7 +866,7 @@ export function DraftDrawer({
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">SEO metadata</span>
                 {onEditMeta && (
-                  <button onClick={onEditMeta} className="text-xs font-medium text-[#185FA5] hover:underline">
+                  <button onClick={onEditMeta} className="text-xs font-medium text-brand hover:underline">
                     Edit all fields
                   </button>
                 )}
@@ -800,7 +886,7 @@ export function DraftDrawer({
                       <span className="text-xs text-slate-400">—</span>
                     ) : (
                       brief.secondaryKeywords!.map((k) => (
-                        <span key={k} className="rounded bg-[#185FA5]/10 px-1.5 py-0.5 text-[11px] text-[#185FA5]">
+                        <span key={k} className="rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand">
                           {k}
                         </span>
                       ))
@@ -823,12 +909,12 @@ export function DraftDrawer({
                           <button onClick={() => { setEditing(false); setEditBody(draft.body); }} className="text-xs text-slate-500 hover:text-slate-700">
                             Cancel
                           </button>
-                          <button onClick={saveBody} disabled={saving} className="text-xs font-medium text-[#185FA5] hover:underline disabled:opacity-50">
+                          <button onClick={saveBody} disabled={saving} className="text-xs font-medium text-brand hover:underline disabled:opacity-50">
                             {saving ? "Saving…" : "Save"}
                           </button>
                         </div>
                       ) : (
-                        <button onClick={() => { setEditBody(draft.body); setEditing(true); }} className="text-xs font-medium text-[#185FA5] hover:underline">
+                        <button onClick={() => { setEditBody(draft.body); setEditing(true); }} className="text-xs font-medium text-brand hover:underline">
                           Edit
                         </button>
                       ))}
@@ -842,7 +928,7 @@ export function DraftDrawer({
                       <button
                         onClick={generateDraft}
                         disabled={generating || !suggestedRaw}
-                        className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {generating ? (
                           <>
@@ -867,33 +953,64 @@ export function DraftDrawer({
                   )}
                 </div>
 
-                {/* Internal links panel */}
+                {/* Internal links panel — status line, list collapsed behind a
+                    toggle. QA passes at 3+ links confirmed in the Cluster Map. */}
                 <div className="rounded-lg border border-slate-200">
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Internal links — Cluster Map
+                      Internal links
                     </span>
-                    {qa.internalLinks && <span className="text-xs font-medium text-emerald-600">All verified</span>}
-                  </div>
-                  <div className="px-4 py-3">
-                    {(brief.internalLinks?.length ?? 0) === 0 ? (
-                      <p className="text-xs text-slate-400">No internal links on this draft.</p>
+                    {linkVerify ? (
+                      <span
+                        className={`text-xs font-medium ${
+                          qa.internalLinks ? "text-emerald-600" : "text-amber-600"
+                        }`}
+                      >
+                        {linkVerify.confirmed} inserted, confirmed in site map
+                        {linkVerify.unverified > 0 ? ` · ${linkVerify.unverified} unverified` : ""}
+                      </span>
                     ) : (
-                      <ul className="space-y-1.5">
+                      <span className="text-xs text-slate-400">Checking…</span>
+                    )}
+                  </div>
+                  <div className="px-4 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-slate-500">
+                        {linkVerify
+                          ? `${linkVerify.confirmed} internal link${linkVerify.confirmed === 1 ? "" : "s"} inserted and confirmed in the Cluster Map${
+                              linkVerify.confirmed >= 3 ? "." : " (QA passes at 3 or more)."
+                            }`
+                          : "Verifying internal links against the Cluster Map…"}
+                      </p>
+                      {(brief.internalLinks?.length ?? 0) > 0 && (
+                        <button
+                          onClick={() => setLinksOpen((v) => !v)}
+                          className="shrink-0 text-xs font-medium text-brand hover:underline"
+                        >
+                          {linksOpen ? "Hide links" : "View links"}
+                        </button>
+                      )}
+                    </div>
+                    {linksOpen && (brief.internalLinks?.length ?? 0) > 0 && (
+                      <ul className="mt-2 space-y-1.5">
                         {brief.internalLinks!.map((l, i) => (
                           <li key={`${l.url}-${i}`} className="flex items-center justify-between gap-2 text-xs">
                             <span className="flex items-center gap-1.5 text-slate-700">
                               <span className="text-emerald-600">✓</span>
                               <span className="font-mono">{l.url}</span>
                             </span>
-                            <span className="text-slate-400">Confirmed live · {l.section}</span>
+                            <span className="text-slate-400">Confirmed in site map · {l.section}</span>
                           </li>
                         ))}
                       </ul>
                     )}
-                    <p className="mt-2 text-[11px] text-slate-400">
-                      Generator used only confirmed Cluster Map pages. No invented links.
-                    </p>
+                    {linksOpen && (
+                      <p className="mt-2 text-[11px] text-slate-400">
+                        Generator used only confirmed Cluster Map pages. No invented links.
+                        “Confirmed in site map” means the URL is a known live page in the site
+                        inventory.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -961,7 +1078,7 @@ export function DraftDrawer({
                         <button
                           onClick={publish}
                           disabled={publishing}
-                          className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-2 w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {publishing ? "Publishing…" : "Publish"}
                         </button>
@@ -1014,7 +1131,7 @@ export function DraftDrawer({
                       <button
                         onClick={approve}
                         disabled={!canPublish || approving || (!qaGatePassed && !qaOverride)}
-                        className="mt-2 w-full rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="mt-2 w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                         title={
                           !canPublish
                             ? "Complete the manual checks first"
@@ -1037,7 +1154,7 @@ export function DraftDrawer({
                     </div>
                   )
                 ) : (
-                  <div className="rounded-lg border border-[#185FA5]/30 bg-[#185FA5]/5 p-3">
+                  <div className="rounded-lg border border-brand/30 bg-brand/5 p-3">
                     <div className="text-sm font-semibold text-slate-900">Brief ready</div>
                     <p className="mt-0.5 text-xs text-slate-600">
                       Generate the draft from this brief to start the review.
@@ -1045,7 +1162,7 @@ export function DraftDrawer({
                     <button
                       onClick={generateDraft}
                       disabled={generating || !suggestedRaw}
-                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[#185FA5] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {generating ? (
                         <>
@@ -1055,6 +1172,60 @@ export function DraftDrawer({
                         "Generate draft from brief"
                       )}
                     </button>
+                  </div>
+                )}
+
+                {/* Structure gap — which required sections are missing. Only
+                    shown when the KM structure check failed. */}
+                {structureCheck && !structureCheck.passed && structureCheck.missing.length > 0 && (
+                  <div className="rounded-lg border border-rose-300 bg-rose-50 p-3">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-rose-800">
+                      Missing required sections
+                    </div>
+                    <p className="text-[11px] text-rose-700">
+                      The draft is missing sections the {brief.contentType?.replace(/_/g, " ") || "content"}{" "}
+                      scaffold requires. Add them (or edit the body) before approving.
+                    </p>
+                    <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] text-slate-700">
+                      {structureCheck.missing.map((m, i) => (
+                        <li key={i}>{m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Freshness — time-sensitive figures the reviewer must verify
+                    before approval (hard gate). Only shown when flags exist. */}
+                {freshnessFlags.length > 0 && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                        Verify time-sensitive figures
+                      </span>
+                      <span className="text-xs font-medium text-amber-700">{freshnessFlags.length}</span>
+                    </div>
+                    <p className="text-[11px] text-amber-700">
+                      These can go stale (wage rates, thresholds, years, deadlines). Confirm each is
+                      current before approving. Never carry a dated figure forward unverified.
+                    </p>
+                    <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto">
+                      {freshnessFlags.map((f, i) => (
+                        <li key={i} className="text-[11px] text-slate-700">
+                          <span className="rounded bg-amber-100 px-1 font-mono font-medium text-amber-900">
+                            {f.match}
+                          </span>{" "}
+                          <span className="text-slate-500">{f.sentence}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs font-medium text-amber-900">
+                      <input
+                        type="checkbox"
+                        checked={freshnessAck}
+                        onChange={(e) => setFreshnessAck(e.target.checked)}
+                      />
+                      Time-sensitive figures verified / updated
+                    </label>
                   </div>
                 )}
 
@@ -1069,7 +1240,13 @@ export function DraftDrawer({
                     <Check ok={qa.metaDescription} label="Meta description present" />
                     <Check ok={qa.h1Keyword} label="H1 contains primary keyword" />
                     <Check ok={qa.pillarLink} label="Pillar link present" />
-                    <Check ok={qa.internalLinks} label="Internal links verified" />
+                    <Check
+                      ok={qa.internalLinks}
+                      label={`Internal links (3+ confirmed)${linkVerify ? ` — ${linkVerify.confirmed}` : ""}`}
+                    />
+                    {structureCheck && (
+                      <Check ok={qa.structure} label="Required section structure present" />
+                    )}
                     <Check ok={qa.wordCount} label="Word count meets minimum" />
                     <Check ok={qa.titleLen} label="Title under 60 characters" />
                   </div>
