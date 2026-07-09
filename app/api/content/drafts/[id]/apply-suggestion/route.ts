@@ -24,6 +24,7 @@ import {
   getAnthropic,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
+import { PROTECTED_TERMS } from "@/lib/readability";
 import { stripEmDashes } from "@/lib/sanitize-content";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
@@ -88,7 +89,9 @@ Hard rules:
 - Only modify the section(s) directly related to the feedback. Leave everything else byte-identical.
 - If the feedback asks for a citation (e.g. "cite NYLL §740"), insert it naturally where it's most relevant, with a brief contextual sentence if needed.
 - If the feedback asks for a missing section (e.g. "no H2 subheadings"), add the minimum structure to fix it — do not invent content the body doesn't support.
-${multi ? "- When two items overlap (e.g. \"no H1\" + \"keyword missing from H1\"), satisfy both with a single coherent edit instead of two separate ones.\n" : ""}- If you can't honor ${multi ? "an item" : "the feedback"} without inventing facts or doing damage, leave that part unchanged and explain why in the summary. Apply whichever items you can.
+${multi ? "- When two items overlap (e.g. \"no H1\" + \"keyword missing from H1\"), satisfy both with a single coherent edit instead of two separate ones.\n" : ""}- If a readability item asks to shorten/split/simplify a sentence, split it into two or more shorter sentences and prefer active voice, preserving the exact meaning. Do NOT drop facts, citations, or nuance to make it shorter.
+- NEVER alter, remove, or "simplify away" these protected legal terms — keep them verbatim (you may add a brief plain-English gloss, but the term must stay): ${PROTECTED_TERMS.join(", ")}.
+- If you can't honor ${multi ? "an item" : "the feedback"} without inventing facts or doing damage, leave that part unchanged and explain why in the summary. Apply whichever items you can.
 - If you can't honor ANY of the items, return the body UNCHANGED and set no_change=true.
 - Output the COMPLETE updated body, not just the changed lines. Use the same markdown conventions the original uses.
 

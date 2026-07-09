@@ -35,6 +35,12 @@ import {
 } from "@/lib/km-content-system";
 import { checkStructure, type StructureCheck } from "@/lib/structure-check";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
+import {
+  READABILITY_TARGET,
+  readabilityStats,
+  renderReadabilityRules,
+} from "@/lib/readability";
+import { matchCurrentFact, renderCurrentFactsBlock } from "@/lib/current-facts";
 import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
 import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic";
@@ -288,6 +294,22 @@ export async function POST(req: Request) {
     `- Statutes, deadlines, and figures are stated precisely or omitted — never guessed.\n` +
     `- The piece reads in KM's brand voice and ends with a clear next step / CTA.`;
 
+  // Current verified statutory figures — inject so the draft uses correct,
+  // dated values instead of guessing or repeating stale numbers.
+  const factsBlock = renderCurrentFactsBlock(
+    [
+      brief.primaryKeyword,
+      ...(brief.secondaryKeywords ?? []),
+      brief.h1,
+      ...(brief.faqQuestions ?? []),
+    ].join(" "),
+  );
+  if (factsBlock) userPrompt += `\n\n---\n${factsBlock}`;
+
+  // Readability hard constraints so the draft starts clean (short, active
+  // sentences) rather than needing a remediation pass after the fact.
+  userPrompt += `\n\n---\n${renderReadabilityRules()}`;
+
   // Sensitive topics (harassment, retaliation, discrimination, wrongful
   // termination) get a tone override that leads with calm, human language before
   // any legal reference. Prepended so it outranks the default brand voice for
@@ -360,10 +382,56 @@ export async function POST(req: Request) {
       }
     }
 
+    // Readability remediation: if the draft reads dense, run up to 2 rewrite
+    // passes that shorten/de-passivize sentences while preserving meaning,
+    // structure, headings, links, and protected legal terms. Keep a pass only if
+    // it improves readability without regressing the section structure.
+    let readStats = readabilityStats(text);
+    let readPasses = 0;
+    while (readStats.flesch < READABILITY_TARGET && readStats.overThresholdCount > 0 && readPasses < 2) {
+      readPasses++;
+      try {
+        const rwPrompt =
+          `Rewrite the article below to improve readability WITHOUT changing its meaning, facts, ` +
+          `headings, structure, or internal links.\n\n` +
+          `${renderReadabilityRules()}\n\n` +
+          `Keep every heading (#, ##, ###) exactly as-is, keep all citations, statutes, and figures, ` +
+          `and keep the protected legal terms verbatim. Split long sentences and convert passive voice ` +
+          `to active.\n\nReturn the COMPLETE rewritten article in Markdown, nothing else.\n\n` +
+          `===== ARTICLE =====\n${text}`;
+        const rw = await getAnthropic().messages.create({
+          model: CONTENT_LONG_FORM_MODEL,
+          max_tokens: maxTokens,
+          system: cachedSystemPrompt(tenantConfig.systemPrompt),
+          messages: [{ role: "user", content: rwPrompt }],
+        });
+        const rwb = rw.content.find((b) => b.type === "text");
+        const cand = rwb && rwb.type === "text" ? stripEmDashes(rwb.text) : "";
+        if (!cand.trim()) break;
+        const candStats = readabilityStats(cand);
+        const candStruct = checkStructure(cand, brief.contentType, brief.practiceArea);
+        // Accept only if readability improved and structure didn't newly break.
+        if (candStats.flesch > readStats.flesch && (candStruct.passed || !structureCheck.passed)) {
+          text = cand;
+          readStats = candStats;
+          structureCheck = candStruct;
+        } else {
+          break;
+        }
+      } catch {
+        break;
+      }
+    }
+
     // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
-    // deadlines) so the reviewer verifies them before approval. Hard QA gate for
-    // legal content — enforced in the draft drawer.
-    const freshnessFlags = findTimeSensitiveFacts(text);
+    // deadlines) so the reviewer verifies them before approval. Attach the
+    // authoritative current value where one is known. Hard QA gate in the drawer.
+    const freshnessFlags = findTimeSensitiveFacts(text).map((f) => {
+      const cf = matchCurrentFact(f);
+      return cf
+        ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
+        : { ...f };
+    });
 
     const draftId = await autosave(brief, text, language, {
       structure_check: { missing: structureCheck.missing, passed: structureCheck.passed },
