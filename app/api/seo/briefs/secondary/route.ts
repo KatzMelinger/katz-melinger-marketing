@@ -3,8 +3,7 @@
  *
  * Suggests secondary keywords for the brief wizard's Step 3, sourced for free
  * from our own seo_opportunities pool: keywords that share a significant word
- * with the primary, returned with their volume / KD / intent (the SEMrush-style
- * "secondary keywords" table). No extra LLM or SEMrush calls.
+ * with the primary, returned with their volume / KD / intent (the * "secondary keywords" table). No extra LLM or DataForSEO calls.
  */
 
 import { NextRequest, NextResponse } from "next/server";

@@ -70,7 +70,7 @@ create index if not exists legal_authority_topics_idx
 
 -- ---------------------------------------------------------------------------
 -- People Ask & Trends Library — real questions + trend signals. Some rows
--- are curated by hand; others are auto-captured from live sources (Semrush,
+-- are curated by hand; others are auto-captured from live sources (DataForSEO,
 -- Search Console, Autocomplete, Reddit, YouTube) via the research layer.
 -- ---------------------------------------------------------------------------
 create table if not exists public.people_ask_sources (
@@ -79,7 +79,7 @@ create table if not exists public.people_ask_sources (
   source_type    text not null default 'manual' check (source_type in (
     'paa',               -- Google People Also Ask
     'autocomplete',      -- Google Autocomplete
-    'semrush',
+    'dataforseo',
     'search_console',
     'reddit',
     'youtube',

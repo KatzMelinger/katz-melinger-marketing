@@ -1,8 +1,8 @@
 /**
  * Keyword cannibalization detector.
  *
- * Pulls the firm's ranked keywords from Semrush (domain_organic), groups them
- * by exact keyword text, and flags any keyword where 2+ distinct URLs from
+ * Pulls the firm's ranked keywords from DataForSEO (ranked_keywords), groups
+ * them by exact keyword text, and flags any keyword where 2+ distinct URLs from
  * the same domain rank in the top results. Cannibalization splits link equity
  * and confuses search intent, so it's worth tracking.
  *
@@ -11,11 +11,10 @@
  * detection.
  */
 
-import { SEMRUSH_DOMAIN, type SemrushKeywordRow } from "./semrush";
-import { getDomainKeywords } from "./dataforseo";
+import { getDomainKeywords, type DataForSeoKeywordRow } from "./dataforseo";
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
-import { getTenantConfig } from "./tenant-config";
+import { getTenantConfig, DEFAULT_SEO_DOMAIN } from "./tenant-config";
 import {
   evaluateCannibalizationAlerts,
   type CannibalizationIssue,
@@ -39,16 +38,16 @@ function classifySeverity(positions: number[]): "low" | "medium" | "high" {
 }
 
 export async function detectCannibalization(
-  domain: string = SEMRUSH_DOMAIN,
-  prefetchedRows?: SemrushKeywordRow[],
+  domain: string = DEFAULT_SEO_DOMAIN,
+  prefetchedRows?: DataForSeoKeywordRow[],
   tenantId?: string,
 ): Promise<{ snapshotId: string; issues: CannibalizationDetail[] }> {
   const tid = tenantId ?? (await resolveTenantId());
-  if (domain === SEMRUSH_DOMAIN) domain = (await getTenantConfig(tid)).seoDomain;
+  if (domain === DEFAULT_SEO_DOMAIN) domain = (await getTenantConfig(tid)).seoDomain;
   // Pull a wide enough slice that we can group meaningfully — 1000 rows
-  // matches the keyword_research refresh budget and keeps Semrush units low.
-  // Callers that already hold the firm's domain_organic report (e.g. the daily
-  // rank-refresh cron) can pass it in to avoid a second Semrush call.
+  // matches the keyword_research refresh budget and keeps API usage low.
+  // Callers that already hold the firm's ranked-keywords report (e.g. the daily
+  // rank-refresh cron) can pass it in to avoid a second DataForSEO call.
   const rows =
     prefetchedRows ??
     (await getDomainKeywords(domain, undefined, 1000, 0, "traffic", "desc"));

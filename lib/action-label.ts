@@ -5,7 +5,7 @@
  * action at all. The spec's canonical signals are the WordPress URL inventory
  * and live Google Search Console positions, but this resolver is written to
  * degrade gracefully: when GSC/WP data isn't wired yet, it falls back to the
- * SEMrush rank we already have (our_position), so labels are still meaningful.
+ * DataForSEO rank we already have (our_position), so labels are still meaningful.
  *
  *   Create   — no existing URL covers the keyword group.
  *   Optimize — a URL exists but ranks below position 20 (or we have no rank).
@@ -20,7 +20,7 @@ const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 182;
 
 export function deriveActionLabel(input: {
   existingUrl: string | null;
-  /** SEMrush organic rank — the always-available fallback signal. */
+  /** DataForSEO organic rank — the always-available fallback signal. */
   ourPosition: number | null;
   /** Persisted Google Search Console position, when available (preferred). */
   gscPosition?: number | null;
@@ -31,7 +31,7 @@ export function deriveActionLabel(input: {
 }): ActionLabel | null {
   if (!input.existingUrl) return "create";
 
-  // Prefer a real GSC position; fall back to the SEMrush rank we already store.
+  // Prefer a real GSC position; fall back to the DataForSEO rank we already store.
   const pos = input.gscPosition ?? input.ourPosition ?? null;
   if (pos == null || pos > 20) return "optimize";
 

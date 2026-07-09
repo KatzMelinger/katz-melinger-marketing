@@ -1,13 +1,13 @@
 /**
  * Outbound link analysis + Claude-generated link-building strategy.
  *
- * Different from /seo/backlinks (which shows the Semrush incoming backlink
+ * Different from /seo/backlinks (which shows the DataForSEO incoming backlink
  * profile — sites that already link to katzmelinger.com). This feature:
  *
  *   1. Crawls the firm's own sitemap and extracts every external link the
  *      site already points OUT to (good signal for who they could request
  *      reciprocal links from).
- *   2. Pulls existing Semrush competitor + authority data so Claude knows
+ *   2. Pulls existing DataForSEO competitor + authority data so Claude knows
  *      what kind of authority profile to aim for.
  *   3. Asks Claude for a structured outreach plan: categories of targets,
  *      specific organizations to pitch, outreach templates, expected

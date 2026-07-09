@@ -1,8 +1,8 @@
 /**
  * Keyword geo classifier — used by /seo/keywords + /seo/keywords/competitive
- * to filter Semrush data down to NY/NJ-relevant keywords (and slice by city).
+ * to filter DataForSEO data down to NY/NJ-relevant keywords (and slice by city).
  *
- * Semrush returns US-wide rankings; for a NY/NJ-only firm, anything mentioning
+ * DataForSEO returns US-wide rankings; for a NY/NJ-only firm, anything mentioning
  * a non-target state is incidental noise. This classifier:
  *
  *   - Tags each keyword with a state ("ny", "nj", "other", or null)

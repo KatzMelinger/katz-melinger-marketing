@@ -2,7 +2,7 @@
  * Keyword relevance / junk filter — the missing piece that turns the SEO
  * Opportunity list into a system.
  *
- * The Opportunity Radar surfaces raw SEMrush gaps, which include navigational
+ * The Opportunity Radar surfaces raw DataForSEO gaps, which include navigational
  * junk ("unemployment login", "nys dol phone number"), the firm's own brand
  * terms, and competitor brand terms — all sitting next to real practice-area
  * opportunities. `scoreKeyword` assigns a 0-100 relevance score and an

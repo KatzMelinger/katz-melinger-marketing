@@ -1,12 +1,12 @@
 /**
  * Supabase-backed cache wrapper for DataForSEO API calls.
  *
- * DataForSEO's API is POST + JSON (unlike Semrush's GET + CSV), so this exposes
+ * DataForSEO's API is POST + JSON, so this exposes
  * `cachedDataForSeoPost(path, payload)` rather than a fetch() drop-in. It returns
  * the parsed JSON response. On cache hit it returns the stored JSON; on miss it
  * calls live, persists the body if the call succeeded, and returns it.
  *
- * Mirrors lib/semrush-cache.ts:
+ * Caching contract:
  *   - SHA-256 cache key over (path + JSON payload). Auth is a header, not part
  *     of the payload, so key rotation never invalidates the cache.
  *   - Per-endpoint TTL tuned to how fast the underlying data changes.

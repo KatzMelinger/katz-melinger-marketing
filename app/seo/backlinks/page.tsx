@@ -441,7 +441,7 @@ export default function SeoBacklinksPage() {
           rows={recentLost ?? []}
           dateField="lastSeenIso"
           onClose={() => setDrill(null)}
-          subtitle="Semrush hasn't refreshed these recently — likely candidates for outreach to confirm or reclaim."
+          subtitle="Not seen in recent crawls — likely candidates for outreach to confirm or reclaim."
         />
       )}
 
@@ -654,7 +654,7 @@ export default function SeoBacklinksPage() {
                     )}
                     {samples && samples !== "loading" && samples.length === 0 && (
                       <p className="text-xs text-slate-500">
-                        No specific backlinks returned by Semrush for this domain in the latest
+                        No specific backlinks returned for this domain in the latest
                         sample.
                       </p>
                     )}

@@ -7,7 +7,7 @@
  *
  *   1. content_pipeline rows with a URL set (= live or queued for publish)
  *   2. content_drafts in published/approved status
- *   3. The latest cannibalization_snapshots row (Semrush ranked keywords)
+ *   3. The latest cannibalization_snapshots row (DataForSEO ranked keywords)
  *
  * For each proposed title we tokenize, strip stopwords, and compute Jaccard
  * similarity against the existing keyword/title corpus. Anything above the

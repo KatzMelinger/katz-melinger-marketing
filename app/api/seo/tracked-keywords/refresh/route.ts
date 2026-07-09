@@ -6,7 +6,7 @@
  * GET /api/seo/tracked-keywords/refresh
  *   (Vercel Cron trigger — requires Authorization: Bearer ${CRON_SECRET})
  *
- * Refreshes ranking data for all tracked keywords by hitting Semrush once
+ * Refreshes ranking data for all tracked keywords by hitting DataForSEO once
  * for the firm's domain and matching tracked keywords against the result.
  * Preserves the previous rank in `previous_rank` so the UI can show movement.
  *
@@ -158,7 +158,7 @@ async function refreshTrackedKeywords(tenantId: string) {
     // and omit keywords the firm actually ranks for (verified in the migration
     // parity check). For tracked keywords missing from the snapshot, do a
     // bounded set of real-time SERP lookups so the rank column is accurate —
-    // this makes us MORE accurate than the old Semrush snapshot-only refresh.
+    // this makes us MORE accurate than a snapshot-only refresh.
     const LIVE_RANK_CAP = 50;
     const liveRankMap = new Map<string, number | null>();
     const toLookup = unmatchedPhrases.slice(0, LIVE_RANK_CAP);
@@ -292,7 +292,7 @@ async function refreshTrackedKeywords(tenantId: string) {
     }
 
     // Append today's rank snapshot for the firm domain AND every tracked
-    // competitor, building the position-history time-series (Semrush-style
+    // competitor, building the position-history time-series (DataForSEO-style
     // trend chart + date-over-date columns). Non-fatal: a failure here must
     // not fail the ranking refresh. Competitor ranks reuse their cached
     // ranked-keywords snapshot (no live-SERP spend) — exact/partial match per
