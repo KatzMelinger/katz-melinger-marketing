@@ -20,7 +20,6 @@ import {
 } from "@/lib/schema-templates";
 
 type QaPair = { question: string; answer: string };
-type Crumb = { name: string; url: string };
 
 type GeneratedSchema = {
   jsonld: Record<string, unknown>;

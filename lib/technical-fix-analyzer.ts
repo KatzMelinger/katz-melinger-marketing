@@ -52,12 +52,12 @@ export async function analyzePageForFixes(url: string): Promise<FixAnalysis> {
 ${firm}
 
 Rules:
-- Only suggest fixes for fix_types the plugin supports: meta_title (≤65 chars), meta_description (140-160 chars ideal), canonical (full URL), og_title, og_description, schema_jsonld (valid JSON only — typically LegalService, FAQPage, or Article schema).
+- Only suggest fixes for fix_types the plugin supports: meta_title (≤65 chars), meta_description (140-160 chars ideal), canonical (full URL), og_title, og_description, schema_jsonld (valid JSON only — ONLY FAQPage, Attorney, or LegalService).
 - Do NOT suggest fixes for headings, internal links, alt text, or content body — those aren't supported yet.
 - Only emit a fix when it actually improves something. If the current value is already good, don't include it.
 - For each fix, write a 1-sentence rationale the marketer will see in the dashboard explaining WHY this is better.
 - Keep titles and descriptions on-brand and geo-targeted (NY/NJ) where natural. Don't invent facts.
-- For schema_jsonld, return ONLY valid JSON (an object), no surrounding markdown.`;
+- For schema_jsonld: this site runs Yoast SEO, which already emits the base @graph (WebPage, Article, Organization, WebSite, BreadcrumbList, author) on every page. NEVER suggest Article/BlogPosting, WebPage, Organization, or BreadcrumbList schema — that would duplicate Yoast and fail validation. Only suggest FAQPage (for pages with Q&A), Attorney (bio pages), or LegalService (firm-level pages) when that type is genuinely missing. Return ONLY valid JSON (an object), no surrounding markdown.`;
 
   const userParts: string[] = [];
   userParts.push(`URL: ${snapshot.url}`);

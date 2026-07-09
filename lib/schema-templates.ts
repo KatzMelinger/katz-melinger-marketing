@@ -140,72 +140,14 @@ export const SCHEMA_TEMPLATES: SchemaTemplate[] = [
       },
     ],
   },
-  {
-    id: "blog_posting",
-    label: "Blog post / article",
-    schemaType: "BlogPosting",
-    description:
-      "Article schema for a blog or news post. Helps Google show date + author in the SERP and is used by AI overviews to attribute quotes.",
-    fields: [
-      {
-        key: "pageUrl",
-        label: "Article URL",
-        kind: "url",
-        required: true,
-      },
-      {
-        key: "headline",
-        label: "Headline / title",
-        kind: "text",
-        required: true,
-      },
-      {
-        key: "author",
-        label: "Author name",
-        kind: "text",
-        required: true,
-      },
-      {
-        key: "datePublished",
-        label: "Date published (YYYY-MM-DD)",
-        kind: "text",
-        required: true,
-      },
-      {
-        key: "dateModified",
-        label: "Date modified (YYYY-MM-DD)",
-        kind: "text",
-        hint: "Leave blank to reuse datePublished.",
-      },
-      {
-        key: "summary",
-        label: "1-2 sentence summary",
-        kind: "textarea",
-      },
-    ],
-  },
-  {
-    id: "breadcrumb",
-    label: "Breadcrumb trail",
-    schemaType: "BreadcrumbList",
-    description:
-      "Site-navigation schema. Helps Google show breadcrumbs in the SERP instead of the raw URL.",
-    fields: [
-      {
-        key: "pageUrl",
-        label: "Page URL",
-        kind: "url",
-        required: true,
-      },
-      {
-        key: "crumbs",
-        label: "Breadcrumb trail",
-        kind: "breadcrumbs",
-        required: true,
-        hint: "One step per line. The deepest crumb should match the page URL.",
-      },
-    ],
-  },
+  // NOTE: BlogPosting/Article and BreadcrumbList templates were intentionally
+  // removed. katzmelinger.com runs Yoast SEO (free), which already emits the
+  // base @graph — WebPage, Article, Organization, WebSite, BreadcrumbList, and
+  // author — automatically on every page. Yoast is the single owner of those
+  // types; Huracán only adds what Yoast does NOT: FAQPage, Attorney bios, and
+  // the firm-level LegalService. Re-adding Article/BreadcrumbList here would
+  // duplicate Yoast's schema and trip Google's "duplicate structured data"
+  // validation. See the Content Pipeline spec, Fix 3 (single owner).
 ];
 
 export function findTemplate(id: string): SchemaTemplate | null {
