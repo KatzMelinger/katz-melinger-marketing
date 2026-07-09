@@ -8,7 +8,7 @@ import { MarketingNav } from "@/components/marketing-nav";
 const BG = "#ffffff";
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
 // GBP API has a default dev-tier quota of ~10 requests/minute. Each page
 // load fires several calls (location detail + reviews + media + posts), so

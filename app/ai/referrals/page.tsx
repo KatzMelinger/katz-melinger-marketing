@@ -178,7 +178,7 @@ export default function AiReferralsPage() {
                       <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#475569" }} />
                       <YAxis tick={{ fontSize: 11, fill: "#475569" }} />
                       <Tooltip />
-                      <Line type="monotone" dataKey="sessions" stroke="#185FA5" strokeWidth={2} />
+                      <Line type="monotone" dataKey="sessions" stroke="#116AB2" strokeWidth={2} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -198,7 +198,7 @@ export default function AiReferralsPage() {
                         <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#475569" }} />
                         <YAxis tick={{ fontSize: 11, fill: "#475569" }} />
                         <Tooltip />
-                        <Bar dataKey="sessions" fill="#185FA5" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="sessions" fill="#116AB2" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

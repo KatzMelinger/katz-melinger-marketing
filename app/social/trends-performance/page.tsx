@@ -30,7 +30,7 @@ type Payload = {
   suggestion: string;
 };
 
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
   hot: { bg: "#fee2e2", fg: "#b91c1c", label: "Hot" },
   warm: { bg: "#fef3c7", fg: "#b45309", label: "Warm" },

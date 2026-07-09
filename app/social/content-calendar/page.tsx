@@ -45,7 +45,7 @@ type CalendarItem = {
 
 type View = "month" | "week";
 
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
 /** Channel → brand color. Falls back to slate for anything unmapped. */
 const CHANNEL: Record<string, { color: string; label: string }> = {

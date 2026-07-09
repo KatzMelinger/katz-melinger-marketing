@@ -31,18 +31,49 @@ export const maxDuration = 300;
 
 // Instagram allows up to 10 carousel images.
 const MAX_SLIDES = 10;
+// Cap how many reference images we forward to the image model, keeping the
+// request payload and generation cost bounded.
+const MAX_REFERENCE_IMAGES = 4;
 
 function firstHex(s: string | undefined | null): string | null {
   const m = (s ?? "").match(/#([0-9a-fA-F]{6})\b/);
   return m ? `#${m[1]}` : null;
 }
 
+/**
+ * Decode client-supplied reference images (base64 data URLs, normalized to PNG
+ * by the uploader) into raw byte buffers. Malformed entries are skipped rather
+ * than failing the whole request.
+ */
+function decodeReferenceImages(value: unknown): Uint8Array[] {
+  if (!Array.isArray(value)) return [];
+  const out: Uint8Array[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !item) continue;
+    const comma = item.indexOf(",");
+    const b64 = item.startsWith("data:") && comma >= 0 ? item.slice(comma + 1) : item;
+    try {
+      const buf = Buffer.from(b64, "base64");
+      if (buf.length > 0) out.push(new Uint8Array(buf));
+    } catch {
+      /* skip malformed entry */
+    }
+    if (out.length >= MAX_REFERENCE_IMAGES) break;
+  }
+  return out;
+}
+
 export async function POST(req: Request) {
   const denied = await guardUser();
   if (denied) return denied;
 
-  const body = (await req.json().catch(() => ({}))) as { draftId?: string; script?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    draftId?: string;
+    script?: string;
+    referenceImages?: unknown;
+  };
   const script = typeof body.script === "string" ? body.script : "";
+  const referenceImages = decodeReferenceImages(body.referenceImages);
   if (!script.trim()) {
     return NextResponse.json({ error: "script is required" }, { status: 400 });
   }
@@ -67,7 +98,7 @@ export async function POST(req: Request) {
   ]);
   const brand = {
     firmName: cfg.firmName || "Your Firm",
-    accentColor: firstHex(style?.colorPalette) || "#185FA5",
+    accentColor: firstHex(style?.colorPalette) || "#116AB2",
     styleSuffix: styleStyle.promptSuffix || "",
   };
 
@@ -75,7 +106,12 @@ export async function POST(req: Request) {
 
   let rendered;
   try {
-    rendered = await renderCarouselSlides({ slides, brand, generateBackground });
+    rendered = await renderCarouselSlides({
+      slides,
+      brand,
+      generateBackground,
+      referenceImages,
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Slide rendering failed" },
@@ -98,6 +134,7 @@ export async function POST(req: Request) {
           draft_id: body.draftId ?? null,
           slide: r.n,
           generated_background: generateBackground,
+          reference_images: referenceImages.length,
         },
       });
       if (saved.public_url) out.push({ n: r.n, headline: r.headline, url: saved.public_url });
@@ -137,9 +174,16 @@ export async function POST(req: Request) {
     urls,
     caption: parsed.caption,
     generatedBackground: generateBackground,
+    usedReferences: referenceImages.length,
     truncated,
     message: `${out.length} slide image(s) ready${
-      generateBackground ? "" : " (brand gradient — connect OpenAI for generated backgrounds)"
+      generateBackground
+        ? referenceImages.length
+          ? ` (backgrounds anchored on ${referenceImages.length} reference image${
+              referenceImages.length > 1 ? "s" : ""
+            })`
+          : ""
+        : " (brand gradient — connect OpenAI for generated backgrounds)"
     }${truncated ? `. Only the first ${MAX_SLIDES} slides were rendered.` : "."}`,
   });
 }

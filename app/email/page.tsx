@@ -21,7 +21,7 @@ import {
 
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
 type EmailPayload = {
   connected: boolean;
@@ -415,7 +415,7 @@ export default function EmailPage() {
 
               <section
                 className="rounded-xl border border-dashed p-6"
-                style={{ backgroundColor: CARD, borderColor: "#185FA5" }}
+                style={{ backgroundColor: CARD, borderColor: "#116AB2" }}
               >
                 <h2 className="text-lg font-semibold text-slate-900">Campaign creation wizard</h2>
                 <p className="mt-2 text-sm text-slate-600">

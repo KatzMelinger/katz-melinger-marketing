@@ -29,8 +29,8 @@ import { MarketingNav } from "@/components/marketing-nav";
 
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
-const ACCENT = "#185FA5";
-const PIE_COLORS = ["#185FA5", "#1D9E75", "#CA8A04", "#A855F7"];
+const ACCENT = "#116AB2";
+const PIE_COLORS = ["#116AB2", "#1D9E75", "#CA8A04", "#A855F7"];
 
 type PlatformName = "Facebook" | "Instagram" | "Twitter" | "LinkedIn";
 
@@ -450,7 +450,7 @@ export default function SocialAnalyticsPage() {
 
         <section
           className="rounded-xl border border-dashed p-6"
-          style={{ backgroundColor: CARD, borderColor: "#185FA5" }}
+          style={{ backgroundColor: CARD, borderColor: "#116AB2" }}
         >
           <h2 className="text-lg font-semibold text-slate-900">
             Post creation interface

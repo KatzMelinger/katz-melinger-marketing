@@ -34,7 +34,7 @@ type Payload = {
   suggested: string[];
 };
 
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
 function fmt(n: number): string {
   return n >= 10000 ? `${(n / 1000).toFixed(1)}k` : n.toLocaleString();

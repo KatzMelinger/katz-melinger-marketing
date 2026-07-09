@@ -250,7 +250,7 @@ export default function LeadResponsePage() {
 
         {/* KPI row */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#185FA5" }}>
+          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#116AB2" }}>
             <p className="text-sm font-medium text-white/90">Total leads</p>
             <p className="mt-3 text-3xl font-semibold tabular-nums text-white">{report?.totalLeads ?? "—"}</p>
             <p className="mt-1 text-xs text-white/70">unique callers</p>

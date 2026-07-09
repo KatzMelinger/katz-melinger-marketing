@@ -50,7 +50,7 @@ function scoreColor(score: number | null | undefined): string {
 
 function pctBarColor(pct: number): string {
   if (pct >= 80) return "#166534";
-  if (pct >= 60) return "#185FA5";
+  if (pct >= 60) return "#116AB2";
   if (pct >= 40) return "#b45309";
   return "#be123c";
 }

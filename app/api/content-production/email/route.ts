@@ -40,7 +40,7 @@ function ensureTrackingHtml(html: string): string {
 
 function brandedEmailHtml(firmName: string, bodyHtml: string): string {
   return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#0f172a">
-  <div style="background:#185FA5;padding:16px 20px;color:#ffffff;font-size:18px;font-weight:bold">${firmName}</div>
+  <div style="background:#116AB2;padding:16px 20px;color:#ffffff;font-size:18px;font-weight:bold">${firmName}</div>
   <div style="padding:20px;font-size:15px;line-height:1.6">${bodyHtml}</div>
 </div>`;
 }

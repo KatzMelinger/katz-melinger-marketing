@@ -135,7 +135,7 @@ export async function getTenantConfig(tenantId?: string): Promise<TenantConfig> 
     firmWebsite: row?.firm_website || fb.firmWebsite,
     targetGeography: row?.target_geography || fb.targetGeography,
     firmSpokesperson: row?.firm_spokesperson || fb.firmSpokesperson,
-    brandColor: row?.brand_primary_color || "#185FA5",
+    brandColor: row?.brand_primary_color || "#116AB2",
     logoUrl: row?.logo_url || null,
     emailProvider: row?.email_provider || null,
     practiceAreas:

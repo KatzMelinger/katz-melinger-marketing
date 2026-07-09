@@ -200,7 +200,7 @@ export function PerformanceReport({ period }: { period: PeriodKey }) {
     const sessionsPrior = ga4Prior?.sessions ?? 0;
     return [
       { key: "spend", label: "Spend", value: fmtUsd(metrics.current.spend), pct: metrics.deltas.spend?.pct ?? null, goodUp: false, tone: "#b45309" },
-      { key: "sessions", label: "Sessions", value: fmtNum(sessions), pct: pctDelta(sessions, sessionsPrior), goodUp: true, tone: "#185FA5" },
+      { key: "sessions", label: "Sessions", value: fmtNum(sessions), pct: pctDelta(sessions, sessionsPrior), goodUp: true, tone: "#116AB2" },
       { key: "calls", label: "Calls", value: fmtNum(metrics.current.calls), pct: metrics.deltas.calls?.pct ?? null, goodUp: true, tone: "#0f4c75" },
       { key: "intakes", label: "Intakes", value: fmtNum(funnelTotals.intakes), pct: pctDelta(funnelTotals.intakes, funnelPrior?.intakes ?? 0), goodUp: true, tone: "#166534" },
       { key: "matters", label: "Matters", value: fmtNum(funnelTotals.matters), pct: pctDelta(funnelTotals.matters, funnelPrior?.matters ?? 0), goodUp: true, tone: "#475569" },

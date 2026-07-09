@@ -50,7 +50,7 @@ const FIELD_PLACEHOLDERS: Record<ImageStyleKey, string> = {
   visualDirection:
     "e.g. Photorealistic editorial, soft natural light, NYC professional settings. Modern minimal staging. Lean toward documentary realism over polished studio.",
   colorPalette:
-    "e.g. Primary: #185FA5 (KM blue). Accent: warm amber. Neutrals: charcoal, off-white, slate. Avoid pure black and neon colors.",
+    "e.g. Primary: #116AB2 (KM blue). Accent: warm amber. Neutrals: charcoal, off-white, slate. Avoid pure black and neon colors.",
   moodTone:
     "e.g. Confident, authoritative, but approachable. Empathetic — these are people who've been wronged. Avoid corporate stiffness or stock-photo cheerfulness.",
   composition:

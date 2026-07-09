@@ -224,7 +224,7 @@ export default function CallsPage() {
         ) : null}
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#185FA5" }}>
+          <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#116AB2" }}>
             <p className="text-sm font-medium text-white/90">Total (filtered)</p>
             <p className="mt-3 text-3xl font-semibold tabular-nums">{totalCalls}</p>
           </article>

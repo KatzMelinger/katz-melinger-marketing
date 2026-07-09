@@ -11,6 +11,8 @@
 import { usePathname } from "next/navigation";
 import { MarketingSidebar } from "@/components/marketing-sidebar";
 import { HubSubNav } from "@/components/hub-subnav";
+import { AlertStrip } from "@/components/alert-strip";
+import { SystemStatusProvider } from "@/components/system-status";
 import { TenantProvider } from "@/components/tenant-provider";
 
 const NO_CHROME_PATHS = ["/login", "/signup", "/onboarding"];
@@ -32,9 +34,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   }
   return (
     <TenantProvider>
+      <SystemStatusProvider>
       <div className="flex min-h-screen">
         <MarketingSidebar />
         <div className="flex-1 min-w-0">
+          {/* Alert strip (Huraqan §6) — real action items above all content;
+              renders nothing when everything is healthy. */}
+          <AlertStrip />
           {/* Renders the Ops Hub sub-nav strip on any hub page (returns null
               elsewhere). Mounted once here so every hub page gets it
               consistently — pages must NOT render HubSubNav themselves. */}
@@ -42,6 +48,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </div>
+      </SystemStatusProvider>
     </TenantProvider>
   );
 }

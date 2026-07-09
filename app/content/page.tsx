@@ -11,7 +11,7 @@ import { readContentType } from "@/lib/content-types";
 
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
 /** The `existing` payload returned by the 409 duplicate guard. */
 type DuplicateExisting = { kind?: string; id?: string; label?: string; status?: string | null };

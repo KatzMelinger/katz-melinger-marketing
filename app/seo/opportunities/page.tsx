@@ -333,8 +333,8 @@ export default function SeoOpportunitiesPage() {
             onClick={() => setExclusionsOpen((o) => !o)}
             className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-medium ${
               exclusionsOpen
-                ? "border-[#185FA5] text-[#185FA5] bg-[#185FA5]/5"
-                : "border-slate-300 text-slate-700 hover:border-[#185FA5] hover:text-[#185FA5]"
+                ? "border-brand text-brand bg-brand/5"
+                : "border-slate-300 text-slate-700 hover:border-brand hover:text-brand"
             }`}
           >
             Manage exclusions
@@ -854,12 +854,12 @@ function ExclusionsPanel({
             if (e.key === "Enter") add();
           }}
           placeholder="e.g. unemployment, workers comp, osha"
-          className="w-64 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[#185FA5] focus:outline-none"
+          className="w-64 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-brand focus:outline-none"
         />
         <button
           onClick={add}
           disabled={busy || !term.trim()}
-          className="rounded-md bg-[#185FA5] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1f6fb8] disabled:opacity-50"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
         >
           Add term
         </button>
