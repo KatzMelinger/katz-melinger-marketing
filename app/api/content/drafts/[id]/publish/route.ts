@@ -25,6 +25,7 @@ import {
   surfaceForFormat,
 } from "@/lib/agent/compliance-filter";
 import { isWordPressFormat } from "@/lib/wp-content-publish";
+import { queueFaqPageSchema } from "@/lib/faq-schema";
 import {
   AYRSHARE_PLATFORMS,
   getAyrshareApiKey,
@@ -194,10 +195,29 @@ export async function POST(
       .update({ metadata: queuedMetadata })
       .eq("id", id)
       .eq("tenant_id", tenantId);
+
+    // Auto-attach FAQPage schema (Huracán owns FAQPage; Yoast owns the base
+    // graph). Only for in-place updates, where the live URL is already known —
+    // a brand-new post has no URL until the plugin creates it. Never blocks
+    // publish: a parse miss or DB hiccup just means no FAQ schema this round.
+    let faqSchemaQueued = 0;
+    if (isUpdate) {
+      try {
+        faqSchemaQueued = await queueFaqPageSchema({
+          body,
+          pageUrl: (prevMeta.source_url as string).trim(),
+          tenantId,
+        });
+      } catch {
+        /* non-fatal — FAQ schema is a nice-to-have, never hold up the publish */
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       status: "queued",
       channel: "wordpress",
+      faq_schema_queued: faqSchemaQueued,
       message: isUpdate
         ? "Queued for WordPress — the site plugin will update the existing page in place on its next sync."
         : "Queued for WordPress — the site plugin will publish it on its next sync.",
