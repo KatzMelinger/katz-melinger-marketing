@@ -33,6 +33,7 @@ import {
   type Analysis,
 } from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
+import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 
 const PROSE_CLASS =
   "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2";
@@ -208,7 +209,15 @@ function readStructureCheck(
   };
 }
 
-type FreshnessFlagMeta = { kind?: string; match?: string; sentence?: string };
+type FreshnessFlagMeta = {
+  kind?: string;
+  match?: string;
+  sentence?: string;
+  /** Authoritative current value, when the flag maps to a known current fact. */
+  current_value?: string;
+  current_label?: string;
+  effective_date?: string;
+};
 
 /**
  * Time-sensitive figures flagged at generation/refresh (lib/freshness-check.ts).
@@ -383,6 +392,9 @@ export function DraftDrawer({
     // Absent structure check (older drafts) is treated as passing so it can't
     // retroactively block; present-and-failed blocks (added to qaRequired below).
     structure: structureCheck ? structureCheck.passed : true,
+    // Readability floor. No analysis yet = treated as passing (advisory until
+    // the score exists); gated only when an analysis is present (see qaRequired).
+    readability: analysis ? analysis.readability_score >= READABILITY_FLOOR : true,
     wordCount: wordCount >= 600,
     titleLen: metaTitle.length > 0 && metaTitle.length <= 60,
   };
@@ -404,6 +416,14 @@ export function DraftDrawer({
   // structure check (KM generator). A failed check means sections are missing.
   if (structureCheck) {
     qaRequired.push({ key: "structure", label: "Required section structure present" });
+  }
+  // Readability floor is a hard gate once the draft has been analyzed, so a low
+  // draft can't pass quietly. Below the floor blocks; 60-70 is an advisory band.
+  if (analysis) {
+    qaRequired.push({
+      key: "readability",
+      label: `Readability ${READABILITY_FLOOR}+ (aim ${READABILITY_TARGET})`,
+    });
   }
   const qaFailed = qaRequired.filter((c) => !qa[c.key]);
   const qaGatePassed = qaFailed.length === 0;
@@ -1216,6 +1236,13 @@ export function DraftDrawer({
                             {f.match}
                           </span>{" "}
                           <span className="text-slate-500">{f.sentence}</span>
+                          {f.current_value && (
+                            <span className="mt-0.5 block font-medium text-emerald-700">
+                              Current verified value: {f.current_value}
+                              {f.effective_date ? ` (effective ${f.effective_date})` : ""}
+                              {f.current_label ? ` — ${f.current_label}` : ""}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -1247,6 +1274,12 @@ export function DraftDrawer({
                     />
                     {structureCheck && (
                       <Check ok={qa.structure} label="Required section structure present" />
+                    )}
+                    {analysis && (
+                      <Check
+                        ok={qa.readability}
+                        label={`Readability ${READABILITY_FLOOR}+ (${analysis.readability_score}, aim ${READABILITY_TARGET})`}
+                      />
                     )}
                     <Check ok={qa.wordCount} label="Word count meets minimum" />
                     <Check ok={qa.titleLen} label="Title under 60 characters" />

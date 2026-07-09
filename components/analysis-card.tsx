@@ -24,6 +24,9 @@ import {
 export type Analysis = {
   readability_score: number;
   reading_grade_level: number;
+  // Per-sentence readability findings (over-long / passive / complex). Optional
+  // so older analyses loaded before the migration don't fail the type check.
+  readability_findings?: string[];
   word_count: number;
   sentence_count: number;
   keyword_density: Record<string, number>;
@@ -256,6 +259,15 @@ export function AnalysisCard({
         />
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
+        {analysis.readability_findings && analysis.readability_findings.length > 0 && (
+          <FindingsList
+            label={`Readability findings (${analysis.readability_score}/100, aim 70+)`}
+            findings={analysis.readability_findings}
+            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            selected={selectedFindings}
+            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          />
+        )}
         {analysis.seo_findings && analysis.seo_findings.length > 0 && (
           <FindingsList
             label="SEO findings"

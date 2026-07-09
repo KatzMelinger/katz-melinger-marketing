@@ -21,6 +21,7 @@ import {
   filterTitlesByCannibalization,
   type FilteredTitle,
 } from "./title-cannibalization";
+import { readabilityFindings } from "./readability";
 
 const STOP_WORDS = new Set([
   "the","and","that","with","from","this","your","have","will","about","into",
@@ -70,6 +71,8 @@ export type ComplianceStatus = "compliant" | "needs_changes" | "non_compliant";
 export type ContentAnalysis = {
   readability_score: number;
   reading_grade_level: number;
+  /** One Apply-able finding per over-long / passive / complex sentence. */
+  readability_findings: string[];
   word_count: number;
   sentence_count: number;
   keyword_density: Record<string, number>;
@@ -890,6 +893,7 @@ export async function analyzeDraft(args: {
   const analysis: ContentAnalysis = {
     readability_score: normalizeReadability(flesch),
     reading_grade_level: Math.round(grade * 10) / 10,
+    readability_findings: readabilityFindings(body),
     word_count: words.length,
     sentence_count: sentences,
     keyword_density: keywordDensity(words),
@@ -936,6 +940,15 @@ export async function analyzeDraft(args: {
     draft_id: draftId,
     ...persistable,
   });
+  // Newest column first: drop readability_findings if not migrated yet.
+  if (error && /readability_findings/.test(error.message)) {
+    delete (persistable as Record<string, unknown>).readability_findings;
+    const retry = await supabase.from("content_analyses").insert({ tenant_id: tid,
+      draft_id: draftId,
+      ...persistable,
+    });
+    error = retry.error;
+  }
   if (error && /compliance_/.test(error.message)) {
     for (const k of [
       "compliance_score",

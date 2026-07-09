@@ -29,6 +29,12 @@ import { getFirmContext } from "@/lib/firm-context";
 import { buildSkillsContext } from "@/lib/content-skills";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
+import {
+  READABILITY_TARGET,
+  readabilityStats,
+  renderReadabilityRules,
+} from "@/lib/readability";
+import { matchCurrentFact, renderCurrentFactsBlock } from "@/lib/current-facts";
 import { fetchPageOutline } from "@/lib/page-optimizer";
 import {
   detectContentType,
@@ -163,6 +169,12 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n\n---\n\n");
 
+  // Current verified statutory figures relevant to this page (matched against
+  // the live text + keywords). The refresh path previously injected no reference
+  // facts, so a stale wage/threshold had nothing authoritative to correct it.
+  const factsBlock = renderCurrentFactsBlock(`${title} ${keywords.join(" ")} ${pageText}`);
+  const factsSection = factsBlock ? `\n\n${factsBlock}` : "";
+
   const userPrompt =
     `${knownInfo ? knownInfo + "\n\n===\n\n" : ""}` +
     `You are UPDATING an already-published page — not writing a new one from scratch. This is an ` +
@@ -177,7 +189,10 @@ export async function POST(req: Request) {
     `- Preserve sections that are already accurate and on-topic. Do NOT rewrite them wholesale — light voice/clarity edits only.\n` +
     `- ADD the missing sections and keywords listed above, in the firm's brand voice and to its audiences (see FIRM CONTEXT).\n` +
     `- Keep every factual, legal, and numeric statement accurate. Do NOT invent statutes, deadlines, figures, or case results — if the live page doesn't support a claim, leave it out.\n` +
+    `- EXCEPTION — time-sensitive figures: do NOT preserve wage rates, salary thresholds, dollar amounts, or dated deadlines verbatim just because they are on the page. Replace any such figure with the matching CURRENT VERIFIED FIGURE below. If no verified value is provided for a figure on the page, do not restate that specific number as current — remove or soften it rather than carry a possibly-stale figure forward.\n` +
     `- Follow the HEADING RULES above: keep strong headings verbatim, improve weak ones for SEO, add headings only for the gaps.\n` +
+    factsSection +
+    `\n\n${renderReadabilityRules()}` +
     keywordBlock +
     linkBlock +
     `\n\nOutput: the full updated page in Markdown only. Start with the H1.`;
@@ -206,6 +221,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "The model returned an empty draft." }, { status: 502 });
   }
 
+  // Readability remediation: if the refresh reads dense, run up to 2 rewrite
+  // passes that shorten/de-passivize sentences while preserving meaning,
+  // headings, and links. Keep a pass only if readability actually improved.
+  {
+    let readStats = readabilityStats(updatedBody);
+    let passes = 0;
+    while (readStats.flesch < READABILITY_TARGET && readStats.overThresholdCount > 0 && passes < 2) {
+      passes++;
+      try {
+        const rwPrompt =
+          `Rewrite the article below to improve readability WITHOUT changing its meaning, facts, ` +
+          `headings, structure, or internal links.\n\n${renderReadabilityRules()}\n\n` +
+          `Keep every heading (#, ##, ###) exactly as-is, keep all citations, statutes, and figures, ` +
+          `and keep protected legal terms verbatim. Split long sentences and convert passive voice to ` +
+          `active.\n\nReturn the COMPLETE rewritten article in Markdown, nothing else.\n\n` +
+          `===== ARTICLE =====\n${updatedBody}`;
+        const rw = await getAnthropic().messages.create({
+          model: CONTENT_LONG_FORM_MODEL,
+          max_tokens: 8192,
+          system: cachedSystemPrompt(tenantConfig.systemPrompt),
+          messages: [{ role: "user", content: rwPrompt }],
+        });
+        const rwb = rw.content.find((b) => b.type === "text");
+        const cand = rwb && rwb.type === "text" ? stripEmDashes(rwb.text) : "";
+        if (!cand.trim()) break;
+        const candStats = readabilityStats(cand);
+        if (candStats.flesch > readStats.flesch) {
+          updatedBody = cand;
+          readStats = candStats;
+        } else {
+          break;
+        }
+      } catch {
+        break;
+      }
+    }
+  }
+
   // Heading changes: compare the live page's headings against the redraft's, so
   // the reviewer can see the H1/section changes at a glance (kept vs improved vs
   // added) rather than diffing by eye.
@@ -216,9 +269,14 @@ export async function POST(req: Request) {
 
   // Freshness: a refresh is exactly where stale statutory figures (wage rates,
   // thresholds, deadlines) get silently carried forward. Flag every
-  // time-sensitive figure so the reviewer verifies it before approval (hard QA
-  // gate for legal content — enforced in the draft drawer).
-  const freshnessFlags = findTimeSensitiveFacts(updatedBody);
+  // time-sensitive figure and attach the authoritative current value where known,
+  // so the reviewer verifies it before approval (hard QA gate in the drawer).
+  const freshnessFlags = findTimeSensitiveFacts(updatedBody).map((f) => {
+    const cf = matchCurrentFact(f);
+    return cf
+      ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
+      : { ...f };
+  });
 
   // Stage 3 metadata: fill meta title/description/slug/pillar (the old redraft
   // left these empty, so WordPress push + the drawer had nothing). Reuses the
