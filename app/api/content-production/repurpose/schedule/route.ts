@@ -51,7 +51,12 @@ export async function POST(req: Request) {
   const denied = await guardUser();
   if (denied) return denied;
 
-  const body = (await req.json().catch(() => ({}))) as { posts?: IncomingPost[] };
+  const body = (await req.json().catch(() => ({}))) as { posts?: IncomingPost[]; asDraft?: boolean };
+  // Draft-first: when asDraft, persist the posts as drafts on the Content
+  // Calendar without touching Ayrshare. Approving a draft (from the calendar)
+  // is what sends it to Ayrshare and flips it to scheduled. Default (false)
+  // keeps the existing schedule-now behavior unchanged.
+  const asDraft = body.asDraft === true;
   const incoming = Array.isArray(body.posts) ? body.posts : [];
   if (!incoming.length) {
     return NextResponse.json({ error: "no posts to schedule" }, { status: 400 });
@@ -80,7 +85,7 @@ export async function POST(req: Request) {
     platform: string;
     scheduleDate: string;
     ok: boolean;
-    status: "scheduled" | "failed";
+    status: "draft" | "scheduled" | "failed";
     viaAyrshare: boolean;
     error?: string;
   }[] = [];
@@ -105,9 +110,10 @@ export async function POST(req: Request) {
     // Guaranteed-fail guard: media-required platforms (Instagram, TikTok, etc.)
     // can't post text-only. Fail fast with a clear reason instead of spending an
     // Ayrshare call to get code 139 back.
-    const blockedForMedia = requiresMedia(platform) && mediaUrls.length === 0;
+    // Drafts can be incomplete (no media yet), so we don't block them here.
+    const blockedForMedia = !asDraft && requiresMedia(platform) && mediaUrls.length === 0;
 
-    if (apiKey && !blockedForMedia) {
+    if (!asDraft && apiKey && !blockedForMedia) {
       try {
         const res = await postToAyrshare({
           apiKey,
@@ -142,7 +148,11 @@ export async function POST(req: Request) {
     //     instead of dropping it on the floor.
     // Failed when Ayrshare rejected it, or we blocked it as a guaranteed fail.
     // A planned post (no Ayrshare) with no block stays "scheduled".
-    const status: "scheduled" | "failed" = error ? "failed" : "scheduled";
+    const status: "draft" | "scheduled" | "failed" = asDraft
+      ? "draft"
+      : error
+        ? "failed"
+        : "scheduled";
     if (error) {
       console.error(
         `[repurpose/schedule] ${platform} rejected (draft ${p.draftId ?? "—"}): ${error}`,
@@ -172,11 +182,11 @@ export async function POST(req: Request) {
   }
 
   if (rows.length) {
-    const ins = await db.insert("social_posts", rows);
+    let ins = await db.insert("social_posts", rows);
     // Stay resilient if the new columns haven't been migrated yet: retry without
     // them (reasons still return to the UI and are logged above).
     if (ins.error && /last_error|media_urls/i.test(ins.error.message)) {
-      await db.insert(
+      ins = await db.insert(
         "social_posts",
         rows.map((r) => {
           const copy = { ...r };
@@ -184,6 +194,14 @@ export async function POST(req: Request) {
           delete copy.media_urls;
           return copy;
         }),
+      );
+    }
+    // Any other insert failure is real — surface it instead of reporting a
+    // fabricated success (nothing actually landed on the calendar).
+    if (ins.error) {
+      return NextResponse.json(
+        { error: `Could not save to the Content Calendar: ${ins.error.message}` },
+        { status: 500 },
       );
     }
   }
@@ -195,9 +213,12 @@ export async function POST(req: Request) {
 
   const scheduled = results.filter((r) => r.status === "scheduled").length;
   const failed = results.filter((r) => r.status === "failed").length;
+  const drafted = results.filter((r) => r.status === "draft").length;
 
   let message: string;
-  if (!apiKey) {
+  if (asDraft) {
+    message = `${drafted} post(s) saved as drafts on the Content Calendar. Approve each one to schedule it.`;
+  } else if (!apiKey) {
     message = `${scheduled} post(s) added to the Content Calendar as planned posts. Connect Ayrshare to auto-publish them at their scheduled times.`;
   } else if (failed === 0) {
     message = `${scheduled} of ${valid.length} post(s) scheduled. Review them on the Content Calendar.`;
@@ -212,6 +233,7 @@ export async function POST(req: Request) {
     ok: rows.length > 0,
     scheduled,
     failed,
+    drafted,
     total: valid.length,
     connected: !!apiKey,
     message,

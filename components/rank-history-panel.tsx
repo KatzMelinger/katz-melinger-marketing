@@ -43,7 +43,7 @@ type RankHistory = {
 };
 
 // Firm domain gets the brand accent; competitors cycle through a distinct set.
-const OWN_COLOR = "#185FA5";
+const OWN_COLOR = "#116AB2";
 const COMPETITOR_COLORS = [
   "#a855f7", // purple
   "#f59e0b", // amber
@@ -319,7 +319,7 @@ export function RankHistoryPanel() {
                       shown
                         ? "border-[#e2e8f0] bg-white text-slate-700"
                         : "border-dashed border-[#e2e8f0] bg-slate-50 text-slate-400"
-                    } ${isOwn ? "cursor-default" : "hover:border-[#185FA5] cursor-pointer"}`}
+                    } ${isOwn ? "cursor-default" : "hover:border-brand cursor-pointer"}`}
                   >
                     <span
                       className="h-2.5 w-2.5 rounded-full"
@@ -376,7 +376,7 @@ export function RankHistoryPanel() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search keywords…"
-                className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/30"
+                className="px-3 py-1.5 text-sm rounded-md border border-[#e2e8f0] focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
               />
               <select
                 value={clusterFilter}
@@ -402,7 +402,7 @@ export function RankHistoryPanel() {
                       <button
                         type="button"
                         onClick={() => setSort("keyword")}
-                        className="inline-flex items-center hover:text-[#185FA5]"
+                        className="inline-flex items-center hover:text-brand"
                       >
                         Keyword{effectiveSortCol === "keyword" ? (effectiveSortDir === "asc" ? " ▲" : " ▼") : ""}
                       </button>
@@ -563,7 +563,7 @@ function DomainSubHead({
       <button
         type="button"
         onClick={() => onSort(col)}
-        className="inline-flex items-center hover:text-[#185FA5]"
+        className="inline-flex items-center hover:text-brand"
       >
         {label}
         {indicator(col)}

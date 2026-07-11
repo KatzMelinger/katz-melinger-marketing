@@ -9,7 +9,7 @@ import {
 } from "recharts";
 
 const COLORS = [
-  "#185FA5",
+  "#116AB2",
   "#1D9E75",
   "#CA8A04",
   "#A855F7",

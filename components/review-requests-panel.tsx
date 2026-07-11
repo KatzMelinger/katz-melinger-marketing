@@ -333,7 +333,7 @@ export function ReviewRequestsPanel() {
               onClick={handleManualAdd}
               disabled={adding}
               className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              style={{ backgroundColor: "#185FA5" }}
+              style={{ backgroundColor: "#116AB2" }}
             >
               {adding ? "Adding…" : "Add to queue"}
             </button>

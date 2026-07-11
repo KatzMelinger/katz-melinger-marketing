@@ -13,7 +13,7 @@ import type { FormatKey } from "./content-multiformat";
 export type RepurposeFormat = {
   key: Extract<
     FormatKey,
-    "instagram" | "linkedin" | "facebook" | "twitter" | "carousel" | "video_short"
+    "instagram" | "linkedin" | "facebook" | "carousel" | "video_short"
   >;
   label: string;
   /** Ayrshare platform(s) this variation naturally posts to (first = default). */
@@ -29,7 +29,6 @@ export const REPURPOSE_FORMATS: RepurposeFormat[] = [
   { key: "instagram", label: "Instagram caption", platforms: ["instagram"], kind: "caption" },
   { key: "linkedin", label: "LinkedIn post", platforms: ["linkedin"], kind: "caption" },
   { key: "facebook", label: "Facebook post", platforms: ["facebook"], kind: "caption" },
-  { key: "twitter", label: "X / Twitter thread", platforms: ["twitter"], kind: "caption" },
   {
     key: "carousel",
     label: "Carousel script",

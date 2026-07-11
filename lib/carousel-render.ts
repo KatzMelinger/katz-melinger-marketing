@@ -15,7 +15,7 @@ import path from "node:path";
 
 import { createCanvas, loadImage, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
 
-import { generateImages } from "./openai-images";
+import { generateImages, generateWithReferences } from "./openai-images";
 
 // Instagram-portrait canvas (4:5). Crisp text, standard carousel aspect.
 const W = 1080;
@@ -25,7 +25,7 @@ export type SlideInput = { n: number; headline: string; sub: string };
 
 export type CarouselBrand = {
   firmName: string;
-  /** Hex accent, e.g. "#185FA5". */
+  /** Hex accent, e.g. "#116AB2". */
   accentColor: string;
   /** Brand-style prompt suffix from composeStyleForGeneration(). */
   styleSuffix: string;
@@ -103,7 +103,7 @@ function compositeSlide(
   ensureFonts();
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
-  const accent = brand.accentColor || "#185FA5";
+  const accent = brand.accentColor || "#116AB2";
 
   // Background: generated image cover-fit, or a brand gradient fallback.
   if (bg) {
@@ -206,10 +206,14 @@ export async function renderCarouselSlides(opts: {
   brand: CarouselBrand;
   generateBackground?: boolean;
   concurrency?: number;
+  /** Optional brand reference images (PNG bytes). When present, backgrounds are
+   *  generated with the edits endpoint so they anchor on this visual style. */
+  referenceImages?: Uint8Array[];
 }): Promise<RenderedSlide[]> {
   const { slides, brand } = opts;
   const genBg = opts.generateBackground !== false;
   const limit = Math.max(1, opts.concurrency ?? 3);
+  const references = opts.referenceImages ?? [];
 
   // Generate backgrounds with a small concurrency pool.
   const backgrounds: (Awaited<ReturnType<typeof loadImage>> | null)[] = new Array(slides.length).fill(null);
@@ -219,12 +223,15 @@ export async function renderCarouselSlides(opts: {
       while (cursor < slides.length) {
         const i = cursor++;
         try {
-          const [img] = await generateImages({
+          const genOpts = {
             prompt: backgroundPrompt(slides[i], brand),
-            size: "1024x1536",
-            quality: "medium",
+            size: "1024x1536" as const,
+            quality: "medium" as const,
             n: 1,
-          });
+          };
+          const [img] = references.length
+            ? await generateWithReferences({ ...genOpts, referenceImages: references })
+            : await generateImages(genOpts);
           backgrounds[i] = await loadImage(Buffer.from(img.b64_json, "base64"));
         } catch {
           backgrounds[i] = null; // gradient fallback

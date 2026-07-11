@@ -22,9 +22,9 @@ import { MarketingNav } from "@/components/marketing-nav";
 
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
-const PIE_COLORS = ["#185FA5", "#1D9E75", "#CA8A04", "#A855F7", "#64748b"];
+const PIE_COLORS = ["#116AB2", "#1D9E75", "#CA8A04", "#A855F7", "#64748b"];
 
 function fmtDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec <= 0) return "—";

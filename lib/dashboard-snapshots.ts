@@ -18,6 +18,7 @@ import { headers } from "next/headers";
 import { countContentDuplicates } from "@/lib/content-dedup";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { listRecommendationItems, type RecCategory } from "@/lib/recommendation-items";
 
 export type Kpi = {
   label: string;
@@ -265,6 +266,110 @@ export async function getAiVisibilityKpis(): Promise<Kpi[]> {
     { label: "Avg Position in AI", ...SOON },
     { label: "Citation Rate", ...SOON },
   ];
+}
+
+// ── Dashboard cards (Huraqan design system §12 / §13) ────────────────────────
+
+export type PeggyRec = {
+  id: string;
+  title: string;
+  description: string;
+  category: RecCategory;
+  priority: "High" | "Medium" | "Low";
+  href: string;
+  icon: string;
+};
+
+// Where each recommendation category is acted on (items carry no href of their
+// own), and the glyph shown in its icon square.
+const REC_HREF: Record<RecCategory, string> = {
+  seo: "/seo/opportunities",
+  aeo: "/aeo",
+  content: "/content",
+  technical: "/seo/technical",
+  local: "/local-seo",
+  social: "/social",
+};
+const REC_ICON: Record<RecCategory, string> = {
+  seo: "🔍",
+  aeo: "🤖",
+  content: "✍️",
+  technical: "🛠",
+  local: "📍",
+  social: "📣",
+};
+const IMPACT_LABEL = { high: "High", medium: "Medium", low: "Low" } as const;
+
+/**
+ * Top active recommendations for the dashboard "Peggy" card (§12). Real data
+ * from `recommendation_items`; returns an empty array when nothing is pending
+ * (the card then shows an honest empty state rather than fabricated actions).
+ */
+export async function getPeggyRecommendations(limit = 3): Promise<PeggyRec[]> {
+  try {
+    const items = await listRecommendationItems("active");
+    return items.slice(0, limit).map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.rationale,
+      category: r.category,
+      priority: IMPACT_LABEL[r.impact],
+      href: REC_HREF[r.category] ?? "/recommendations",
+      icon: REC_ICON[r.category] ?? "💡",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type AiVisibilityStatus = "cited" | "partial" | "not-found" | "no-data" | "unconnected";
+export type AiVisibilityPlatform = {
+  id: string;
+  label: string;
+  status: AiVisibilityStatus;
+  detail: string;
+};
+export type AiVisibilitySnapshot = {
+  /** True once at least one AEO run has completed. */
+  hasRun: boolean;
+  runDate: string | null;
+  selfMentionRatePct: number;
+  platforms: AiVisibilityPlatform[];
+};
+
+type AeoDashboardLite = {
+  runId: string | null;
+  runDate: string | null;
+  selfMentionRatePct: number;
+  providerStatus: { id: string; label: string; available: boolean }[];
+  providerCoverage: { provider: string; total: number; covered: number; pct: number }[];
+};
+
+/**
+ * Per-platform AI-answer visibility for the dashboard tracker card (§13). Real
+ * data from the latest completed AEO run: a platform with no API key reads
+ * "Not connected", one that hasn't been scanned reads "No data", otherwise its
+ * self-mention coverage maps to Cited / Partial / Not found.
+ */
+export async function getAiVisibilitySnapshot(): Promise<AiVisibilitySnapshot> {
+  const aeo = await getJson<AeoDashboardLite>("/api/aeo/dashboard");
+  const providerStatus = aeo?.providerStatus ?? [];
+  const coverage = new Map((aeo?.providerCoverage ?? []).map((c) => [c.provider, c]));
+  const platforms: AiVisibilityPlatform[] = providerStatus.map((p) => {
+    if (!p.available) return { id: p.id, label: p.label, status: "unconnected", detail: "Not connected" };
+    const c = coverage.get(p.id);
+    if (!c || c.total === 0) return { id: p.id, label: p.label, status: "no-data", detail: "No data yet" };
+    const detail = `${c.covered} of ${c.total} prompts`;
+    if (c.covered === 0) return { id: p.id, label: p.label, status: "not-found", detail };
+    if (c.pct >= 50) return { id: p.id, label: p.label, status: "cited", detail };
+    return { id: p.id, label: p.label, status: "partial", detail };
+  });
+  return {
+    hasRun: !!aeo?.runId,
+    runDate: aeo?.runDate ?? null,
+    selfMentionRatePct: aeo?.selfMentionRatePct ?? 0,
+    platforms,
+  };
 }
 
 type ReviewsPayload = { reviews?: Array<{ rating?: number }> } | Array<{ rating?: number }>;

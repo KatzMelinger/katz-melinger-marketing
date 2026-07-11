@@ -20,11 +20,8 @@ import Link from "next/link";
 
 import { DraftDrawer } from "@/components/draft-drawer";
 import { KmBriefWizard, type WizardOpportunity } from "@/components/km-brief-wizard";
-import {
-  RepurposeReviewDrawer,
-  requestRepurpose,
-  type RepurposeDraft,
-} from "@/components/repurpose-review-drawer";
+import { requestRepurpose, type RepurposeDraft } from "@/components/repurpose-review-drawer";
+import { SocialComposerDrawer } from "@/components/social-composer-drawer";
 
 // The rest of the production line lives one click away from this page, so the
 // sidebar carries a single "Content Production" tab instead of five.
@@ -526,7 +523,7 @@ export default function ContentProductionPage() {
       )}
 
       {repurpose && (
-        <RepurposeReviewDrawer
+        <SocialComposerDrawer
           topic={repurpose.topic}
           drafts={repurpose.drafts}
           onClose={() => setRepurpose(null)}

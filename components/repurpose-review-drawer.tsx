@@ -75,6 +75,37 @@ const PLATFORM_LABEL: Record<string, string> = {
 
 type Slide = { n: number; headline: string; url: string };
 
+/**
+ * Load an uploaded image, downscale it to `maxDim`, and re-encode as a PNG data
+ * URL. Normalizing to PNG keeps the payload small and matches what the image
+ * model's edits endpoint expects for reference images, regardless of the
+ * source format (JPEG / WebP / PNG).
+ */
+async function fileToPngDataUrl(file: File, maxDim = 1024): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result as string);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("Could not read image"));
+    im.src = dataUrl;
+  });
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL("image/png");
+}
+
 type Row = {
   draftId: string;
   format: string;
@@ -97,6 +128,9 @@ type Row = {
   mediaUrls?: string[];
   genBusy?: boolean;
   genMsg?: string | null;
+  // Optional brand reference images (PNG data URLs) that anchor the generated
+  // slide backgrounds on the firm's visual style.
+  referenceImages?: string[];
 };
 
 function ymd(d: Date): string {
@@ -164,6 +198,33 @@ export function RepurposeReviewDrawer({
   const patch = (i: number, p: Partial<Row>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
 
+  // Attach uploaded brand images (normalized to PNG data URLs) as generation
+  // references for this carousel. Capped at 4 to match the API's limit.
+  const addReferences = async (i: number, files: FileList | null) => {
+    if (!files?.length) return;
+    try {
+      const encoded = await Promise.all(Array.from(files).map((f) => fileToPngDataUrl(f)));
+      setRows((rs) =>
+        rs.map((r, idx) =>
+          idx === i
+            ? { ...r, referenceImages: [...(r.referenceImages ?? []), ...encoded].slice(0, 4) }
+            : r,
+        ),
+      );
+    } catch {
+      patch(i, { genMsg: "Could not read one of those images." });
+    }
+  };
+
+  const removeReference = (i: number, refIdx: number) =>
+    setRows((rs) =>
+      rs.map((r, idx) =>
+        idx === i
+          ? { ...r, referenceImages: (r.referenceImages ?? []).filter((_, k) => k !== refIdx) }
+          : r,
+      ),
+    );
+
   // Carousel: turn the slide script into post-ready slide images. On success the
   // post text becomes the caption and the slides ride along as media.
   const generateSlides = async (i: number) => {
@@ -173,7 +234,11 @@ export function RepurposeReviewDrawer({
       const res = await fetch("/api/content-production/repurpose/carousel-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draftId: row.draftId, script: row.script ?? row.body }),
+        body: JSON.stringify({
+          draftId: row.draftId,
+          script: row.script ?? row.body,
+          referenceImages: row.referenceImages ?? [],
+        }),
       });
       const j = await res.json();
       if (!res.ok) {
@@ -331,7 +396,7 @@ export function RepurposeReviewDrawer({
                     type="checkbox"
                     checked={r.keep}
                     onChange={(e) => patch(i, { keep: e.target.checked })}
-                    className="h-3.5 w-3.5 accent-[#185FA5]"
+                    className="h-3.5 w-3.5 accent-brand"
                   />
                   {r.keep ? "Scheduling" : "Skipped"}
                 </label>
@@ -392,6 +457,62 @@ export function RepurposeReviewDrawer({
                       </span>
                     </div>
                   )}
+                  {/* Optional brand reference images — anchor the generated
+                      slide backgrounds on the firm's visual style. */}
+                  <div className="mt-2 border-t border-slate-200/70 pt-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label
+                        className={`inline-flex items-center gap-1.5 rounded border border-dashed border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 ${
+                          r.keep && !r.genBusy && (r.referenceImages?.length ?? 0) < 4
+                            ? "cursor-pointer hover:border-brand hover:text-brand"
+                            : "cursor-not-allowed opacity-50"
+                        }`}
+                        title="Upload up to 4 brand images (logo, colors, past posts) to style the generated backgrounds."
+                      >
+                        <span aria-hidden>＋</span> Add brand reference images
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          disabled={!r.keep || r.genBusy || (r.referenceImages?.length ?? 0) >= 4}
+                          onChange={(e) => {
+                            void addReferences(i, e.target.files);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      {(r.referenceImages?.length ?? 0) > 0 && (
+                        <span className="text-[11px] text-slate-500">
+                          {r.referenceImages!.length}/4 attached
+                        </span>
+                      )}
+                    </div>
+                    {(r.referenceImages?.length ?? 0) > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {r.referenceImages!.map((src, k) => (
+                          <span key={k} className="relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={src}
+                              alt={`Reference ${k + 1}`}
+                              className="h-12 w-12 rounded border border-slate-200 object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeReference(i, k)}
+                              disabled={r.genBusy}
+                              title="Remove"
+                              className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-slate-700 text-[10px] leading-none text-white hover:bg-red-600 disabled:opacity-50"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={() => generateSlides(i)}

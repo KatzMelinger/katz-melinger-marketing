@@ -122,7 +122,7 @@ export default async function MarketingReviewsPage(
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <article
               className="rounded-lg border border-white/10 p-5"
-              style={{ backgroundColor: "#185FA5" }}
+              style={{ backgroundColor: "#116AB2" }}
             >
               <p className="text-sm font-medium text-white/90">Average rating</p>
               <p className="mt-3 text-3xl font-semibold tabular-nums text-slate-900">
@@ -161,7 +161,7 @@ export default async function MarketingReviewsPage(
               <Link
                 href="/reviews#log-review"
                 className="mt-4 inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-900 transition-opacity hover:opacity-90"
-                style={{ backgroundColor: "#185FA5" }}
+                style={{ backgroundColor: "#116AB2" }}
               >
                 Log your first review
               </Link>

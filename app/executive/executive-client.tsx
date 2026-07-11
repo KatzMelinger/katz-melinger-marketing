@@ -61,7 +61,7 @@ function pctDelta(current: number, prior: number): number | null {
 }
 
 /** Tiny inline-SVG sparkline; no chart dependency. */
-function Sparkline({ data, color = "#185FA5" }: { data: number[]; color?: string }) {
+function Sparkline({ data, color = "#116AB2" }: { data: number[]; color?: string }) {
   if (data.length < 2) return null;
   const w = 240;
   const h = 40;
@@ -163,7 +163,7 @@ export function ExecutiveClient() {
 
     return [
       { key: "spend", label: "Spend", value: fmtUsd(spend), pct: metrics.deltas.spend?.pct ?? null, goodUp: false, tone: "#b45309" },
-      { key: "sessions", label: "Site sessions", value: fmtNum(sessions), pct: pctDelta(sessions, sessionsPrior), goodUp: true, tone: "#185FA5" },
+      { key: "sessions", label: "Site sessions", value: fmtNum(sessions), pct: pctDelta(sessions, sessionsPrior), goodUp: true, tone: "#116AB2" },
       { key: "calls", label: "Calls", value: fmtNum(calls), pct: metrics.deltas.calls?.pct ?? null, goodUp: true, tone: "#0f4c75" },
       { key: "intakes", label: "Intakes", value: fmtNum(intakes), pct: pctDelta(intakes, intakesPrior), goodUp: true, tone: "#166534" },
       { key: "matters", label: "Matters", value: fmtNum(matters), pct: pctDelta(matters, mattersPrior), goodUp: true, tone: "#475569" },

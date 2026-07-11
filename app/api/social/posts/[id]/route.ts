@@ -92,7 +92,89 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (denied) return denied;
   const { id } = await params;
 
-  const body = (await req.json().catch(() => ({}))) as { content?: string; scheduleDate?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    content?: string;
+    scheduleDate?: string;
+    approve?: boolean;
+  };
+
+  // Approve a draft (the Phase 2 gate): send it to Ayrshare (if connected) and
+  // flip draft → scheduled. Only a draft can be approved. Reuses the same
+  // Ayrshare mechanics as the reschedule path below.
+  if (body.approve === true) {
+    const { db, row } = await loadPost(id);
+    if (!row) return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    if (row.status !== "draft") {
+      return NextResponse.json({ error: "Only a draft can be approved." }, { status: 400 });
+    }
+    const platform = row.platform as AyrsharePlatform;
+    const media = Array.isArray(row.media_urls) ? row.media_urls : [];
+    const apiKey = getAyrshareApiKey();
+
+    // No Ayrshare connected → approve as a planned scheduled post.
+    if (!apiKey) {
+      const { error } = await db.from("social_posts").update({ status: "scheduled" }).eq("id", id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({
+        ok: true,
+        message: "Approved. Scheduled as a planned post — connect Ayrshare to auto-publish it.",
+      });
+    }
+    if (requiresMedia(platform) && media.length === 0) {
+      return NextResponse.json(
+        { error: `${platform} needs an image or video before it can be scheduled.` },
+        { status: 400 },
+      );
+    }
+
+    const profileKey = (await getTenantConfig(db.tenantId)).ayrshareProfileKey;
+    // A draft's stored slot time may have elapsed by the time it's approved. If
+    // it's still in the future, schedule for then; otherwise publish now — a past
+    // scheduleDate is rejected by Ayrshare and would strand the draft as failed.
+    const nowMs = Date.now();
+    const futureAt =
+      row.scheduled_at && new Date(row.scheduled_at).getTime() > nowMs ? row.scheduled_at : null;
+
+    const res = await postToAyrshare({
+      apiKey,
+      profileKey,
+      post: row.content,
+      platforms: [platform],
+      mediaUrls: media.length ? media : undefined,
+      scheduleDate: futureAt ?? undefined,
+      twitterThread: platform === "twitter",
+    });
+    if (!res.ok) {
+      const reason = res.errors?.[0]?.message ?? "Ayrshare rejected the post.";
+      await db
+        .from("social_posts")
+        .update({ status: "failed", last_error: reason })
+        .eq("id", id)
+        .then(undefined, () => {});
+      return NextResponse.json({ error: reason }, { status: 502 });
+    }
+    // Success — record it. We intentionally do NOT write last_error here: a draft
+    // has none to clear, and depending on that possibly-unmigrated column would
+    // let this write fail AFTER Ayrshare accepted the post, leaving the row a
+    // 'draft' that a retry would double-publish.
+    const update: Record<string, unknown> = {
+      ayrshare_id: res.id ?? null,
+      post_url: res.postIds?.find((x) => x.platform === platform)?.postUrl ?? null,
+    };
+    if (futureAt) {
+      update.status = "scheduled";
+    } else {
+      update.status = "published";
+      update.published_at = new Date(nowMs).toISOString();
+    }
+    const { error } = await db.from("social_posts").update(update).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      ok: true,
+      message: futureAt ? "Approved and scheduled." : "Approved and published.",
+    });
+  }
+
   const newContent = typeof body.content === "string" ? body.content.trim() : undefined;
   const newDate =
     typeof body.scheduleDate === "string" && !Number.isNaN(Date.parse(body.scheduleDate))

@@ -48,6 +48,10 @@
     {
       "path": "/api/social/report/snapshot",
       "schedule": "0 8 1 * *"
+    },
+    {
+      "path": "/api/social/metrics/refresh",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

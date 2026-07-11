@@ -18,18 +18,23 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { DashboardGreeting } from "@/components/dashboard-greeting";
 import { DepartmentPanel } from "@/components/department-panel";
+import { AiRecommendationCard } from "@/components/ai-recommendation-card";
+import { AiVisibilityCard } from "@/components/ai-visibility-card";
 import { DEPARTMENTS } from "@/lib/departments";
 import { APP_NAME } from "@/lib/app-config";
 import { getTenantConfig } from "@/lib/tenant-config";
 import {
   getAiVisibilityKpis,
+  getAiVisibilitySnapshot,
   getCampaignsKpis,
   getExecutiveKpis,
   getIntelligenceKpis,
   getLocalKpis,
   getOffPageSnapshot,
   getOnPageSnapshot,
+  getPeggyRecommendations,
   getSeoContentSnapshot,
   getSocialKpis,
   getWorkspaceKpis,
@@ -55,20 +60,15 @@ export default async function Home() {
   const { firmName } = await getTenantConfig();
   return (
     <main className="mx-auto max-w-[1400px] space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight text-slate-900">Marketing Intelligence</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
-          {firmName ? `${firmName} · ` : ""}Content, rankings, and authority across every department.
-        </p>
-      </header>
+      <DashboardGreeting firmName={firmName} />
       <Suspense fallback={<BoardSkeleton />}>
-        <Board />
+        <Board firmName={firmName} />
       </Suspense>
     </main>
   );
 }
 
-async function Board() {
+async function Board({ firmName }: { firmName: string | null }) {
   const [
     executiveKpis,
     seoContent,
@@ -80,6 +80,8 @@ async function Board() {
     socialKpis,
     intelKpis,
     workspaceKpis,
+    peggyRecs,
+    aiVisibility,
   ] = await Promise.all([
     getExecutiveKpis(),
     getSeoContentSnapshot(),
@@ -91,10 +93,19 @@ async function Board() {
     getSocialKpis(),
     getIntelligenceKpis(),
     getWorkspaceKpis(),
+    getPeggyRecommendations(),
+    getAiVisibilitySnapshot(),
   ]);
 
   return (
     <div className="space-y-5">
+      {/* Dashboard cards (Huraqan §12 / §13) — real recommendations + AI
+          visibility, side by side above the department board. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <AiRecommendationCard items={peggyRecs} />
+        <AiVisibilityCard snapshot={aiVisibility} firmName={firmName} />
+      </div>
+
       {/* Executive summary — the top-of-funnel board overview, full width. */}
       <DepartmentPanel
         panelKey="executive"

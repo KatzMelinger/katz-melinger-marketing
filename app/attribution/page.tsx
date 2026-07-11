@@ -177,7 +177,7 @@ export default async function AttributionPage() {
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: "Total calls", value: String(totals.calls), bg: "#185FA5" },
+            { label: "Total calls", value: String(totals.calls), bg: "#116AB2" },
             { label: "Total intakes", value: String(totals.intakes), bg: "#166534" },
             { label: "Total settlements", value: String(totals.settlements), bg: "#b45309" },
             { label: "Settlement revenue", value: fmtUsd(totals.revenue), bg: "#475569" },

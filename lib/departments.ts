@@ -57,7 +57,7 @@ export const DEPARTMENTS: Department[] = [
   {
     key: "seo-content",
     label: "SEO Content",
-    accent: "#185FA5",
+    accent: "#116AB2",
     defaultOpen: true,
     items: [
       // Content Studio is one surface with a shared tab bar (ContentNav):
@@ -235,7 +235,7 @@ export const SIDEBAR_SECTIONS: Department[] = [
   {
     key: "research",
     label: "Research",
-    accent: "#185FA5",
+    accent: "#116AB2",
     defaultOpen: true,
     items: [
       { label: "SEO Dashboard", href: "/seo", icon: "◎", status: "active" },

@@ -42,7 +42,7 @@ type Payload = {
   channels: Channel[];
 };
 
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 const CHANNEL_COLOR: Record<string, string> = {
   instagram: "#C13584",
   facebook: "#1877F2",

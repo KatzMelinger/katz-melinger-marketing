@@ -99,7 +99,7 @@ export default function OnboardingPage() {
   const [targetGeography, setTargetGeography] = useState("");
   const [firmSpokesperson, setFirmSpokesperson] = useState("");
   // Branding
-  const [brandColor, setBrandColor] = useState("#185FA5");
+  const [brandColor, setBrandColor] = useState("#116AB2");
   const [logoUrl, setLogoUrl] = useState("");
   // Domains
   const [seoDomain, setSeoDomain] = useState("");
@@ -290,7 +290,7 @@ export default function OnboardingPage() {
                   <div className="mt-1 flex items-center gap-2">
                     <input
                       type="color"
-                      value={/^#[0-9a-fA-F]{6}$/.test(brandColor) ? brandColor : "#185FA5"}
+                      value={/^#[0-9a-fA-F]{6}$/.test(brandColor) ? brandColor : "#116AB2"}
                       onChange={(e) => setBrandColor(e.target.value)}
                       className="h-9 w-12 rounded border border-slate-300 p-0.5"
                       aria-label="Brand color"
@@ -299,7 +299,7 @@ export default function OnboardingPage() {
                       type="text"
                       value={brandColor}
                       onChange={(e) => setBrandColor(e.target.value)}
-                      placeholder="#185FA5"
+                      placeholder="#116AB2"
                       className="flex-1 px-3 py-2 rounded-md border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
                     />
                   </div>

@@ -72,7 +72,7 @@ export function CallsBySourceChart({ data }: Props) {
         />
         <Bar
           dataKey="calls"
-          fill="#185FA5"
+          fill="#116AB2"
           radius={[4, 4, 0, 0]}
           maxBarSize={48}
         />

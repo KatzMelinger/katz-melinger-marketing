@@ -125,7 +125,7 @@ function buildGraph(clusters: Cluster[]): { nodes: Node[]; edges: Edge[] } {
         ),
       },
       style: {
-        background: "#185FA5",
+        background: "#116AB2",
         color: "#fff",
         border: "2px solid #0f3d6b",
         borderRadius: 12,

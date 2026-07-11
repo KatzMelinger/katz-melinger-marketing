@@ -155,8 +155,8 @@ const SETTING_FIELDS: {
   {
     key: "brandPrimaryColor",
     label: "Brand color (hex)",
-    placeholder: "#185FA5",
-    help: "Accent color across the dashboard. Use a hex value like #185FA5.",
+    placeholder: "#116AB2",
+    help: "Accent color across the dashboard. Use a hex value like #116AB2.",
   },
   {
     key: "logoUrl",

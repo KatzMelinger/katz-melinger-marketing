@@ -36,7 +36,7 @@ type Payload = {
 };
 
 type Net = "instagram" | "linkedin";
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 const NET_COLOR: Record<Net, string> = { instagram: "#C13584", linkedin: "#0A66C2" };
 
 function fmt(n: number): string {

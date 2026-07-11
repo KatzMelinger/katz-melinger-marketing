@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 const BG = "#ffffff";
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
 function decodeOAuthParam(s: string): string {
   try {

@@ -18,7 +18,7 @@ type Cell = { day: number; hour: number; count: number; avgEngagement: number; b
 type NetData = { key: string; totalPosts: number; placed: number; cells: Cell[]; top: Cell[]; benchmarked?: boolean };
 type Payload = { connected: boolean; error?: string; windowDays?: number; timezone?: string; networks: NetData[] };
 
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const NET_LABEL: Record<string, string> = {
   instagram: "Instagram",

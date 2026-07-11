@@ -13,6 +13,7 @@
 import { recordVendorUsage } from "./usage-meter";
 
 const AYRSHARE_POST_URL = "https://api.ayrshare.com/api/post";
+const AYRSHARE_ANALYTICS_URL = "https://api.ayrshare.com/api/analytics/post";
 
 /** Platforms Ayrshare accepts in the `platforms` array. */
 export const AYRSHARE_PLATFORMS = [
@@ -170,5 +171,106 @@ export async function deleteAyrsharePost(input: {
         };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Ayrshare delete request failed" };
+  }
+}
+
+/** Normalized per-platform post metrics. Raw is kept for anything platform-
+ *  specific we don't surface yet. */
+export type PostMetrics = {
+  impressions?: number;
+  reach?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  clicks?: number;
+  raw?: unknown;
+};
+
+/** Pull the first present numeric field from a set of candidate keys. Ayrshare's
+ *  analytics field names differ per network, so we try the common aliases. */
+function pickNum(obj: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+  }
+  return undefined;
+}
+
+/** Normalize one platform's raw analytics object into PostMetrics. Field names
+ *  are best-effort aliases across networks and should be verified against a live
+ *  Ayrshare response for each connected platform. */
+export function normalizePostMetrics(raw: Record<string, unknown>): PostMetrics {
+  return {
+    impressions: pickNum(raw, ["impressions", "impressionCount", "views", "viewCount", "videoViews", "playCount"]),
+    reach: pickNum(raw, ["reach", "reachCount", "uniqueImpressions", "accountsReached"]),
+    likes: pickNum(raw, ["likeCount", "likes", "favoriteCount", "reactions", "reactionCount"]),
+    comments: pickNum(raw, ["commentsCount", "commentCount", "comments", "replies", "replyCount"]),
+    shares: pickNum(raw, ["shareCount", "shares", "retweetCount", "reshareCount", "reposts"]),
+    clicks: pickNum(raw, ["clickCount", "clicks", "linkClicks", "urlClicks", "websiteClicks"]),
+    raw,
+  };
+}
+
+export type AyrsharePostAnalytics = {
+  ok: boolean;
+  /** Metrics keyed by platform (e.g. "linkedin"). */
+  perPlatform: Record<string, PostMetrics>;
+  error?: string;
+};
+
+/**
+ * Fetch analytics for a published post by its Ayrshare id. Returns per-platform
+ * normalized metrics. Ayrshare responds with an object keyed by platform, each
+ * carrying an `analytics` block; we normalize whichever fields are present.
+ */
+export async function getAyrsharePostAnalytics(input: {
+  apiKey: string;
+  profileKey?: string | null;
+  id: string;
+  platforms: string[];
+}): Promise<AyrsharePostAnalytics> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${input.apiKey}`,
+    "Content-Type": "application/json",
+  };
+  if (input.profileKey) headers["Profile-Key"] = input.profileKey;
+  try {
+    const res = await fetch(AYRSHARE_ANALYTICS_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ id: input.id, platforms: input.platforms }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || data.status === "error") {
+      return {
+        ok: false,
+        perPlatform: {},
+        error:
+          (Array.isArray(data.errors) && (data.errors[0] as { message?: string })?.message) ||
+          `Ayrshare analytics failed (${res.status})`,
+      };
+    }
+    const perPlatform: Record<string, PostMetrics> = {};
+    for (const platform of input.platforms) {
+      const block = data[platform];
+      if (block && typeof block === "object") {
+        const b = block as Record<string, unknown>;
+        // Metrics may sit under `analytics` or directly on the platform block.
+        const analytics = (b.analytics && typeof b.analytics === "object" ? b.analytics : b) as Record<
+          string,
+          unknown
+        >;
+        perPlatform[platform] = normalizePostMetrics(analytics);
+      }
+    }
+    return { ok: true, perPlatform };
+  } catch (e) {
+    return {
+      ok: false,
+      perPlatform: {},
+      error: e instanceof Error ? e.message : "Ayrshare analytics request failed",
+    };
   }
 }

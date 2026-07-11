@@ -17,7 +17,7 @@ import { MarketingNav } from "@/components/marketing-nav";
 
 const CARD = "#ffffff";
 const BORDER = "#e2e8f0";
-const ACCENT = "#185FA5";
+const ACCENT = "#116AB2";
 
 function positionBadgeClass(pos: number): string {
   if (pos >= 1 && pos <= 3) return "bg-emerald-500/25 text-emerald-200 ring-emerald-500/40";

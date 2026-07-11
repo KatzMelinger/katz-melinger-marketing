@@ -138,7 +138,7 @@ export default function FormsPage() {
 
         <section className="grid gap-4 sm:grid-cols-3">
           {[
-            { label: "Total submissions", value: String(rows.length), bg: "#185FA5" },
+            { label: "Total submissions", value: String(rows.length), bg: "#116AB2" },
             { label: "This month", value: String(thisMonth), bg: "#166534" },
             { label: "Top form source", value: topSource, bg: "#475569" },
           ].map((c) => (
