@@ -41,6 +41,16 @@ type CalendarItem = {
     sensitiveToneApplied: boolean | null;
     noDuplicateThisMonth: boolean | null;
   } | null;
+  // Per-post performance (Phase 4). Null until the post is live and refreshed.
+  metrics: {
+    impressions?: number;
+    reach?: number;
+    likes?: number;
+    comments?: number;
+    shares?: number;
+    clicks?: number;
+  } | null;
+  metricsUpdatedAt: string | null;
 };
 
 type View = "month" | "week";
@@ -97,14 +107,17 @@ export default function ContentCalendarPage() {
   // The post whose detail/edit drawer is open.
   const [selected, setSelected] = useState<CalendarItem | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<CalendarItem[]> => {
     try {
       const res = await fetch("/api/social/calendar", { cache: "no-store" });
       const json = (await res.json()) as { items?: CalendarItem[]; error?: string };
       if (json.error) setError(json.error);
-      setItems(json.items ?? []);
+      const its = json.items ?? [];
+      setItems(its);
+      return its;
     } catch {
       setError("Failed to load the calendar.");
+      return [];
     }
   }, []);
 
@@ -224,6 +237,23 @@ export default function ContentCalendarPage() {
               </h2>
             </div>
 
+            {/* Status legend. The ⚠ marker means a post needs attention: a failed
+                publish, or one flagged for brand / compliance review. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-full border border-slate-300 bg-white" /> Draft
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden>🕒</span> Scheduled
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#0A66C2" }} /> Published
+              </span>
+              <span className="inline-flex items-center gap-1.5" style={{ color: "#b91c1c" }}>
+                <span aria-hidden>⚠</span> Failed or flagged — needs attention
+              </span>
+            </div>
+
             {/* Channel legend (only channels actually present) */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               {channelsInUse.map((p) => {
@@ -269,6 +299,12 @@ export default function ContentCalendarPage() {
             await load();
             setSelected(null);
           }}
+          onRefreshed={async () => {
+            // Reload but keep the drawer open on the same post, so the freshly
+            // pulled metrics are shown instead of the drawer closing.
+            const its = await load();
+            setSelected((cur) => (cur ? its.find((i) => i.id === cur.id) ?? null : null));
+          }}
         />
       )}
     </div>
@@ -298,6 +334,7 @@ function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
   const ch = channelOf(item.platform);
   const scheduled = item.status === "scheduled";
   const failed = item.status === "failed";
+  const draft = item.status === "draft";
   return (
     <button
       type="button"
@@ -306,13 +343,22 @@ function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
       title={`${ch.label} · ${item.status} — click to view / edit\n${item.body}`}
     >
       <span
-        className="flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-[11px] font-medium text-white"
-        style={{
-          backgroundColor: failed ? "#dc2626" : ch.color,
-          opacity: scheduled ? 0.85 : 1,
-        }}
+        className={`flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${
+          draft ? "border border-dashed" : "text-white"
+        }`}
+        style={
+          draft
+            ? { backgroundColor: "#fff", color: ch.color, borderColor: ch.color }
+            : { backgroundColor: failed ? "#dc2626" : ch.color, opacity: scheduled ? 0.85 : 1 }
+        }
       >
-        {failed ? <span aria-hidden>⚠</span> : scheduled ? <span aria-hidden>🕒</span> : null}
+        {draft ? (
+          <span aria-hidden>📝</span>
+        ) : failed ? (
+          <span aria-hidden>⚠</span>
+        ) : scheduled ? (
+          <span aria-hidden>🕒</span>
+        ) : null}
         <span className="truncate">{item.body || ch.label}</span>
       </span>
     </button>
@@ -498,10 +544,12 @@ function PostDetailDrawer({
   item,
   onClose,
   onChanged,
+  onRefreshed,
 }: {
   item: CalendarItem;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
+  onRefreshed: () => void | Promise<void>;
 }) {
   const ch = channelOf(item.platform);
   const editable = item.status !== "published";
@@ -509,7 +557,7 @@ function PostDetailDrawer({
   const [content, setContent] = useState(item.body);
   const [date, setDate] = useState(ymd(d0));
   const [time, setTime] = useState(hhmm(d0));
-  const [busy, setBusy] = useState<null | "save" | "delete">(null);
+  const [busy, setBusy] = useState<null | "save" | "delete" | "approve" | "metrics">(null);
   const [msg, setMsg] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
 
   const save = async () => {
@@ -532,6 +580,54 @@ function PostDetailDrawer({
       await onChanged();
     } catch {
       setMsg({ tone: "warn", text: "Update failed." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Approve a draft → send it to Ayrshare and flip it to scheduled.
+  const approve = async () => {
+    setBusy("approve");
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/social/posts/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approve: true }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setMsg({ tone: "warn", text: j?.error || "Approve failed." });
+        return;
+      }
+      setMsg({ tone: "ok", text: j.message || "Approved and scheduled." });
+      await onChanged();
+    } catch {
+      setMsg({ tone: "warn", text: "Approve failed." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Pull fresh stats from Ayrshare for this one post now.
+  const refreshMetrics = async () => {
+    setBusy("metrics");
+    setMsg(null);
+    try {
+      const res = await fetch("/api/social/metrics/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      const j = await res.json();
+      if (!res.ok || j.ok === false) {
+        setMsg({ tone: "warn", text: j?.error || "Could not refresh metrics." });
+        return;
+      }
+      setMsg({ tone: "ok", text: j.refreshed ? "Metrics updated." : "No new metrics available yet." });
+      await onRefreshed();
+    } catch {
+      setMsg({ tone: "warn", text: "Could not refresh metrics." });
     } finally {
       setBusy(null);
     }
@@ -574,9 +670,11 @@ function PostDetailDrawer({
                 className={`text-xs font-medium ${
                   item.status === "failed"
                     ? "text-red-600"
-                    : item.status === "scheduled"
-                      ? "text-slate-500"
-                      : "text-emerald-600"
+                    : item.status === "draft"
+                      ? "text-amber-600"
+                      : item.status === "scheduled"
+                        ? "text-slate-500"
+                        : "text-emerald-600"
                 }`}
               >
                 {item.status}
@@ -607,6 +705,53 @@ function PostDetailDrawer({
           )}
 
           {item.checklist && <SocialChecklistChips checklist={item.checklist} />}
+
+          {(item.status === "published" || item.status === "scheduled") && (
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Performance</span>
+                <button
+                  onClick={refreshMetrics}
+                  disabled={busy !== null}
+                  className="text-xs font-medium text-brand hover:underline disabled:opacity-50"
+                >
+                  {busy === "metrics" ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+              {item.metrics ? (
+                <>
+                  <div className="mt-1.5 grid grid-cols-3 gap-2 text-center">
+                    {(
+                      [
+                        ["Impressions", item.metrics.impressions],
+                        ["Reach", item.metrics.reach],
+                        ["Likes", item.metrics.likes],
+                        ["Comments", item.metrics.comments],
+                        ["Shares", item.metrics.shares],
+                        ["Clicks", item.metrics.clicks],
+                      ] as const
+                    ).map(([label, val]) => (
+                      <div key={label} className="rounded bg-slate-50 py-1.5">
+                        <div className="text-sm font-semibold text-slate-800">
+                          {typeof val === "number" ? val.toLocaleString() : "—"}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {item.metricsUpdatedAt && (
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Updated {new Date(item.metricsUpdatedAt).toLocaleString()}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-slate-400">
+                  No stats yet. They appear once the post is live and the next refresh runs.
+                </p>
+              )}
+            </div>
+          )}
 
           <label className="block text-sm font-medium text-slate-700">
             Caption
@@ -682,13 +827,28 @@ function PostDetailDrawer({
             >
               {busy === "delete" ? "Removing…" : "Delete / Unschedule"}
             </button>
-            <button
-              onClick={save}
-              disabled={busy !== null}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand/90 disabled:opacity-50"
-            >
-              {busy === "save" ? "Saving…" : "Save changes"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={save}
+                disabled={busy !== null}
+                className={
+                  item.status === "draft"
+                    ? "rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:border-brand hover:text-brand disabled:opacity-50"
+                    : "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand/90 disabled:opacity-50"
+                }
+              >
+                {busy === "save" ? "Saving…" : "Save changes"}
+              </button>
+              {item.status === "draft" && (
+                <button
+                  onClick={approve}
+                  disabled={busy !== null}
+                  className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand/90 disabled:opacity-50"
+                >
+                  {busy === "approve" ? "Scheduling…" : "Approve & schedule"}
+                </button>
+              )}
+            </div>
           </footer>
         )}
       </div>
@@ -700,6 +860,7 @@ function WeekChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
   const ch = channelOf(item.platform);
   const d = new Date(item.date);
   const failed = item.status === "failed";
+  const draft = item.status === "draft";
   return (
     <button
       type="button"
@@ -708,13 +869,16 @@ function WeekChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
       title={`${ch.label} · ${fmtTime(d)} · ${item.status} — click to view / edit\n${item.body}`}
     >
       <span
-        className="block truncate rounded px-1.5 py-0.5 text-[11px] font-medium text-white"
-        style={{
-          backgroundColor: failed ? "#dc2626" : ch.color,
-          opacity: item.status === "scheduled" ? 0.85 : 1,
-        }}
+        className={`block truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${
+          draft ? "border border-dashed" : "text-white"
+        }`}
+        style={
+          draft
+            ? { backgroundColor: "#fff", color: ch.color, borderColor: ch.color }
+            : { backgroundColor: failed ? "#dc2626" : ch.color, opacity: item.status === "scheduled" ? 0.85 : 1 }
+        }
       >
-        {failed ? "⚠ " : ""}
+        {draft ? "📝 " : failed ? "⚠ " : ""}
         {fmtTime(d)} · {item.body || ch.label}
       </span>
     </button>
