@@ -36,6 +36,8 @@ import {
 } from "@/lib/readability";
 import { matchCurrentFact, renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
+import { checkStructure } from "@/lib/structure-check";
+import { renderStructureBlock } from "@/lib/km-content-system";
 import { fetchPageOutline } from "@/lib/page-optimizer";
 import {
   detectContentType,
@@ -194,6 +196,7 @@ export async function POST(req: Request) {
     `- Keep every factual, legal, and numeric statement accurate. Do NOT invent statutes, deadlines, figures, or case results — if the live page doesn't support a claim, leave it out.\n` +
     `- EXCEPTION — time-sensitive figures: do NOT preserve wage rates, salary thresholds, dollar amounts, or dated deadlines verbatim just because they are on the page. Replace any such figure with the matching CURRENT VERIFIED FIGURE below. If no verified value is provided for a figure on the page, do not restate that specific number as current — remove or soften it rather than carry a possibly-stale figure forward.\n` +
     `- Follow the HEADING RULES above: keep strong headings verbatim, improve weak ones for SEO, add headings only for the gaps.\n` +
+    `- Use a proper Markdown heading hierarchy: exactly one H1 (# ) for the page title, each major section as an H2 (## ), and subsections and FAQ questions as H3 (### ). Never use bold text in place of a heading.\n` +
     factsSection +
     `\n\n${renderReadabilityRules()}` +
     keywordBlock +
@@ -222,6 +225,47 @@ export async function POST(req: Request) {
 
   if (!updatedBody.trim()) {
     return NextResponse.json({ error: "The model returned an empty draft." }, { status: 502 });
+  }
+
+  // Structure enforcement: hold refreshed website pages to the same H1/H2/H3
+  // section scaffold as new drafts (this path previously had none, so refreshes
+  // kept whatever flat/bold headings the live page had). Detect gaps for the
+  // detected content type and run ONE additive repair pass; keep it only if it
+  // didn't regress. Persisted to metadata.structure_check so the drawer's QA gate
+  // blocks a structurally-incomplete page just like it does for new drafts.
+  const kmArea: "employment" | "collections" =
+    practiceArea === "collections" ? "collections" : "employment";
+  let structureCheck = checkStructure(updatedBody, gapReport.contentType, kmArea);
+  if (!structureCheck.passed) {
+    try {
+      const repairPrompt =
+        `The updated page below is missing required structure for a ` +
+        `${gapReport.contentType.replace(/_/g, " ")}. Add ONLY the missing sections and fix ` +
+        `heading levels to match the structure below, keeping the existing accurate content ` +
+        `intact. Use proper Markdown headings (one # H1, ## for sections, ### for subsections ` +
+        `and FAQ questions). Do NOT use bold text in place of a heading.\n\n` +
+        `Missing: ${structureCheck.missing.join("; ")}\n\n` +
+        renderStructureBlock(gapReport.contentType, kmArea) +
+        `\n\nReturn the COMPLETE corrected page in Markdown, nothing else.\n\n` +
+        `===== CURRENT PAGE =====\n${updatedBody}`;
+      const repair = await getAnthropic().messages.create({
+        model: CONTENT_LONG_FORM_MODEL,
+        max_tokens: 8192,
+        system: cachedSystemPrompt(tenantConfig.systemPrompt),
+        messages: [{ role: "user", content: repairPrompt }],
+      });
+      const rb = repair.content.find((b) => b.type === "text");
+      const repaired = rb && rb.type === "text" ? stripEmDashes(rb.text) : "";
+      if (repaired.trim()) {
+        const recheck = checkStructure(repaired, gapReport.contentType, kmArea);
+        if (recheck.passed || recheck.missing.length < structureCheck.missing.length) {
+          updatedBody = repaired;
+          structureCheck = recheck;
+        }
+      }
+    } catch {
+      /* best-effort — fall through with the original body + failed check */
+    }
   }
 
   // Readability remediation: if the refresh reads dense, run up to 2 rewrite
@@ -314,6 +358,9 @@ export async function POST(req: Request) {
         source_url: url,
         update_keywords: keywords,
         pillar_id: resolvedPillar,
+        // Section-structure check (H1/H2/H3 scaffold) so the drawer's QA gate
+        // holds refreshed pages to the same heading structure as new drafts.
+        structure_check: { missing: structureCheck.missing, passed: structureCheck.passed },
         // Time-sensitive figures the reviewer must verify before approval.
         freshness: { flags: freshnessFlags },
         // Stages 1–2 result, surfaced so the reviewer sees what the redraft
