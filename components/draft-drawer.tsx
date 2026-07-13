@@ -280,6 +280,9 @@ export function DraftDrawer({
   const [generating, setGenerating] = useState(false);
   // Findings the reviewer chose to apply — opens the AI rewrite/diff modal.
   const [applyingFindings, setApplyingFindings] = useState<string[] | null>(null);
+  // Bumped after an Apply to remount AnalysisCard, which clears its finding
+  // selection (so the "Apply N selected" button resets).
+  const [applyNonce, setApplyNonce] = useState(0);
   // Reviewer confirmation that flagged time-sensitive figures are current.
   const [freshnessAck, setFreshnessAck] = useState(false);
   // Live link-verification counts (Cluster-Map membership) for the QA gate.
@@ -480,6 +483,10 @@ export function DraftDrawer({
   };
 
   // Persist an AI-proposed edit after the reviewer accepts it in the diff modal.
+  // After saving, clear the finding selection (via the AnalysisCard remount) and
+  // re-run the analysis so the scores (readability etc.) and findings reflect the
+  // applied change — otherwise the panel keeps showing the pre-apply score and a
+  // stale "Apply N selected" button.
   const acceptApply = async (newBody: string) => {
     if (!draft) return;
     const res = await fetch(`/api/content/drafts/${draft.id}`, {
@@ -487,13 +494,17 @@ export function DraftDrawer({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: newBody }),
     });
-    if (res.ok) {
-      setDraft({ ...draft, body: newBody });
-      setEditBody(newBody);
-      setMsg("Applied.");
-      onChanged();
-    }
     setApplyingFindings(null);
+    if (res.ok) {
+      const updated = { ...draft, body: newBody };
+      setDraft(updated);
+      setEditBody(newBody);
+      setApplyNonce((n) => n + 1);
+      onChanged();
+      setMsg("Applied — re-scoring…");
+      await runAnalysis(updated);
+      setMsg("Applied. Scores updated.");
+    }
   };
 
   // Apply an internal link from the overlap check: turn the first plain-text
@@ -1328,6 +1339,7 @@ export function DraftDrawer({
               (analysis ? (
                 <div className="mt-4">
                   <AnalysisCard
+                    key={applyNonce}
                     analysis={analysis}
                     onRerun={() => runAnalysis(draft)}
                     rerunning={analyzing}
