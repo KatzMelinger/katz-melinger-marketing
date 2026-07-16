@@ -27,12 +27,13 @@
  * video script. Neither adds a generation format.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
 import { checkSocialCompliance, type ComplianceFlag } from "@/lib/social-compliance";
 import { bestSlot, nyWallClockToUtc } from "@/lib/social-best-time";
+import type { AngleConflict } from "@/lib/social-duplicate";
 
 /** The networks the composer can compose for. `platform` (the key) is the
  *  Ayrshare id used to schedule. */
@@ -115,6 +116,16 @@ type Variation = {
   scriptBusy?: boolean;
   scriptMsg?: string | null;
 };
+
+/** Human label for a duplicate/angle conflict, naming the matching post. */
+function conflictLabel(c: AngleConflict): string {
+  const d = new Date(c.date);
+  const when = Number.isNaN(d.getTime()) ? "" : ` on ${d.toLocaleDateString()}`;
+  const plat = META_BY_KEY.get(c.platform as NetworkKey)?.label ?? c.platform;
+  return c.reason === "same-source"
+    ? `Same source already posted (${plat}${when})`
+    : `Similar angle already scheduled (${plat}${when})`;
+}
 
 /** Count hashtags in a body (the counter + preview chips read from the copy). */
 function hashtagsOf(body: string): string[] {
@@ -235,10 +246,57 @@ export function SocialComposerDrawer({
     null,
   );
   const [postErrors, setPostErrors] = useState<Map<NetworkKey, string>>(new Map());
+  // Feature 8 — live duplicate/angle check against the whole calendar.
+  const [dupByNet, setDupByNet] = useState<Map<NetworkKey, AngleConflict>>(new Map());
+  const [dupAck, setDupAck] = useState(false);
 
   const selectedList = useMemo(
     () => [...KM_NETWORKS, ...EXTRA_NETWORKS].filter((n) => selected.has(n.key)),
     [selected],
+  );
+
+  // Debounced duplicate check: compare each selected variation's copy against the
+  // calendar and surface "similar angle already scheduled" before the user
+  // schedules. Keyed on the copies only, so it doesn't re-run on time/media edits.
+  const dupPayload = useMemo(
+    () =>
+      selectedList
+        .map((n) => ({ platform: n.key, body: variations.get(n.key)?.copy ?? "" }))
+        .filter((p) => p.body.trim().length > 0),
+    [selectedList, variations],
+  );
+  const dupKey = useMemo(() => JSON.stringify(dupPayload), [dupPayload]);
+  useEffect(() => {
+    if (!dupPayload.length) {
+      setDupByNet(new Map());
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch("/api/social/duplicate-check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ posts: dupPayload }),
+        });
+        const j = await res.json();
+        if (!res.ok || !Array.isArray(j?.matches)) return;
+        const next = new Map<NetworkKey, AngleConflict>();
+        for (const m of j.matches as { platform: string; conflict: AngleConflict | null }[]) {
+          if (m.conflict) next.set(m.platform as NetworkKey, m.conflict);
+        }
+        setDupByNet(next);
+        setDupAck(false); // fresh results → require re-acknowledgement
+      } catch {
+        /* advisory only */
+      }
+    }, 800);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dupKey]);
+
+  const duplicateNets = useMemo(
+    () => selectedList.filter((n) => dupByNet.has(n.key)),
+    [selectedList, dupByNet],
   );
 
   // Live compliance flags per selected network. A blocking flag stops that post
@@ -416,6 +474,7 @@ export function SocialComposerDrawer({
   // its own; posts land on the Content Calendar at their scheduled time.
   const schedule = async () => {
     if (!legalOk || blockedNets.length > 0 || mediaMissingNets.length > 0) return;
+    if (duplicateNets.length > 0 && !dupAck) return;
     const posts = buildPosts(true);
     if (!posts.length) return;
 
@@ -426,7 +485,7 @@ export function SocialComposerDrawer({
       const res = await fetch("/api/content-production/repurpose/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posts }),
+        body: JSON.stringify({ posts, ackDuplicates: dupAck }),
       });
       const j = await res.json();
       if (!res.ok) {
@@ -486,7 +545,7 @@ export function SocialComposerDrawer({
       const res = await fetch("/api/content-production/repurpose/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posts, asDraft: true }),
+        body: JSON.stringify({ posts, asDraft: true, ackDuplicates: dupAck }),
       });
       const j = await res.json();
       if (!res.ok) {
@@ -507,6 +566,7 @@ export function SocialComposerDrawer({
   const activeCopy = active === "template" ? template : activeVar?.copy ?? "";
   const activeTags = hashtagsOf(activeCopy);
   const activeFlags = active === "template" ? [] : flagsByNet.get(active) ?? [];
+  const activeDup = active === "template" ? null : dupByNet.get(active) ?? null;
   const readyCount = selectedList.filter((n) => (variations.get(n.key)?.copy ?? "").trim()).length;
   const canApprove =
     !busy &&
@@ -514,7 +574,8 @@ export function SocialComposerDrawer({
     readyCount > 0 &&
     legalOk &&
     blockedNets.length === 0 &&
-    mediaMissingNets.length === 0;
+    mediaMissingNets.length === 0 &&
+    (duplicateNets.length === 0 || dupAck);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
@@ -641,6 +702,18 @@ export function SocialComposerDrawer({
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {/* Duplicate/angle alert for the active variation. */}
+              {activeDup && (
+                <div className="mt-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-orange-800">
+                    ≈ {conflictLabel(activeDup)}
+                  </p>
+                  <p className="mt-0.5 text-xs text-orange-700">
+                    Review the existing post before scheduling — or acknowledge below to schedule anyway.
+                  </p>
                 </div>
               )}
 
@@ -883,11 +956,33 @@ export function SocialComposerDrawer({
                 </span>
               </label>
 
+              {/* Duplicate/angle acknowledgement — required before Approve when a
+                  near-duplicate is detected on the calendar. */}
+              {duplicateNets.length > 0 && (
+                <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md bg-orange-50 px-3 py-2 text-sm text-orange-800">
+                  <input
+                    type="checkbox"
+                    checked={dupAck}
+                    onChange={(e) => setDupAck(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-orange-600"
+                  />
+                  <span>
+                    I reviewed the similar post(s) already on the calendar
+                    {" "}({duplicateNets.map((n) => n.label).join(", ")}) and want to schedule anyway.
+                  </span>
+                </label>
+              )}
+
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <span className="text-xs text-slate-400">{readyCount} network(s) ready</span>
                 {blockedNets.length > 0 && (
                   <span className="text-xs font-medium text-amber-700">
                     ⚠️ {blockedNets.length} flagged post(s) — clear the flags to schedule.
+                  </span>
+                )}
+                {duplicateNets.length > 0 && !dupAck && (
+                  <span className="text-xs font-medium text-orange-700">
+                    ≈ {duplicateNets.map((n) => n.label).join(", ")} look like a repeat — review or acknowledge.
                   </span>
                 )}
                 {mediaMissingNets.length > 0 && (
@@ -919,9 +1014,11 @@ export function SocialComposerDrawer({
                         ? "Clear the flagged posts first."
                         : mediaMissingNets.length > 0
                           ? `Attach media for ${mediaMissingNets.map((n) => n.label).join(", ")} first.`
-                          : !legalOk
-                            ? "Confirm the legal review first."
-                            : undefined
+                          : duplicateNets.length > 0 && !dupAck
+                            ? "Review the similar posts or acknowledge to schedule anyway."
+                            : !legalOk
+                              ? "Confirm the legal review first."
+                              : undefined
                     }
                     className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >

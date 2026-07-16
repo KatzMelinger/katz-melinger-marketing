@@ -53,7 +53,13 @@ export async function POST(req: Request) {
   const denied = await guardUser();
   if (denied) return denied;
 
-  const body = (await req.json().catch(() => ({}))) as { posts?: IncomingPost[]; asDraft?: boolean };
+  const body = (await req.json().catch(() => ({}))) as {
+    posts?: IncomingPost[];
+    asDraft?: boolean;
+    /** The composer already showed the duplicate alert and the user acknowledged
+     *  it, so don't re-flag near-duplicates as needing review. */
+    ackDuplicates?: boolean;
+  };
   // Draft-first: when asDraft, persist the posts as drafts on the Content
   // Calendar without touching Ayrshare. Approving a draft (from the calendar)
   // is what sends it to Ayrshare and flips it to scheduled. Default (false)
@@ -87,14 +93,16 @@ export async function POST(req: Request) {
   // is flagged for review below (named by its matching post) and can't schedule
   // until a human clears it. Fails soft — a check error never blocks scheduling.
   let dupConflicts: AngleConflict[][] = valid.map(() => []);
-  try {
-    const dup = await checkCalendarDuplicates({
-      tenantId: db.tenantId,
-      candidates: valid.map((p) => ({ body: p.body })),
-    });
-    if (dup.ran) dupConflicts = dup.conflicts;
-  } catch {
-    /* advisory — never block scheduling on a check failure */
+  if (body.ackDuplicates !== true) {
+    try {
+      const dup = await checkCalendarDuplicates({
+        tenantId: db.tenantId,
+        candidates: valid.map((p) => ({ body: p.body })),
+      });
+      if (dup.ran) dupConflicts = dup.conflicts;
+    } catch {
+      /* advisory — never block scheduling on a check failure */
+    }
   }
 
   const results: {
