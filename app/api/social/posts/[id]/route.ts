@@ -96,7 +96,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     content?: string;
     scheduleDate?: string;
     approve?: boolean;
+    clearFlag?: boolean;
   };
+
+  // Clear a brand/compliance flag after human review: return a flagged post to
+  // draft so it can be edited and approved. This is the deliberate "reviewed and
+  // cleared" step the gate requires; it never publishes on its own.
+  if (body.clearFlag === true) {
+    const { db, row } = await loadPost(id);
+    if (!row) return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    if (row.status !== "flagged") {
+      return NextResponse.json({ error: "This post isn't flagged." }, { status: 400 });
+    }
+    const { error } = await db
+      .from("social_posts")
+      .update({ status: "draft", last_error: null })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      ok: true,
+      message: "Flag cleared — the post is a draft again and can be approved.",
+    });
+  }
 
   // Approve a draft (the Phase 2 gate): send it to Ayrshare (if connected) and
   // flip draft → scheduled. Only a draft can be approved. Reuses the same

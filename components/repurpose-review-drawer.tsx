@@ -67,7 +67,6 @@ const PLATFORM_LABEL: Record<string, string> = {
   instagram: "Instagram",
   linkedin: "LinkedIn",
   facebook: "Facebook",
-  twitter: "X / Twitter",
   tiktok: "TikTok",
   youtube: "YouTube",
   gmb: "Google Business",

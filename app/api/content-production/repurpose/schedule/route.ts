@@ -19,6 +19,7 @@
 
 import { NextResponse } from "next/server";
 
+import { checkSocialCompliance } from "@/lib/social-compliance";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
     platform: string;
     scheduleDate: string;
     ok: boolean;
-    status: "draft" | "scheduled" | "failed";
+    status: "draft" | "scheduled" | "failed" | "flagged";
     viaAyrshare: boolean;
     error?: string;
   }[] = [];
@@ -107,13 +108,21 @@ export async function POST(req: Request) {
     let viaAyrshare = false;
     let error: string | undefined;
 
+    // Brand/compliance gate (server-side enforcement of the composer's flag): a
+    // blocking flag can neither publish nor schedule. It lands on the calendar as
+    // "flagged" with the reason, and a human must clear it (review + override)
+    // before it can be approved. This backstops the client gate so a flagged
+    // draft can't be quietly approved from the calendar later.
+    const blockingFlags = checkSocialCompliance(content).filter((f) => f.severity === "block");
+    const flagged = blockingFlags.length > 0;
+
     // Guaranteed-fail guard: media-required platforms (Instagram, TikTok, etc.)
     // can't post text-only. Fail fast with a clear reason instead of spending an
     // Ayrshare call to get code 139 back.
     // Drafts can be incomplete (no media yet), so we don't block them here.
     const blockedForMedia = !asDraft && requiresMedia(platform) && mediaUrls.length === 0;
 
-    if (!asDraft && apiKey && !blockedForMedia) {
+    if (!flagged && !asDraft && apiKey && !blockedForMedia) {
       try {
         const res = await postToAyrshare({
           apiKey,
@@ -148,11 +157,18 @@ export async function POST(req: Request) {
     //     instead of dropping it on the floor.
     // Failed when Ayrshare rejected it, or we blocked it as a guaranteed fail.
     // A planned post (no Ayrshare) with no block stays "scheduled".
-    const status: "draft" | "scheduled" | "failed" = asDraft
-      ? "draft"
-      : error
-        ? "failed"
-        : "scheduled";
+    const status: "draft" | "scheduled" | "failed" | "flagged" = flagged
+      ? "flagged"
+      : asDraft
+        ? "draft"
+        : error
+          ? "failed"
+          : "scheduled";
+    // A flagged post carries the reason in last_error so the calendar can show
+    // why it's held; a real publish error carries the Ayrshare reason.
+    const lastError = flagged
+      ? `Needs review: ${blockingFlags.map((f) => f.label).join("; ")}`
+      : error ?? null;
     if (error) {
       console.error(
         `[repurpose/schedule] ${platform} rejected (draft ${p.draftId ?? "—"}): ${error}`,
@@ -167,17 +183,17 @@ export async function POST(req: Request) {
       scheduled_at: p.scheduleDate,
       published_at: null,
       source_draft_id: p.draftId ?? null,
-      last_error: error ?? null,
+      last_error: lastError,
       media_urls: mediaUrls.length ? mediaUrls : null,
     });
     results.push({
       draftId: p.draftId ?? null,
       platform,
       scheduleDate: p.scheduleDate,
-      ok: status !== "failed",
+      ok: status !== "failed" && status !== "flagged",
       status,
       viaAyrshare,
-      error,
+      error: (flagged ? lastError : error) ?? undefined,
     });
   }
 
@@ -214,18 +230,22 @@ export async function POST(req: Request) {
   const scheduled = results.filter((r) => r.status === "scheduled").length;
   const failed = results.filter((r) => r.status === "failed").length;
   const drafted = results.filter((r) => r.status === "draft").length;
+  const flaggedCount = results.filter((r) => r.status === "flagged").length;
+  const flagNote = flaggedCount
+    ? ` ${flaggedCount} post(s) were flagged for brand/compliance review — clear the flag on the calendar before they can schedule.`
+    : "";
 
   let message: string;
   if (asDraft) {
-    message = `${drafted} post(s) saved as drafts on the Content Calendar. Approve each one to schedule it.`;
+    message = `${drafted} post(s) saved as drafts on the Content Calendar. Approve each one to schedule it.${flagNote}`;
   } else if (!apiKey) {
     message = `${scheduled} post(s) added to the Content Calendar as planned posts. Connect Ayrshare to auto-publish them at their scheduled times.`;
   } else if (failed === 0) {
-    message = `${scheduled} of ${valid.length} post(s) scheduled. Review them on the Content Calendar.`;
+    message = `${scheduled} of ${valid.length} post(s) scheduled. Review them on the Content Calendar.${flagNote}`;
   } else if (scheduled === 0) {
-    message = `Ayrshare rejected all ${failed} post(s) — see the reasons below. They're on the Content Calendar marked “failed”.`;
+    message = `Ayrshare rejected all ${failed} post(s) — see the reasons below. They're on the Content Calendar marked “failed”.${flagNote}`;
   } else {
-    message = `${scheduled} of ${valid.length} post(s) scheduled. ${failed} were rejected by Ayrshare — see the reasons below.`;
+    message = `${scheduled} of ${valid.length} post(s) scheduled. ${failed} were rejected by Ayrshare — see the reasons below.${flagNote}`;
   }
 
   return NextResponse.json({
@@ -233,6 +253,7 @@ export async function POST(req: Request) {
     ok: rows.length > 0,
     scheduled,
     failed,
+    flagged: flaggedCount,
     drafted,
     total: valid.length,
     connected: !!apiKey,

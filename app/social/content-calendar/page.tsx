@@ -63,13 +63,12 @@ const CHANNEL: Record<string, { color: string; label: string }> = {
   instagram: { color: "#C13584", label: "Instagram" },
   facebook: { color: "#1877F2", label: "Facebook" },
   tiktok: { color: "#111827", label: "TikTok" },
-  twitter: { color: "#0F172A", label: "X" },
-  x: { color: "#0F172A", label: "X" },
   gmb: { color: "#34A853", label: "Google" },
+  // Extra networks the composer can add. X/Twitter is intentionally absent —
+  // the firm doesn't use it, so a stray legacy X post falls back to "Other".
   youtube: { color: "#FF0000", label: "YouTube" },
   threads: { color: "#000000", label: "Threads" },
   pinterest: { color: "#E60023", label: "Pinterest" },
-  bluesky: { color: "#0285FF", label: "Bluesky" },
 };
 
 function channelOf(platform: string) {
@@ -250,7 +249,10 @@ export default function ContentCalendarPage() {
                 <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#0A66C2" }} /> Published
               </span>
               <span className="inline-flex items-center gap-1.5" style={{ color: "#b91c1c" }}>
-                <span aria-hidden>⚠</span> Failed or flagged — needs attention
+                <span aria-hidden>⚠</span> Failed — publish error
+              </span>
+              <span className="inline-flex items-center gap-1.5" style={{ color: "#b45309" }}>
+                <span aria-hidden>⚑</span> Flagged — needs review before it can schedule
               </span>
             </div>
 
@@ -334,6 +336,7 @@ function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
   const ch = channelOf(item.platform);
   const scheduled = item.status === "scheduled";
   const failed = item.status === "failed";
+  const flagged = item.status === "flagged";
   const draft = item.status === "draft";
   return (
     <button
@@ -349,13 +352,15 @@ function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
         style={
           draft
             ? { backgroundColor: "#fff", color: ch.color, borderColor: ch.color }
-            : { backgroundColor: failed ? "#dc2626" : ch.color, opacity: scheduled ? 0.85 : 1 }
+            : { backgroundColor: failed ? "#dc2626" : flagged ? "#d97706" : ch.color, opacity: scheduled ? 0.85 : 1 }
         }
       >
         {draft ? (
           <span aria-hidden>📝</span>
         ) : failed ? (
           <span aria-hidden>⚠</span>
+        ) : flagged ? (
+          <span aria-hidden>⚑</span>
         ) : scheduled ? (
           <span aria-hidden>🕒</span>
         ) : null}
@@ -557,7 +562,7 @@ function PostDetailDrawer({
   const [content, setContent] = useState(item.body);
   const [date, setDate] = useState(ymd(d0));
   const [time, setTime] = useState(hhmm(d0));
-  const [busy, setBusy] = useState<null | "save" | "delete" | "approve" | "metrics">(null);
+  const [busy, setBusy] = useState<null | "save" | "delete" | "approve" | "metrics" | "clearFlag">(null);
   const [msg, setMsg] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
 
   const save = async () => {
@@ -580,6 +585,30 @@ function PostDetailDrawer({
       await onChanged();
     } catch {
       setMsg({ tone: "warn", text: "Update failed." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Clear a brand/compliance flag after review → returns the post to draft.
+  const clearFlag = async () => {
+    setBusy("clearFlag");
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/social/posts/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clearFlag: true }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setMsg({ tone: "warn", text: j?.error || "Could not clear the flag." });
+        return;
+      }
+      setMsg({ tone: "ok", text: j.message || "Flag cleared." });
+      await onChanged();
+    } catch {
+      setMsg({ tone: "warn", text: "Could not clear the flag." });
     } finally {
       setBusy(null);
     }
@@ -670,14 +699,16 @@ function PostDetailDrawer({
                 className={`text-xs font-medium ${
                   item.status === "failed"
                     ? "text-red-600"
-                    : item.status === "draft"
-                      ? "text-amber-600"
-                      : item.status === "scheduled"
-                        ? "text-slate-500"
-                        : "text-emerald-600"
+                    : item.status === "flagged"
+                      ? "text-orange-600"
+                      : item.status === "draft"
+                        ? "text-amber-600"
+                        : item.status === "scheduled"
+                          ? "text-slate-500"
+                          : "text-emerald-600"
                 }`}
               >
-                {item.status}
+                {item.status === "flagged" ? "flagged — needs review" : item.status}
                 {item.hasMedia ? " · has media" : ""}
               </span>
             </div>
@@ -694,6 +725,25 @@ function PostDetailDrawer({
           {item.status === "failed" && item.lastError && (
             <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
               <strong>Rejected:</strong> {item.lastError}
+            </div>
+          )}
+
+          {item.status === "flagged" && (
+            <div className="rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+              <p>
+                <strong>⚑ Flagged for brand/compliance review.</strong>{" "}
+                {item.lastError || "This post needs review before it can schedule."}
+              </p>
+              <p className="mt-1 text-xs text-orange-700">
+                Edit the copy to resolve it, then clear the flag to make it an approvable draft.
+              </p>
+              <button
+                onClick={clearFlag}
+                disabled={busy !== null}
+                className="mt-2 rounded-md border border-orange-400 bg-white px-3 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+              >
+                {busy === "clearFlag" ? "Clearing…" : "Clear flag (reviewed)"}
+              </button>
             </div>
           )}
 
@@ -860,6 +910,7 @@ function WeekChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
   const ch = channelOf(item.platform);
   const d = new Date(item.date);
   const failed = item.status === "failed";
+  const flagged = item.status === "flagged";
   const draft = item.status === "draft";
   return (
     <button
@@ -875,10 +926,10 @@ function WeekChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
         style={
           draft
             ? { backgroundColor: "#fff", color: ch.color, borderColor: ch.color }
-            : { backgroundColor: failed ? "#dc2626" : ch.color, opacity: item.status === "scheduled" ? 0.85 : 1 }
+            : { backgroundColor: failed ? "#dc2626" : flagged ? "#d97706" : ch.color, opacity: item.status === "scheduled" ? 0.85 : 1 }
         }
       >
-        {draft ? "📝 " : failed ? "⚠ " : ""}
+        {draft ? "📝 " : failed ? "⚠ " : flagged ? "⚑ " : ""}
         {fmtTime(d)} · {item.body || ch.label}
       </span>
     </button>
