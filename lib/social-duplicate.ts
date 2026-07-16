@@ -71,7 +71,11 @@ type ExistingPost = { id: string; platform: string; date: string; body: string; 
  * Load this month's scheduled/published social posts for the tenant, plus each
  * one's source-asset title (from the linked draft's social_source metadata).
  */
-async function loadMonthPosts(tenantId: string, now: Date): Promise<ExistingPost[]> {
+async function loadMonthPosts(
+  tenantId: string,
+  now: Date,
+  wholeCalendar = false,
+): Promise<ExistingPost[]> {
   const sb = getSupabaseAdmin();
   const { start, end } = monthBounds(now);
   // scheduled_at OR published_at within the month. Two ranged filters can't be
@@ -94,7 +98,7 @@ async function loadMonthPosts(tenantId: string, now: Date): Promise<ExistingPost
       return date ? { r, date } : null;
     })
     .filter((x): x is { r: Record<string, unknown>; date: string } => x !== null)
-    .filter(({ date }) => date >= start && date < end);
+    .filter(({ date }) => wholeCalendar || (date >= start && date < end));
 
   // Resolve source titles from the linked drafts in one query.
   const draftIds = [...new Set(rows.map(({ r }) => r.source_draft_id).filter(Boolean))] as string[];
@@ -127,10 +131,16 @@ export async function checkMonthlyDuplicates(args: {
   sourceTitle: string;
   candidates: { body: string }[];
   now?: Date;
+  /** Scan the whole calendar instead of just the current month (Feature 8). */
+  wholeCalendar?: boolean;
 }): Promise<{ ran: boolean; conflicts: AngleConflict[][] }> {
   const empty = args.candidates.map(() => [] as AngleConflict[]);
   try {
-    const existing = await loadMonthPosts(args.tenantId, args.now ?? new Date());
+    const existing = await loadMonthPosts(
+      args.tenantId,
+      args.now ?? new Date(),
+      args.wholeCalendar === true,
+    );
     if (!existing.length) return { ran: true, conflicts: empty };
 
     const sourceTokens = tokens(args.sourceTitle);
@@ -155,4 +165,25 @@ export async function checkMonthlyDuplicates(args: {
   } catch {
     return { ran: false, conflicts: empty };
   }
+}
+
+/**
+ * Feature 8 — whole-calendar duplicate/angle check used as a scheduling gate.
+ * Same comparison as checkMonthlyDuplicates but scans every scheduled/published
+ * post (not just this month) and doesn't require a source title. A non-empty
+ * conflict list for a candidate means "a near-duplicate angle already exists" —
+ * the schedule route turns that into a review-required flag naming the match.
+ */
+export async function checkCalendarDuplicates(args: {
+  tenantId: string;
+  candidates: { body: string }[];
+  now?: Date;
+}): Promise<{ ran: boolean; conflicts: AngleConflict[][] }> {
+  return checkMonthlyDuplicates({
+    tenantId: args.tenantId,
+    sourceTitle: "",
+    candidates: args.candidates,
+    now: args.now,
+    wholeCalendar: true,
+  });
 }

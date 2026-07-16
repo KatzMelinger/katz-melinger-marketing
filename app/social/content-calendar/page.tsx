@@ -18,6 +18,7 @@ import Link from "next/link";
 import { MarketingNav } from "@/components/marketing-nav";
 import { DashCard, DashSpinner } from "@/components/dashboard-ui";
 import { SocialChecklistChips } from "@/components/social-checklist-chips";
+import { SocialComposerDrawer } from "@/components/social-composer-drawer";
 
 type CalendarItem = {
   id: string;
@@ -105,6 +106,9 @@ export default function ContentCalendarPage() {
   const [cursor, setCursor] = useState<Date>(() => new Date());
   // The post whose detail/edit drawer is open.
   const [selected, setSelected] = useState<CalendarItem | null>(null);
+  // Blank-composer "Create post" flow — opens the tabbed composer with no seed
+  // drafts so a post can be created, composed, and scheduled without leaving.
+  const [composing, setComposing] = useState(false);
 
   const load = useCallback(async (): Promise<CalendarItem[]> => {
     try {
@@ -196,6 +200,14 @@ export default function ContentCalendarPage() {
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={() => setComposing(true)}
+              className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white shadow-sm"
+              style={{ backgroundColor: ACCENT }}
+            >
+              + Create post
+            </button>
           </div>
         </div>
 
@@ -306,6 +318,17 @@ export default function ContentCalendarPage() {
             // pulled metrics are shown instead of the drawer closing.
             const its = await load();
             setSelected((cur) => (cur ? its.find((i) => i.id === cur.id) ?? null : null));
+          }}
+        />
+      )}
+
+      {composing && (
+        <SocialComposerDrawer
+          topic="New post"
+          drafts={[]}
+          onClose={() => setComposing(false)}
+          onScheduled={() => {
+            void load();
           }}
         />
       )}

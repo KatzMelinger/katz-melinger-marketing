@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 
 import { checkSocialCompliance } from "@/lib/social-compliance";
+import { checkCalendarDuplicates, type AngleConflict } from "@/lib/social-duplicate";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -81,6 +82,21 @@ export async function POST(req: Request) {
   const apiKey = getAyrshareApiKey();
   const ayrshareProfileKey = apiKey ? (await getTenantConfig(db.tenantId)).ayrshareProfileKey : null;
 
+  // Feature 8 — duplicate/angle gate: compare every candidate against the whole
+  // Content Calendar (semantically, not exact-text) up front. A near-duplicate
+  // is flagged for review below (named by its matching post) and can't schedule
+  // until a human clears it. Fails soft — a check error never blocks scheduling.
+  let dupConflicts: AngleConflict[][] = valid.map(() => []);
+  try {
+    const dup = await checkCalendarDuplicates({
+      tenantId: db.tenantId,
+      candidates: valid.map((p) => ({ body: p.body })),
+    });
+    if (dup.ran) dupConflicts = dup.conflicts;
+  } catch {
+    /* advisory — never block scheduling on a check failure */
+  }
+
   const results: {
     draftId: string | null;
     platform: string;
@@ -93,7 +109,7 @@ export async function POST(req: Request) {
   const rows: Record<string, unknown>[] = [];
   const editedDrafts = new Map<string, string>();
 
-  for (const p of valid) {
+  for (const [i, p] of valid.entries()) {
     const platform = p.platform as AyrsharePlatform;
     const content = p.body.trim();
     if (p.draftId) editedDrafts.set(p.draftId, content);
@@ -114,7 +130,8 @@ export async function POST(req: Request) {
     // before it can be approved. This backstops the client gate so a flagged
     // draft can't be quietly approved from the calendar later.
     const blockingFlags = checkSocialCompliance(content).filter((f) => f.severity === "block");
-    const flagged = blockingFlags.length > 0;
+    const dupConflict = dupConflicts[i]?.[0] ?? null;
+    const flagged = blockingFlags.length > 0 || !!dupConflict;
 
     // Guaranteed-fail guard: media-required platforms (Instagram, TikTok, etc.)
     // can't post text-only. Fail fast with a clear reason instead of spending an
@@ -166,9 +183,17 @@ export async function POST(req: Request) {
           : "scheduled";
     // A flagged post carries the reason in last_error so the calendar can show
     // why it's held; a real publish error carries the Ayrshare reason.
-    const lastError = flagged
-      ? `Needs review: ${blockingFlags.map((f) => f.label).join("; ")}`
-      : error ?? null;
+    const flagReasons = [...blockingFlags.map((f) => f.label)];
+    if (dupConflict) {
+      const when = new Date(dupConflict.date);
+      const whenStr = Number.isNaN(when.getTime()) ? "" : ` on ${when.toISOString().slice(0, 10)}`;
+      flagReasons.push(
+        dupConflict.reason === "same-source"
+          ? `Same source already posted (${dupConflict.platform}${whenStr})`
+          : `Similar angle already scheduled (${dupConflict.platform}${whenStr})`,
+      );
+    }
+    const lastError = flagged ? `Needs review: ${flagReasons.join("; ")}` : error ?? null;
     if (error) {
       console.error(
         `[repurpose/schedule] ${platform} rejected (draft ${p.draftId ?? "—"}): ${error}`,
