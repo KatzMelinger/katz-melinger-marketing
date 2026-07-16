@@ -20,6 +20,7 @@ import {
   DashPill,
   DashSpinner,
 } from "@/components/dashboard-ui";
+import { READABILITY_TARGET } from "@/lib/readability";
 
 export type Analysis = {
   readability_score: number;
@@ -142,12 +143,32 @@ export function AnalysisCard({
     analysis.linkability_score === null ||
     analysis.compliance_score === null;
   const selectedCount = selectedFindings.size;
+  // One-click readability remediation: send every readability finding through
+  // the same review-and-accept rewrite flow as "Apply selected", so the user
+  // sees the diff before it saves. Shown only when the page reads below target
+  // and there are sentence-level findings to fix.
+  const readabilityFindingsList = analysis.readability_findings ?? [];
+  const canAutoFixReadability =
+    !!onApplyFindings &&
+    readabilityFindingsList.length > 0 &&
+    analysis.readability_score < READABILITY_TARGET;
 
   return (
     <DashCard>
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <div className="text-sm font-medium">Analysis</div>
         <div className="flex items-center gap-2">
+          {canAutoFixReadability && selectedCount === 0 && (
+            <button
+              type="button"
+              onClick={() => onApplyFindings?.(readabilityFindingsList)}
+              className="text-xs px-2.5 py-1 rounded border border-brand/40 bg-brand/5 text-brand hover:bg-brand/10 inline-flex items-center gap-1.5 font-medium"
+              title={`Rewrite all ${readabilityFindingsList.length} hard-to-read sentences in one shot — shortens and de-passivizes them. You review the diff before it saves.`}
+            >
+              <span aria-hidden>📖</span>
+              Auto-fix readability ({readabilityFindingsList.length})
+            </button>
+          )}
           {onApplyFindings && selectedCount > 0 && (
             <>
               <button

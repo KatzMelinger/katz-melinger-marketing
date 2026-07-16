@@ -106,6 +106,8 @@ export function sentenceMetrics(sentence: string): SentenceMetric {
 
 export type ReadabilityStats = {
   flesch: number;
+  /** Flesch-Kincaid grade level over the same Markdown-stripped text. */
+  grade: number;
   avgSentenceLen: number;
   passivePct: number;
   longestSentence: number;
@@ -116,7 +118,7 @@ export type ReadabilityStats = {
 export function readabilityStats(body: string): ReadabilityStats {
   const sentences = splitSentences(body);
   if (sentences.length === 0) {
-    return { flesch: 0, avgSentenceLen: 0, passivePct: 0, longestSentence: 0, overThresholdCount: 0, sentenceCount: 0 };
+    return { flesch: 0, grade: 0, avgSentenceLen: 0, passivePct: 0, longestSentence: 0, overThresholdCount: 0, sentenceCount: 0 };
   }
   const metrics = sentences.map(sentenceMetrics);
   const totalWords = metrics.reduce((n, m) => n + m.words, 0);
@@ -125,12 +127,16 @@ export function readabilityStats(body: string): ReadabilityStats {
   const flesch = totalWords
     ? 206.835 - 1.015 * (totalWords / sentences.length) - 84.6 * (totalSyll / totalWords)
     : 0;
+  const grade = totalWords
+    ? 0.39 * (totalWords / sentences.length) + 11.8 * (totalSyll / totalWords) - 15.59
+    : 0;
   const passiveCount = metrics.filter((m) => m.passive).length;
   const over = metrics.filter(
     (m) => m.words > LONG_SENTENCE_WORDS || m.passive || m.grade > HIGH_GRADE,
   ).length;
   return {
     flesch: Math.max(0, Math.min(100, Math.round(flesch))),
+    grade: Math.round(Math.max(0, grade) * 10) / 10,
     avgSentenceLen: Math.round((totalWords / sentences.length) * 10) / 10,
     passivePct: Math.round((passiveCount / sentences.length) * 100),
     longestSentence: metrics.reduce((n, m) => Math.max(n, m.words), 0),

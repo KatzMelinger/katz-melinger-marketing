@@ -21,7 +21,7 @@ import {
   filterTitlesByCannibalization,
   type FilteredTitle,
 } from "./title-cannibalization";
-import { readabilityFindings } from "./readability";
+import { readabilityFindings, readabilityStats } from "./readability";
 
 const STOP_WORDS = new Set([
   "the","and","that","with","from","this","your","have","will","about","into",
@@ -122,16 +122,6 @@ function basicMetrics(body: string): {
   let syllables = 0;
   for (const w of words) syllables += countSyllables(w);
   return { words, sentences, syllables };
-}
-
-function fleschReadingEase(words: number, sentences: number, syllables: number): number {
-  if (words === 0 || sentences === 0) return 0;
-  return 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words);
-}
-
-function fleschKincaidGrade(words: number, sentences: number, syllables: number): number {
-  if (words === 0 || sentences === 0) return 0;
-  return 0.39 * (words / sentences) + 11.8 * (syllables / words) - 15.59;
 }
 
 function normalizeReadability(flesch: number): number {
@@ -849,9 +839,15 @@ export async function analyzeDraft(args: {
   const supabase = getSupabaseAdmin();
   const tid = await resolveTenantId();
 
-  const { words, sentences, syllables } = basicMetrics(body);
-  const flesch = fleschReadingEase(words.length, sentences, syllables);
-  const grade = fleschKincaidGrade(words.length, sentences, syllables);
+  const { words, sentences } = basicMetrics(body);
+  // Displayed readability is computed by the remediation engine's scorer, which
+  // strips Markdown (##, *, link URLs) before measuring. The old basicMetrics
+  // scorer counted that markup as words/syllables and pinned dense legal pages
+  // artificially low (the "stuck at 56" bug) — and disagreed with the number the
+  // rewrite loop and Apply findings optimize. One engine now drives both.
+  const readStats = readabilityStats(body);
+  const flesch = readStats.flesch;
+  const grade = readStats.grade;
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
