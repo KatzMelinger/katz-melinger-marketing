@@ -70,6 +70,11 @@ export default function CitationsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newSource, setNewSource] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const [importText, setImportText] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
   const [auditingLinks, setAuditingLinks] = useState(false);
   const [linkResults, setLinkResults] = useState<
     { source: string; listing_url: string; status: string; issues: string | null; fetched: boolean }[]
@@ -196,12 +201,41 @@ export default function CitationsPage() {
       await fetch("/api/seo/citations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source }),
+        // Include the listing URL so the row is audit-ready (the "Audit N linked
+        // listings" count is driven by rows that have a listing_url).
+        body: JSON.stringify({ source, listing_url: newUrl.trim() || undefined }),
       });
       setNewSource("");
+      setNewUrl("");
       await refresh();
     } finally {
       setBusy(null);
+    }
+  };
+
+  const importListings = async () => {
+    const text = importText.trim();
+    if (!text) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const res = await fetch("/api/seo/citations/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setImportMsg(j?.error ?? "Import failed.");
+        return;
+      }
+      setImportMsg(j.message ?? "Imported.");
+      setImportText("");
+      await refresh();
+    } catch {
+      setImportMsg("Import failed.");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -409,7 +443,7 @@ export default function CitationsPage() {
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
         <h2 className="text-lg font-semibold">Tracked citations</h2>
 
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <input
             type="text"
             value={newSource}
@@ -418,7 +452,17 @@ export default function CitationsPage() {
               if (e.key === "Enter") addManual();
             }}
             placeholder="Source (e.g. Yelp, Bing Places)"
-            className="flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
+            className="min-w-[140px] flex-1 rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
+          />
+          <input
+            type="url"
+            value={newUrl}
+            onChange={(e) => setNewUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addManual();
+            }}
+            placeholder="Listing URL (so it can be audited)"
+            className="min-w-[180px] flex-[2] rounded-md border border-[#e2e8f0] px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
           <button
             onClick={addManual}
@@ -427,6 +471,42 @@ export default function CitationsPage() {
           >
             Add
           </button>
+        </div>
+
+        {/* Bulk import from the "Local citations Works Completed" sheet. */}
+        <div className="mt-2">
+          <button
+            onClick={() => setImportOpen((v) => !v)}
+            className="text-xs font-medium text-brand hover:underline"
+          >
+            {importOpen ? "− Hide bulk import" : "+ Import from sheet (bulk)"}
+          </button>
+          {importOpen && (
+            <div className="mt-2 rounded-md border border-[#e2e8f0] bg-slate-50 p-3">
+              <p className="text-xs text-slate-600">
+                Paste one listing URL per line, or <strong>Domain, Citation Link</strong> rows
+                (CSV/TSV). Each becomes a tracked listing that the link audit checks. Existing
+                sources keep their audited data.
+              </p>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                rows={6}
+                placeholder={"https://www.avvo.com/attorneys/...\nFindLaw, https://lawyers.findlaw.com/...\nhttps://www.justia.com/lawyers/..."}
+                className="mt-2 w-full rounded-md border border-[#e2e8f0] px-3 py-2 font-mono text-xs focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
+              />
+              <div className="mt-2 flex items-center gap-3">
+                <button
+                  onClick={importListings}
+                  disabled={importing || !importText.trim()}
+                  className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
+                >
+                  {importing ? "Importing…" : "Import listings"}
+                </button>
+                {importMsg && <span className="text-xs text-slate-600">{importMsg}</span>}
+              </div>
+            </div>
+          )}
         </div>
 
         <ul className="mt-4 space-y-2">

@@ -23,7 +23,7 @@ const GBP_LOCATIONS_CACHE_PREFIX = "gbp:locations:cache:v1:";
 const GBP_SELECTED_ACCOUNT_KEY = "gbp:selected-account:v1";
 const GBP_SELECTED_LOCATION_KEY = "gbp:selected-location:v1";
 
-export type LocalSeoTabId = "gbp" | "reviews" | "rankings" | "citations";
+export type LocalSeoTabId = "gbp" | "reviews" | "rankings";
 
 /** GET `/api/local-seo/google-business?action=dashboard` JSON (subset). */
 /** Structured Google API error (when the Business Profile API returns non-2xx). */
@@ -162,16 +162,6 @@ export interface CompetitorRow {
   trend: "up" | "down" | "flat";
 }
 
-export type NapMatchLevel = "match" | "partial" | "mismatch";
-
-export interface CitationRow {
-  id: string;
-  directory: string;
-  url: string;
-  napMatch: NapMatchLevel;
-  issues: string[];
-}
-
 /** Full client dashboard state after merging GBP API + static placeholders. */
 export interface LocalSeoDashboardData {
   business: LocalBusinessInfo;
@@ -182,7 +172,6 @@ export interface LocalSeoDashboardData {
   responseTemplates: ResponseTemplate[];
   keywordRankings: KeywordRankingRow[];
   competitors: CompetitorRow[];
-  citations: CitationRow[];
   warnings: string[];
 }
 
@@ -259,7 +248,6 @@ async function fetchLocalSeoDashboard(opts?: {
     responseTemplates: MOCK_TEMPLATES,
     keywordRankings: MOCK_KEYWORD_RANKINGS,
     competitors: MOCK_COMPETITORS,
-    citations: MOCK_CITATIONS,
     warnings: data.warnings ?? [],
     },
   };
@@ -354,44 +342,6 @@ const MOCK_COMPETITORS: CompetitorRow[] = [
   { id: "c3", name: "Downtown Labor Advocates", avgRank: 8.4, trend: "down" },
 ];
 
-const MOCK_CITATIONS: CitationRow[] = [
-  {
-    id: "ci1",
-    directory: "Avvo",
-    url: "https://www.avvo.com/attorneys/ny-new-york",
-    napMatch: "match",
-    issues: [],
-  },
-  {
-    id: "ci2",
-    directory: "FindLaw",
-    url: "https://lawyers.findlaw.com/",
-    napMatch: "partial",
-    issues: ["Suite number differs from GBP"],
-  },
-  {
-    id: "ci3",
-    directory: "Justia",
-    url: "https://www.justia.com/",
-    napMatch: "match",
-    issues: [],
-  },
-  {
-    id: "ci4",
-    directory: "Martindale-Hubbell",
-    url: "https://www.martindale.com/",
-    napMatch: "mismatch",
-    issues: ["Old phone format", "Missing suite"],
-  },
-  {
-    id: "ci5",
-    directory: "NYC Bar Association",
-    url: "https://www.nycbar.org/",
-    napMatch: "partial",
-    issues: ["Website URL not listed"],
-  },
-];
-
 function platformLabel(p: ReviewPlatform): string {
   switch (p) {
     case "google":
@@ -417,12 +367,6 @@ function aggregateRating(reviews: PlatformReviewRow[]): number {
   return sum / reviews.length;
 }
 
-function napTone(m: CitationRow["napMatch"]): { className: string; label: string } {
-  if (m === "match") return { className: "text-emerald-400", label: "NAP match" };
-  if (m === "partial")
-    return { className: "text-amber-300", label: "Partial match" };
-  return { className: "text-rose-400", label: "Mismatch" };
-}
 
 export default function LocalSeoPlatformPage() {
   const [activeTab, setActiveTab] = useState<LocalSeoTabId>("gbp");
@@ -437,7 +381,6 @@ export default function LocalSeoPlatformPage() {
   const [templates, setTemplates] = useState<ResponseTemplate[]>([]);
   const [keywordRankings, setKeywordRankings] = useState<KeywordRankingRow[]>([]);
   const [competitors, setCompetitors] = useState<CompetitorRow[]>([]);
-  const [citations, setCitations] = useState<CitationRow[]>([]);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [gbpWarnings, setGbpWarnings] = useState<string[]>([]);
   const [recoveryState, setRecoveryState] = useState<GbpDashboardApiResponse | null>(null);
@@ -560,7 +503,6 @@ export default function LocalSeoPlatformPage() {
         setTemplates(data.responseTemplates);
         setKeywordRankings(data.keywordRankings);
         setCompetitors(data.competitors);
-        setCitations(data.citations);
         setGbpWarnings(data.warnings);
         setLastLoadedAt(new Date().toISOString());
         if (silent) setError(null);
@@ -822,7 +764,8 @@ export default function LocalSeoPlatformPage() {
             <h1 className="text-2xl font-semibold text-slate-900">Local SEO</h1>
             <p className="mt-1 text-sm text-slate-500">
               Google Business Profile data from the Business Profile API; rankings
-              and citations use sample data until those sources are connected.
+              use sample data until that source is connected. Citations moved to
+              their own page (sidebar → Citations).
               {AUTO_REFRESH
                 ? ` Auto-refresh every ${Math.round(REFRESH_MS / 1000)}s.`
                 : " Click Refresh data to pull live numbers (auto-refresh is off to stay under GBP's dev-tier quota of 10 req/min)."}
@@ -862,7 +805,6 @@ export default function LocalSeoPlatformPage() {
           {tabBtn("gbp", "Google Business Profile")}
           {tabBtn("reviews", "Reviews")}
           {tabBtn("rankings", "Rankings")}
-          {tabBtn("citations", "Citations")}
         </div>
 
         {rateLimitRetryAt ? (
@@ -873,7 +815,7 @@ export default function LocalSeoPlatformPage() {
             Google Business Profile API quota is temporarily rate-limited. Retrying in{" "}
             <span className="font-semibold tabular-nums">{retryCountdownSec}s</span>.
             <span className="ml-2 text-amber-700/80">
-              Tip: keep "Use cached account/location discovery" enabled to reduce calls.
+              Tip: keep &ldquo;Use cached account/location discovery&rdquo; enabled to reduce calls.
             </span>
           </div>
         ) : null}
@@ -1508,65 +1450,6 @@ export default function LocalSeoPlatformPage() {
           </div>
         ) : null}
 
-        {!loading && business && activeTab === "citations" ? (
-          <section
-            className="rounded-xl border p-6"
-            style={{ backgroundColor: CARD, borderColor: BORDER }}
-          >
-            <h2 className="mb-2 text-lg font-semibold">Citation & NAP monitor</h2>
-            <p className="mb-4 text-xs text-slate-500">
-              Legal directories and listings — verify name, address, and phone match Google
-              Business Profile.
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#e2e8f0] text-slate-500">
-                    <th className="pb-3 pr-4 font-medium">Directory</th>
-                    <th className="pb-3 pr-4 font-medium">NAP</th>
-                    <th className="pb-3 pr-4 font-medium">Issues</th>
-                    <th className="pb-3 font-medium">Link</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {citations.map((c) => {
-                    const tone = napTone(c.napMatch);
-                    return (
-                      <tr key={c.id} className="border-b border-[#e2e8f0]/50">
-                        <td className="py-3 pr-4 font-medium text-slate-900">{c.directory}</td>
-                        <td className={`py-3 pr-4 font-medium ${tone.className}`}>
-                          {tone.label}
-                        </td>
-                        <td className="py-3 pr-4 text-slate-500">
-                          {c.issues.length ? (
-                            <ul className="list-inside list-disc text-xs">
-                              {c.issues.map((issue) => (
-                                <li key={issue}>{issue}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <span className="text-slate-600">None</span>
-                          )}
-                        </td>
-                        <td className="py-3">
-                          <a
-                            href={c.url}
-                            className="text-xs hover:underline"
-                            style={{ color: ACCENT }}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            View listing
-                          </a>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        ) : null}
       </main>
     </div>
   );

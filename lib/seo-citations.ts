@@ -117,6 +117,70 @@ export async function addCitation(
   return { ok: true, row: data as CitationRow };
 }
 
+/**
+ * Bulk-load tracked listings from a pasted list / CSV (Domain + Citation Link).
+ * Each entry seeds a row with its listing_url so the "Audit from saved links"
+ * run picks it up automatically. Unlike addCitation's full upsert, this never
+ * clobbers an already-audited row: a source that already exists keeps its NAP
+ * and status; we only backfill a missing listing_url. New sources are inserted
+ * as `unverified` awaiting the next audit.
+ */
+export async function importCitations(
+  entries: { source: string; listing_url: string }[],
+  tenantId?: string,
+): Promise<{ added: number; updated: number; skipped: number }> {
+  const tid = tenantId ?? (await resolveTenantId());
+  const supabase = getSupabaseAdmin();
+  const { data: existingRows } = await supabase
+    .from("seo_citations")
+    .select("source, listing_url")
+    .eq("tenant_id", tid);
+  const bySource = new Map(
+    (existingRows ?? []).map((r) => [
+      String((r as { source: string }).source).toLowerCase(),
+      r as { source: string; listing_url: string | null },
+    ]),
+  );
+
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  for (const e of entries) {
+    const source = (e.source || "").trim();
+    const url = (e.listing_url || "").trim();
+    if (!source || !url) {
+      skipped++;
+      continue;
+    }
+    const found = bySource.get(source.toLowerCase());
+    if (!found) {
+      const { error } = await supabase.from("seo_citations").insert({
+        tenant_id: tid,
+        source,
+        listing_url: url,
+        status: "unverified",
+        source_type: "scan",
+        last_checked_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      if (error) skipped++;
+      else added++;
+    } else if (!(found.listing_url ?? "").trim()) {
+      // Existing row without a URL → backfill it, preserving everything else.
+      const { error } = await supabase
+        .from("seo_citations")
+        .update({ listing_url: url, updated_at: new Date().toISOString() })
+        .eq("tenant_id", tid)
+        .eq("source", found.source);
+      if (error) skipped++;
+      else updated++;
+    } else {
+      skipped++; // already tracked with a URL — leave it untouched
+    }
+  }
+  return { added, updated, skipped };
+}
+
 export async function updateCitation(
   id: string,
   patch: Partial<CitationInput>,
