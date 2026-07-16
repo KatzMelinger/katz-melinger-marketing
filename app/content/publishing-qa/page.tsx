@@ -153,7 +153,7 @@ export default function PublishingQAPage() {
           <p className="mx-auto max-w-md text-sm text-slate-600">
             Move a piece to{" "}
             <span className="font-medium">Review</span> on the{" "}
-            <Link href="/content/pipeline" className="text-brand hover:underline">
+            <Link href="/content-production" className="text-brand hover:underline">
               Production Board
             </Link>{" "}
             and it shows up here for the publish checklist.

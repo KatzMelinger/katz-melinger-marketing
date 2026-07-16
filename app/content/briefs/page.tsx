@@ -322,7 +322,7 @@ function BriefCard({
           <>
             <DashPill tone="emerald">Sent to Production ✓</DashPill>
             <Link
-              href="/content/pipeline"
+              href="/content-production"
               className="text-xs font-medium text-brand hover:underline"
             >
               Open Production Board →

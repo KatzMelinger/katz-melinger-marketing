@@ -11,10 +11,11 @@ import { readContentType } from "@/lib/content-types";
  * the current Website / Social Media / Email selection along.
  */
 // Note: "Pipeline" and "Saved drafts" were removed here because they duplicate
-// the sidebar's "Production Board" (/content/pipeline) and "Drafts"
+// the sidebar's "Production Board" (/content-production) and "Drafts"
 // (/content/drafts) entries — the same route reached two ways was a top source
 // of Diana's "six screens" confusion. The sidebar links are now the single
-// entry point for each.
+// entry point for each. (The old /content/pipeline view is retired and
+// redirects to /content-production.)
 const TYPE_SCOPED_TABS = [
   { href: "/content", label: "Marketing copy" },
   { href: "/content/km", label: "SEO content" },

@@ -12,7 +12,7 @@ import { usePathname } from "next/navigation";
 
 const STAGES: { href: string; label: string }[] = [
   { href: "/seo/opportunities", label: "Opportunity" },
-  { href: "/content/pipeline", label: "Draft" },
+  { href: "/content-production", label: "Draft" },
   { href: "/content-production", label: "Approve" },
   { href: "/content/publishing-qa", label: "QA" },
   { href: "/content-production", label: "Published" },

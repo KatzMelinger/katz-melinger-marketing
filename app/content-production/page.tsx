@@ -27,7 +27,7 @@ import { SocialComposerDrawer } from "@/components/social-composer-drawer";
 // sidebar carries a single "Content Production" tab instead of five.
 const LINE_LINKS: { href: string; label: string; icon: string }[] = [
   { href: "/content/briefs", label: "Briefs", icon: "📋" },
-  { href: "/content/pipeline", label: "Content Studio", icon: "▥" },
+  { href: "/content", label: "Content Studio", icon: "▥" },
   { href: "/content/publishing-qa", label: "Publishing QA", icon: "🔍" },
   { href: "/content/refresh", label: "Refresh Queue", icon: "♻" },
 ];
@@ -122,6 +122,7 @@ export default function ContentProductionPage() {
   const [tab, setTab] = useState<TabId>("new");
   const [sourceFilter, setSourceFilter] = useState<"all" | "peggy" | "agent">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "review" | "needs_legal">("all");
+  const [bucketFilter, setBucketFilter] = useState<string>("all");
   const [wizardOpp, setWizardOpp] = useState<WizardOpportunity | null>(null);
   const [reviewItem, setReviewItem] = useState<DrawerItem | null>(null);
   // Generated social variations awaiting human review before they're scheduled.
@@ -177,6 +178,15 @@ export default function ContentProductionPage() {
     return (id: string | null) => (id ? m.get(id) ?? id : null);
   }, [data?.pillars]);
 
+  // Bucket id → label, from the tenant's configured buckets (Money Page, BOFU
+  // Education, …). Rendered as a card badge + drives the board's bucket filter.
+  // This is the funnel-stage field that used to live only on the Content Studio
+  // pipeline; surfacing it here is why the duplicate view can retire.
+  const bucketLabel = useMemo(() => {
+    const m = new Map((data?.buckets ?? []).map((b) => [b.id, b.label]));
+    return (id: string | null) => (id ? m.get(id) ?? id : null);
+  }, [data?.buckets]);
+
   const stages = data?.stages ?? [];
   const allNewItems = (data?.items ?? []).filter((i) => i.tab === "new");
   // Source + status filters apply to the New-content board. (Opportunity cards
@@ -184,7 +194,8 @@ export default function ContentProductionPage() {
   const newItems = allNewItems.filter(
     (i) =>
       (sourceFilter === "all" || i.createdBy === sourceFilter) &&
-      (statusFilter === "all" || i.rawStatus === statusFilter),
+      (statusFilter === "all" || i.rawStatus === statusFilter) &&
+      (bucketFilter === "all" || i.bucket === bucketFilter),
   );
   const existingItems = (data?.items ?? []).filter((i) => i.tab === "existing");
   const peggyCount = allNewItems.filter((i) => i.createdBy === "peggy").length;
@@ -360,7 +371,26 @@ export default function ContentProductionPage() {
           ))}
         </div>
         {tab === "new" && (
-          <div className="mb-1 flex items-center gap-1 text-xs">
+          <div className="mb-1 flex flex-wrap items-center gap-1 text-xs">
+            {(data?.buckets?.length ?? 0) > 0 && (
+              <label className="mr-2 flex items-center gap-1">
+                <span className="text-slate-400" title="Filter the board by funnel bucket">
+                  Bucket:
+                </span>
+                <select
+                  value={bucketFilter}
+                  onChange={(e) => setBucketFilter(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600"
+                >
+                  <option value="all">All</option>
+                  {(data?.buckets ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <span className="mr-1 text-slate-400" title="Filter the board by who created each item">
               Created by:
             </span>
@@ -442,6 +472,7 @@ export default function ContentProductionPage() {
                       key={`${i.source}-${i.id}`}
                       item={i}
                       pillarLabel={pillarLabel}
+                      bucketLabel={bucketLabel}
                       onCreateBrief={onCreateBrief}
                       onReview={onReview}
                     />
@@ -863,6 +894,7 @@ function Counter({
 function Card({
   item,
   pillarLabel,
+  bucketLabel,
   showUrl,
   onCreateBrief,
   onReview,
@@ -876,6 +908,7 @@ function Card({
 }: {
   item: Item;
   pillarLabel: (id: string | null) => string | null;
+  bucketLabel?: (id: string | null) => string | null;
   showUrl?: boolean;
   onCreateBrief?: (item: Item) => void;
   onReview?: (item: Item) => void;
@@ -908,6 +941,11 @@ function Card({
       </div>
       {showUrl && item.url && <div className="mt-0.5 truncate text-xs text-slate-400">{item.url}</div>}
       <div className="mt-1.5 flex flex-wrap gap-1">
+        {bucketLabel && item.bucket && (
+          <span className="rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700">
+            {bucketLabel(item.bucket)}
+          </span>
+        )}
         {item.assetType && (
           <span className="rounded bg-blue-50 px-1.5 text-[11px] text-blue-700">
             {ASSET_LABEL[item.assetType] ?? item.assetType}

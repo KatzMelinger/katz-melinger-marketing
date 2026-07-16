@@ -19,6 +19,20 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/content-production/repurpose/carousel-images": ["assets/fonts/**/*"],
   },
+  // The Production Board (/content-production) is now the single pipeline UI.
+  // The old Content Studio pipeline view (/content/pipeline) was a duplicate of
+  // the same records/lifecycle in a different layout; it's retired. Redirect any
+  // lingering bookmarks to the board so they don't 404. (The /api/content/pipeline
+  // API routes stay — many surfaces still read/write through them.)
+  async redirects() {
+    return [
+      {
+        source: "/content/pipeline",
+        destination: "/content-production",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
