@@ -13,6 +13,7 @@ import {
   addCitation,
   getCanonicalNap,
   listCitations,
+  listCitationSnapshots,
   removeCitation,
   updateCitation,
   type CitationInput,
@@ -23,8 +24,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const [canonical, citations] = await Promise.all([getCanonicalNap(), listCitations()]);
-    return NextResponse.json({ canonical, citations });
+    const [canonical, citations, snapshots] = await Promise.all([
+      getCanonicalNap(),
+      listCitations(),
+      listCitationSnapshots(),
+    ]);
+    return NextResponse.json({ canonical, citations, snapshots });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed to list citations" },

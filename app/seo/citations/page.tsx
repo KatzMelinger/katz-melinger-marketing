@@ -19,6 +19,16 @@ import { SeoShell, formatNumber } from "@/components/seo-shell";
 
 type Canonical = { name: string; address: string; phone: string; website: string };
 
+type Snapshot = {
+  captured_on: string;
+  total: number;
+  consistent: number;
+  inconsistent: number;
+  missing: number;
+  unverified: number;
+  consistency_pct: number;
+};
+
 type Citation = {
   id: string;
   source: string;
@@ -76,6 +86,7 @@ export default function CitationsPage() {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [fixId, setFixId] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [auditingLinks, setAuditingLinks] = useState(false);
   const [linkResults, setLinkResults] = useState<
     { source: string; listing_url: string; status: string; issues: string | null; fetched: boolean }[]
@@ -93,6 +104,7 @@ export default function CitationsPage() {
       }
       setCanonical(json.canonical ?? null);
       setCitations(json.citations ?? []);
+      setSnapshots(Array.isArray(json.snapshots) ? json.snapshots : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -440,6 +452,8 @@ export default function CitationsPage() {
         )}
       </section>
 
+      {snapshots.length > 0 && <TrendPanel snapshots={snapshots} />}
+
       {/* Tracked citations */}
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
         <h2 className="text-lg font-semibold">Tracked citations</h2>
@@ -585,6 +599,73 @@ export default function CitationsPage() {
         </ul>
       </section>
     </SeoShell>
+  );
+}
+
+/**
+ * Consistency-over-time trend (Directories & Citations doc, section 7). Each
+ * audit saves a daily snapshot; this charts consistency % so improvement is
+ * visible, not just the current-state counters. Renders only when snapshots
+ * exist (i.e. after the snapshots table is migrated and at least one audit ran).
+ */
+function TrendPanel({ snapshots }: { snapshots: Snapshot[] }) {
+  const latest = snapshots[snapshots.length - 1];
+  const first = snapshots[0];
+  const delta = latest.consistency_pct - first.consistency_pct;
+  // Sparkline geometry: map each snapshot's % to an x,y point.
+  const W = 320;
+  const H = 48;
+  const pts = snapshots.map((s, i) => {
+    const x = snapshots.length === 1 ? W : (i / (snapshots.length - 1)) * W;
+    const y = H - (Math.max(0, Math.min(100, s.consistency_pct)) / 100) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  return (
+    <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Consistency over time</h2>
+          <p className="text-xs text-slate-500">
+            Share of verifiable listings that match your canonical NAP, per audit.
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-semibold text-slate-900">{latest.consistency_pct}%</div>
+          {snapshots.length > 1 && (
+            <div
+              className={`text-xs font-medium ${
+                delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-slate-400"
+              }`}
+            >
+              {delta > 0 ? "▲" : delta < 0 ? "▼" : "±"} {Math.abs(delta)} pts since {first.captured_on}
+            </div>
+          )}
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" preserveAspectRatio="none" height={H}>
+        <line x1="0" y1={H} x2={W} y2={H} stroke="#e2e8f0" strokeWidth="1" />
+        {snapshots.length > 1 ? (
+          <polyline
+            points={pts.join(" ")}
+            fill="none"
+            stroke="#116AB2"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ) : (
+          <circle cx={W} cy={pts[0]?.split(",")[1] ?? H} r="3" fill="#116AB2" />
+        )}
+      </svg>
+      <div className="mt-1 flex justify-between text-[11px] text-slate-400">
+        <span>{first.captured_on}</span>
+        <span>
+          {latest.consistent}/{latest.consistent + latest.inconsistent} consistent ·{" "}
+          {latest.total} tracked
+        </span>
+        <span>{latest.captured_on}</span>
+      </div>
+    </section>
   );
 }
 

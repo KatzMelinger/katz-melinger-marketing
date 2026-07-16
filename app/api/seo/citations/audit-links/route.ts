@@ -9,7 +9,7 @@
 
 import { NextResponse } from "next/server";
 
-import { auditCitationsByLinks } from "@/lib/seo-citations";
+import { auditCitationsByLinks, saveCitationSnapshot } from "@/lib/seo-citations";
 import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
@@ -21,6 +21,8 @@ export async function POST() {
   if (denied) return denied;
   try {
     const result = await auditCitationsByLinks();
+    // Record a daily consistency snapshot for the trend panel (best-effort).
+    await saveCitationSnapshot();
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(

@@ -53,6 +53,77 @@ export interface CitationRow {
 const SELECT_COLS =
   "id, source, listing_url, nap_name, nap_address, nap_phone, status, issues, source_type, last_checked_at, updated_at";
 
+export interface CitationSnapshot {
+  captured_on: string;
+  total: number;
+  consistent: number;
+  inconsistent: number;
+  missing: number;
+  unverified: number;
+  consistency_pct: number;
+}
+
+/**
+ * Record today's consistency snapshot (one row per tenant per day, upserted) so
+ * the page can chart consistency/coverage over time. Best-effort: if the
+ * snapshots table hasn't been migrated yet, this quietly no-ops.
+ */
+export async function saveCitationSnapshot(tenantId?: string): Promise<void> {
+  try {
+    const tid = tenantId ?? (await resolveTenantId());
+    const rows = await listCitations(tid);
+    const total = rows.length;
+    const consistent = rows.filter((r) => r.status === "consistent").length;
+    const inconsistent = rows.filter((r) => r.status === "inconsistent").length;
+    const missing = rows.filter((r) => r.status === "missing").length;
+    const unverified = rows.filter((r) => r.status === "unverified").length;
+    // Consistency % measured against the listings we could actually verify
+    // (consistent + inconsistent); unverified/missing don't count either way.
+    const verifiable = consistent + inconsistent;
+    const consistencyPct = verifiable ? Math.round((consistent / verifiable) * 100) : 0;
+
+    const supabase = getSupabaseAdmin();
+    const today = new Date().toISOString().slice(0, 10);
+    await supabase.from("seo_citation_snapshots").upsert(
+      {
+        tenant_id: tid,
+        captured_on: today,
+        total,
+        consistent,
+        inconsistent,
+        missing,
+        unverified,
+        consistency_pct: consistencyPct,
+      },
+      { onConflict: "tenant_id,captured_on" },
+    );
+  } catch {
+    /* best-effort — never fail an audit because history couldn't be written */
+  }
+}
+
+/** Recent daily snapshots (oldest→newest), for the trend panel. Fail-soft. */
+export async function listCitationSnapshots(
+  limit = 30,
+  tenantId?: string,
+): Promise<CitationSnapshot[]> {
+  try {
+    const supabase = getSupabaseServer();
+    if (!supabase) return [];
+    const tid = tenantId ?? (await resolveTenantId());
+    const { data, error } = await supabase
+      .from("seo_citation_snapshots")
+      .select("captured_on, total, consistent, inconsistent, missing, unverified, consistency_pct")
+      .eq("tenant_id", tid)
+      .order("captured_on", { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return (data as CitationSnapshot[]).slice().reverse();
+  } catch {
+    return [];
+  }
+}
+
 export async function getCanonicalNap(tenantId?: string): Promise<CanonicalNap> {
   const config = await getTenantConfig(tenantId);
   return {
