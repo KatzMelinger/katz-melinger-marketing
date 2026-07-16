@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { SeoShell, formatNumber } from "@/components/seo-shell";
 
-type Canonical = { name: string; address: string; phone: string };
+type Canonical = { name: string; address: string; phone: string; website: string };
 
 type Citation = {
   id: string;
@@ -75,6 +75,7 @@ export default function CitationsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [fixId, setFixId] = useState<string | null>(null);
   const [auditingLinks, setAuditingLinks] = useState(false);
   const [linkResults, setLinkResults] = useState<
     { source: string; listing_url: string; status: string; issues: string | null; fetched: boolean }[]
@@ -518,53 +519,136 @@ export default function CitationsPage() {
               No citations tracked yet. Run an audit above or add a source manually.
             </li>
           )}
-          {citations.map((c) => (
-            <li
-              key={c.id}
-              className="flex flex-wrap items-center gap-3 rounded-md border border-[#e2e8f0] bg-white px-3 py-2"
-            >
-              <div className="min-w-[160px] flex-1">
-                <div className="text-sm font-medium text-slate-900">{c.source}</div>
-                {(c.nap_name || c.nap_address || c.nap_phone) && (
-                  <p className="text-xs text-slate-500">
-                    {c.nap_name ?? "—"} · {c.nap_address ?? "—"} · {c.nap_phone ?? "—"}
-                  </p>
+          {citations.map((c) => {
+            const needsFix = c.status === "inconsistent" || c.status === "missing";
+            return (
+              <li
+                key={c.id}
+                className="rounded-md border border-[#e2e8f0] bg-white px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-[160px] flex-1">
+                    <div className="text-sm font-medium text-slate-900">{c.source}</div>
+                    {(c.nap_name || c.nap_address || c.nap_phone) && (
+                      <p className="text-xs text-slate-500">
+                        {c.nap_name ?? "—"} · {c.nap_address ?? "—"} · {c.nap_phone ?? "—"}
+                      </p>
+                    )}
+                    {c.issues && <p className="text-xs text-red-700">⚠ {c.issues}</p>}
+                  </div>
+
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                      STATUS_CLASSES[c.status] ?? STATUS_CLASSES.unverified
+                    }`}
+                  >
+                    {statusLabel(c.status)}
+                  </span>
+
+                  {needsFix && (
+                    <button
+                      onClick={() => setFixId((cur) => (cur === c.id ? null : c.id))}
+                      className="rounded-md border border-brand/40 bg-brand/5 px-2 py-1 text-xs font-medium text-brand hover:bg-brand/10"
+                    >
+                      {fixId === c.id ? "Hide fix" : "Fix →"}
+                    </button>
+                  )}
+
+                  <select
+                    value={c.status}
+                    onChange={(e) => patchStatus(c.id, e.target.value)}
+                    disabled={busy === c.id}
+                    className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs focus:border-brand focus:outline-none"
+                  >
+                    {STATUSES.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => remove(c)}
+                    disabled={busy === c.id}
+                    className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {busy === c.id ? "…" : "Remove"}
+                  </button>
+                </div>
+
+                {needsFix && fixId === c.id && (
+                  <FixPanel citation={c} canonical={canonical} />
                 )}
-                {c.issues && <p className="text-xs text-red-700">⚠ {c.issues}</p>}
-              </div>
-
-              <span
-                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                  STATUS_CLASSES[c.status] ?? STATUS_CLASSES.unverified
-                }`}
-              >
-                {statusLabel(c.status)}
-              </span>
-
-              <select
-                value={c.status}
-                onChange={(e) => patchStatus(c.id, e.target.value)}
-                disabled={busy === c.id}
-                className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs focus:border-brand focus:outline-none"
-              >
-                {STATUSES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                onClick={() => remove(c)}
-                disabled={busy === c.id}
-                className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
-              >
-                {busy === c.id ? "…" : "Remove"}
-              </button>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </section>
     </SeoShell>
+  );
+}
+
+/** Copy-to-clipboard field: the correct value the listing should show. */
+function CopyField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-20 shrink-0 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      <code className="flex-1 rounded bg-white px-2 py-1 text-xs text-slate-800">{value}</code>
+      <button
+        onClick={() => {
+          void navigator.clipboard?.writeText(value);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1200);
+        }}
+        className="rounded border border-[#e2e8f0] px-2 py-1 text-[11px] text-slate-600 hover:border-brand hover:text-brand"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Guided update: the exact corrected field values (from the canonical profile)
+ * plus a direct link to edit/claim the listing. We never write to the directory
+ * ourselves (most have no write API, and the guardrail forbids it) — you make
+ * the change, then the next audit confirms it's fixed.
+ */
+function FixPanel({ citation, canonical }: { citation: Citation; canonical: Canonical | null }) {
+  const claimUrl =
+    citation.listing_url ||
+    `https://www.google.com/search?q=${encodeURIComponent(`claim ${citation.source} listing ${canonical?.name ?? ""}`)}`;
+  return (
+    <div className="mt-2 rounded-md border border-brand/30 bg-brand/5 p-3">
+      <p className="text-xs font-semibold text-slate-700">
+        Correct values — paste these into {citation.source}:
+      </p>
+      <div className="mt-2 space-y-1.5">
+        <CopyField label="Name" value={canonical?.name ?? ""} />
+        <CopyField label="Address" value={canonical?.address ?? ""} />
+        <CopyField label="Phone" value={canonical?.phone ?? ""} />
+        <CopyField label="Website" value={canonical?.website ?? ""} />
+      </div>
+      {citation.issues && (
+        <p className="mt-2 text-xs text-red-700">What&apos;s off now: {citation.issues}</p>
+      )}
+      <div className="mt-2 flex items-center gap-3">
+        <a
+          href={claimUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90"
+        >
+          {citation.listing_url ? "Open listing to edit →" : "Find claim page →"}
+        </a>
+        <span className="text-[11px] text-slate-500">
+          We never change a live listing for you — edit it there, then re-audit.
+        </span>
+      </div>
+    </div>
   );
 }

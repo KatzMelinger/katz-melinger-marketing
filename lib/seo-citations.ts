@@ -29,6 +29,9 @@ export interface CanonicalNap {
   name: string;
   address: string;
   phone: string;
+  /** Firm website — shown in the guided-update panel; not part of the NAP
+   *  comparison yet (that's a separate canonical-profile expansion). */
+  website: string;
 }
 
 export type CitationStatus = "consistent" | "inconsistent" | "missing" | "unverified";
@@ -56,6 +59,7 @@ export async function getCanonicalNap(tenantId?: string): Promise<CanonicalNap> 
     name: config.firmName,
     address: config.firmAddress,
     phone: config.firmPhone,
+    website: config.firmWebsite,
   };
 }
 
