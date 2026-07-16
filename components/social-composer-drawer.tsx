@@ -78,7 +78,16 @@ const META_BY_KEY = new Map<NetworkKey, NetworkMeta>(
   [...KM_NETWORKS, ...EXTRA_NETWORKS].map((n) => [n.key, n]),
 );
 
+// Client-side upload validation (mirrors lib/social-assets.ts on the server).
+const SOCIAL_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "video/mp4"];
+const SOCIAL_MEDIA_ACCEPT = SOCIAL_MEDIA_TYPES.join(",");
+const SOCIAL_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
+
 type Slide = { n: number; headline: string; url: string };
+
+/** A manually-uploaded image/video (Metricool-style upload). Its `url` is also
+ *  pushed into the variation's mediaUrls so it flows to Ayrshare. */
+type UploadedAsset = { url: string; kind: "image" | "video"; filename: string };
 
 type Variation = {
   key: NetworkKey;
@@ -94,6 +103,10 @@ type Variation = {
   draftId: string | null;
   slides?: Slide[];
   mediaUrls?: string[];
+  /** Manually-uploaded media (kept for preview + removal; urls also live in mediaUrls). */
+  uploads?: UploadedAsset[];
+  mediaBusy?: boolean;
+  mediaMsg?: string | null;
   genBusy?: boolean;
   genMsg?: string | null;
   /** Reel/video script asset (Script add-on). */
@@ -229,6 +242,17 @@ export function SocialComposerDrawer({
     [selectedList, flagsByNet],
   );
 
+  // Media guard: networks that reject text-only posts (Instagram, TikTok, …)
+  // can't schedule until an image or video is attached. Generated slides and
+  // manual uploads both land in mediaUrls, so one check covers both.
+  const mediaMissingNets = useMemo(
+    () =>
+      selectedList.filter(
+        (n) => n.needsMedia && (variations.get(n.key)?.mediaUrls?.length ?? 0) === 0,
+      ),
+    [selectedList, variations],
+  );
+
   const toggleNetwork = (key: NetworkKey) =>
     setSelected((s) => {
       const next = new Set(s);
@@ -246,6 +270,70 @@ export function SocialComposerDrawer({
       const next = new Map(m);
       const cur = next.get(key);
       if (cur) next.set(key, { ...cur, ...p });
+      return next;
+    });
+
+  // ---- Manual media upload (Metricool-style) --------------------------------
+  const [dragOverNet, setDragOverNet] = useState<NetworkKey | null>(null);
+
+  // Upload one or more files to Supabase and append their URLs to this
+  // variation's media. URL only — Ayrshare fetches the stored file at publish.
+  const uploadMedia = async (key: NetworkKey, files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (!list.length) return;
+    const valid = list.filter(
+      (f) => SOCIAL_MEDIA_TYPES.includes(f.type) && f.size <= SOCIAL_MEDIA_MAX_BYTES,
+    );
+    const skipped = list.length - valid.length;
+    if (!valid.length) {
+      patchVar(key, { mediaMsg: "Only JPG, PNG, or MP4 up to 100MB." });
+      return;
+    }
+    patchVar(key, { mediaBusy: true, mediaMsg: null });
+    try {
+      const fd = new FormData();
+      valid.forEach((f) => fd.append("files", f));
+      const res = await fetch("/api/social/assets", { method: "POST", body: fd });
+      const j = await res.json();
+      if (!res.ok || !Array.isArray(j?.uploaded) || j.uploaded.length === 0) {
+        patchVar(key, { mediaBusy: false, mediaMsg: j?.error || "Upload failed." });
+        return;
+      }
+      const added: UploadedAsset[] = (j.uploaded as UploadedAsset[]).map((a) => ({
+        url: a.url,
+        kind: a.kind,
+        filename: a.filename,
+      }));
+      setVariations((m) => {
+        const next = new Map(m);
+        const cur = next.get(key);
+        if (cur) {
+          next.set(key, {
+            ...cur,
+            uploads: [...(cur.uploads ?? []), ...added],
+            mediaUrls: [...(cur.mediaUrls ?? []), ...added.map((a) => a.url)],
+            mediaBusy: false,
+            mediaMsg: skipped ? `${skipped} file(s) skipped (type or size).` : null,
+          });
+        }
+        return next;
+      });
+    } catch {
+      patchVar(key, { mediaBusy: false, mediaMsg: "Upload failed." });
+    }
+  };
+
+  const removeUpload = (key: NetworkKey, url: string) =>
+    setVariations((m) => {
+      const next = new Map(m);
+      const cur = next.get(key);
+      if (cur) {
+        next.set(key, {
+          ...cur,
+          uploads: (cur.uploads ?? []).filter((a) => a.url !== url),
+          mediaUrls: (cur.mediaUrls ?? []).filter((u) => u !== url),
+        });
+      }
       return next;
     });
 
@@ -303,7 +391,7 @@ export function SocialComposerDrawer({
   // existing schedule route (unchanged Ayrshare path). Nothing publishes here on
   // its own; posts land on the Content Calendar at their scheduled time.
   const schedule = async () => {
-    if (!legalOk || blockedNets.length > 0) return;
+    if (!legalOk || blockedNets.length > 0 || mediaMissingNets.length > 0) return;
     const posts = buildPosts(true);
     if (!posts.length) return;
 
@@ -394,7 +482,13 @@ export function SocialComposerDrawer({
   const activeTags = hashtagsOf(activeCopy);
   const activeFlags = active === "template" ? [] : flagsByNet.get(active) ?? [];
   const readyCount = selectedList.filter((n) => (variations.get(n.key)?.copy ?? "").trim()).length;
-  const canApprove = !busy && !draftBusy && readyCount > 0 && legalOk && blockedNets.length === 0;
+  const canApprove =
+    !busy &&
+    !draftBusy &&
+    readyCount > 0 &&
+    legalOk &&
+    blockedNets.length === 0 &&
+    mediaMissingNets.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
@@ -550,6 +644,89 @@ export function SocialComposerDrawer({
                 </div>
               )}
 
+              {/* Manual media upload (drag-and-drop + file picker) per platform. */}
+              {activeVar && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-600">
+                      Media
+                      {activeMeta?.needsMedia && (
+                        <span className="ml-1 text-amber-600">· required for {activeMeta.label}</span>
+                      )}
+                    </span>
+                    {activeVar.mediaBusy && <span className="text-xs text-slate-400">Uploading…</span>}
+                  </div>
+                  <label
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverNet(activeVar.key);
+                    }}
+                    onDragLeave={() => setDragOverNet(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverNet(null);
+                      void uploadMedia(activeVar.key, e.dataTransfer.files);
+                    }}
+                    className={`mt-1.5 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-3 py-4 text-center text-xs transition-colors ${
+                      dragOverNet === activeVar.key
+                        ? "border-brand bg-brand/5 text-brand"
+                        : "border-slate-300 text-slate-500 hover:border-brand/50"
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      accept={SOCIAL_MEDIA_ACCEPT}
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files) void uploadMedia(activeVar.key, e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                    <span aria-hidden className="text-base">⬆︎</span>
+                    <span className="mt-1">
+                      <strong className="text-slate-700">Drag &amp; drop</strong> or click to upload
+                    </span>
+                    <span className="text-slate-400">
+                      JPG, PNG, or MP4 · up to 100MB · stored in Supabase, sent to Ayrshare by URL
+                    </span>
+                  </label>
+                  {activeVar.mediaMsg && (
+                    <p className="mt-1 text-xs text-amber-700">{activeVar.mediaMsg}</p>
+                  )}
+                  {(activeVar.uploads?.length ?? 0) > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {activeVar.uploads!.map((a) => (
+                        <div key={a.url} className="relative">
+                          {a.kind === "video" ? (
+                            <video
+                              src={a.url}
+                              muted
+                              className="h-20 w-20 rounded-md border border-slate-200 object-cover"
+                            />
+                          ) : (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={a.url}
+                              alt={a.filename}
+                              className="h-20 w-20 rounded-md border border-slate-200 object-cover"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeUpload(activeVar.key, a.url)}
+                            title={`Remove ${a.filename}`}
+                            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-xs text-slate-500 shadow-sm hover:text-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {active !== "template" && postErrors.get(active) && (
                 <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
                   Rejected: {postErrors.get(active)}
@@ -677,6 +854,12 @@ export function SocialComposerDrawer({
                     ⚠️ {blockedNets.length} flagged post(s) — clear the flags to schedule.
                   </span>
                 )}
+                {mediaMissingNets.length > 0 && (
+                  <span className="text-xs font-medium text-amber-700">
+                    🖼️ {mediaMissingNets.map((n) => n.label).join(", ")}{" "}
+                    need{mediaMissingNets.length === 1 ? "s" : ""} an image or video attached.
+                  </span>
+                )}
                 <div className="ml-auto flex items-center gap-2">
                   <button
                     onClick={onClose}
@@ -698,9 +881,11 @@ export function SocialComposerDrawer({
                     title={
                       blockedNets.length > 0
                         ? "Clear the flagged posts first."
-                        : !legalOk
-                          ? "Confirm the legal review first."
-                          : undefined
+                        : mediaMissingNets.length > 0
+                          ? `Attach media for ${mediaMissingNets.map((n) => n.label).join(", ")} first.`
+                          : !legalOk
+                            ? "Confirm the legal review first."
+                            : undefined
                     }
                     className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -737,6 +922,7 @@ export function SocialComposerDrawer({
                 copy={activeCopy}
                 tags={activeTags}
                 slides={activeVar?.slides}
+                uploads={activeVar?.uploads}
               />
             </div>
           </div>
@@ -792,14 +978,17 @@ function PreviewCard({
   copy,
   tags,
   slides,
+  uploads,
 }: {
   widthClass: string;
   network: NetworkMeta | null;
   copy: string;
   tags: string[];
   slides?: Slide[];
+  uploads?: UploadedAsset[];
 }) {
   const bodyText = copy.replace(/(^|\n)\s*(#[\p{L}\p{N}_]+(\s+#[\p{L}\p{N}_]+)*)\s*$/u, "").trim();
+  const upload = uploads?.[0];
   return (
     <div className={`${widthClass} rounded-xl border border-slate-200 bg-white p-4 shadow-sm`}>
       <div className="flex items-center gap-2">
@@ -811,7 +1000,14 @@ function PreviewCard({
       </div>
       <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{bodyText || "…"}</p>
       {tags.length > 0 && <p className="mt-2 text-sm text-brand">{tags.slice(0, 8).join(" ")}</p>}
-      {slides?.length ? (
+      {upload ? (
+        upload.kind === "video" ? (
+          <video src={upload.url} muted controls className="mt-3 w-full rounded-lg border border-slate-200 object-cover" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={upload.url} alt={upload.filename} className="mt-3 w-full rounded-lg border border-slate-200 object-cover" />
+        )
+      ) : slides?.length ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={slides[0].url} alt="Carousel" className="mt-3 w-full rounded-lg border border-slate-200 object-cover" />
       ) : network?.needsMedia ? (
