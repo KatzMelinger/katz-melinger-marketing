@@ -29,6 +29,8 @@ const PROSE_CLASS =
 
 import { ContentNav } from "@/components/content-nav";
 import { ContentTypeTabs } from "@/components/content-type-tabs";
+import { SocialComposerDrawer } from "@/components/social-composer-drawer";
+import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
 import {
   DashCard,
   DashButton,
@@ -47,6 +49,13 @@ import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 const PILLAR_LABEL: Record<string, string> = Object.fromEntries(
   ALL_KM_PILLARS.map((p) => [p.id, p.label]),
 );
+
+// Draft formats the social composer can schedule. A draft in one of these opens
+// straight in the composer (seeded with its copy) instead of only the .docx path.
+const SOCIAL_FORMATS = new Set([
+  "linkedin", "facebook", "instagram", "carousel", "video_short",
+  "tiktok", "gmb", "threads", "pinterest", "youtube",
+]);
 
 type Draft = {
   id: string;
@@ -264,6 +273,7 @@ export default function DraftsPage() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
+  const [composing, setComposing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -615,6 +625,15 @@ export default function DraftsPage() {
                     {new Date(selectedDraft.created_at).toLocaleString()}
                   </span>
                   <div className="ml-auto flex items-center gap-2">
+                    {SOCIAL_FORMATS.has(selectedDraft.format) && (
+                      <button
+                        onClick={() => setComposing(true)}
+                        className="text-xs px-2 py-1 rounded bg-brand text-white font-medium hover:bg-brand/90"
+                        title="Open this draft in the social composer to add media, set a time, and schedule it"
+                      >
+                        📅 Schedule
+                      </button>
+                    )}
                     {selectedDraft.status !== "review" &&
                       selectedDraft.status !== "published" && (
                         <button
@@ -749,6 +768,22 @@ export default function DraftsPage() {
           )}
         </div>
       </div>
+
+      {composing && selectedDraft && (
+        <SocialComposerDrawer
+          topic={selectedDraft.title || selectedDraft.topic}
+          drafts={[
+            {
+              id: selectedDraft.id,
+              format: selectedDraft.format,
+              title: selectedDraft.title,
+              body: selectedDraft.body,
+              metadata: selectedDraft.metadata,
+            } satisfies RepurposeDraft,
+          ]}
+          onClose={() => setComposing(false)}
+        />
+      )}
     </div>
   );
 }
