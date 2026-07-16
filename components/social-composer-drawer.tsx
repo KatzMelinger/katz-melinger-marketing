@@ -32,6 +32,7 @@ import Link from "next/link";
 
 import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
 import { checkSocialCompliance, type ComplianceFlag } from "@/lib/social-compliance";
+import { bestSlot, nyWallClockToUtc } from "@/lib/social-best-time";
 
 /** The networks the composer can compose for. `platform` (the key) is the
  *  Ayrshare id used to schedule. */
@@ -133,6 +134,20 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate(),
   ).padStart(2, "0")}`;
+}
+
+/** The next upcoming {date, time} whose weekday matches `targetDay` (0=Sun..6=Sat)
+ *  at `targetHour`, skipping today if that hour has already passed. Times are
+ *  wall-clock strings the composer interprets as America/New_York. */
+function nextSlotDate(targetDay: number, targetHour: number): { date: string; time: string } {
+  const cursor = new Date();
+  for (let i = 0; i < 8; i++) {
+    if (i > 0) cursor.setDate(cursor.getDate() + 1);
+    if (cursor.getDay() !== targetDay) continue;
+    if (i === 0 && targetHour <= cursor.getHours()) continue; // slot already passed today
+    return { date: ymd(cursor), time: `${String(targetHour).padStart(2, "0")}:00` };
+  }
+  return { date: ymd(cursor), time: `${String(targetHour).padStart(2, "0")}:00` };
 }
 
 /** A staggered slot per network index: consecutive business days at 9:00am. */
@@ -272,6 +287,15 @@ export function SocialComposerDrawer({
       if (cur) next.set(key, { ...cur, ...p });
       return next;
     });
+
+  // Fill this network's slot with its recommended best time (Phase-1 static
+  // benchmark per platform). No-op for a network without a suggestion.
+  const applyBestTime = (key: NetworkKey) => {
+    const slot = bestSlot(key);
+    if (!slot) return;
+    const { date, time } = nextSlotDate(slot.day, slot.hour);
+    patchVar(key, { date, time });
+  };
 
   // ---- Manual media upload (Metricool-style) --------------------------------
   const [dragOverNet, setDragOverNet] = useState<NetworkKey | null>(null);
@@ -433,9 +457,11 @@ export function SocialComposerDrawer({
         const copy = v?.copy?.trim();
         if (!copy) return null;
         if (compliant && checkSocialCompliance(copy).some((f) => f.severity === "block")) return null;
-        // Guard a cleared date/time input: fall back to a default rather than
-        // letting `new Date("T09:00")` throw an unhandled RangeError.
-        const dt = new Date(`${v?.date || ymd(new Date())}T${v?.time || "09:00"}`);
+        // The date/time inputs are America/New_York wall-clock. Convert to the
+        // correct UTC instant explicitly (offset-less strings would otherwise be
+        // parsed as browser-local, wrong on any non-ET machine). Ayrshare +
+        // scheduled_at both expect UTC ISO.
+        const dt = nyWallClockToUtc(v?.date || ymd(new Date()), v?.time || "09:00");
         if (Number.isNaN(dt.getTime())) return null;
         return {
           draftId: v?.draftId ?? null,
@@ -640,7 +666,17 @@ export function SocialComposerDrawer({
                     onChange={(e) => patchVar(activeVar.key, { time: e.target.value })}
                     className="rounded-md border border-slate-300 px-2 py-1 text-xs"
                   />
-                  <span className="text-slate-400">· staggered per platform</span>
+                  {bestSlot(activeVar.key) && (
+                    <button
+                      type="button"
+                      onClick={() => applyBestTime(activeVar.key)}
+                      title={`Fill the next recommended posting slot for ${activeMeta?.label} (Eastern).`}
+                      className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-1 font-medium text-emerald-700 hover:bg-emerald-100"
+                    >
+                      <span aria-hidden>⏰</span> Apply best time
+                    </button>
+                  )}
+                  <span className="text-slate-400">· Eastern · staggered per platform</span>
                 </div>
               )}
 

@@ -14,36 +14,21 @@
 import { NextResponse } from "next/server";
 
 import { getPosts } from "@/lib/metricool";
+import { BEST_TIME_BENCHMARKS, BEST_TIME_TZ } from "@/lib/social-best-time";
 import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const NETWORKS = ["instagram", "facebook", "linkedin", "tiktok"] as const;
-const TZ = "America/New_York";
+const TZ = BEST_TIME_TZ;
 
 // Below this many placed posts, a channel's own heatmap is too sparse to trust,
 // so we backfill empty slots with industry-benchmark best-times (day 0=Sun..6=Sat,
-// hour 24h, score relative). These are clearly flagged in the response/UI.
+// hour 24h, score relative). These are clearly flagged in the response/UI. The
+// benchmark table is shared with the composer's "Apply best time" action.
 const MIN_REAL_POSTS = 10;
-const BENCHMARKS: Record<string, Array<{ day: number; hour: number; score: number }>> = {
-  instagram: [
-    { day: 2, hour: 11, score: 10 }, { day: 3, hour: 13, score: 9 }, { day: 4, hour: 11, score: 8 },
-    { day: 3, hour: 11, score: 8 }, { day: 5, hour: 10, score: 6 }, { day: 1, hour: 12, score: 5 },
-  ],
-  facebook: [
-    { day: 3, hour: 11, score: 10 }, { day: 2, hour: 10, score: 9 }, { day: 4, hour: 13, score: 8 },
-    { day: 1, hour: 9, score: 6 }, { day: 5, hour: 12, score: 6 },
-  ],
-  linkedin: [
-    { day: 2, hour: 9, score: 10 }, { day: 3, hour: 10, score: 10 }, { day: 4, hour: 8, score: 9 },
-    { day: 2, hour: 12, score: 7 }, { day: 3, hour: 17, score: 6 },
-  ],
-  tiktok: [
-    { day: 4, hour: 19, score: 10 }, { day: 4, hour: 12, score: 9 }, { day: 2, hour: 9, score: 8 },
-    { day: 5, hour: 17, score: 7 }, { day: 3, hour: 11, score: 6 },
-  ],
-};
+const BENCHMARKS = BEST_TIME_BENCHMARKS;
 
 type RawPost = {
   publishedAt?: { dateTime?: string; timezone?: string };
@@ -73,7 +58,7 @@ function nyParts(dateTime?: string, srcTz?: string): { day: number; hour: number
     hour12: false,
   }).formatToParts(instant);
   const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
-  let hourStr = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const hourStr = parts.find((p) => p.type === "hour")?.value ?? "0";
   const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   if (!(wd in dayMap)) return null;
   let hour = parseInt(hourStr, 10);
