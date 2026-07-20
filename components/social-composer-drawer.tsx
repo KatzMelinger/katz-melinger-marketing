@@ -27,7 +27,7 @@
  * video script. Neither adds a generation format.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
@@ -147,18 +147,41 @@ function ymd(d: Date): string {
   ).padStart(2, "0")}`;
 }
 
+/** "Now" as an America/New_York calendar date + hour, regardless of the
+ *  browser's own timezone (the slots and the schedule inputs are all ET). */
+function nyNow(): { base: Date; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
+  let hour = get("hour");
+  if (hour === 24) hour = 0;
+  // A UTC-midnight anchor for NY's calendar date, so getUTCDay/getUTCDate give
+  // the ET weekday and clean day arithmetic (no DST drift on the date itself).
+  const base = new Date(Date.UTC(get("year"), get("month") - 1, get("day")));
+  return { base, hour };
+}
+
 /** The next upcoming {date, time} whose weekday matches `targetDay` (0=Sun..6=Sat)
- *  at `targetHour`, skipping today if that hour has already passed. Times are
- *  wall-clock strings the composer interprets as America/New_York. */
+ *  at `targetHour`, skipping today if that hour has already passed. Computed in
+ *  America/New_York (the zone the composer's date/time inputs represent). */
 function nextSlotDate(targetDay: number, targetHour: number): { date: string; time: string } {
-  const cursor = new Date();
+  const { base, hour: nyHour } = nyNow();
+  const cursor = new Date(base);
   for (let i = 0; i < 8; i++) {
-    if (i > 0) cursor.setDate(cursor.getDate() + 1);
-    if (cursor.getDay() !== targetDay) continue;
-    if (i === 0 && targetHour <= cursor.getHours()) continue; // slot already passed today
-    return { date: ymd(cursor), time: `${String(targetHour).padStart(2, "0")}:00` };
+    if (i > 0) cursor.setUTCDate(cursor.getUTCDate() + 1);
+    if (cursor.getUTCDay() !== targetDay) continue;
+    if (i === 0 && targetHour <= nyHour) continue; // slot already passed today (ET)
+    const d = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}-${String(cursor.getUTCDate()).padStart(2, "0")}`;
+    return { date: d, time: `${String(targetHour).padStart(2, "0")}:00` };
   }
-  return { date: ymd(cursor), time: `${String(targetHour).padStart(2, "0")}:00` };
+  const d = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}-${String(cursor.getUTCDate()).padStart(2, "0")}`;
+  return { date: d, time: `${String(targetHour).padStart(2, "0")}:00` };
 }
 
 /** A staggered slot per network index: consecutive business days at 9:00am. */
@@ -266,11 +289,18 @@ export function SocialComposerDrawer({
     [selectedList, variations],
   );
   const dupKey = useMemo(() => JSON.stringify(dupPayload), [dupPayload]);
+  // Monotonic request id so a slow earlier response can't clobber a newer one;
+  // and the signature of the last duplicate set, so we only force re-ack when the
+  // matched networks actually change (not on every keystroke elsewhere).
+  const dupReqRef = useRef(0);
+  const dupSigRef = useRef("");
   useEffect(() => {
     if (!dupPayload.length) {
       setDupByNet(new Map());
+      dupSigRef.current = "";
       return;
     }
+    const mySeq = ++dupReqRef.current;
     const timer = window.setTimeout(async () => {
       try {
         const res = await fetch("/api/social/duplicate-check", {
@@ -279,13 +309,20 @@ export function SocialComposerDrawer({
           body: JSON.stringify({ posts: dupPayload }),
         });
         const j = await res.json();
+        if (mySeq !== dupReqRef.current) return; // a newer request superseded this one
         if (!res.ok || !Array.isArray(j?.matches)) return;
         const next = new Map<NetworkKey, AngleConflict>();
         for (const m of j.matches as { platform: string; conflict: AngleConflict | null }[]) {
           if (m.conflict) next.set(m.platform as NetworkKey, m.conflict);
         }
         setDupByNet(next);
-        setDupAck(false); // fresh results → require re-acknowledgement
+        // Only require re-acknowledgement when the set of duplicate networks
+        // changed — editing unrelated copy shouldn't silently uncheck the box.
+        const sig = [...next.keys()].sort().join(",");
+        if (sig !== dupSigRef.current) {
+          dupSigRef.current = sig;
+          setDupAck(false);
+        }
       } catch {
         /* advisory only */
       }
@@ -437,7 +474,10 @@ export function SocialComposerDrawer({
       patchVar(key, {
         genBusy: false,
         slides: j.slides as Slide[],
-        mediaUrls: j.urls as string[],
+        // Keep any manually-uploaded media and swap in the fresh slide URLs —
+        // rebuilding from `uploads` avoids both losing the upload and piling up
+        // stale slide URLs on regenerate.
+        mediaUrls: [...(v.uploads ?? []).map((a) => a.url), ...(j.urls as string[])],
         copy: (j.caption as string)?.trim() || v.copy,
         genMsg: j.message || null,
       });
@@ -476,7 +516,10 @@ export function SocialComposerDrawer({
     if (!legalOk || blockedNets.length > 0 || mediaMissingNets.length > 0) return;
     if (duplicateNets.length > 0 && !dupAck) return;
     const posts = buildPosts(true);
-    if (!posts.length) return;
+    if (!posts.length) {
+      setResult({ tone: "warn", text: "Nothing ready to schedule — add copy (and a valid time) to a platform.", recorded: false });
+      return;
+    }
 
     setBusy(true);
     setResult(null);
@@ -534,11 +577,14 @@ export function SocialComposerDrawer({
       .filter((p): p is NonNullable<{ draftId: string | null; format: NetworkKey; platform: NetworkKey; body: string; mediaUrls: string[]; scheduleDate: string }> => p !== null);
 
   // Save every ready variation as a draft on the Content Calendar — no Ayrshare,
-  // no gate. Drafts are allowed to still carry flags; you clear them before you
-  // approve. Approving a draft (from the calendar) is what schedules it.
+  // no gate. Drafts park as-is even if they'd trip a rule; the brand/compliance
+  // gate is re-checked when the draft is approved from the calendar.
   const saveDraft = async () => {
     const posts = buildPosts(false);
-    if (!posts.length) return;
+    if (!posts.length) {
+      setResult({ tone: "warn", text: "Nothing to save — add copy to at least one platform.", recorded: false });
+      return;
+    }
     setDraftBusy(true);
     setResult(null);
     try {

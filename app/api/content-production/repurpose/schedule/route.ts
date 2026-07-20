@@ -92,8 +92,11 @@ export async function POST(req: Request) {
   // Content Calendar (semantically, not exact-text) up front. A near-duplicate
   // is flagged for review below (named by its matching post) and can't schedule
   // until a human clears it. Fails soft — a check error never blocks scheduling.
+  // The flagged gate applies only when actually scheduling. "Save as draft" parks
+  // work-in-progress (which may still trip a rule) as a plain draft — the gate is
+  // re-checked when the draft is approved from the calendar.
   let dupConflicts: AngleConflict[][] = valid.map(() => []);
-  if (body.ackDuplicates !== true) {
+  if (!asDraft && body.ackDuplicates !== true) {
     try {
       const dup = await checkCalendarDuplicates({
         tenantId: db.tenantId,
@@ -137,9 +140,13 @@ export async function POST(req: Request) {
     // "flagged" with the reason, and a human must clear it (review + override)
     // before it can be approved. This backstops the client gate so a flagged
     // draft can't be quietly approved from the calendar later.
-    const blockingFlags = checkSocialCompliance(content).filter((f) => f.severity === "block");
+    // Only scheduling flags; a "save as draft" parks even a rule-tripping post as
+    // a plain draft (re-checked at approve). dupConflicts is empty for asDraft.
+    const blockingFlags = asDraft
+      ? []
+      : checkSocialCompliance(content).filter((f) => f.severity === "block");
     const dupConflict = dupConflicts[i]?.[0] ?? null;
-    const flagged = blockingFlags.length > 0 || !!dupConflict;
+    const flagged = !asDraft && (blockingFlags.length > 0 || !!dupConflict);
 
     // Guaranteed-fail guard: media-required platforms (Instagram, TikTok, etc.)
     // can't post text-only. Fail fast with a clear reason instead of spending an
@@ -272,7 +279,7 @@ export async function POST(req: Request) {
   if (asDraft) {
     message = `${drafted} post(s) saved as drafts on the Content Calendar. Approve each one to schedule it.${flagNote}`;
   } else if (!apiKey) {
-    message = `${scheduled} post(s) added to the Content Calendar as planned posts. Connect Ayrshare to auto-publish them at their scheduled times.`;
+    message = `${scheduled} post(s) added to the Content Calendar as planned posts. Connect Ayrshare to auto-publish them at their scheduled times.${flagNote}`;
   } else if (failed === 0) {
     message = `${scheduled} of ${valid.length} post(s) scheduled. Review them on the Content Calendar.${flagNote}`;
   } else if (scheduled === 0) {

@@ -839,7 +839,7 @@ export async function analyzeDraft(args: {
   const supabase = getSupabaseAdmin();
   const tid = await resolveTenantId();
 
-  const { words, sentences } = basicMetrics(body);
+  const { words } = basicMetrics(body);
   // Displayed readability is computed by the remediation engine's scorer, which
   // strips Markdown (##, *, link URLs) before measuring. The old basicMetrics
   // scorer counted that markup as words/syllables and pinned dense legal pages
@@ -891,7 +891,7 @@ export async function analyzeDraft(args: {
     reading_grade_level: Math.round(grade * 10) / 10,
     readability_findings: readabilityFindings(body),
     word_count: words.length,
-    sentence_count: sentences,
+    sentence_count: readStats.sentenceCount,
     keyword_density: keywordDensity(words),
     target_keyword_hits: targetHits(body, targetKeywords),
     aeo_score: aeo.score,

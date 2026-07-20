@@ -282,7 +282,7 @@ export function AnalysisCard({
       <div className="grid md:grid-cols-2 gap-4 mt-4">
         {analysis.readability_findings && analysis.readability_findings.length > 0 && (
           <FindingsList
-            label={`Readability findings (${analysis.readability_score}/100, aim 70+)`}
+            label={`Readability findings (${analysis.readability_score}/100, aim ${READABILITY_TARGET}+)`}
             findings={analysis.readability_findings}
             onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
             selected={selectedFindings}

@@ -62,7 +62,7 @@ function buildDigest(
   const prev = snapshots.length >= 2 ? snapshots[snapshots.length - 2] : null;
   const delta = prev ? consistencyPct - prev.consistency_pct : 0;
   const trendStr = prev
-    ? ` (${delta > 0 ? "▲" : delta < 0 ? "▼" : "±"}${Math.abs(delta)} pts vs last week)`
+    ? ` (${delta > 0 ? "▲" : delta < 0 ? "▼" : "±"}${Math.abs(delta)} pts vs ${prev.captured_on})`
     : "";
 
   const dirTotal = directoryStatuses.length;

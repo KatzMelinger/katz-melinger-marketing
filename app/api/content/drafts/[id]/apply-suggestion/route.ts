@@ -171,12 +171,16 @@ Call the apply_edit tool with the complete updated body, a short summary of what
     );
     const summary =
       typeof parsed?.summary === "string" ? parsed.summary : "";
+    // Normalize the ORIGINAL the same way so the redline shows only the real
+    // edit — otherwise the global em/en-dash strip renders as scattered "edits"
+    // across untouched sections, overstating a minimal readability fix.
+    const original_body = stripEmDashes(draft.body as string);
     const no_change =
-      parsed?.no_change === true || updated_body === (draft.body as string);
+      parsed?.no_change === true || updated_body === original_body;
 
     return NextResponse.json({
       updated_body,
-      original_body: draft.body as string,
+      original_body,
       summary,
       no_change,
     });

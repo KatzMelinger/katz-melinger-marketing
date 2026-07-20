@@ -15,6 +15,7 @@
 
 import { NextResponse } from "next/server";
 
+import { checkSocialCompliance } from "@/lib/social-compliance";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -108,10 +109,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (row.status !== "flagged") {
       return NextResponse.json({ error: "This post isn't flagged." }, { status: 400 });
     }
-    const { error } = await db
+    let { error } = await db
       .from("social_posts")
       .update({ status: "draft", last_error: null })
       .eq("id", id);
+    // Degrade gracefully if last_error isn't migrated (same as the insert path);
+    // otherwise a flagged post inserted without the column could never be cleared.
+    if (error && /last_error/i.test(error.message)) {
+      ({ error } = await db.from("social_posts").update({ status: "draft" }).eq("id", id));
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({
       ok: true,
@@ -127,6 +133,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!row) return NextResponse.json({ error: "Post not found" }, { status: 404 });
     if (row.status !== "draft") {
       return NextResponse.json({ error: "Only a draft can be approved." }, { status: 400 });
+    }
+    // Re-check compliance at approval: a draft's caption may have been edited to
+    // non-compliant copy after it was parked. A blocking flag re-flags the post
+    // (held for review) instead of publishing it.
+    const approveFlags = checkSocialCompliance(row.content).filter((f) => f.severity === "block");
+    if (approveFlags.length > 0) {
+      await db
+        .from("social_posts")
+        .update({ status: "flagged", last_error: `Needs review: ${approveFlags.map((f) => f.label).join("; ")}` })
+        .eq("id", id)
+        .then(undefined, () => {});
+      return NextResponse.json(
+        { error: `Flagged for review: ${approveFlags.map((f) => f.label).join("; ")}. Clear the flag after reviewing.` },
+        { status: 400 },
+      );
     }
     const platform = row.platform as AyrsharePlatform;
     const media = Array.isArray(row.media_urls) ? row.media_urls : [];

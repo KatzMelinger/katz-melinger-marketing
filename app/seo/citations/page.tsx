@@ -609,7 +609,9 @@ function CitationSummary({
   const verifiable = counts.consistent + counts.inconsistent;
   const consistencyPct = verifiable ? Math.round((counts.consistent / verifiable) * 100) : 0;
 
-  // Week-over-week: current % vs the previous snapshot's %.
+  // Change vs the previous audit's snapshot. Snapshots are written per audit
+  // (not strictly weekly), so we label it with that snapshot's date rather than
+  // claiming "last week".
   const prev = snapshots.length >= 2 ? snapshots[snapshots.length - 2] : null;
   const delta = prev ? consistencyPct - prev.consistency_pct : null;
 
@@ -642,7 +644,7 @@ function CitationSummary({
                   delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-slate-400"
                 }`}
               >
-                {delta > 0 ? "▲" : delta < 0 ? "▼" : "±"} {Math.abs(delta)} pts vs last week
+                {delta > 0 ? "▲" : delta < 0 ? "▼" : "±"} {Math.abs(delta)} pts vs {prev?.captured_on}
               </span>
             )}
           </div>
@@ -708,9 +710,15 @@ function CopyField({ label, value }: { label: string; value: string }) {
       <code className="flex-1 rounded bg-white px-2 py-1 text-xs text-slate-800">{value}</code>
       <button
         onClick={() => {
-          void navigator.clipboard?.writeText(value);
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1200);
+          // Only flip to "Copied" if the write actually succeeded (the Clipboard
+          // API rejects in insecure contexts); swallow the rejection either way.
+          navigator.clipboard
+            ?.writeText(value)
+            .then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1200);
+            })
+            .catch(() => {});
         }}
         className="rounded border border-[#e2e8f0] px-2 py-1 text-[11px] text-slate-600 hover:border-brand hover:text-brand"
       >

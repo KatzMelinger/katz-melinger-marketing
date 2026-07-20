@@ -73,7 +73,9 @@ const CHANNEL: Record<string, { color: string; label: string }> = {
 };
 
 function channelOf(platform: string) {
-  return CHANNEL[platform] ?? { color: "#64748B", label: platform || "Other" };
+  // Any unmapped platform (e.g. a stray legacy X post) shows neutral "Other"
+  // rather than a raw lowercase id.
+  return CHANNEL[platform] ?? { color: "#64748B", label: "Other" };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

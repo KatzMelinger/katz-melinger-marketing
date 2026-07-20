@@ -199,6 +199,11 @@ export async function addCitation(
  * clobbers an already-audited row: a source that already exists keeps its NAP
  * and status; we only backfill a missing listing_url. New sources are inserted
  * as `unverified` awaiting the next audit.
+ *
+ * NOTE: `bySource` is built once and not updated between inserts, so `entries`
+ * must be de-duped by (case-insensitive) source before calling — the import
+ * route's parseImport() does this. Duplicate sources in one batch would
+ * otherwise attempt a second insert on the same (tenant, source) unique key.
  */
 export async function importCitations(
   entries: { source: string; listing_url: string }[],
