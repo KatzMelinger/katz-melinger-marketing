@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { SeoShell, formatNumber } from "@/components/seo-shell";
+import { DirectoryCoverage } from "@/components/directory-coverage";
 
 type Canonical = { name: string; address: string; phone: string; website: string };
 
@@ -281,8 +282,8 @@ export default function CitationsPage() {
 
   return (
     <SeoShell
-      title="Citations"
-      subtitle="Keep the firm's Name, Address & Phone identical across every directory and listing — inconsistent NAP hurts local ranking."
+      title="Directories & Citations"
+      subtitle="One page for both questions: are we listed everywhere we should be, and is every listing accurate? Keep the firm's Name, Address & Phone identical across every directory — inconsistent NAP hurts local ranking."
     >
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -598,6 +599,8 @@ export default function CitationsPage() {
           })}
         </ul>
       </section>
+
+      <DirectoryCoverage />
     </SeoShell>
   );
 }

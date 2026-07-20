@@ -31,6 +31,13 @@ const nextConfig: NextConfig = {
         destination: "/content-production",
         permanent: true,
       },
+      // Legal Directories folded into the unified Citations page (directory
+      // coverage now lives there alongside NAP accuracy). The API routes stay.
+      {
+        source: "/seo/directories",
+        destination: "/seo/citations",
+        permanent: true,
+      },
     ];
   },
 };

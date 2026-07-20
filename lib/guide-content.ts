@@ -153,17 +153,11 @@ export const GUIDE_ENTRIES: Record<string, GuideEntry> = {
     howToUse:
       "Manage GBP settings, view rankings by ZIP, respond to reviews, and keep an eye on local citations.",
   },
-  "/seo/directories": {
-    whatItIs:
-      "A tracker for your claimed profiles across legal and business directories, with status and priority per listing.",
-    howToUse:
-      "Add directories manually or use Suggest for AI picks, then update status as you claim and optimize each one.",
-  },
   "/seo/citations": {
     whatItIs:
-      "A NAP (Name / Address / Phone) consistency tracker that flags drift from your canonical details across listings.",
+      "Directories & Citations — one page for both listing coverage (are we listed/claimed everywhere we should be?) and NAP accuracy (does every listing match your canonical Name / Address / Phone?).",
     howToUse:
-      "Paste a listing to audit its NAP, save the finding, and flag inconsistencies to fix across directories.",
+      "Import or add listings, run the audit to flag NAP drift, use Fix for the corrected values + claim link, and track directory coverage (with AI-suggested directories) in the coverage section below.",
   },
   "/content/refresh": {
     whatItIs:
