@@ -496,9 +496,11 @@ export function DraftDrawer({
     });
     setApplyingFindings(null);
     if (res.ok) {
-      const updated = { ...draft, body: newBody };
+      const returned = (await res.json().catch(() => null)) as DraftRow | null;
+      const updated: DraftRow = returned && typeof returned === "object" ? returned : { ...draft, body: newBody };
       setDraft(updated);
-      setEditBody(newBody);
+      setEditBody(updated.body ?? newBody);
+      setFreshnessAck(false);
       setApplyNonce((n) => n + 1);
       onChanged();
       setMsg("Applied — re-scoring…");
@@ -531,10 +533,14 @@ export function DraftDrawer({
       body: JSON.stringify({ body: newBody }),
     });
     if (res.ok) {
-      setDraft({ ...draft, body: newBody });
-      setEditBody(newBody);
+      const updated = (await res.json().catch(() => null)) as DraftRow | null;
+      const next: DraftRow = updated && typeof updated === "object" ? updated : { ...draft, body: newBody };
+      setDraft(next);
+      setEditBody(next.body ?? newBody);
+      setFreshnessAck(false);
       setMsg(`Linked "${term}" to the existing page.`);
       onChanged();
+      await runAnalysis(next);
     } else {
       setMsg("Failed to apply link.");
     }
@@ -566,10 +572,19 @@ export function DraftDrawer({
         body: JSON.stringify({ body: editBody }),
       });
       if (res.ok) {
-        setDraft({ ...draft, body: editBody });
+        // Use the server's returned row so the recomputed freshness flags land in
+        // the drawer; re-verify freshness and re-run analysis so no QA gate shows
+        // a pre-edit value.
+        const updated = (await res.json().catch(() => null)) as DraftRow | null;
+        const next: DraftRow = updated && typeof updated === "object" ? updated : { ...draft, body: editBody };
+        setDraft(next);
+        setEditBody(next.body ?? editBody);
         setEditing(false);
-        setMsg("Saved.");
+        setFreshnessAck(false);
         onChanged();
+        setMsg("Saved — re-checking…");
+        await runAnalysis(next);
+        setMsg("Saved. Checks updated.");
       } else {
         setMsg("Save failed.");
       }
@@ -650,6 +665,15 @@ export function DraftDrawer({
     setApproving(true);
     setMsg("Running compliance check…");
     try {
+      // The approve endpoint only accepts a draft at status "review", but a card
+      // opened from the Production Board is at "initial_review"/"draft" and nothing
+      // else moves it. Promote it to "review" first (this also syncs the pipeline),
+      // so approving works from the board, not just the Drafts studio.
+      await fetch(`/api/content/drafts/${draftId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "review" }),
+      }).catch(() => {});
       const res = await fetch("/api/agent/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

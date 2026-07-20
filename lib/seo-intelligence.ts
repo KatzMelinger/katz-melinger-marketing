@@ -403,10 +403,15 @@ export async function getKeywordGapVsCompetitor(
   return competitor
     .map((row) => {
       const oursForKeyword = ourMap.get(row.keyword.toLowerCase());
-      const ourPosition = oursForKeyword?.position ?? 0;
+      // position 0/absent means we don't rank for this keyword at all — that's the
+      // BIGGEST gap, not the best rank. Keep 0 for display, but score it as if we
+      // ranked far back so "competitor ranks, we don't" surfaces to the top.
+      const ranked = !!(oursForKeyword?.position && oursForKeyword.position > 0);
+      const ourPosition = ranked ? oursForKeyword!.position : 0;
+      const gapRank = ranked ? ourPosition : 100;
       const competitorPosition = row.position;
       const opportunityScore = toPercent(
-        row.searchVolume / 150 + Math.max(0, ourPosition - competitorPosition) * 6,
+        row.searchVolume / 150 + Math.max(0, gapRank - competitorPosition) * 6,
       );
       return {
         keyword: row.keyword,
@@ -625,8 +630,9 @@ async function fetchPageSpeed(
   const endpoint = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
   endpoint.searchParams.set("url", url);
   endpoint.searchParams.set("strategy", strategy);
-  endpoint.searchParams.set("category", "performance");
-  endpoint.searchParams.set("category", "seo");
+  // Repeated `category` params (append, not set — set would drop the first).
+  endpoint.searchParams.append("category", "performance");
+  endpoint.searchParams.append("category", "seo");
   const apiKey = process.env.PAGESPEED_API_KEY?.trim();
   if (apiKey) {
     endpoint.searchParams.set("key", apiKey);

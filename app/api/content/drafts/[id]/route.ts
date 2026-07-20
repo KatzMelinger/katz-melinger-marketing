@@ -6,6 +6,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantClient } from "@/lib/tenant-db";
+import { findTimeSensitiveFacts } from "@/lib/freshness-check";
+import { matchCurrentFact } from "@/lib/current-facts";
+import { getCurrentFacts } from "@/lib/current-facts-store";
 
 export const runtime = "nodejs";
 
@@ -73,6 +76,34 @@ export async function PATCH(
     if (key in (body ?? {})) patch[key] = body[key];
   }
   const { supabase, tenantId } = await getTenantClient();
+
+  // When the body changes (a manual edit), recompute the time-sensitive-figure
+  // gate so it can't go stale — otherwise a reviewer could edit a current figure
+  // to a dated one and still pass the freshness QA gate (which reads
+  // metadata.freshness). Merge into existing metadata; best-effort.
+  if (typeof body?.body === "string") {
+    try {
+      const { data: existing } = await supabase
+        .from("content_drafts")
+        .select("metadata")
+        .eq("id", id)
+        .maybeSingle();
+      const baseMeta =
+        (patch.metadata as Record<string, unknown> | undefined) ??
+        ((existing?.metadata as Record<string, unknown> | null) ?? {});
+      const currentFacts = await getCurrentFacts(tenantId);
+      const flags = findTimeSensitiveFacts(body.body).map((f) => {
+        const cf = matchCurrentFact(f, currentFacts);
+        return cf
+          ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
+          : f;
+      });
+      patch.metadata = { ...baseMeta, freshness: { flags } };
+    } catch (e) {
+      console.warn("[drafts] freshness recompute on edit failed:", e);
+    }
+  }
+
   const { data, error } = await supabase
     .from("content_drafts")
     .update(patch)

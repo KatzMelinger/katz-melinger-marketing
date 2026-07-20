@@ -252,9 +252,27 @@ export async function POST(req: Request) {
         }),
       );
     }
-    // Any other insert failure is real — surface it instead of reporting a
-    // fabricated success (nothing actually landed on the calendar).
     if (ins.error) {
+      // CRITICAL: some rows may already be live on Ayrshare (they have a real
+      // ayrshare_id). Reporting failure here would make the user re-click
+      // Schedule and DOUBLE-PUBLISH to the real accounts. If anything was
+      // published, return success with a loud warning instead of a 500.
+      const publishedCount = rows.filter((r) => r.ayrshare_id).length;
+      if (publishedCount > 0) {
+        return NextResponse.json({
+          ok: true,
+          scheduled: publishedCount,
+          failed: 0,
+          calendarError: ins.error.message,
+          results,
+          message:
+            `${publishedCount} post(s) were scheduled on your social accounts, but could NOT be saved to the Content Calendar ` +
+            `(${ins.error.message}). They are already queued — do NOT re-schedule them, or they'll post twice. ` +
+            `They may not appear on the calendar; check Ayrshare directly.`,
+        });
+      }
+      // Nothing was published externally — safe to surface the failure (a retry
+      // won't double-post) instead of reporting a fabricated success.
       return NextResponse.json(
         { error: `Could not save to the Content Calendar: ${ins.error.message}` },
         { status: 500 },

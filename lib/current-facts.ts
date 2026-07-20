@@ -108,10 +108,21 @@ export function matchCurrentFact(
   const hay = norm(`${flag?.sentence ?? ""} ${flag?.match ?? ""}`);
   if (!hay.trim()) return null;
   // Prefer the fact with the most keyword hits in the sentence.
-  let best: { fact: CurrentFact; hits: number } | null = null;
+  let bestHits = 0;
+  let winners: CurrentFact[] = [];
   for (const f of facts) {
     const hits = f.keywords.filter((k) => hay.includes(norm(k))).length;
-    if (hits > 0 && (!best || hits > best.hits)) best = { fact: f, hits };
+    if (hits === 0) continue;
+    if (hits > bestHits) {
+      bestHits = hits;
+      winners = [f];
+    } else if (hits === bestHits) {
+      winners.push(f);
+    }
   }
-  return best?.fact ?? null;
+  // Ambiguous — multiple facts tie at the top (e.g. NYC $17 vs rest-of-state $16
+  // minimum wage, when the sentence gives no jurisdiction cue). Don't guess a
+  // value the reviewer might wrongly trust; surface the flag with no suggestion.
+  if (winners.length !== 1) return null;
+  return winners[0];
 }
