@@ -1,17 +1,16 @@
 /**
- * Weekly citations re-audit + digest.
+ * Weekly citations re-audit (powers the in-app "This week" summary).
  *
  * GET  /api/seo/citations/weekly-audit — Vercel Cron (Bearer CRON_SECRET),
- *      scheduled Monday morning. Re-audits every linked listing, saves a
- *      consistency snapshot, and emails a digest (consistency %, coverage,
- *      what needs attention) to the marketing inbox.
+ *      scheduled Monday morning. Re-audits every linked listing and saves a
+ *      consistency snapshot, so the summary + trend on /seo/citations refresh
+ *      themselves without anyone clicking Audit. The results live on that page.
  * POST /api/seo/citations/weekly-audit — manual trigger for the signed-in
- *      tenant, to preview the same run/digest without waiting for Monday.
+ *      tenant, to run the same refresh on demand.
  *
- * Email sends via the Resend adapter (lib/messaging). With no RESEND_API_KEY it
- * stubs cleanly (status "stubbed"), so this runs end-to-end in dev; set
- * RESEND_API_KEY + RESEND_FROM to actually deliver. Override the recipient with
- * CITATIONS_DIGEST_TO (defaults to the KM marketing inbox).
+ * Email digest is OFF by default (the results are shown in-app). To also email
+ * it, set CITATIONS_DIGEST_EMAIL=true (sends via the Resend adapter — needs
+ * RESEND_API_KEY + RESEND_FROM; recipient override CITATIONS_DIGEST_TO).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -34,6 +33,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const DIGEST_TO = process.env.CITATIONS_DIGEST_TO?.trim() || "marketing@katzmelinger.com";
+const EMAIL_ENABLED = process.env.CITATIONS_DIGEST_EMAIL?.trim() === "true";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.NEXT_PUBLIC_SITE_URL?.trim() || "";
 
 function isAuthorizedCron(req: NextRequest): boolean {
@@ -133,6 +133,10 @@ async function runWeeklyAudit(tenantId: string) {
     snapshots,
     audited,
   );
+  // The results are shown on /seo/citations. Email is an opt-in extra.
+  if (!EMAIL_ENABLED) {
+    return { ...digest.stats, email: "disabled" as const };
+  }
   const send = await dispatch("email", {
     to: DIGEST_TO,
     subject: digest.subject,

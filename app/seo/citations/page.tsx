@@ -317,20 +317,7 @@ export default function CitationsPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-3">
-        <article className="rounded-xl border border-[#e2e8f0] bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Consistent</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-700">{formatNumber(counts.consistent)}</p>
-        </article>
-        <article className="rounded-xl border border-[#e2e8f0] bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Inconsistent</p>
-          <p className="mt-2 text-2xl font-semibold text-red-700">{formatNumber(counts.inconsistent)}</p>
-        </article>
-        <article className="rounded-xl border border-[#e2e8f0] bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Missing / unverified</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-700">{formatNumber(counts.open)}</p>
-        </article>
-      </section>
+      <CitationSummary citations={citations} snapshots={snapshots} counts={counts} />
 
       {/* Audit from saved links */}
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
@@ -452,8 +439,6 @@ export default function CitationsPage() {
           </ul>
         )}
       </section>
-
-      {snapshots.length > 0 && <TrendPanel snapshots={snapshots} />}
 
       {/* Tracked citations */}
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
@@ -606,67 +591,106 @@ export default function CitationsPage() {
 }
 
 /**
- * Consistency-over-time trend (Directories & Citations doc, section 7). Each
- * audit saves a daily snapshot; this charts consistency % so improvement is
- * visible, not just the current-state counters. Renders only when snapshots
- * exist (i.e. after the snapshots table is migrated and at least one audit ran).
+ * Weekly summary — the "digest" shown in-app instead of emailed. The Monday
+ * cron re-audits + snapshots; this panel reads the current state so the results
+ * are always front-and-center: consistency % now, week-over-week movement, what
+ * needs attention, when it was last audited, and the trend sparkline (once
+ * snapshots exist). Always renders when there are tracked citations.
  */
-function TrendPanel({ snapshots }: { snapshots: Snapshot[] }) {
-  const latest = snapshots[snapshots.length - 1];
-  const first = snapshots[0];
-  const delta = latest.consistency_pct - first.consistency_pct;
-  // Sparkline geometry: map each snapshot's % to an x,y point.
+function CitationSummary({
+  citations,
+  snapshots,
+  counts,
+}: {
+  citations: Citation[];
+  snapshots: Snapshot[];
+  counts: { consistent: number; inconsistent: number; open: number };
+}) {
+  const verifiable = counts.consistent + counts.inconsistent;
+  const consistencyPct = verifiable ? Math.round((counts.consistent / verifiable) * 100) : 0;
+
+  // Week-over-week: current % vs the previous snapshot's %.
+  const prev = snapshots.length >= 2 ? snapshots[snapshots.length - 2] : null;
+  const delta = prev ? consistencyPct - prev.consistency_pct : null;
+
+  // Most recent audit timestamp across all listings.
+  const lastAudited = citations.reduce<string | null>((max, c) => {
+    if (!c.last_checked_at) return max;
+    return !max || c.last_checked_at > max ? c.last_checked_at : max;
+  }, null);
+
+  // Sparkline geometry (only when there's history).
   const W = 320;
-  const H = 48;
+  const H = 40;
   const pts = snapshots.map((s, i) => {
     const x = snapshots.length === 1 ? W : (i / (snapshots.length - 1)) * W;
     const y = H - (Math.max(0, Math.min(100, s.consistency_pct)) / 100) * H;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
+
   return (
     <section className="rounded-xl border border-[#e2e8f0] bg-white p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">Consistency over time</h2>
-          <p className="text-xs text-slate-500">
-            Share of verifiable listings that match your canonical NAP, per audit.
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-brand">This week</h2>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-3xl font-semibold text-slate-900">{consistencyPct}%</span>
+            <span className="text-sm text-slate-500">NAP consistent</span>
+            {delta !== null && (
+              <span
+                className={`text-xs font-medium ${
+                  delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-slate-400"
+                }`}
+              >
+                {delta > 0 ? "▲" : delta < 0 ? "▼" : "±"} {Math.abs(delta)} pts vs last week
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            {counts.consistent} of {verifiable || 0} checkable listing(s) match ·{" "}
+            {lastAudited
+              ? `last audited ${new Date(lastAudited).toLocaleDateString()}`
+              : "not audited yet"}{" "}
+            · auto-refreshes every Monday
           </p>
         </div>
-        <div className="text-right">
-          <div className="text-2xl font-semibold text-slate-900">{latest.consistency_pct}%</div>
-          {snapshots.length > 1 && (
-            <div
-              className={`text-xs font-medium ${
-                delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-slate-400"
-              }`}
-            >
-              {delta > 0 ? "▲" : delta < 0 ? "▼" : "±"} {Math.abs(delta)} pts since {first.captured_on}
-            </div>
-          )}
-        </div>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" preserveAspectRatio="none" height={H}>
-        <line x1="0" y1={H} x2={W} y2={H} stroke="#e2e8f0" strokeWidth="1" />
-        {snapshots.length > 1 ? (
-          <polyline
-            points={pts.join(" ")}
-            fill="none"
-            stroke="#116AB2"
-            strokeWidth="2"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        ) : (
-          <circle cx={W} cy={pts[0]?.split(",")[1] ?? H} r="3" fill="#116AB2" />
+        {snapshots.length > 0 && (
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            className="w-full max-w-[320px]"
+            preserveAspectRatio="none"
+            height={H}
+          >
+            <line x1="0" y1={H} x2={W} y2={H} stroke="#e2e8f0" strokeWidth="1" />
+            {snapshots.length > 1 ? (
+              <polyline
+                points={pts.join(" ")}
+                fill="none"
+                stroke="#116AB2"
+                strokeWidth="2"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            ) : (
+              <circle cx={W} cy={pts[0]?.split(",")[1] ?? H} r="3" fill="#116AB2" />
+            )}
+          </svg>
         )}
-      </svg>
-      <div className="mt-1 flex justify-between text-[11px] text-slate-400">
-        <span>{first.captured_on}</span>
-        <span>
-          {latest.consistent}/{latest.consistent + latest.inconsistent} consistent ·{" "}
-          {latest.total} tracked
-        </span>
-        <span>{latest.captured_on}</span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-[#e2e8f0] bg-slate-50 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">Consistent</p>
+          <p className="mt-1 text-2xl font-semibold text-emerald-700">{formatNumber(counts.consistent)}</p>
+        </div>
+        <div className="rounded-lg border border-[#e2e8f0] bg-slate-50 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">Inconsistent</p>
+          <p className="mt-1 text-2xl font-semibold text-red-700">{formatNumber(counts.inconsistent)}</p>
+        </div>
+        <div className="rounded-lg border border-[#e2e8f0] bg-slate-50 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">Missing / unverified</p>
+          <p className="mt-1 text-2xl font-semibold text-amber-700">{formatNumber(counts.open)}</p>
+        </div>
       </div>
     </section>
   );
