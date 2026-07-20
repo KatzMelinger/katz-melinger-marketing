@@ -52,6 +52,10 @@
     {
       "path": "/api/social/metrics/refresh",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/seo/citations/weekly-audit",
+      "schedule": "0 13 * * 1"
     }
   ]
 }
