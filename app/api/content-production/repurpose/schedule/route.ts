@@ -156,13 +156,18 @@ export async function POST(req: Request) {
 
     if (!flagged && !asDraft && apiKey && !blockedForMedia) {
       try {
+        // If the chosen slot has already elapsed (e.g. a best-time slot picked
+        // earlier the same day), publish now rather than sending Ayrshare a past
+        // date it would reject and strand as "failed".
+        const futureAt =
+          new Date(p.scheduleDate).getTime() > Date.now() ? p.scheduleDate : undefined;
         const res = await postToAyrshare({
           apiKey,
           profileKey: ayrshareProfileKey,
           post: content,
           platforms: [platform],
           mediaUrls: mediaUrls.length ? mediaUrls : undefined,
-          scheduleDate: p.scheduleDate,
+          scheduleDate: futureAt,
           // Long X posts (our threads) auto-split instead of being rejected >280.
           twitterThread: platform === "twitter",
         });

@@ -32,8 +32,8 @@ export async function GET() {
       return NextResponse.json({ error: "Failed to load keywords" }, { status: 500 });
     }
     return NextResponse.json(data ?? []);
-  } catch (err: any) {
-    console.error("[seo/tracked-keywords GET] Failed:", err?.message);
+  } catch (err) {
+    console.error("[seo/tracked-keywords GET] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to load keywords" }, { status: 500 });
   }
 }
@@ -85,14 +85,16 @@ export async function DELETE(req: NextRequest) {
     const { error } = await db
       .from("seo_keywords")
       .delete()
-      .ilike("keyword", keyword);
+      // Exact match — ilike would treat %/_ in the keyword as wildcards and could
+      // delete more than the one intended keyword.
+      .eq("keyword", keyword);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json({ ok: true, removed: keyword });
-  } catch (err: any) {
+  } catch (err) {
     return NextResponse.json(
-      { error: err?.message ?? "Failed to remove keyword" },
+      { error: err instanceof Error ? err.message : "Failed to remove keyword" },
       { status: 500 },
     );
   }
@@ -144,8 +146,8 @@ export async function POST(req: NextRequest) {
     // refresh cron reads ranks via ranked_keywords + a live-SERP fallback.
 
     return NextResponse.json(data, { status: 201 });
-  } catch (err: any) {
-    console.error("[seo/tracked-keywords POST] Failed:", err?.message);
+  } catch (err) {
+    console.error("[seo/tracked-keywords POST] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to add keyword" }, { status: 500 });
   }
 }

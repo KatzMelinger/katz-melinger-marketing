@@ -24,6 +24,7 @@ import {
 import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { assertPublicUrl } from "@/lib/url-safety";
 
 export interface CanonicalNap {
   name: string;
@@ -414,6 +415,8 @@ Return ONLY a JSON object, no markdown fences:
 {"nameFound": <string|null>, "addressFound": <string|null>, "phoneFound": <string|null>, "status": "consistent"|"inconsistent"|"missing", "issues": <string|null>}`;
 
 async function fetchListingText(url: string): Promise<string> {
+  // SSRF guard: listing_url is user-supplied; never fetch internal addresses.
+  await assertPublicUrl(url);
   const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; KMDashboard/1.0)" },
     redirect: "follow",

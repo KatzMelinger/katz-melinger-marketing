@@ -203,3 +203,24 @@ export async function executeRun(runId: string): Promise<void> {
       .eq("id", runId);
   }
 }
+
+/**
+ * Fail any run stuck in 'running' past the max serverless duration — its function
+ * instance was killed before it could set done/failed, so it would otherwise stay
+ * "running" forever. Called at the start of the weekly sweep as a lightweight reaper.
+ */
+export async function reapStaleRuns(): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("aeo_runs")
+    .update({
+      status: "failed",
+      error: "Run timed out before completing (reaped).",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("status", "running")
+    .lt("started_at", cutoff)
+    .select("id");
+  return data?.length ?? 0;
+}

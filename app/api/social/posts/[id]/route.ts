@@ -134,6 +134,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (row.status !== "draft") {
       return NextResponse.json({ error: "Only a draft can be approved." }, { status: 400 });
     }
+    // Idempotency: a draft that already carries an ayrshare_id was published on a
+    // prior attempt whose status write failed. Do NOT re-post (that would
+    // double-publish) — just reconcile the status.
+    if (row.ayrshare_id) {
+      await db
+        .from("social_posts")
+        .update({ status: "scheduled" })
+        .eq("id", id)
+        .then(undefined, () => {});
+      return NextResponse.json({
+        ok: true,
+        message: "Already scheduled on Ayrshare — status reconciled (not re-posted).",
+      });
+    }
     // Re-check compliance at approval: a draft's caption may have been edited to
     // non-compliant copy after it was parked. A blocking flag re-flags the post
     // (held for review) instead of publishing it.
@@ -209,8 +223,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       update.status = "published";
       update.published_at = new Date(nowMs).toISOString();
     }
-    const { error } = await db.from("social_posts").update(update).eq("id", id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    let updErr = (await db.from("social_posts").update(update).eq("id", id)).error;
+    if (updErr) {
+      // Retry persisting just the id + status (avoid a possibly-unmigrated column).
+      updErr = (
+        await db
+          .from("social_posts")
+          .update({ ayrshare_id: res.id ?? null, status: update.status })
+          .eq("id", id)
+      ).error;
+    }
+    if (updErr) {
+      // Published on Ayrshare but the calendar row couldn't be updated. Do NOT
+      // 500 — a retry would double-publish. Report success with a warning; the
+      // idempotency guard above catches a retry if the id did persist.
+      return NextResponse.json({
+        ok: true,
+        calendarError: updErr.message,
+        message: `Published on Ayrshare, but the calendar status couldn't be saved (${updErr.message}). Do NOT re-approve — it's already out.`,
+      });
+    }
     return NextResponse.json({
       ok: true,
       message: futureAt ? "Approved and scheduled." : "Approved and published.",
@@ -293,17 +325,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: reason }, { status: 502 });
   }
 
-  const { error } = await db
-    .from("social_posts")
-    .update({
-      content,
-      scheduled_at: scheduledAt,
-      ayrshare_id: res.id ?? null,
-      post_url: res.postIds?.find((x) => x.platform === platform)?.postUrl ?? null,
-      status: "scheduled",
-      last_error: null,
-    })
-    .eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let updErr = (
+    await db
+      .from("social_posts")
+      .update({
+        content,
+        scheduled_at: scheduledAt,
+        ayrshare_id: res.id ?? null,
+        post_url: res.postIds?.find((x) => x.platform === platform)?.postUrl ?? null,
+        status: "scheduled",
+        last_error: null,
+      })
+      .eq("id", id)
+  ).error;
+  if (updErr) {
+    // At minimum point the row at the NEW ayrshare_id, so a retry's guard doesn't
+    // re-delete + re-create against the old (already-deleted) id.
+    updErr = (
+      await db
+        .from("social_posts")
+        .update({ ayrshare_id: res.id ?? null, status: "scheduled" })
+        .eq("id", id)
+    ).error;
+  }
+  if (updErr) {
+    // The new post is live on Ayrshare; don't 500 (a retry would delete+recreate
+    // again → duplicate). Report success with a warning.
+    return NextResponse.json({
+      ok: true,
+      calendarError: updErr.message,
+      message: `Rescheduled on Ayrshare, but the calendar couldn't be updated (${updErr.message}). Don't retry — it's already rescheduled.`,
+    });
+  }
   return NextResponse.json({ ok: true, message: "Post updated and rescheduled." });
 }

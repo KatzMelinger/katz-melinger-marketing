@@ -14,6 +14,7 @@
  */
 
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { assertPublicUrl } from "@/lib/url-safety";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -131,6 +132,8 @@ async function fetchTitleH1(
   url: string,
 ): Promise<{ title: string | null; h1: string | null }> {
   try {
+    // SSRF guard: user-supplied URLs (ingest) must not reach internal addresses.
+    await assertPublicUrl(url);
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
       signal: AbortSignal.timeout(12_000),

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { listCompetitors } from "@/lib/seo-competitors";
 import {
+  getBacklinkChange30d,
   getBacklinkDomains,
   getBacklinkOverview,
 } from "@/lib/seo-intelligence";
@@ -12,9 +13,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const { tenantId, seoDomain } = await getTenantConfig();
-    const [overview, domains] = await Promise.all([
+    const [overview, domains, change] = await Promise.all([
       getBacklinkOverview(seoDomain),
       getBacklinkDomains(seoDomain),
+      getBacklinkChange30d(seoDomain),
     ]);
 
     const toxicLinks = domains
@@ -27,8 +29,10 @@ export async function GET() {
       competitors: await listCompetitors(tenantId),
       overview,
       domains,
-      newBacklinksLast30d: Math.max(4, Math.round(domains.length * 0.32)),
-      lostBacklinksLast30d: Math.max(1, Math.round(domains.length * 0.11)),
+      // Real counts from backlink timestamps (was fabricated from domain count).
+      newBacklinksLast30d: change.newLast30d,
+      lostBacklinksLast30d: change.lostLast30d,
+      backlinkChangeCapped: change.newCapped || change.lostCapped,
       disavowFile: toxicLinks.join("\n"),
       linkBuildingOpportunities: domains
         .filter((domain) => domain.authorityScore >= 40)

@@ -452,6 +452,11 @@ export async function getKeywordGapVsCompetitors(
     ),
   );
 
+  // A competitor "beats us" only when it actually outranks us: it ranks and we
+  // don't (ourPosition 0/absent), or it ranks ahead of us.
+  const beats = (g: CompetitorKeywordGap) =>
+    g.competitorPosition > 0 && (g.ourPosition <= 0 || g.competitorPosition < g.ourPosition);
+
   // Merge by keyword, keeping the best (lowest) competitor position seen.
   const merged = new Map<string, CompetitorKeywordGap & { competitorsBeatingUs: number }>();
   for (const gaps of perDomain) {
@@ -459,10 +464,10 @@ export async function getKeywordGapVsCompetitors(
       const key = gap.keyword.toLowerCase();
       const existing = merged.get(key);
       if (!existing) {
-        merged.set(key, { ...gap, competitorsBeatingUs: 1 });
+        merged.set(key, { ...gap, competitorsBeatingUs: beats(gap) ? 1 : 0 });
         continue;
       }
-      existing.competitorsBeatingUs += 1;
+      if (beats(gap)) existing.competitorsBeatingUs += 1;
       if (gap.competitorPosition > 0 && gap.competitorPosition < existing.competitorPosition) {
         existing.competitorPosition = gap.competitorPosition;
         existing.domain = gap.domain;
@@ -576,6 +581,35 @@ export async function getRecentBacklinks(
       nofollow: !row.dofollow,
     }))
     .filter((b) => b.sourceUrl);
+}
+
+/**
+ * Real "new / lost in the last 30 days" counts, derived from the backlink
+ * timestamps (not fabricated from the domain count). New = first_seen within
+ * 30 days; lost = not seen (last_seen) in 30+ days. Capped at 200 each; the
+ * `*Capped` flags say when the true number may be higher (rare for a small firm).
+ */
+export async function getBacklinkChange30d(domain = DEFAULT_SEO_DOMAIN): Promise<{
+  newLast30d: number;
+  lostLast30d: number;
+  newCapped: boolean;
+  lostCapped: boolean;
+}> {
+  const LIMIT = 200;
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const [fresh, stale] = await Promise.all([
+    getRecentBacklinks(domain, { limit: LIMIT, sort: "first_seen_desc" }),
+    getRecentBacklinks(domain, { limit: LIMIT, sort: "last_seen_asc" }),
+  ]);
+  const inWindow = (iso: string | null) => !!iso && new Date(iso).getTime() >= cutoff;
+  const newLast30d = fresh.filter((b) => inWindow(b.firstSeenIso)).length;
+  const lostLast30d = stale.filter((b) => b.lastSeenIso && new Date(b.lastSeenIso).getTime() < cutoff).length;
+  return {
+    newLast30d,
+    lostLast30d,
+    newCapped: fresh.length >= LIMIT && newLast30d === fresh.length,
+    lostCapped: stale.length >= LIMIT && lostLast30d === stale.length,
+  };
 }
 
 /**

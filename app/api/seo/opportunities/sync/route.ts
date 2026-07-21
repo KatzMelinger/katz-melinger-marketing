@@ -51,6 +51,10 @@ function contentTypeFromIntent(intent: KMSearchIntent): KMContentType {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Heavy per-tenant external work in a loop (keyword gaps, GSC, WP) with no
+// explicit budget before — a short default could cut it off between the two
+// upserts and leave the tables inconsistent. Match the sibling heavy crons.
+export const maxDuration = 300;
 
 const MAX_KEYWORDS = 200;
 // Statuses the user has acted on — a re-sync must not overwrite these.

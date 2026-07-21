@@ -45,7 +45,9 @@ export async function writeAlert(args: WriteAlertArgs, tenantId?: string): Promi
       .from("marketing_alerts")
       .select("id")
       .eq("type", args.type)
-      .eq("status", "new")
+      // Dedupe against any live alert, not just unread ones — otherwise a later
+      // run re-creates an alert the user already read/dismissed.
+      .neq("status", "archived")
       .eq("tenant_id", tid)
       .contains("payload", { dedupe_key: args.dedupeKey })
       .limit(1);

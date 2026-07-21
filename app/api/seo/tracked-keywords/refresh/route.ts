@@ -33,7 +33,10 @@ import {
 } from "@/lib/dataforseo";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// This run does up to ~100 live (paid) SERP calls per tenant plus per-row DB
+// updates; 60s was far too low and a timeout mid-loop corrupts previous_rank.
+// Match the other heavy crons at 300s.
+export const maxDuration = 300;
 
 /**
  * Vercel Cron auth — Vercel injects `Authorization: Bearer ${CRON_SECRET}` on

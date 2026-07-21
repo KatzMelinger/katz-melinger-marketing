@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { startRun, executeRun } from "@/lib/aeo-runner";
+import { startRun, executeRun, reapStaleRuns } from "@/lib/aeo-runner";
 import { evaluateRankAlerts } from "@/lib/alerts-engine";
 import { listTenantIds } from "@/lib/tenant-db";
 import type { AEOProviderId } from "@/lib/aeo-providers";
@@ -37,6 +37,9 @@ export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Clear any zombie runs left "running" by a killed prior sweep before starting.
+  await reapStaleRuns().catch(() => 0);
 
   // Cron has no session → process every active firm: rank-drop alerts + AEO sweep.
   const runIds: string[] = [];

@@ -561,6 +561,16 @@ export function DraftDrawer({
     }
   };
 
+  // Apply actions operate on the SAVED draft body; if the editor has unsaved
+  // changes, running one would silently discard them. Block with a nudge.
+  const unsavedEditGuard = (): boolean => {
+    if (editing && editBody !== (draft?.body ?? "")) {
+      setMsg("Save or discard your edits first — Apply works on the saved draft.");
+      return true;
+    }
+    return false;
+  };
+
   const saveBody = async () => {
     if (!draft) return;
     setSaving(true);
@@ -1367,9 +1377,18 @@ export function DraftDrawer({
                     analysis={analysis}
                     onRerun={() => runAnalysis(draft)}
                     rerunning={analyzing}
-                    onApplyFindings={(fs) => setApplyingFindings(fs)}
-                    onApplyTitle={applyTitle}
-                    onApplyLink={applyOverlapLink}
+                    onApplyFindings={(fs) => {
+                      if (unsavedEditGuard()) return;
+                      setApplyingFindings(fs);
+                    }}
+                    onApplyTitle={(t) => {
+                      if (unsavedEditGuard()) return;
+                      void applyTitle(t);
+                    }}
+                    onApplyLink={(term, url) => {
+                      if (unsavedEditGuard()) return;
+                      return applyOverlapLink(term, url);
+                    }}
                     currentTitle={draft.title}
                   />
                 </div>
