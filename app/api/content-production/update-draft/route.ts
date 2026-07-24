@@ -30,6 +30,7 @@ import { buildSkillsContext } from "@/lib/content-skills";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness } from "@/lib/freshness-classify";
+import { logEvent } from "@/lib/telemetry";
 import {
   READABILITY_TARGET,
   readabilityStats,
@@ -320,6 +321,13 @@ export async function POST(req: Request) {
   // time-sensitive figure and attach the authoritative current value where known,
   // so the reviewer verifies it before approval (hard QA gate in the drawer).
   const freshnessFlags = classifyFreshness(findTimeSensitiveFacts(updatedBody), currentFacts);
+  logEvent("freshness_classified", {
+    context: "refresh",
+    total: freshnessFlags.length,
+    outdated: freshnessFlags.filter((f) => f.status === "outdated").length,
+    verify: freshnessFlags.filter((f) => f.status === "verify").length,
+    current: freshnessFlags.filter((f) => f.status === "current").length,
+  });
 
   // Stage 3 metadata: fill meta title/description/slug/pillar (the old redraft
   // left these empty, so WordPress push + the drawer had nothing). Reuses the

@@ -20,6 +20,11 @@ import {
   runComplianceGate,
   surfaceForFormat,
 } from "@/lib/agent/compliance-filter";
+import { findTimeSensitiveFacts } from "@/lib/freshness-check";
+import { classifyFreshness, outstandingFreshness } from "@/lib/freshness-classify";
+import { getCurrentFacts } from "@/lib/current-facts-store";
+import { freshnessGateEnabled } from "@/lib/feature-flags";
+import { logEvent } from "@/lib/telemetry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +33,8 @@ type ApproveBody = {
   type?: "content" | "onpage";
   id?: string;
   action?: "approve" | "reject";
+  /** Reviewer confirmations of "verify" figures (freshness gate), by flag key. */
+  freshnessVerifiedKeys?: string[];
 };
 
 export async function POST(req: NextRequest) {
@@ -45,7 +52,12 @@ export async function POST(req: NextRequest) {
   if (type === "onpage") {
     return approveOnPage(supabase, tenantId, id, action);
   }
-  return approveContent(supabase, tenantId, id, action);
+  const verifiedKeys = new Set(
+    Array.isArray(body?.freshnessVerifiedKeys)
+      ? body.freshnessVerifiedKeys.filter((k): k is string => typeof k === "string")
+      : [],
+  );
+  return approveContent(supabase, tenantId, id, action, verifiedKeys);
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -55,6 +67,7 @@ async function approveContent(
   tenantId: string,
   id: string,
   action: "approve" | "reject",
+  verifiedKeys: Set<string> = new Set(),
 ) {
   // RLS scopes this read to the caller's tenant — a cross-tenant id returns null.
   const { data: draft, error } = await supabase
@@ -90,6 +103,63 @@ async function approveContent(
       { error: `Only items awaiting review can be approved (status: ${draft.status}).` },
       { status: 409 },
     );
+  }
+
+  // Freshness HARD gate (feature-flagged). Recompute time-sensitive figures from
+  // the CURRENT body and hold the draft for legal if any is unresolved. Outdated
+  // is body-derived, so a stale value still in the draft can't be waved through —
+  // the reviewer must apply the current value or mark a "verify" figure verified.
+  // Server-authoritative: a direct API call can't bypass it the way a client can.
+  if (freshnessGateEnabled()) {
+    const body = typeof draft.body === "string" ? draft.body : "";
+    const facts = await getCurrentFacts(tenantId);
+    const flags = classifyFreshness(findTimeSensitiveFacts(body), facts);
+    const outstanding = outstandingFreshness(flags, verifiedKeys);
+    if (outstanding.length > 0) {
+      const freshness = {
+        checked_at: new Date().toISOString(),
+        outstanding: outstanding.map((f) => ({
+          match: f.match,
+          status: f.status,
+          reason: f.reason,
+          suggested_value: f.suggested_value,
+          current_label: f.current_label,
+        })),
+      };
+      const mergedMetadata = {
+        ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+        freshness_gate: freshness,
+      };
+      await supabase
+        .from("content_drafts")
+        .update({ status: "needs_legal", metadata: mergedMetadata })
+        .eq("id", id)
+        .eq("tenant_id", tenantId);
+      await supabase
+        .from("content_pipeline")
+        .update({ status: "needs_legal" })
+        .eq("draft_id", id)
+        .eq("tenant_id", tenantId);
+      logEvent("freshness_gate_hold", {
+        draftId: id,
+        outstanding: outstanding.length,
+        outdated: outstanding.filter((f) => f.status === "outdated").length,
+        verify: outstanding.filter((f) => f.status === "verify").length,
+      });
+      return NextResponse.json(
+        {
+          error: "Held for legal — resolve the time-sensitive figures before approving.",
+          status: "needs_legal",
+          freshness,
+        },
+        { status: 422 },
+      );
+    }
+    logEvent("freshness_gate_pass", {
+      draftId: id,
+      flags: flags.length,
+      verified: verifiedKeys.size,
+    });
   }
 
   // Re-run the compliance HARD gate on the CURRENT body. Manual approvals are

@@ -126,3 +126,30 @@ export function unresolvedFreshness(
 ): ClassifiedFreshnessFlag[] {
   return flags.filter((f) => f.status !== "current");
 }
+
+/**
+ * Stable identity for a flag, shared by the drawer (per-figure resolution) and
+ * the server gate (matching a client "verified" attestation). Must be computed
+ * the same way on both sides.
+ */
+export function freshnessKey(f: {
+  fact_key?: string;
+  match?: string;
+  sentence?: string;
+}): string {
+  return `${f.fact_key ?? ""}|${f.match ?? ""}|${(f.sentence ?? "").slice(0, 48)}`;
+}
+
+/**
+ * Figures still blocking approval: outdated (a stale value is still in the body)
+ * or verify not among the reviewer's confirmations. "current" never blocks.
+ * Outdated is body-derived, so it can't be waved through with a stale attestation.
+ */
+export function outstandingFreshness(
+  flags: ClassifiedFreshnessFlag[],
+  verifiedKeys: Set<string> = new Set(),
+): ClassifiedFreshnessFlag[] {
+  return flags.filter(
+    (f) => f.status !== "current" && !(f.status === "verify" && verifiedKeys.has(freshnessKey(f))),
+  );
+}

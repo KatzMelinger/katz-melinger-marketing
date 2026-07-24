@@ -34,6 +34,7 @@ import {
 } from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
+import { freshnessKey } from "@/lib/freshness-classify";
 
 const PROSE_CLASS =
   "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2";
@@ -407,10 +408,8 @@ export function DraftDrawer({
   // Old drafts stored flags without a status — treat those as needing verify.
   const freshStatus = (f: FreshnessFlagMeta): "outdated" | "verify" | "current" =>
     f.status ?? "verify";
-  const freshKey = (f: FreshnessFlagMeta) =>
-    `${f.fact_key ?? ""}|${f.match ?? ""}|${(f.sentence ?? "").slice(0, 48)}`;
   const isFreshResolved = (f: FreshnessFlagMeta) =>
-    freshStatus(f) === "current" || resolvedFresh.has(freshKey(f));
+    freshStatus(f) === "current" || resolvedFresh.has(freshnessKey(f));
   // Figures still blocking approval: outdated (apply the value) or verify (mark).
   const outstandingFresh = freshnessFlags.filter((f) => !isFreshResolved(f));
 
@@ -590,7 +589,7 @@ export function DraftDrawer({
       return;
     }
     const newBody = source.replace(re, newToken);
-    setApplyingFresh(freshKey(flag));
+    setApplyingFresh(freshnessKey(flag));
     const res = await fetch(`/api/content/drafts/${draft.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -614,7 +613,7 @@ export function DraftDrawer({
   // Attorney confirms a "verify" figure (e.g. the litigated federal threshold).
   // Records the confirmation for this draft session; never changes the value.
   const markFreshVerified = (flag: FreshnessFlagMeta) => {
-    setResolvedFresh((prev) => new Set(prev).add(freshKey(flag)));
+    setResolvedFresh((prev) => new Set(prev).add(freshnessKey(flag)));
     setMsg(`Marked verified: ${flag.match}.`);
   };
 
@@ -725,16 +724,16 @@ export function DraftDrawer({
       );
       return;
     }
-    // HARD gate for time-sensitive figures: a refresh must not carry stale wage
-    // rates / thresholds / deadlines forward. Block until every flagged figure is
-    // resolved — outdated ones applied, verify ones marked verified.
-    if (outstandingFresh.length > 0 && !qaOverride) {
+    // HARD gate for time-sensitive figures — NOT overridable (unlike the QA
+    // checklist): a refresh must not carry stale wage rates / thresholds forward.
+    // Resolve each figure (apply the current value or mark verified) to proceed.
+    if (outstandingFresh.length > 0) {
       const nOut = outstandingFresh.filter((f) => freshStatus(f) === "outdated").length;
       const nVer = outstandingFresh.length - nOut;
       const parts = [nOut ? `${nOut} to update` : "", nVer ? `${nVer} to verify` : ""].filter(Boolean);
       setMsg(
         `Resolve ${outstandingFresh.length} time-sensitive figure${outstandingFresh.length === 1 ? "" : "s"} ` +
-          `(${parts.join(", ")}) in Content freshness — apply the current value or mark verified — or tick "Approve despite QA".`,
+          `(${parts.join(", ")}) in Content freshness — apply the current value or mark verified — before approving.`,
       );
       return;
     }
@@ -762,7 +761,12 @@ export function DraftDrawer({
       const res = await fetch("/api/agent/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "content", id: draftId, action: "approve" }),
+        body: JSON.stringify({
+          type: "content",
+          id: draftId,
+          action: "approve",
+          freshnessVerifiedKeys: Array.from(resolvedFresh),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -770,11 +774,19 @@ export function DraftDrawer({
         setMsg("Approved — ready to publish.");
       } else if (res.status === 422) {
         setStatus("needs_legal");
-        const n = data?.compliance?.violations?.length ?? 0;
-        setMsg(
-          data?.error ??
-            `Held by the compliance gate${n ? ` (${n} issue${n === 1 ? "" : "s"})` : ""}.`,
-        );
+        if (data?.freshness) {
+          const n = data.freshness.outstanding?.length ?? 0;
+          setMsg(
+            data?.error ??
+              `Held for legal — ${n} time-sensitive figure${n === 1 ? "" : "s"} to resolve.`,
+          );
+        } else {
+          const n = data?.compliance?.violations?.length ?? 0;
+          setMsg(
+            data?.error ??
+              `Held by the compliance gate${n ? ` (${n} issue${n === 1 ? "" : "s"})` : ""}.`,
+          );
+        }
       } else {
         setMsg(data?.error ?? "Approve failed.");
       }
@@ -920,6 +932,12 @@ export function DraftDrawer({
                   {sourceLabel !== "—" && <DashPill tone="neutral">{sourceLabel}</DashPill>}
                   {qa.internalLinks && <DashPill tone="emerald">Internal links verified</DashPill>}
                   {brief.cannibalizationConfirmed && <DashPill tone="emerald">No cannibalization</DashPill>}
+                  {freshnessFlags.length > 0 &&
+                    (outstandingFresh.length > 0 ? (
+                      <DashPill tone="amber">Freshness: {outstandingFresh.length} flagged</DashPill>
+                    ) : (
+                      <DashPill tone="emerald">Freshness: resolved</DashPill>
+                    ))}
                 </div>
               </div>
               {draft && (
@@ -1360,7 +1378,7 @@ export function DraftDrawer({
                       {freshnessFlags.map((f, i) => {
                         const st = freshStatus(f);
                         const resolved = isFreshResolved(f);
-                        const key = freshKey(f);
+                        const key = freshnessKey(f);
                         return (
                           <li
                             key={i}
