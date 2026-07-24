@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantClient } from "@/lib/tenant-db";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
-import { matchCurrentFact } from "@/lib/current-facts";
+import { classifyFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 
 export const runtime = "nodejs";
@@ -92,12 +92,7 @@ export async function PATCH(
         (patch.metadata as Record<string, unknown> | undefined) ??
         ((existing?.metadata as Record<string, unknown> | null) ?? {});
       const currentFacts = await getCurrentFacts(tenantId);
-      const flags = findTimeSensitiveFacts(body.body).map((f) => {
-        const cf = matchCurrentFact(f, currentFacts);
-        return cf
-          ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
-          : f;
-      });
+      const flags = classifyFreshness(findTimeSensitiveFacts(body.body), currentFacts);
       patch.metadata = { ...baseMeta, freshness: { flags } };
     } catch (e) {
       console.warn("[drafts] freshness recompute on edit failed:", e);

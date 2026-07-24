@@ -60,7 +60,10 @@ export const CURRENT_FACTS: CurrentFact[] = [
     effectiveDate: "2026-01-01",
     unit: "hour",
     reVerifyBy: "2027-01-01",
-    keywords: ["minimum wage", "min wage", "hourly wage", "wage rate"],
+    keywords: [
+      "minimum wage", "min wage", "hourly wage", "wage rate",
+      "new york city", "nyc", "long island", "westchester",
+    ],
   },
   {
     id: "ny-min-wage-upstate-2026",
@@ -70,7 +73,10 @@ export const CURRENT_FACTS: CurrentFact[] = [
     effectiveDate: "2026-01-01",
     unit: "hour",
     reVerifyBy: "2027-01-01",
-    keywords: ["minimum wage", "min wage", "hourly wage", "wage rate", "upstate"],
+    keywords: [
+      "minimum wage", "min wage", "hourly wage", "wage rate",
+      "upstate", "rest of new york", "rest of state",
+    ],
   },
   {
     id: "ny-exempt-threshold-downstate-2026",
@@ -83,7 +89,7 @@ export const CURRENT_FACTS: CurrentFact[] = [
     keywords: [
       "salary threshold", "exempt threshold", "salary basis", "exemption threshold",
       "executive exemption", "administrative exemption", "overtime exemption",
-      "exempt salary", "salary level",
+      "exempt salary", "salary level", "new york city", "nyc", "downstate",
     ],
   },
   {
@@ -194,16 +200,19 @@ export function matchCurrentFact(
 ): CurrentFact | null {
   const hay = norm(`${flag?.sentence ?? ""} ${flag?.match ?? ""}`);
   if (!hay.trim()) return null;
-  // Prefer the fact with the most keyword hits in the sentence.
-  let bestHits = 0;
+  // Prefer the fact whose matched keywords are the most specific. Score by total
+  // matched-keyword length, so "federal minimum wage" (a jurisdiction-specific
+  // keyword) outranks the generic "minimum wage" instead of tying with it.
+  let bestScore = 0;
   let winners: CurrentFact[] = [];
   for (const f of facts) {
-    const hits = f.keywords.filter((k) => hay.includes(norm(k))).length;
-    if (hits === 0) continue;
-    if (hits > bestHits) {
-      bestHits = hits;
+    const matched = f.keywords.filter((k) => hay.includes(norm(k)));
+    if (matched.length === 0) continue;
+    const score = matched.reduce((sum, k) => sum + k.length, 0);
+    if (score > bestScore) {
+      bestScore = score;
       winners = [f];
-    } else if (hits === bestHits) {
+    } else if (score === bestScore) {
       winners.push(f);
     }
   }

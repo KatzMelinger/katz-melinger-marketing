@@ -35,12 +35,13 @@ import {
 } from "@/lib/km-content-system";
 import { checkStructure, type StructureCheck } from "@/lib/structure-check";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
+import { classifyFreshness } from "@/lib/freshness-classify";
 import {
   READABILITY_TARGET,
   readabilityStats,
   renderReadabilityRules,
 } from "@/lib/readability";
-import { matchCurrentFact, renderCurrentFactsBlock } from "@/lib/current-facts";
+import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
@@ -430,12 +431,7 @@ export async function POST(req: Request) {
     // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
     // deadlines) so the reviewer verifies them before approval. Attach the
     // authoritative current value where one is known. Hard QA gate in the drawer.
-    const freshnessFlags = findTimeSensitiveFacts(text).map((f) => {
-      const cf = matchCurrentFact(f, currentFacts);
-      return cf
-        ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
-        : { ...f };
-    });
+    const freshnessFlags = classifyFreshness(findTimeSensitiveFacts(text), currentFacts);
 
     const draftId = await autosave(brief, text, language, {
       structure_check: { missing: structureCheck.missing, passed: structureCheck.passed },

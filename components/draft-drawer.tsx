@@ -217,6 +217,13 @@ type FreshnessFlagMeta = {
   current_value?: string;
   current_label?: string;
   effective_date?: string;
+  /** Classification (lib/freshness-classify.ts): outdated | verify | current. */
+  status?: "outdated" | "verify" | "current";
+  /** Value to write on "Apply update" — set only when status is outdated. */
+  suggested_value?: string;
+  /** Why it needs attention, e.g. "litigated — attorney must verify". */
+  reason?: string;
+  fact_key?: string;
 };
 
 /**

@@ -29,12 +29,13 @@ import { getFirmContext } from "@/lib/firm-context";
 import { buildSkillsContext } from "@/lib/content-skills";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
+import { classifyFreshness } from "@/lib/freshness-classify";
 import {
   READABILITY_TARGET,
   readabilityStats,
   renderReadabilityRules,
 } from "@/lib/readability";
-import { matchCurrentFact, renderCurrentFactsBlock } from "@/lib/current-facts";
+import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { checkStructure } from "@/lib/structure-check";
 import { renderStructureBlock } from "@/lib/km-content-system";
@@ -318,12 +319,7 @@ export async function POST(req: Request) {
   // thresholds, deadlines) get silently carried forward. Flag every
   // time-sensitive figure and attach the authoritative current value where known,
   // so the reviewer verifies it before approval (hard QA gate in the drawer).
-  const freshnessFlags = findTimeSensitiveFacts(updatedBody).map((f) => {
-    const cf = matchCurrentFact(f, currentFacts);
-    return cf
-      ? { ...f, current_value: cf.value, current_label: cf.label, effective_date: cf.effectiveDate }
-      : { ...f };
-  });
+  const freshnessFlags = classifyFreshness(findTimeSensitiveFacts(updatedBody), currentFacts);
 
   // Stage 3 metadata: fill meta title/description/slug/pillar (the old redraft
   // left these empty, so WordPress push + the drawer had nothing). Reuses the
