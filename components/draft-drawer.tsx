@@ -238,6 +238,18 @@ function readFreshness(draft: DraftRow | null): FreshnessFlagMeta[] {
   return Array.isArray(flags) ? (flags as FreshnessFlagMeta[]) : [];
 }
 
+function FreshPill({ status }: { status: "outdated" | "verify" | "current" }) {
+  const cls = {
+    outdated: "bg-rose-100 text-rose-700",
+    verify: "bg-amber-100 text-amber-800",
+    current: "bg-emerald-100 text-emerald-700",
+  }[status];
+  const label = { outdated: "Outdated", verify: "Verify", current: "Current" }[status];
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{label}</span>
+  );
+}
+
 function Check({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -290,8 +302,11 @@ export function DraftDrawer({
   // Bumped after an Apply to remount AnalysisCard, which clears its finding
   // selection (so the "Apply N selected" button resets).
   const [applyNonce, setApplyNonce] = useState(0);
-  // Reviewer confirmation that flagged time-sensitive figures are current.
-  const [freshnessAck, setFreshnessAck] = useState(false);
+  // Per-figure freshness resolution. "verify" figures are resolved by Mark
+  // verified (tracked here by key); "outdated" figures resolve by applying the
+  // current value (a body edit the server reclassifies as current).
+  const [resolvedFresh, setResolvedFresh] = useState<Set<string>>(() => new Set());
+  const [applyingFresh, setApplyingFresh] = useState<string | null>(null);
   // Live link-verification counts (Cluster-Map membership) for the QA gate.
   const [linkVerify, setLinkVerify] = useState<
     { total: number; confirmed: number; unverified: number } | null
@@ -304,6 +319,7 @@ export function DraftDrawer({
     setDraft(null);
     setBriefOnly(null);
     setSuggestedRaw(null);
+    setResolvedFresh(new Set());
 
     if (draftId) {
       fetch(`/api/content/drafts/${draftId}`)
@@ -388,6 +404,15 @@ export function DraftDrawer({
   // Post-generation gates read off the draft metadata.
   const structureCheck = readStructureCheck(draft);
   const freshnessFlags = readFreshness(draft);
+  // Old drafts stored flags without a status — treat those as needing verify.
+  const freshStatus = (f: FreshnessFlagMeta): "outdated" | "verify" | "current" =>
+    f.status ?? "verify";
+  const freshKey = (f: FreshnessFlagMeta) =>
+    `${f.fact_key ?? ""}|${f.match ?? ""}|${(f.sentence ?? "").slice(0, 48)}`;
+  const isFreshResolved = (f: FreshnessFlagMeta) =>
+    freshStatus(f) === "current" || resolvedFresh.has(freshKey(f));
+  // Figures still blocking approval: outdated (apply the value) or verify (mark).
+  const outstandingFresh = freshnessFlags.filter((f) => !isFreshResolved(f));
 
   // Automatic QA checks — computed from the linked record + latest analysis.
   const metaTitle = brief.metaTitle || item.title;
@@ -507,7 +532,6 @@ export function DraftDrawer({
       const updated: DraftRow = returned && typeof returned === "object" ? returned : { ...draft, body: newBody };
       setDraft(updated);
       setEditBody(updated.body ?? newBody);
-      setFreshnessAck(false);
       setApplyNonce((n) => n + 1);
       onChanged();
       setMsg("Applied — re-scoring…");
@@ -544,13 +568,54 @@ export function DraftDrawer({
       const next: DraftRow = updated && typeof updated === "object" ? updated : { ...draft, body: newBody };
       setDraft(next);
       setEditBody(next.body ?? newBody);
-      setFreshnessAck(false);
       setMsg(`Linked "${term}" to the existing page.`);
       onChanged();
       await runAnalysis(next);
     } else {
       setMsg("Failed to apply link.");
     }
+  };
+
+  // Apply a current value over an outdated figure (one click). Replaces the stale
+  // dollar token in the body with the current value and re-saves; the PATCH route
+  // recomputes freshness, so the figure comes back reclassified as "current".
+  const applyFreshnessUpdate = async (flag: FreshnessFlagMeta) => {
+    if (!draft || !flag.match || !flag.suggested_value) return;
+    const newToken = (flag.suggested_value.match(/\$[\d,]+(?:\.\d+)?/) ?? [flag.suggested_value])[0];
+    const source = draft.body ?? "";
+    const esc = flag.match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`${esc}(?!\\d)`, "g");
+    if (!re.test(source)) {
+      setMsg(`Couldn't find ${flag.match} in the draft — edit it manually.`);
+      return;
+    }
+    const newBody = source.replace(re, newToken);
+    setApplyingFresh(freshKey(flag));
+    const res = await fetch(`/api/content/drafts/${draft.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: newBody }),
+    });
+    setApplyingFresh(null);
+    if (res.ok) {
+      const returned = (await res.json().catch(() => null)) as DraftRow | null;
+      const next: DraftRow =
+        returned && typeof returned === "object" ? returned : { ...draft, body: newBody };
+      setDraft(next);
+      setEditBody(next.body ?? newBody);
+      setMsg(`Updated ${flag.match} → ${newToken}.`);
+      onChanged();
+      await runAnalysis(next);
+    } else {
+      setMsg("Failed to apply the update.");
+    }
+  };
+
+  // Attorney confirms a "verify" figure (e.g. the litigated federal threshold).
+  // Records the confirmation for this draft session; never changes the value.
+  const markFreshVerified = (flag: FreshnessFlagMeta) => {
+    setResolvedFresh((prev) => new Set(prev).add(freshKey(flag)));
+    setMsg(`Marked verified: ${flag.match}.`);
   };
 
   // Apply a suggested title — a quick PATCH, no AI step.
@@ -597,7 +662,6 @@ export function DraftDrawer({
         setDraft(next);
         setEditBody(next.body ?? editBody);
         setEditing(false);
-        setFreshnessAck(false);
         onChanged();
         setMsg("Saved — re-checking…");
         await runAnalysis(next);
@@ -662,11 +726,15 @@ export function DraftDrawer({
       return;
     }
     // HARD gate for time-sensitive figures: a refresh must not carry stale wage
-    // rates / thresholds / deadlines forward. Block until the reviewer confirms.
-    if (freshnessFlags.length > 0 && !freshnessAck && !qaOverride) {
+    // rates / thresholds / deadlines forward. Block until every flagged figure is
+    // resolved — outdated ones applied, verify ones marked verified.
+    if (outstandingFresh.length > 0 && !qaOverride) {
+      const nOut = outstandingFresh.filter((f) => freshStatus(f) === "outdated").length;
+      const nVer = outstandingFresh.length - nOut;
+      const parts = [nOut ? `${nOut} to update` : "", nVer ? `${nVer} to verify` : ""].filter(Boolean);
       setMsg(
-        `Verify the ${freshnessFlags.length} time-sensitive figure${freshnessFlags.length === 1 ? "" : "s"} ` +
-          `(wage rates, thresholds, deadlines) and tick "Time-sensitive figures verified" before approving.`,
+        `Resolve ${outstandingFresh.length} time-sensitive figure${outstandingFresh.length === 1 ? "" : "s"} ` +
+          `(${parts.join(", ")}) in Content freshness — apply the current value or mark verified — or tick "Approve despite QA".`,
       );
       return;
     }
@@ -1267,45 +1335,89 @@ export function DraftDrawer({
                   </div>
                 )}
 
-                {/* Freshness — time-sensitive figures the reviewer must verify
-                    before approval (hard gate). Only shown when flags exist. */}
+                {/* Content freshness — each time-sensitive figure is classified;
+                    the reviewer applies the current value or marks it verified.
+                    Hard gate: approval blocks until every figure is resolved. */}
                 {freshnessFlags.length > 0 && (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <div className="rounded-lg border border-amber-300 bg-amber-50/60 p-3">
                     <div className="mb-1 flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wide text-amber-800">
-                        Verify time-sensitive figures
+                        Content freshness
                       </span>
-                      <span className="text-xs font-medium text-amber-700">{freshnessFlags.length}</span>
+                      <span
+                        className={`text-xs font-medium ${
+                          outstandingFresh.length ? "text-amber-700" : "text-emerald-700"
+                        }`}
+                      >
+                        {outstandingFresh.length ? `${outstandingFresh.length} to resolve` : "all resolved"}
+                      </span>
                     </div>
                     <p className="text-[11px] text-amber-700">
-                      These can go stale (wage rates, thresholds, years, deadlines). Confirm each is
-                      current before approving. Never carry a dated figure forward unverified.
+                      Time-sensitive figures flagged on this refresh. Apply the current value or mark
+                      verified before approval — never carry a dated figure forward.
                     </p>
-                    <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto">
-                      {freshnessFlags.map((f, i) => (
-                        <li key={i} className="text-[11px] text-slate-700">
-                          <span className="rounded bg-amber-100 px-1 font-mono font-medium text-amber-900">
-                            {f.match}
-                          </span>{" "}
-                          <span className="text-slate-500">{f.sentence}</span>
-                          {f.current_value && (
-                            <span className="mt-0.5 block font-medium text-emerald-700">
-                              Current verified value: {f.current_value}
-                              {f.effective_date ? ` (effective ${f.effective_date})` : ""}
-                              {f.current_label ? ` — ${f.current_label}` : ""}
-                            </span>
-                          )}
-                        </li>
-                      ))}
+                    <ul className="mt-2 space-y-1.5">
+                      {freshnessFlags.map((f, i) => {
+                        const st = freshStatus(f);
+                        const resolved = isFreshResolved(f);
+                        const key = freshKey(f);
+                        return (
+                          <li
+                            key={i}
+                            className="flex items-start justify-between gap-2 rounded border border-amber-200 bg-white/70 px-2 py-1.5"
+                          >
+                            <div className="min-w-0 text-[11px]">
+                              <div className="flex items-center gap-1.5">
+                                <span className="rounded bg-slate-100 px-1 font-mono font-medium text-slate-800">
+                                  {f.match}
+                                </span>
+                                <FreshPill status={resolved ? "current" : st} />
+                              </div>
+                              {f.current_label && (
+                                <div className="mt-0.5 truncate text-slate-500">{f.current_label}</div>
+                              )}
+                              {st === "outdated" && f.suggested_value && (
+                                <div className="mt-0.5 text-emerald-700">
+                                  now {f.suggested_value}
+                                  {f.effective_date ? ` (eff. ${f.effective_date})` : ""}
+                                </div>
+                              )}
+                              {st === "verify" && !resolved && (
+                                <div className="mt-0.5 text-amber-700">
+                                  {f.reason ?? "attorney must verify"}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-none pt-0.5">
+                              {resolved ? (
+                                <span className="text-[11px] font-medium text-emerald-700">
+                                  ✓ {st === "outdated" ? "updated" : "verified"}
+                                </span>
+                              ) : st === "outdated" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => applyFreshnessUpdate(f)}
+                                  disabled={applyingFresh === key}
+                                  className="rounded bg-blue-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                  {applyingFresh === key ? "Applying…" : "Apply update"}
+                                </button>
+                              ) : st === "verify" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => markFreshVerified(f)}
+                                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                >
+                                  Mark verified
+                                </button>
+                              ) : (
+                                <span className="text-[11px] font-medium text-emerald-700">✓ current</span>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
-                    <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs font-medium text-amber-900">
-                      <input
-                        type="checkbox"
-                        checked={freshnessAck}
-                        onChange={(e) => setFreshnessAck(e.target.checked)}
-                      />
-                      Time-sensitive figures verified / updated
-                    </label>
                   </div>
                 )}
 
