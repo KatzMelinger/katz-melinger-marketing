@@ -18,6 +18,12 @@ type Row = {
   jurisdiction: string | null;
   effective_date: string | null;
   keywords: string[] | null;
+  unit: string | null;
+  source_url: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  re_verify_by: string | null;
+  verify_only: boolean | null;
 };
 
 /**
@@ -32,7 +38,9 @@ export async function getCurrentFacts(tenantId?: string): Promise<CurrentFact[]>
     const sb = getSupabaseAdmin();
     const { data, error } = await sb
       .from("current_facts")
-      .select("fact_key, label, value, jurisdiction, effective_date, keywords")
+      .select(
+        "fact_key, label, value, jurisdiction, effective_date, keywords, unit, source_url, verified_by, verified_at, re_verify_by, verify_only",
+      )
       .eq("tenant_id", tid)
       .order("sort_order", { ascending: true });
     if (error || !data || data.length === 0) return [...CURRENT_FACTS];
@@ -51,6 +59,12 @@ export async function getCurrentFacts(tenantId?: string): Promise<CurrentFact[]>
           keywords: Array.isArray(r.keywords)
             ? r.keywords.filter((k): k is string => typeof k === "string" && k.trim().length > 0).map((k) => k.trim())
             : [],
+          unit: (r.unit ?? "").trim(),
+          sourceUrl: (r.source_url ?? "").trim(),
+          verifiedBy: (r.verified_by ?? "").trim(),
+          verifiedAt: (r.verified_at ?? "").trim(),
+          reVerifyBy: (r.re_verify_by ?? "").trim(),
+          verifyOnly: r.verify_only === true,
         };
       })
       .filter((f): f is CurrentFact => f !== null);
