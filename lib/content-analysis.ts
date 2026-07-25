@@ -28,6 +28,7 @@ import {
   readabilityContentType,
 } from "./readability-rules";
 import { readabilityRulesEngineEnabled } from "./feature-flags";
+import { evaluateAiReadabilityRules } from "./readability-ai";
 import { logEvent } from "./telemetry";
 
 const STOP_WORDS = new Set([
@@ -856,31 +857,17 @@ export async function analyzeDraft(args: {
   const flesch = readStats.flesch;
   const grade = readStats.grade;
   // Part 2: score against the 15 KM rules instead of Flesch-Kincaid when the flag
-  // is on. Grade stays a display-only readout either way. The rule engine names
-  // each rule + its specific fix, so the findings carry actionable guidance rather
-  // than one canned line, and false positives (grade-level flags, mislabeled
-  // passives, heading merges) go away.
+  // is on. Grade stays a display-only readout either way. The deterministic rules
+  // run inline; the 5 AI rules run alongside the other Claude calls below and fold
+  // into the score. Flag off = existing Flesch behavior.
   const useReadabilityRules = readabilityRulesEngineEnabled();
-  const ruleResult = useReadabilityRules
-    ? scoreReadabilityRules(body, { contentType: readabilityContentType(format) })
-    : null;
-  const readabilityScore = ruleResult ? ruleResult.score : normalizeReadability(flesch);
-  const readabilityFindingList = ruleResult
-    ? formatReadabilityFindings(ruleResult.findings)
-    : readabilityFindings(body);
-  logEvent("readability_scored", {
-    engine: useReadabilityRules ? "rules" : "flesch",
-    score: readabilityScore,
-    grade: Math.round(grade * 10) / 10,
-    findings: readabilityFindingList.length,
-    failed: ruleResult?.failedRuleIds ?? [],
-  });
+  const readabilityCT = readabilityContentType(format);
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
   // Run brand voice + CASH + linkability + contentEnhancements + compliance in
   // parallel — all are Claude calls and independent of each other.
-  const [brand, cash, linkability, enhancements, compliance] = await Promise.all([
+  const [brand, cash, linkability, enhancements, compliance, aiReadability] = await Promise.all([
     brandVoiceMatch(body, tid),
     cashScore(body),
     linkabilityScore({ body, topic: topic ?? title ?? "", title }),
@@ -902,7 +889,33 @@ export async function analyzeDraft(args: {
       console.warn("[content-analysis] Compliance check failed:", err);
       return null;
     }),
+    // The 5 AI-assisted readability rules (08/11/12/13/14). Only when the engine
+    // flag is on; degrades to "not evaluated" on error so it can't fail analysis.
+    useReadabilityRules
+      ? evaluateAiReadabilityRules(body)
+      : Promise.resolve({ findings: [], evaluatedRuleIds: [] }),
   ]);
+
+  // Now that the AI rules are in, compute the final rule-based readability result.
+  const ruleResult = useReadabilityRules
+    ? scoreReadabilityRules(body, {
+        contentType: readabilityCT,
+        aiFindings: aiReadability.findings,
+        evaluatedAiRuleIds: aiReadability.evaluatedRuleIds,
+      })
+    : null;
+  const readabilityScore = ruleResult ? ruleResult.score : normalizeReadability(flesch);
+  const readabilityFindingList = ruleResult
+    ? formatReadabilityFindings(ruleResult.findings)
+    : readabilityFindings(body);
+  logEvent("readability_scored", {
+    engine: useReadabilityRules ? "rules" : "flesch",
+    score: readabilityScore,
+    grade: Math.round(grade * 10) / 10,
+    findings: readabilityFindingList.length,
+    ai_rules: aiReadability.evaluatedRuleIds.length,
+    failed: ruleResult?.failedRuleIds ?? [],
+  });
 
   // Cross-check proposed titles against the firm's existing content so the
   // user doesn't accidentally write a piece that competes with an existing
