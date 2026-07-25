@@ -42,6 +42,7 @@ import {
   readabilityPromptBlock,
 } from "@/lib/readability-rules";
 import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
+import { renderAuthorDirective } from "@/lib/firm-author";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { guardUser } from "@/lib/supabase-route";
@@ -318,6 +319,10 @@ export async function POST(req: Request) {
   const useReadabilityRules = readabilityRulesEngineEnabled();
   const readabilityCT = readabilityContentType(`km_${brief.contentType}`);
   userPrompt += `\n\n---\n${readabilityPromptBlock(readabilityCT, useReadabilityRules)}`;
+
+  // Author attribution: byline must be the firm's designated author, never an
+  // invented or carried-forward name.
+  userPrompt += `\n\n---\n${renderAuthorDirective()}`;
 
   // Sensitive topics (harassment, retaliation, discrimination, wrongful
   // termination) get a tone override that leads with calm, human language before

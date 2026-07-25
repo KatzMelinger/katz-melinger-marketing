@@ -37,6 +37,7 @@ import {
   readabilityPromptBlock,
 } from "@/lib/readability-rules";
 import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
+import { renderAuthorDirective } from "@/lib/firm-author";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { checkStructure } from "@/lib/structure-check";
@@ -205,6 +206,7 @@ export async function POST(req: Request) {
     `- Use a proper Markdown heading hierarchy: exactly one H1 (# ) for the page title, each major section as an H2 (## ), and subsections and FAQ questions as H3 (### ). Never use bold text in place of a heading.\n` +
     factsSection +
     `\n\n${readabilityPromptBlock(readabilityCT, useReadabilityRules)}` +
+    `\n\n${renderAuthorDirective()}` +
     keywordBlock +
     linkBlock +
     `\n\nOutput: the full updated page in Markdown only. Start with the H1.`;
