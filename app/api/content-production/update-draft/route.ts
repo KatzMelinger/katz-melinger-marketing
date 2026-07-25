@@ -32,10 +32,11 @@ import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness } from "@/lib/freshness-classify";
 import { logEvent } from "@/lib/telemetry";
 import {
-  READABILITY_TARGET,
-  readabilityStats,
-  renderReadabilityRules,
-} from "@/lib/readability";
+  readabilityContentType,
+  readabilityForGenerator,
+  readabilityPromptBlock,
+} from "@/lib/readability-rules";
+import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { checkStructure } from "@/lib/structure-check";
@@ -109,6 +110,9 @@ export async function POST(req: Request) {
   // redraft that fills what's missing without rewriting what already works.
   const detected = await detectContentType(outline, url);
   const gapReport = auditGaps(outline, detected, keywords);
+  // Readability engine selection (rule-based vs Flesch) for the prompt + loop.
+  const useReadabilityRules = readabilityRulesEngineEnabled();
+  const readabilityCT = readabilityContentType(`km_${gapReport.contentType}`);
 
   // 2. Allowed internal links — site-wide bidirectional discovery over the
   //    cluster map (site_pages), NOT just the assigned pillar. buildLinkPlan
@@ -200,7 +204,7 @@ export async function POST(req: Request) {
     `- Follow the HEADING RULES above: keep strong headings verbatim, improve weak ones for SEO, add headings only for the gaps.\n` +
     `- Use a proper Markdown heading hierarchy: exactly one H1 (# ) for the page title, each major section as an H2 (## ), and subsections and FAQ questions as H3 (### ). Never use bold text in place of a heading.\n` +
     factsSection +
-    `\n\n${renderReadabilityRules()}` +
+    `\n\n${readabilityPromptBlock(readabilityCT, useReadabilityRules)}` +
     keywordBlock +
     linkBlock +
     `\n\nOutput: the full updated page in Markdown only. Start with the H1.`;
@@ -274,14 +278,14 @@ export async function POST(req: Request) {
   // passes that shorten/de-passivize sentences while preserving meaning,
   // headings, and links. Keep a pass only if readability actually improved.
   {
-    let readStats = readabilityStats(updatedBody);
+    let readSignal = readabilityForGenerator(updatedBody, readabilityCT, useReadabilityRules);
     let passes = 0;
-    while (readStats.flesch < READABILITY_TARGET && readStats.overThresholdCount > 0 && passes < 2) {
+    while (readSignal.needsWork && passes < 2) {
       passes++;
       try {
         const rwPrompt =
           `Rewrite the article below to improve readability WITHOUT changing its meaning, facts, ` +
-          `headings, structure, or internal links.\n\n${renderReadabilityRules()}\n\n` +
+          `headings, structure, or internal links.\n\n${readabilityPromptBlock(readabilityCT, useReadabilityRules)}\n\n` +
           `Keep every heading (#, ##, ###) exactly as-is, keep all citations, statutes, and figures, ` +
           `and keep protected legal terms verbatim. Split long sentences and convert passive voice to ` +
           `active.\n\nReturn the COMPLETE rewritten article in Markdown, nothing else.\n\n` +
@@ -295,10 +299,10 @@ export async function POST(req: Request) {
         const rwb = rw.content.find((b) => b.type === "text");
         const cand = rwb && rwb.type === "text" ? stripEmDashes(rwb.text) : "";
         if (!cand.trim()) break;
-        const candStats = readabilityStats(cand);
-        if (candStats.flesch > readStats.flesch) {
+        const candSignal = readabilityForGenerator(cand, readabilityCT, useReadabilityRules);
+        if (candSignal.score > readSignal.score) {
           updatedBody = cand;
-          readStats = candStats;
+          readSignal = candSignal;
         } else {
           break;
         }

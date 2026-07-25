@@ -13,7 +13,12 @@
  * sentence length/grade nor merged into the paragraph beneath them.
  */
 
-import { PROTECTED_TERMS, readabilityStats } from "./readability";
+import {
+  PROTECTED_TERMS,
+  readabilityStats,
+  READABILITY_TARGET,
+  renderReadabilityRules,
+} from "./readability";
 
 export type RuleId =
   | "01" | "02" | "03" | "04" | "05" | "06" | "07" | "08"
@@ -389,4 +394,38 @@ export function renderReadabilityRulesForGenerator(
     "Keep legal terms of art verbatim (e.g. \"liquidated damages\", \"Fair Labor Standards Act\"); do not simplify them.",
     "Target reading level: grade 8 or lower.",
   ].join("\n");
+}
+
+/**
+ * The readability constraint block to inject into a generator prompt — the KM
+ * rules when the engine flag is on, the legacy block otherwise. Callers pass the
+ * flag so this module stays pure/testable.
+ */
+export function readabilityPromptBlock(
+  contentType: ReadabilityContentType,
+  useRules: boolean,
+): string {
+  return useRules ? renderReadabilityRulesForGenerator(contentType) : renderReadabilityRules();
+}
+
+/**
+ * Readability signal for a generator's rewrite loop, unified across engines:
+ * `score` is higher-is-better in both (rules → share passed; Flesch → ease), so
+ * a rewrite is kept when its score beats the current one. `needsWork` says whether
+ * another pass is worthwhile.
+ */
+export function readabilityForGenerator(
+  body: string,
+  contentType: ReadabilityContentType,
+  useRules: boolean,
+): { score: number; needsWork: boolean } {
+  if (useRules) {
+    const r = scoreReadabilityRules(body, { contentType });
+    return { score: r.score, needsWork: r.findings.length > 0 };
+  }
+  const s = readabilityStats(body);
+  return {
+    score: s.flesch,
+    needsWork: s.flesch < READABILITY_TARGET && s.overThresholdCount > 0,
+  };
 }

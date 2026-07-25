@@ -37,10 +37,11 @@ import { checkStructure, type StructureCheck } from "@/lib/structure-check";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness } from "@/lib/freshness-classify";
 import {
-  READABILITY_TARGET,
-  readabilityStats,
-  renderReadabilityRules,
-} from "@/lib/readability";
+  readabilityContentType,
+  readabilityForGenerator,
+  readabilityPromptBlock,
+} from "@/lib/readability-rules";
+import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { guardUser } from "@/lib/supabase-route";
@@ -312,8 +313,11 @@ export async function POST(req: Request) {
   if (factsBlock) userPrompt += `\n\n---\n${factsBlock}`;
 
   // Readability hard constraints so the draft starts clean (short, active
-  // sentences) rather than needing a remediation pass after the fact.
-  userPrompt += `\n\n---\n${renderReadabilityRules()}`;
+  // sentences) rather than needing a remediation pass after the fact. The KM rule
+  // set when the engine flag is on; the legacy block otherwise.
+  const useReadabilityRules = readabilityRulesEngineEnabled();
+  const readabilityCT = readabilityContentType(`km_${brief.contentType}`);
+  userPrompt += `\n\n---\n${readabilityPromptBlock(readabilityCT, useReadabilityRules)}`;
 
   // Sensitive topics (harassment, retaliation, discrimination, wrongful
   // termination) get a tone override that leads with calm, human language before
@@ -391,15 +395,15 @@ export async function POST(req: Request) {
     // passes that shorten/de-passivize sentences while preserving meaning,
     // structure, headings, links, and protected legal terms. Keep a pass only if
     // it improves readability without regressing the section structure.
-    let readStats = readabilityStats(text);
+    let readSignal = readabilityForGenerator(text, readabilityCT, useReadabilityRules);
     let readPasses = 0;
-    while (readStats.flesch < READABILITY_TARGET && readStats.overThresholdCount > 0 && readPasses < 2) {
+    while (readSignal.needsWork && readPasses < 2) {
       readPasses++;
       try {
         const rwPrompt =
           `Rewrite the article below to improve readability WITHOUT changing its meaning, facts, ` +
           `headings, structure, or internal links.\n\n` +
-          `${renderReadabilityRules()}\n\n` +
+          `${readabilityPromptBlock(readabilityCT, useReadabilityRules)}\n\n` +
           `Keep every heading (#, ##, ###) exactly as-is, keep all citations, statutes, and figures, ` +
           `and keep the protected legal terms verbatim. Split long sentences and convert passive voice ` +
           `to active.\n\nReturn the COMPLETE rewritten article in Markdown, nothing else.\n\n` +
@@ -413,12 +417,12 @@ export async function POST(req: Request) {
         const rwb = rw.content.find((b) => b.type === "text");
         const cand = rwb && rwb.type === "text" ? stripEmDashes(rwb.text) : "";
         if (!cand.trim()) break;
-        const candStats = readabilityStats(cand);
+        const candSignal = readabilityForGenerator(cand, readabilityCT, useReadabilityRules);
         const candStruct = checkStructure(cand, brief.contentType, brief.practiceArea);
         // Accept only if readability improved and structure didn't newly break.
-        if (candStats.flesch > readStats.flesch && (candStruct.passed || !structureCheck.passed)) {
+        if (candSignal.score > readSignal.score && (candStruct.passed || !structureCheck.passed)) {
           text = cand;
-          readStats = candStats;
+          readSignal = candSignal;
           structureCheck = candStruct;
         } else {
           break;
