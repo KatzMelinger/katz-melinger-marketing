@@ -22,6 +22,13 @@ import {
   type FilteredTitle,
 } from "./title-cannibalization";
 import { readabilityFindings, readabilityStats } from "./readability";
+import {
+  scoreReadabilityRules,
+  formatReadabilityFindings,
+  readabilityContentType,
+} from "./readability-rules";
+import { readabilityRulesEngineEnabled } from "./feature-flags";
+import { logEvent } from "./telemetry";
 
 const STOP_WORDS = new Set([
   "the","and","that","with","from","this","your","have","will","about","into",
@@ -848,6 +855,26 @@ export async function analyzeDraft(args: {
   const readStats = readabilityStats(body);
   const flesch = readStats.flesch;
   const grade = readStats.grade;
+  // Part 2: score against the 15 KM rules instead of Flesch-Kincaid when the flag
+  // is on. Grade stays a display-only readout either way. The rule engine names
+  // each rule + its specific fix, so the findings carry actionable guidance rather
+  // than one canned line, and false positives (grade-level flags, mislabeled
+  // passives, heading merges) go away.
+  const useReadabilityRules = readabilityRulesEngineEnabled();
+  const ruleResult = useReadabilityRules
+    ? scoreReadabilityRules(body, { contentType: readabilityContentType(format) })
+    : null;
+  const readabilityScore = ruleResult ? ruleResult.score : normalizeReadability(flesch);
+  const readabilityFindingList = ruleResult
+    ? formatReadabilityFindings(ruleResult.findings)
+    : readabilityFindings(body);
+  logEvent("readability_scored", {
+    engine: useReadabilityRules ? "rules" : "flesch",
+    score: readabilityScore,
+    grade: Math.round(grade * 10) / 10,
+    findings: readabilityFindingList.length,
+    failed: ruleResult?.failedRuleIds ?? [],
+  });
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
@@ -887,9 +914,9 @@ export async function analyzeDraft(args: {
   const keptTitles = filtered.kept.map((k) => k.title);
 
   const analysis: ContentAnalysis = {
-    readability_score: normalizeReadability(flesch),
+    readability_score: readabilityScore,
     reading_grade_level: Math.round(grade * 10) / 10,
-    readability_findings: readabilityFindings(body),
+    readability_findings: readabilityFindingList,
     word_count: words.length,
     sentence_count: readStats.sentenceCount,
     keyword_density: keywordDensity(words),

@@ -342,6 +342,36 @@ export function scoreReadabilityRules(
   };
 }
 
+/** Map a content format/template to the readability content type. */
+export function readabilityContentType(format?: string | null): ReadabilityContentType {
+  const f = (format ?? "").toLowerCase();
+  if (/social|instagram|linkedin|facebook|tiktok|twitter|threads/.test(f)) return "social";
+  if (f.includes("blog")) return "blog";
+  return "web";
+}
+
+/**
+ * Render findings as unique instruction strings for the analyzer's string[]
+ * contract and the Apply-findings UI. Each names its rule and gives that rule's
+ * specific fix — no single canned fix.
+ */
+export function formatReadabilityFindings(
+  findings: ReadabilityFinding[],
+  cap = 25,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const f of findings) {
+    const head = [f.rule, f.detail].filter(Boolean).join(" ");
+    const s = `Rule ${f.ruleId}: ${head}. ${f.fix} "${f.excerpt}"`.replace(/\s+/g, " ").trim();
+    if (seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 /**
  * Generator constraint block — the same rules the scorer enforces, so the
  * generator writes to spec (one source of truth). Deterministic rules only; the
