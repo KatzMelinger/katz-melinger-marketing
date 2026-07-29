@@ -47,33 +47,51 @@ type NetworkKey =
   | "pinterest"
   | "youtube";
 
+// Per-platform post formats (master-spec 4A). Each network exposes only its valid
+// formats; the first is the default. Instagram now defaults to a single Post.
+type PostFormat =
+  | "post" | "reel" | "story" | "carousel" | "video"
+  | "whats_new" | "offer" | "event" | "pin" | "short";
+
+const FORMAT_LABEL: Record<PostFormat, string> = {
+  post: "Post", reel: "Reel", story: "Story", carousel: "Carousel", video: "Video",
+  whats_new: "What's new", offer: "Offer", event: "Event", pin: "Pin", short: "Short",
+};
+
+// Media requirement per format, enforced by the media guard before scheduling.
+type MediaRule = "none" | "media" | "vertical" | "carousel";
+const FORMAT_MEDIA: Record<PostFormat, MediaRule> = {
+  post: "none", reel: "vertical", story: "vertical", carousel: "carousel", video: "vertical",
+  whats_new: "none", offer: "none", event: "none", pin: "media", short: "vertical",
+};
+
 type NetworkMeta = {
   key: NetworkKey;
   label: string;
-  /** Default post type shown next to the network (e.g. "Post", "Carousel"). */
-  postType: string;
+  /** Valid formats for this network; formats[0] is the default. */
+  formats: PostFormat[];
   /** Character limit surfaced in the counter for this network. */
   charLimit: number;
   /** Dot color in the checklist + preview accent. */
   color: string;
-  /** True when Ayrshare rejects a text-only post (needs media). */
-  needsMedia: boolean;
 };
+
+const defaultFormat = (n: NetworkMeta): PostFormat => n.formats[0];
 
 // The five KM networks, pre-selected. Order matches the checklist + tabs.
 const KM_NETWORKS: NetworkMeta[] = [
-  { key: "linkedin", label: "LinkedIn", postType: "Post", charLimit: 3000, color: "#0A66C2", needsMedia: false },
-  { key: "facebook", label: "Facebook", postType: "Post", charLimit: 2000, color: "#1877F2", needsMedia: false },
-  { key: "instagram", label: "Instagram", postType: "Carousel", charLimit: 2200, color: "#C13584", needsMedia: true },
-  { key: "gmb", label: "Google", postType: "Post", charLimit: 1500, color: "#34A853", needsMedia: false },
-  { key: "tiktok", label: "TikTok", postType: "Video", charLimit: 2200, color: "#111827", needsMedia: true },
+  { key: "linkedin", label: "LinkedIn", formats: ["post"], charLimit: 3000, color: "#0A66C2" },
+  { key: "facebook", label: "Facebook", formats: ["post", "reel", "story", "carousel"], charLimit: 2000, color: "#1877F2" },
+  { key: "instagram", label: "Instagram", formats: ["post", "reel", "story", "carousel"], charLimit: 2200, color: "#C13584" },
+  { key: "gmb", label: "Google", formats: ["whats_new", "offer", "event"], charLimit: 1500, color: "#34A853" },
+  { key: "tiktok", label: "TikTok", formats: ["video"], charLimit: 2200, color: "#111827" },
 ];
 
 // Extra networks behind "+ add network". X is intentionally absent.
 const EXTRA_NETWORKS: NetworkMeta[] = [
-  { key: "threads", label: "Threads", postType: "Post", charLimit: 500, color: "#111827", needsMedia: false },
-  { key: "pinterest", label: "Pinterest", postType: "Pin", charLimit: 500, color: "#E60023", needsMedia: true },
-  { key: "youtube", label: "YouTube", postType: "Short", charLimit: 1000, color: "#FF0000", needsMedia: true },
+  { key: "threads", label: "Threads", formats: ["post"], charLimit: 500, color: "#111827" },
+  { key: "pinterest", label: "Pinterest", formats: ["pin"], charLimit: 500, color: "#E60023" },
+  { key: "youtube", label: "YouTube", formats: ["short"], charLimit: 1000, color: "#FF0000" },
 ];
 
 const META_BY_KEY = new Map<NetworkKey, NetworkMeta>(
@@ -93,6 +111,8 @@ type UploadedAsset = { url: string; kind: "image" | "video"; filename: string };
 
 type Variation = {
   key: NetworkKey;
+  /** Chosen post format for this platform (4A). Unset = the network's default. */
+  format?: PostFormat;
   copy: string;
   /** Per-network schedule slot (staggered by default). Local yyyy-mm-dd + HH:mm. */
   date: string;
@@ -355,11 +375,24 @@ export function SocialComposerDrawer({
   // Media guard: networks that reject text-only posts (Instagram, TikTok, …)
   // can't schedule until an image or video is attached. Generated slides and
   // manual uploads both land in mediaUrls, so one check covers both.
+  // Resolve a network's chosen format (falls back to its default).
+  const formatOf = (key: NetworkKey): PostFormat =>
+    variations.get(key)?.format ?? defaultFormat(META_BY_KEY.get(key)!);
+
+  // Format-aware media guard: Reel/Story need a vertical asset, carousel needs
+  // 2+ images, feed Post needs nothing. Returns the shortfall reason, or null.
+  const mediaShortfall = (n: NetworkMeta): string | null => {
+    const rule = FORMAT_MEDIA[formatOf(n.key)];
+    if (rule === "none") return null;
+    const count = variations.get(n.key)?.mediaUrls?.length ?? 0;
+    if (rule === "carousel") return count >= 2 ? null : "needs 2+ images";
+    if (rule === "vertical") return count >= 1 ? null : "needs a vertical (9:16) video or image";
+    return count >= 1 ? null : "needs an image or video";
+  };
   const mediaMissingNets = useMemo(
-    () =>
-      selectedList.filter(
-        (n) => n.needsMedia && (variations.get(n.key)?.mediaUrls?.length ?? 0) === 0,
-      ),
+    () => selectedList.filter((n) => mediaShortfall(n) !== null),
+    // mediaShortfall closes over `variations` (a dep), so this stays correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectedList, variations],
   );
 
@@ -569,12 +602,13 @@ export function SocialComposerDrawer({
           draftId: v?.draftId ?? null,
           format: n.key,
           platform: n.key,
+          postType: formatOf(n.key),
           body: copy,
           mediaUrls: v?.mediaUrls ?? [],
           scheduleDate: dt.toISOString(),
         };
       })
-      .filter((p): p is NonNullable<{ draftId: string | null; format: NetworkKey; platform: NetworkKey; body: string; mediaUrls: string[]; scheduleDate: string }> => p !== null);
+      .filter((p): p is NonNullable<{ draftId: string | null; format: NetworkKey; platform: NetworkKey; postType: PostFormat; body: string; mediaUrls: string[]; scheduleDate: string }> => p !== null);
 
   // Save every ready variation as a draft on the Content Calendar — no Ayrshare,
   // no gate. Drafts park as-is even if they'd trip a rule; the brand/compliance
@@ -654,19 +688,34 @@ export function SocialComposerDrawer({
                 {KM_NETWORKS.map((n) => {
                   const on = selected.has(n.key);
                   const flagged = (flagsByNet.get(n.key) ?? []).some((f) => f.severity === "block");
+                  const fmt = formatOf(n.key);
                   return (
-                    <button
+                    <div
                       key={n.key}
-                      onClick={() => toggleNetwork(n.key)}
-                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm transition-colors ${
                         on ? "border-brand/40 bg-brand/5 text-slate-800" : "border-slate-200 bg-slate-50 text-slate-400"
                       }`}
                     >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: on ? n.color : "#CBD5E1" }} />
-                      <span className="font-medium">{n.label}</span>
-                      <span className={on ? "text-slate-400" : "text-slate-300"}>· {n.postType}</span>
+                      <button type="button" onClick={() => toggleNetwork(n.key)} className="inline-flex items-center gap-2">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: on ? n.color : "#CBD5E1" }} />
+                        <span className="font-medium">{n.label}</span>
+                      </button>
+                      {on && n.formats.length > 1 ? (
+                        <select
+                          value={fmt}
+                          onChange={(e) => patchVar(n.key, { format: e.target.value as PostFormat })}
+                          className="rounded border border-slate-200 bg-white px-1 py-0.5 text-xs text-slate-600"
+                          title="Post format"
+                        >
+                          {n.formats.map((f) => (
+                            <option key={f} value={f}>{FORMAT_LABEL[f]}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className={on ? "text-slate-400 text-xs" : "text-slate-300 text-xs"}>· {FORMAT_LABEL[fmt]}</span>
+                      )}
                       {on && flagged && <span title="Flagged for brand or compliance review" aria-hidden>⚠️</span>}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -805,8 +854,10 @@ export function SocialComposerDrawer({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-slate-600">
                       Media
-                      {activeMeta?.needsMedia && (
-                        <span className="ml-1 text-amber-600">· required for {activeMeta.label}</span>
+                      {activeMeta && FORMAT_MEDIA[formatOf(activeMeta.key)] !== "none" && (
+                        <span className="ml-1 text-amber-600">
+                          · {mediaShortfall(activeMeta) ?? `ready for ${FORMAT_LABEL[formatOf(activeMeta.key)]}`}
+                        </span>
                       )}
                     </span>
                     {activeVar.mediaBusy && <span className="text-xs text-slate-400">Uploading…</span>}
@@ -897,7 +948,7 @@ export function SocialComposerDrawer({
                 <Toggle label="Generate script (reel or video)" on={scriptOn} onChange={setScriptOn} />
               </div>
 
-              {slidesOn && activeVar && activeMeta?.postType === "Carousel" && (
+              {slidesOn && activeVar && activeMeta && formatOf(activeMeta.key) === "carousel" && (
                 <div className="mt-3 rounded-lg border border-brand/30 bg-brand/5 p-3">
                   {activeVar.slides?.length ? (
                     <>
@@ -1189,7 +1240,7 @@ function PreviewCard({
       ) : slides?.length ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={slides[0].url} alt="Carousel" className="mt-3 w-full rounded-lg border border-slate-200 object-cover" />
-      ) : network?.needsMedia ? (
+      ) : network && network.formats.some((f) => FORMAT_MEDIA[f] !== "none") ? (
         <div className="mt-3 flex h-40 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">Image / carousel</div>
       ) : null}
       <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-400">Like · Comment · Share</div>

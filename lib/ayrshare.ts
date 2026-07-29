@@ -63,6 +63,28 @@ export function getAyrshareApiKey(): string | null {
   return process.env.AYRSHARE_API_KEY?.trim() || null;
 }
 
+/**
+ * Map a chosen post format to Ayrshare's per-platform option object. Only Reel and
+ * Story need an explicit flag (feed Post, Carousel, and Video are inferred from the
+ * media). Confirm the exact Ayrshare option names before enabling in production —
+ * this only runs behind the SOCIAL_MULTIFORMAT flag.
+ */
+export function ayrshareFormatOptions(
+  platform: AyrsharePlatform,
+  postType?: string | null,
+): Record<string, unknown> {
+  if (!postType) return {};
+  if (platform === "instagram") {
+    if (postType === "reel") return { instagramOptions: { reels: true } };
+    if (postType === "story") return { instagramOptions: { stories: true } };
+  }
+  if (platform === "facebook") {
+    if (postType === "reel") return { faceBookOptions: { reels: true } };
+    if (postType === "story") return { faceBookOptions: { stories: true } };
+  }
+  return {};
+}
+
 export async function postToAyrshare(input: {
   apiKey: string;
   /** Optional per-tenant profile (Ayrshare Business multi-account). */
@@ -75,6 +97,8 @@ export async function postToAyrshare(input: {
   /** Auto-split a long post into an X/Twitter thread instead of being rejected
    *  for exceeding 280 chars. */
   twitterThread?: boolean;
+  /** Chosen format (reel/story/…) → Ayrshare per-platform option (4A). */
+  postType?: string | null;
 }): Promise<AyrshareResult> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${input.apiKey}`,
@@ -91,6 +115,10 @@ export async function postToAyrshare(input: {
   // Ayrshare auto-threads a long post across tweets when thread is on.
   if (input.twitterThread && input.platforms.includes("twitter")) {
     body.twitterOptions = { thread: true, threadNumber: false };
+  }
+  // Per-platform format (Reel/Story). One platform per call here, so [0] applies.
+  if (input.postType && input.platforms[0]) {
+    Object.assign(body, ayrshareFormatOptions(input.platforms[0], input.postType));
   }
 
   let data: Record<string, unknown> = {};
