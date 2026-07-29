@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getSocialOverview } from "@/lib/metricool";
+import { getSocialOverview, engagementDenominator, engagementRatePct } from "@/lib/metricool";
 
 export const dynamic = "force-dynamic";
 
@@ -55,15 +55,17 @@ type OverviewNetwork = {
   posts: Array<{
     id?: string;
     content?: string;
-    publishedAt?: string;
+    publishedAt?: string | null;
     likes?: number;
     comments?: number;
     shares?: number;
     impressions?: number;
+    reach?: number;
   }>;
   totalPosts: number;
   totalEngagement: number;
   totalImpressions: number;
+  totalReach: number;
 };
 
 function mockPayload(error?: string): MetricoolResponse {
@@ -131,10 +133,12 @@ export async function GET(request: Request) {
       .map((row) => {
         const platform = asPlatform(row.network);
         if (!platform) return null;
-        const engagementRate =
-          row.totalImpressions > 0
-            ? Number(((row.totalEngagement / row.totalImpressions) * 100).toFixed(2))
-            : 0;
+        // interactions ÷ reach × 100 (impressions for LinkedIn) — matches
+        // Metricool. Was dividing by impressions, which inflated the rate.
+        const engagementRate = engagementRatePct(
+          row.totalEngagement,
+          engagementDenominator(row.key, row.totalReach, row.totalImpressions),
+        );
         return {
           platform,
           followers: row.followers ?? 0,
@@ -164,12 +168,32 @@ export async function GET(request: Request) {
       )
       .slice(0, 12);
 
+    // Real engagement-rate trend: bucket every post by day and compute
+    // interactions ÷ reach per day (was hardcoded to 0, so the line was flat).
+    const dayAgg = new Map<string, { interactions: number; denom: number }>();
+    for (const row of data) {
+      for (const post of row.posts) {
+        const day = (post.publishedAt ?? "").slice(0, 10);
+        if (!day) continue;
+        const interactions = (post.likes ?? 0) + (post.comments ?? 0) + (post.shares ?? 0);
+        const denom = engagementDenominator(row.key, post.reach ?? 0, post.impressions ?? 0);
+        const cur = dayAgg.get(day) ?? { interactions: 0, denom: 0 };
+        cur.interactions += interactions;
+        cur.denom += denom;
+        dayAgg.set(day, cur);
+      }
+    }
     const instagram = data.find((x) => x.key === "instagram");
-    const trend: TrendPoint[] = (instagram?.followersTrend ?? []).map((p) => ({
-      date: p.date,
-      engagementRate: 0,
-      followers: p.value,
-    }));
+    const followersByDate = new Map(
+      (instagram?.followersTrend ?? []).map((p) => [p.date, p.value]),
+    );
+    const trend: TrendPoint[] = [...dayAgg.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0])) // chronological
+      .map(([date, agg]) => ({
+        date,
+        engagementRate: engagementRatePct(agg.interactions, agg.denom),
+        followers: followersByDate.get(date) ?? 0,
+      }));
 
     const result: MetricoolResponse = {
       connected: true,
