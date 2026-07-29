@@ -22,6 +22,7 @@ import { NextResponse } from "next/server";
 import { checkSocialCompliance } from "@/lib/social-compliance";
 import { checkCalendarDuplicates, type AngleConflict } from "@/lib/social-duplicate";
 import { guardUser } from "@/lib/supabase-route";
+import { socialMultiformatEnabled } from "@/lib/feature-flags";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
 import {
@@ -43,6 +44,8 @@ type IncomingPost = {
   scheduleDate?: string;
   /** Slide/asset image URLs to attach (carousel). Must be public HTTPS. */
   mediaUrls?: string[];
+  /** Chosen per-platform format: post | reel | story | carousel | video … (4A). */
+  postType?: string | null;
 };
 
 function isPlatform(p: unknown): p is AyrsharePlatform {
@@ -129,6 +132,7 @@ export async function POST(req: Request) {
     const mediaUrls = Array.isArray(p.mediaUrls)
       ? p.mediaUrls.filter((u): u is string => typeof u === "string" && u.startsWith("https://"))
       : [];
+    const postType = typeof p.postType === "string" ? p.postType : null;
 
     let ayrshareId: string | null = null;
     let postUrl: string | null = null;
@@ -152,7 +156,14 @@ export async function POST(req: Request) {
     // can't post text-only. Fail fast with a clear reason instead of spending an
     // Ayrshare call to get code 139 back.
     // Drafts can be incomplete (no media yet), so we don't block them here.
-    const blockedForMedia = !asDraft && requiresMedia(platform) && mediaUrls.length === 0;
+    // Format-aware minimum: carousel needs 2+ images, Reel/Story/Video need 1,
+    // otherwise fall back to the platform's baseline media requirement.
+    const mediaMin =
+      postType === "carousel" ? 2
+      : ["reel", "story", "video", "short", "pin"].includes(postType ?? "") ? 1
+      : requiresMedia(platform) ? 1
+      : 0;
+    const blockedForMedia = !asDraft && mediaUrls.length < mediaMin;
 
     if (!flagged && !asDraft && apiKey && !blockedForMedia) {
       try {
@@ -170,6 +181,8 @@ export async function POST(req: Request) {
           scheduleDate: futureAt,
           // Long X posts (our threads) auto-split instead of being rejected >280.
           twitterThread: platform === "twitter",
+          // Reel/Story → Ayrshare option, only behind the flag (params unverified).
+          postType: socialMultiformatEnabled() ? postType ?? undefined : undefined,
         });
         if (res.ok) {
           viaAyrshare = true;
@@ -230,6 +243,9 @@ export async function POST(req: Request) {
       source_draft_id: p.draftId ?? null,
       last_error: lastError,
       media_urls: mediaUrls.length ? mediaUrls : null,
+      // Only persist when the feature (and its migration) is enabled, so flag-off
+      // deployments don't depend on the new column.
+      ...(socialMultiformatEnabled() ? { post_type: postType } : {}),
     });
     results.push({
       draftId: p.draftId ?? null,

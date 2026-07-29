@@ -22,3 +22,8 @@ export function freshnessGateEnabled(): boolean {
 export function readabilityRulesEngineEnabled(): boolean {
   return enabled("READABILITY_RULES_ENGINE");
 }
+
+/** Per-platform format → Ayrshare post-type mapping on publish (Part 4A). */
+export function socialMultiformatEnabled(): boolean {
+  return enabled("SOCIAL_MULTIFORMAT");
+}
