@@ -36,8 +36,9 @@ import {
   readabilityForGenerator,
   readabilityPromptBlock,
 } from "@/lib/readability-rules";
-import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
+import { readabilityRulesEngineEnabled, eeatAuthorshipEnabled } from "@/lib/feature-flags";
 import { renderAuthorDirective } from "@/lib/firm-author";
+import { appendAuthorBioBox } from "@/lib/authors";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { checkStructure } from "@/lib/structure-check";
@@ -313,6 +314,10 @@ export async function POST(req: Request) {
       }
     }
   }
+
+  // E-E-A-T: append the credentialed author bio box (idempotent — replaces any
+  // prior one on re-refresh). Behind the flag.
+  if (eeatAuthorshipEnabled()) updatedBody = appendAuthorBioBox(updatedBody);
 
   // Heading changes: compare the live page's headings against the redraft's, so
   // the reviewer can see the H1/section changes at a glance (kept vs improved vs
