@@ -13,7 +13,7 @@
 
 import { NextResponse } from "next/server";
 
-import { getSocialOverview } from "@/lib/metricool";
+import { getSocialOverview, engagementDenominator } from "@/lib/metricool";
 import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +44,7 @@ export async function GET() {
     const data = (await getSocialOverview()) as OverviewNetwork[];
 
     const channels = data.map((n) => {
-      const base = n.totalReach > 0 ? n.totalReach : n.totalImpressions;
+      const base = engagementDenominator(n.key, n.totalReach, n.totalImpressions);
       return {
         network: n.network,
         key: n.key,

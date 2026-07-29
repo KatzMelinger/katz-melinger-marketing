@@ -11,7 +11,7 @@
 
 import { NextResponse } from "next/server";
 
-import { getCompetitors, getSocialOverview } from "@/lib/metricool";
+import { getCompetitors, getSocialOverview, engagementDenominator } from "@/lib/metricool";
 import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
@@ -52,22 +52,31 @@ export async function GET() {
   const denied = await guardUser();
   if (denied) return denied;
 
+  // Competitors can be tracked on any network in Metricool, not just IG/LinkedIn.
+  // Pulling only two meant Facebook-tracked firms (e.g. Schwartz Perry, Phillips)
+  // never appeared. Fetch every supported network.
+  const PLATFORMS = ["facebook", "instagram", "linkedin", "tiktok"] as const;
+
   try {
-    const [igRaw, liRaw, overview] = await Promise.all([
-      getCompetitors("instagram").catch(() => ({ data: [] })) as Promise<{ data?: Raw[] }>,
-      getCompetitors("linkedin").catch(() => ({ data: [] })) as Promise<{ data?: Raw[] }>,
+    const [rawByPlatform, overview] = await Promise.all([
+      Promise.all(
+        PLATFORMS.map((p) =>
+          getCompetitors(p).catch(() => ({ data: [] })) as Promise<{ data?: Raw[] }>,
+        ),
+      ),
       getSocialOverview().catch(() => []) as Promise<
         Array<{ key: string; followers: number | null; totalPosts: number; totalEngagement: number; totalReach: number; totalImpressions: number }>
       >,
     ]);
 
-    const instagram = (igRaw?.data ?? []).map((c) => normalize(c, "instagram"));
-    const linkedin = (liRaw?.data ?? []).map((c) => normalize(c, "linkedin"));
+    const byPlatform = Object.fromEntries(
+      PLATFORMS.map((p, i) => [p, (rawByPlatform[i]?.data ?? []).map((c) => normalize(c, p))]),
+    ) as Record<(typeof PLATFORMS)[number], ReturnType<typeof normalize>[]>;
 
     const meFor = (key: string) => {
       const n = overview.find((o) => o.key === key);
       if (!n) return null;
-      const base = n.totalReach > 0 ? n.totalReach : n.totalImpressions;
+      const base = engagementDenominator(key, n.totalReach, n.totalImpressions);
       return {
         followers: n.followers ?? 0,
         posts: n.totalPosts,
@@ -77,9 +86,14 @@ export async function GET() {
 
     return NextResponse.json({
       connected: true,
-      instagram,
-      linkedin,
-      me: { instagram: meFor("instagram"), linkedin: meFor("linkedin") },
+      // Per-platform lists (all networks) + the legacy ig/linkedin keys for the
+      // current UI until it adds the extra tabs.
+      byPlatform,
+      instagram: byPlatform.instagram,
+      linkedin: byPlatform.linkedin,
+      facebook: byPlatform.facebook,
+      tiktok: byPlatform.tiktok,
+      me: Object.fromEntries(PLATFORMS.map((p) => [p, meFor(p)])),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

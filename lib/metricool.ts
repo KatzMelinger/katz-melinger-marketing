@@ -131,6 +131,50 @@ export type MonthlyPlatformMetrics = {
   posts: number;
 };
 
+/** Extract an ISO date string from Metricool's varied date shapes (string or {dateTime}). */
+export function pickDate(...vals: any[]): string | null {
+  for (const v of vals) {
+    if (!v) continue;
+    if (typeof v === "string") return v;
+    if (typeof v === "object") {
+      const s = v.dateTime || v.date || v.datetime || v.publishedAt;
+      if (typeof s === "string") return s;
+    }
+  }
+  return null;
+}
+
+/** Reach for a post across Metricool's field-name variants (0 if none present). */
+export function pickReach(post: any): number {
+  return (
+    post.reach || post.reachTotal || post.reachOrganic || post.organicReach ||
+    post.organic_reach || post.postReach || 0
+  );
+}
+
+/** Interactions = reactions/likes + comments + shares (clicks aren't exposed by the API). */
+export function postInteractions(post: any): number {
+  const likes = post.likes || post.reactions || 0;
+  const comments = post.comments || post.comment || 0;
+  const shares = post.shares || post.reposts || 0;
+  return likes + comments + shares;
+}
+
+/**
+ * Engagement denominator (Metricool's / Diana's formula): reach for most networks,
+ * impressions for LinkedIn (LinkedIn reports impressions, not reach). Falls back to
+ * impressions when reach is unavailable so a missing reach can't zero the rate.
+ */
+export function engagementDenominator(networkKey: string, reach: number, impressions: number): number {
+  if (networkKey === "linkedin") return impressions || reach;
+  return reach || impressions;
+}
+
+/** Engagement rate % = interactions ÷ denominator × 100, to 2 dp. */
+export function engagementRatePct(interactions: number, denominator: number): number {
+  return denominator > 0 ? Number(((interactions / denominator) * 100).toFixed(2)) : 0;
+}
+
 /**
  * Per-platform totals for an explicit date range (used for one calendar month).
  * Unlike getSocialOverview this also derives net-new followers from the follower
@@ -175,12 +219,9 @@ export async function getMonthlyMetrics(from: string, to: string): Promise<Month
       const posts: any[] = postsData?.data || [];
       row.posts = posts.length;
       for (const post of posts) {
-        const likes = post.likes || 0;
-        const comments = post.comments || post.comment || 0;
-        const shares = post.shares || 0;
         row.impressions += post.impressionsTotal || post.impressions || 0;
-        row.reach += post.reach || 0;
-        row.engagement += likes + comments + shares;
+        row.reach += pickReach(post);
+        row.engagement += postInteractions(post);
       }
     } catch (e: any) {
       logger.warn({ network: network.key, error: e.message }, "Monthly metrics: posts fetch failed");
@@ -222,10 +263,12 @@ export async function getSocialOverview(options?: { from?: string; to?: string }
         const values = followerData?.data?.[0]?.values || [];
         if (values.length > 0) {
           networkData.followers = values[0].value;
-          networkData.followersTrend = values.map((v: any) => ({
-            date: v.dateTime.split("T")[0],
-            value: v.value,
-          })).reverse();
+          // Sort chronologically by actual date rather than assuming newest-first
+          // and reversing — a bad assumption produced out-of-order x-axes.
+          networkData.followersTrend = values
+            .map((v: any) => ({ date: (pickDate(v.dateTime, v.date, v) ?? "").slice(0, 10), value: v.value }))
+            .filter((p: { date: string }) => p.date)
+            .sort((a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date));
         }
       }
     } catch (e: any) {
@@ -238,26 +281,30 @@ export async function getSocialOverview(options?: { from?: string; to?: string }
       networkData.totalPosts = posts.length;
 
       for (const post of posts) {
-        networkData.totalLikes += post.likes || 0;
+        networkData.totalLikes += post.likes || post.reactions || 0;
         networkData.totalComments += post.comments || post.comment || 0;
-        networkData.totalShares += post.shares || 0;
+        networkData.totalShares += post.shares || post.reposts || 0;
         networkData.totalImpressions += post.impressionsTotal || post.impressions || 0;
-        networkData.totalReach += post.reach || 0;
-        networkData.totalEngagement += post.engagement || 0;
-        networkData.totalSaved += post.saved || 0;
-        networkData.totalViews += post.views || post.video_views || 0;
+        networkData.totalReach += pickReach(post);
+        // Compute interactions ourselves — Metricool posts have no single
+        // "engagement" field, so relying on it left the total at 0.
+        networkData.totalEngagement += postInteractions(post);
+        networkData.totalSaved += post.saved || post.saves || 0;
+        networkData.totalViews += post.views || post.video_views || post.videoViews || 0;
       }
 
       networkData.posts = posts.slice(0, 10).map((post: any) => ({
         id: post.postId || post.id,
         content: (post.content || post.text || "").slice(0, 200),
-        publishedAt: post.publishedAt || post.created,
-        likes: post.likes || 0,
+        // Normalize to a plain ISO string — publishedAt is often {dateTime,…},
+        // which reached the UI as an object and rendered "Invalid Date".
+        publishedAt: pickDate(post.publishedAt, post.created, post.date),
+        likes: post.likes || post.reactions || 0,
         comments: post.comments || post.comment || 0,
-        shares: post.shares || 0,
+        shares: post.shares || post.reposts || 0,
         impressions: post.impressionsTotal || post.impressions || 0,
-        reach: post.reach || 0,
-        engagement: post.engagement || 0,
+        reach: pickReach(post),
+        engagement: postInteractions(post),
         url: post.url || null,
         imageUrl: post.imageUrl || post.picture || null,
         type: post.type || "post",

@@ -27,17 +27,26 @@ type Competitor = {
 };
 type Me = { followers: number; posts: number; engagementRate: number } | null;
 
+type Net = "instagram" | "linkedin" | "facebook" | "tiktok";
+
 type Payload = {
   connected: boolean;
   error?: string;
   instagram: Competitor[];
   linkedin: Competitor[];
-  me: { instagram?: Me; linkedin?: Me };
+  facebook?: Competitor[];
+  tiktok?: Competitor[];
+  me: Partial<Record<Net, Me>>;
 };
 
-type Net = "instagram" | "linkedin";
+const NETS: Net[] = ["facebook", "instagram", "linkedin", "tiktok"];
 const ACCENT = "#116AB2";
-const NET_COLOR: Record<Net, string> = { instagram: "#C13584", linkedin: "#0A66C2" };
+const NET_COLOR: Record<Net, string> = {
+  instagram: "#C13584",
+  linkedin: "#0A66C2",
+  facebook: "#1877F2",
+  tiktok: "#111827",
+};
 
 function fmt(n: number): string {
   return n >= 10000 ? `${(n / 1000).toFixed(1)}k` : n.toLocaleString();
@@ -66,8 +75,8 @@ export default function CompetitorTrackingPage() {
     };
   }, []);
 
-  const competitors = net === "instagram" ? data?.instagram ?? [] : data?.linkedin ?? [];
-  const me = (net === "instagram" ? data?.me?.instagram : data?.me?.linkedin) ?? null;
+  const competitors = data?.[net] ?? [];
+  const me = data?.me?.[net] ?? null;
 
   // Key insight: how our engagement rate compares to the competitor average.
   let insight: string | null = null;
@@ -93,7 +102,7 @@ export default function CompetitorTrackingPage() {
             <p className="mt-1 text-sm text-slate-500">Benchmark competitor law-firm accounts against Katz Melinger. Refreshes daily.</p>
           </div>
           <div className="inline-flex overflow-hidden rounded-lg border border-[#e2e8f0]">
-            {(["instagram", "linkedin"] as Net[]).map((n) => (
+            {NETS.map((n) => (
               <button
                 key={n}
                 type="button"
