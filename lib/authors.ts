@@ -62,10 +62,11 @@ export const KENNETH_KATZ: Author = {
     "FMLA",
     "Civil Litigation",
   ],
+  // Verb-phrase fragment — the bio box supplies the name/title/firm/years intro,
+  // so this must not repeat them.
   bio:
-    "Kenneth Katz is the Managing Partner of Katz Melinger PLLC with 15+ years of " +
-    "experience representing employees and businesses in employment, wage-and-hour, " +
-    "and collections matters.",
+    "He represents employees and businesses in employment, wage-and-hour, and " +
+    "collections matters.",
   headshotUrl: "https://katzmelinger.com/wp-content/uploads/2026/04/kenneth-katz.webp",
   bioPageUrl: "https://katzmelinger.com/attorney/kenneth-j-katz/",
   sameAs: [
@@ -92,4 +93,33 @@ export function getAuthor(id?: string | null): Author {
 /** The author used when a piece has no explicit reviewer assigned. */
 export function defaultAuthor(): Author {
   return getAuthor(DEFAULT_AUTHOR_ID);
+}
+
+/**
+ * Deterministic "About the Author" bio box (Markdown) — accurate credentials and
+ * the real bio-page link, built from the author record rather than left to the
+ * model. Appended to content so YMYL pages carry a visible E-E-A-T signal.
+ */
+export function renderAuthorBioBox(author: Author = defaultAuthor()): string {
+  const admitted = author.barAdmissions
+    .filter((b) => !b.startsWith("U.S."))
+    .join(" and ") || author.barAdmissions[0] || "";
+  const admittedLine = admitted ? ` Admitted in ${admitted}.` : "";
+  return [
+    "## About the Author",
+    "",
+    `**${author.name}** is the ${author.title} of ${author.firm} with ${author.experience} of experience. ` +
+      `${author.bio}${admittedLine} ${author.credentials}. ` +
+      `[Read ${author.name.split(" ")[0]}'s full bio](${author.bioPageUrl})`,
+  ].join("\n");
+}
+
+// Matches an existing bio box (always last) so re-running a refresh replaces it
+// with current details instead of stacking duplicates.
+const BIO_BOX_RE = /\n*##\s+About the Author[\s\S]*$/i;
+
+/** Append (idempotently) the author bio box to a Markdown body. */
+export function appendAuthorBioBox(body: string, author: Author = defaultAuthor()): string {
+  const stripped = (body ?? "").replace(BIO_BOX_RE, "").trimEnd();
+  return `${stripped}\n\n${renderAuthorBioBox(author)}\n`;
 }

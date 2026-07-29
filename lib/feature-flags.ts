@@ -22,3 +22,8 @@ export function freshnessGateEnabled(): boolean {
 export function readabilityRulesEngineEnabled(): boolean {
   return enabled("READABILITY_RULES_ENGINE");
 }
+
+/** Credentialed author bio box on generated/refreshed content (Part 3). */
+export function eeatAuthorshipEnabled(): boolean {
+  return enabled("EEAT_AUTHORSHIP");
+}

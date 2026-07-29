@@ -41,8 +41,9 @@ import {
   readabilityForGenerator,
   readabilityPromptBlock,
 } from "@/lib/readability-rules";
-import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
+import { readabilityRulesEngineEnabled, eeatAuthorshipEnabled } from "@/lib/feature-flags";
 import { renderAuthorDirective } from "@/lib/firm-author";
+import { appendAuthorBioBox } from "@/lib/authors";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { guardUser } from "@/lib/supabase-route";
@@ -436,6 +437,10 @@ export async function POST(req: Request) {
         break;
       }
     }
+
+    // E-E-A-T: append the credentialed author bio box (deterministic — accurate
+    // credentials + real bio link, not model-written). Behind the flag.
+    if (eeatAuthorshipEnabled()) text = appendAuthorBioBox(text);
 
     // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
     // deadlines) so the reviewer verifies them before approval. Attach the
