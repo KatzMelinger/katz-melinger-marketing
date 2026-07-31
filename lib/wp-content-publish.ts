@@ -18,6 +18,7 @@ import { marked } from "marked";
 
 import { surfaceForFormat } from "@/lib/agent/compliance-filter";
 import { getSupabaseAdmin } from "./supabase-server";
+import { authorForContent } from "./authors";
 
 export type WpContentItem = {
   /** content_drafts.id — echoed back on confirm. */
@@ -29,6 +30,14 @@ export type WpContentItem = {
   meta_title: string;
   meta_description: string;
   format: string;
+  /** employment | collections — for the plugin's own routing if it wants it. */
+  practice_area: string | null;
+  /**
+   * The attorney this post should be authored by. `login` is the WordPress user
+   * login the plugin sets as post_author; null when no WP account is mapped yet
+   * (the plugin then uses its default account). Resolved by practice area/pillar.
+   */
+  author: { login: string; name: string; slug: string } | null;
   /**
    * When set, this is an UPDATE of an already-published page at this URL (a
    * Redraft), not a new post. The plugin resolves it to the existing WP post
@@ -91,7 +100,7 @@ export async function listApprovedWpContent(args: {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb
     .from("content_drafts")
-    .select("id, title, topic, body, format, metadata, seo_brief")
+    .select("id, title, topic, body, format, metadata, seo_brief, practice_area")
     .eq("tenant_id", args.tenantId)
     .eq("status", "approved")
     .order("updated_at", { ascending: false })
@@ -119,6 +128,14 @@ export async function listApprovedWpContent(args: {
         ? metadata.source_url.trim()
         : null;
 
+    // Resolve the authoring attorney by practice area + pillar (same rule the
+    // byline uses), so the plugin can set post_author. Pillar lives on the brief.
+    const km = (metadata?.km_brief as Record<string, unknown> | undefined) ?? undefined;
+    const pillarId =
+      pickMeta(metadata, seoBrief, "pillarId", "pillar_id") ||
+      (typeof km?.pillarId === "string" ? km.pillarId : "");
+    const author = authorForContent({ practiceArea: d.practice_area as string | null, pillarId });
+
     out.push({
       id: d.id as string,
       title,
@@ -127,6 +144,10 @@ export async function listApprovedWpContent(args: {
       meta_title: pickMeta(metadata, seoBrief, "metaTitle", "meta_title") || title,
       meta_description: pickMeta(metadata, seoBrief, "metaDescription", "meta_description"),
       format: ((d.format as string | null) ?? "blog").toLowerCase(),
+      practice_area: (d.practice_area as string | null) ?? null,
+      author: author.wpLogin
+        ? { login: author.wpLogin, name: author.name, slug: author.id }
+        : null,
       update_url: updateUrl,
     });
   }
