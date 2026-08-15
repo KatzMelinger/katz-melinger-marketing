@@ -24,6 +24,7 @@ import {
 import { readabilityFindings, readabilityStats } from "./readability";
 import {
   scoreReadabilityRules,
+  type ReadabilityConfig,
   formatReadabilityFindings,
   readabilityContentType,
 } from "./readability-rules";
@@ -834,6 +835,13 @@ export async function analyzeDraft(args: {
   format?: string | null;
   template?: string | null;
   practiceArea?: string | null;
+  /**
+   * Firm-edited readability config (Part 2 slice 5). Passed in by the caller
+   * rather than loaded here: this module is imported by analysis-card.tsx, a
+   * client component, so the Supabase-backed store must not be reachable from
+   * it. Omit for the code-seeded defaults.
+   */
+  readabilityConfig?: ReadabilityConfig;
 }): Promise<ContentAnalysis> {
   const {
     draftId,
@@ -843,6 +851,7 @@ export async function analyzeDraft(args: {
     topic = null,
     format = null,
     template = null,
+    readabilityConfig,
   } = args;
   const supabase = getSupabaseAdmin();
   const tid = await resolveTenantId();
@@ -902,6 +911,7 @@ export async function analyzeDraft(args: {
         contentType: readabilityCT,
         aiFindings: aiReadability.findings,
         evaluatedAiRuleIds: aiReadability.evaluatedRuleIds,
+        config: readabilityConfig,
       })
     : null;
   const readabilityScore = ruleResult ? ruleResult.score : normalizeReadability(flesch);

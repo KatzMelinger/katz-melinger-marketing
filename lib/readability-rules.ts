@@ -206,6 +206,28 @@ export const PLAINWORD_DICTIONARY: Record<string, string> = {
 /** Legal terms of art that must never be simplified (Rule 15 allowlist). */
 export const LEGAL_ALLOWLIST: string[] = PROTECTED_TERMS;
 
+/**
+ * The parts of the rules engine the firm can edit without a deploy (slice 5).
+ * The tables in supabase/readability_config_schema.sql override these per tenant;
+ * lib/readability-config-store.ts loads them and falls back to the values above,
+ * so the engine behaves identically whether or not the tables are populated.
+ *
+ * Rule logic itself is deliberately NOT configurable — only which rules run, the
+ * plain-word pairs, and the legal terms Rule 15 must leave alone.
+ */
+export type ReadabilityConfig = {
+  plainwords: Record<string, string>;
+  allowlist: string[];
+  /** Rules the firm has switched off. Excluded from the score's denominator. */
+  disabledRuleIds: RuleId[];
+};
+
+export const DEFAULT_READABILITY_CONFIG: ReadabilityConfig = {
+  plainwords: PLAINWORD_DICTIONARY,
+  allowlist: LEGAL_ALLOWLIST,
+  disabledRuleIds: [],
+};
+
 // ---------------------------------------------------------------------------
 // Findings + deterministic checkers.
 // ---------------------------------------------------------------------------
@@ -224,19 +246,21 @@ const excerptOf = (s: string, n = 80) => (s.length > n ? `${s.slice(0, n).trim()
 const countMatches = (hay: string, needle: string): number =>
   (hay.toLowerCase().match(new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g")) ?? []).length;
 
-function inAllowlist(word: string): boolean {
+function inAllowlist(word: string, allowlist: string[]): boolean {
   const w = word.toLowerCase();
-  return LEGAL_ALLOWLIST.some((t) => t.toLowerCase().includes(w));
+  return allowlist.some((t) => t.toLowerCase().includes(w));
 }
 
 /** Run every deterministic rule applicable to the content type. */
 export function runDeterministicRules(
   body: string,
   contentType: ReadabilityContentType = "blog",
+  config: ReadabilityConfig = DEFAULT_READABILITY_CONFIG,
 ): ReadabilityFinding[] {
   const blocks = parseBlocks(body);
   const paragraphs = blocks.filter((b): b is Extract<Block, { type: "paragraph" }> => b.type === "paragraph");
-  const applies = (id: RuleId) => rule(id).scope.includes(contentType);
+  const applies = (id: RuleId) =>
+    rule(id).scope.includes(contentType) && !config.disabledRuleIds.includes(id);
   const out: ReadabilityFinding[] = [];
   const push = (id: RuleId, excerpt: string, detail?: string) => {
     if (!applies(id)) return;
@@ -280,8 +304,8 @@ export function runDeterministicRules(
       // Rule 10 — first person we/our/us
       if (/\b(we|our|ours|we're|we've|we'll)\b/i.test(s) || /\bus\b/.test(s)) push("10", excerptOf(s));
       // Rule 15 — complex word with a plain synonym (skip legal terms of art)
-      for (const [complex, plain] of Object.entries(PLAINWORD_DICTIONARY)) {
-        if (countMatches(s, complex) > 0 && !inAllowlist(complex)) {
+      for (const [complex, plain] of Object.entries(config.plainwords)) {
+        if (countMatches(s, complex) > 0 && !inAllowlist(complex, config.allowlist)) {
           push("15", excerptOf(s), `"${complex}" → "${plain}"`);
           break; // one per sentence keeps the panel readable
         }
@@ -318,10 +342,13 @@ export function scoreReadabilityRules(
     contentType?: ReadabilityContentType;
     aiFindings?: ReadabilityFinding[];
     evaluatedAiRuleIds?: RuleId[];
+    /** Firm-edited rule config; omit for the code-seeded defaults. */
+    config?: ReadabilityConfig;
   } = {},
 ): ReadabilityRuleResult {
   const contentType = opts.contentType ?? "blog";
-  const detFindings = runDeterministicRules(body, contentType);
+  const config = opts.config ?? DEFAULT_READABILITY_CONFIG;
+  const detFindings = runDeterministicRules(body, contentType, config);
   const findings = [...detFindings, ...(opts.aiFindings ?? [])];
 
   const evaluated = new Set<RuleId>();
@@ -330,8 +357,13 @@ export function scoreReadabilityRules(
   }
   for (const id of opts.evaluatedAiRuleIds ?? []) evaluated.add(id);
 
+  // A disabled rule leaves the denominator too, not just the findings. Counting
+  // it as applicable would mark it passed and inflate the score for every draft.
   const applicable = READABILITY_RULES.filter(
-    (r) => r.scope.includes(contentType) && evaluated.has(r.id),
+    (r) =>
+      r.scope.includes(contentType) &&
+      evaluated.has(r.id) &&
+      !config.disabledRuleIds.includes(r.id),
   );
   const failed = new Set(findings.map((f) => f.ruleId));
   const rulesPassed = applicable.filter((r) => !failed.has(r.id)).length;
