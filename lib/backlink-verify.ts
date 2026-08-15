@@ -8,38 +8,12 @@
  * up the function.
  */
 
+import { safeFetch } from "./url-safety";
 import { getTenantConfig } from "./tenant-config";
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
 const USER_AGENT =
   "Mozilla/5.0 (compatible; MarketingDashboard/1.0)";
-
-function isPublicUrl(urlStr: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(urlStr);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  const hostname = parsed.hostname.toLowerCase();
-
-  // Hard blocks.
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
-  if (hostname === "[::1]" || hostname.startsWith("[")) return false;
-  if (hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
-
-  // RFC1918 + link-local.
-  if (/^10\./.test(hostname)) return false;
-  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)) return false;
-  if (/^192\.168\./.test(hostname)) return false;
-  if (/^169\.254\./.test(hostname)) return false;
-
-  // Cloud metadata.
-  if (hostname.includes("metadata.google") || hostname.includes("169.254.169.254")) return false;
-
-  return true;
-}
 
 function getHostname(href: string): string | null {
   try {
@@ -62,17 +36,15 @@ export type VerifyResult = {
 };
 
 export async function verifyBacklinkFromUrl(targetUrl: string): Promise<VerifyResult> {
-  if (!isPublicUrl(targetUrl)) {
-    return { found: false, url: targetUrl, error: "Only public HTTP/HTTPS URLs are allowed" };
-  }
-
   const ourDomain = (await getTenantConfig()).seoDomain;
 
   try {
-    const res = await fetch(targetUrl, {
+    // safeFetch re-checks each redirect hop. Validating targetUrl and then
+    // following redirects would let any open redirect on a public host reach
+    // loopback or the cloud metadata endpoint.
+    const res = await safeFetch(targetUrl, {
       headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
-      signal: AbortSignal.timeout(15_000),
-      redirect: "follow",
+      timeoutMs: 15_000,
     });
     if (!res.ok) return { found: false, url: targetUrl, error: `Fetch returned ${res.status}` };
 
