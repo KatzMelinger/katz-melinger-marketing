@@ -49,20 +49,24 @@ type NetworkKey =
 
 // Per-platform post formats (master-spec 4A). Each network exposes only its valid
 // formats; the first is the default. Instagram now defaults to a single Post.
+// Google Business Offer and Event are deliberately absent: both require a title
+// and start/end dates that this composer has no fields for, and the firm doesn't
+// post promotions or events to Google — it posts article updates. Offering them
+// would only let someone pick a format that can't publish.
 type PostFormat =
   | "post" | "reel" | "story" | "carousel" | "video"
-  | "whats_new" | "offer" | "event" | "pin" | "short";
+  | "whats_new" | "pin" | "short";
 
 const FORMAT_LABEL: Record<PostFormat, string> = {
   post: "Post", reel: "Reel", story: "Story", carousel: "Carousel", video: "Video",
-  whats_new: "What's new", offer: "Offer", event: "Event", pin: "Pin", short: "Short",
+  whats_new: "What's new", pin: "Pin", short: "Short",
 };
 
 // Media requirement per format, enforced by the media guard before scheduling.
 type MediaRule = "none" | "media" | "vertical" | "carousel";
 const FORMAT_MEDIA: Record<PostFormat, MediaRule> = {
   post: "none", reel: "vertical", story: "vertical", carousel: "carousel", video: "vertical",
-  whats_new: "none", offer: "none", event: "none", pin: "media", short: "vertical",
+  whats_new: "none", pin: "media", short: "vertical",
 };
 
 type NetworkMeta = {
@@ -83,7 +87,7 @@ const KM_NETWORKS: NetworkMeta[] = [
   { key: "linkedin", label: "LinkedIn", formats: ["post"], charLimit: 3000, color: "#0A66C2" },
   { key: "facebook", label: "Facebook", formats: ["post", "reel", "story", "carousel"], charLimit: 2000, color: "#1877F2" },
   { key: "instagram", label: "Instagram", formats: ["post", "reel", "story", "carousel"], charLimit: 2200, color: "#C13584" },
-  { key: "gmb", label: "Google", formats: ["whats_new", "offer", "event"], charLimit: 1500, color: "#34A853" },
+  { key: "gmb", label: "Google", formats: ["whats_new"], charLimit: 1500, color: "#34A853" },
   { key: "tiktok", label: "TikTok", formats: ["video"], charLimit: 2200, color: "#111827" },
 ];
 
