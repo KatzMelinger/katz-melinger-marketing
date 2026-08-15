@@ -28,6 +28,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
+import { judgeVertical, measureAspect, type Dimensions } from "@/lib/media-aspect";
 import Link from "next/link";
 
 import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
@@ -383,14 +385,46 @@ export function SocialComposerDrawer({
   const formatOf = (key: NetworkKey): PostFormat =>
     variations.get(key)?.format ?? defaultFormat(META_BY_KEY.get(key)!);
 
+  // Measured pixel dimensions per media URL, so the vertical guard can check the
+  // shape and not just the count. null = measured and unreadable (CORS, decode
+  // failure); absent = not measured yet. Both are treated as "don't block".
+  const [aspects, setAspects] = useState<Map<string, Dimensions | null>>(new Map());
+
+  useEffect(() => {
+    const urls = new Set<string>();
+    for (const v of variations.values()) for (const u of v.mediaUrls ?? []) urls.add(u);
+    const pending = [...urls].filter((u) => !aspects.has(u));
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    void Promise.all(pending.map(async (u) => [u, await measureAspect(u)] as const)).then((pairs) => {
+      if (cancelled) return;
+      setAspects((prev) => {
+        const next = new Map(prev);
+        for (const [u, d] of pairs) next.set(u, d);
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [variations, aspects]);
+
   // Format-aware media guard: Reel/Story need a vertical asset, carousel needs
   // 2+ images, feed Post needs nothing. Returns the shortfall reason, or null.
   const mediaShortfall = (n: NetworkMeta): string | null => {
     const rule = FORMAT_MEDIA[formatOf(n.key)];
     if (rule === "none") return null;
-    const count = variations.get(n.key)?.mediaUrls?.length ?? 0;
+    const urls = variations.get(n.key)?.mediaUrls ?? [];
+    const count = urls.length;
     if (rule === "carousel") return count >= 2 ? null : "needs 2+ images";
-    if (rule === "vertical") return count >= 1 ? null : "needs a vertical (9:16) video or image";
+    if (rule === "vertical") {
+      if (count < 1) return "needs a vertical (9:16) video or image";
+      // The first attachment is the one that becomes the Reel/Story, so it's the
+      // one whose shape matters. Unmeasured assets pass — see judgeVertical.
+      const verdict = judgeVertical(aspects.get(urls[0]) ?? null);
+      return verdict.ok ? null : verdict.reason;
+    }
     return count >= 1 ? null : "needs an image or video";
   };
   const mediaMissingNets = useMemo(
