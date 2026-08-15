@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantClient } from "@/lib/tenant-db";
 import { analyzeDraft } from "@/lib/content-analysis";
+import { getReadabilityConfig } from "@/lib/readability-config-store";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -46,6 +47,10 @@ export async function POST(
       format: (draft.format as string | null) ?? null,
       template: (draft.template as string | null) ?? null,
       practiceArea: (draft.practice_area as string | null) ?? null,
+      // Loaded here, not inside analyzeDraft: that module is imported by the
+      // analysis card (a client component), so the DB-backed store must stay out
+      // of it. Falls back to the code-seeded rules on its own.
+      readabilityConfig: await getReadabilityConfig(tenantId),
     });
     return NextResponse.json(analysis);
   } catch (err) {
