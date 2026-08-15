@@ -1,0 +1,43 @@
+-- ============================================================================
+-- !! DB TARGET CHECK — read before running
+-- ----------------------------------------------------------------------------
+-- Run this against the LIVE marketing-SaaS Supabase project — the one your
+-- active .env.local points at via NEXT_PUBLIC_SUPABASE_URL. Confirm the project
+-- ref matches .env.local before you click Run. .env.local wins over any comment.
+-- ============================================================================
+
+-- ============================================================================
+-- social_insights.account_analytics — account-level social totals (Part 4B)
+-- ============================================================================
+-- Whole-account followers / reach / engagement per platform, pulled from
+-- Ayrshare's /api/analytics/social by lib/social-account-analytics.ts on the
+-- existing 6-hourly /api/social/metrics/refresh cron.
+--
+-- Separate column from `audience` (Trends & Performance overwrites that one
+-- wholesale) and from `report_audience` (the hand-maintained monthly-report
+-- demographics), so none of the three editors clobbers another.
+--
+-- NOTE: this does NOT hold audience demographics. Ayrshare returns none for this
+-- account — Meta withholds any breakdown with fewer than 100 people in it
+-- (warning code 395) and TikTok returns empty audience arrays below its own
+-- threshold. Sections 5-6 of the monthly report stay in report_audience,
+-- maintained by hand, until the accounts are large enough.
+--
+-- JSON shape:
+--   {
+--     "fetchedAt": "2026-08-15T18:23:33.080Z",
+--     "platforms": {
+--       "linkedin": { "followers": 1881, "impressions": 32955, "reach": 11489,
+--                     "likes": 498, "comments": 81, "shares": 3, "clicks": 1333,
+--                     "engagementRatePct": 1.77,
+--                     "warnings": [{ "code": 395, "message": "..." }],
+--                     "raw": { ... } }
+--     },
+--     "lastUpdated": { "linkedin": "2026-08-15T18:23:31.780Z" }
+--   }
+--
+-- Additive and idempotent.
+-- ============================================================================
+
+alter table public.social_insights
+  add column if not exists account_analytics jsonb not null default '{}'::jsonb;
