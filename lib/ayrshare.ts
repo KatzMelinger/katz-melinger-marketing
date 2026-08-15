@@ -69,14 +69,62 @@ export function getAyrshareApiKey(): string | null {
 }
 
 /**
+ * Extra fields a format needs beyond the post text. Google Business event and
+ * offer posts carry their own title and run dates; everything else ignores this.
+ */
+export type FormatExtras = {
+  title?: string | null;
+  /** ISO 8601, e.g. 2026-09-01T14:00:00.000Z */
+  startDate?: string | null;
+  endDate?: string | null;
+  couponCode?: string | null;
+  redeemOnlineUrl?: string | null;
+  termsConditions?: string | null;
+};
+
+/**
+ * Fields Google Business requires per format. A gmbOptions.event or .offer
+ * object without these is rejected by Ayrshare, so we check before spending the
+ * call — same reasoning as MEDIA_REQUIRED_PLATFORMS.
+ */
+const GMB_REQUIRED: Record<string, Array<keyof FormatExtras>> = {
+  event: ["title", "startDate", "endDate"],
+  offer: ["title", "startDate", "endDate"],
+};
+
+/**
+ * Why a format can't be sent yet, or null when it's good to go. Returning a
+ * reason rather than silently degrading matters here: before this, selecting
+ * Offer or Event on Google Business produced an empty option object and the post
+ * went out as a plain what's-new, with nothing in the UI to say the chosen
+ * format had been dropped.
+ */
+export function formatOptionsError(
+  platform: AyrsharePlatform,
+  postType?: string | null,
+  extras?: FormatExtras,
+): string | null {
+  if (!postType || platform !== "gmb") return null;
+  const required = GMB_REQUIRED[postType];
+  if (!required) return null;
+  const missing = required.filter((k) => !String(extras?.[k] ?? "").trim());
+  if (missing.length === 0) return null;
+  return `Google Business ${postType} posts need ${missing.join(", ")}.`;
+}
+
+/**
  * Map a chosen post format to Ayrshare's per-platform option object. Only Reel and
- * Story need an explicit flag (feed Post, Carousel, and Video are inferred from the
- * media). Confirm the exact Ayrshare option names before enabling in production —
- * this only runs behind the SOCIAL_MULTIFORMAT flag.
+ * Story need an explicit flag on Meta (feed Post, Carousel, and Video are inferred
+ * from the media); Google Business needs a full nested object per type.
+ *
+ * gmbOptions shapes verified against
+ * https://www.ayrshare.com/docs/rest-api/endpoints/post/google-business-profile
+ * Runs behind the SOCIAL_MULTIFORMAT flag.
  */
 export function ayrshareFormatOptions(
   platform: AyrsharePlatform,
   postType?: string | null,
+  extras?: FormatExtras,
 ): Record<string, unknown> {
   if (!postType) return {};
   if (platform === "instagram") {
@@ -86,6 +134,26 @@ export function ayrshareFormatOptions(
   if (platform === "facebook") {
     if (postType === "reel") return { faceBookOptions: { reels: true } };
     if (postType === "story") return { faceBookOptions: { stories: true } };
+  }
+  if (platform === "gmb") {
+    // A what's-new post is Google's default; it needs no options object at all.
+    if (postType === "whats_new") return {};
+    if (formatOptionsError(platform, postType, extras)) return {};
+    const window = {
+      title: extras?.title ?? "",
+      startDate: extras?.startDate ?? "",
+      endDate: extras?.endDate ?? "",
+    };
+    if (postType === "event") return { gmbOptions: { event: window } };
+    if (postType === "offer") {
+      // Google drops empty optional fields rather than erroring, but sending
+      // them empty shows blank rows on the offer card, so omit what's unset.
+      const offer: Record<string, unknown> = { ...window };
+      if (extras?.couponCode?.trim()) offer.couponCode = extras.couponCode.trim();
+      if (extras?.redeemOnlineUrl?.trim()) offer.redeemOnlineUrl = extras.redeemOnlineUrl.trim();
+      if (extras?.termsConditions?.trim()) offer.termsConditions = extras.termsConditions.trim();
+      return { gmbOptions: { offer } };
+    }
   }
   return {};
 }
@@ -104,6 +172,8 @@ export async function postToAyrshare(input: {
   twitterThread?: boolean;
   /** Chosen format (reel/story/…) → Ayrshare per-platform option (4A). */
   postType?: string | null;
+  /** Title/dates a Google Business event or offer needs (4A). */
+  formatExtras?: FormatExtras;
 }): Promise<AyrshareResult> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${input.apiKey}`,
@@ -121,9 +191,13 @@ export async function postToAyrshare(input: {
   if (input.twitterThread && input.platforms.includes("twitter")) {
     body.twitterOptions = { thread: true, threadNumber: false };
   }
-  // Per-platform format (Reel/Story). One platform per call here, so [0] applies.
+  // Per-platform format (Reel/Story/GBP type). One platform per call here, so [0] applies.
   if (input.postType && input.platforms[0]) {
-    Object.assign(body, ayrshareFormatOptions(input.platforms[0], input.postType));
+    // Fail a format we can't build rather than posting it as something else —
+    // an offer silently downgraded to a plain update is worse than a refusal.
+    const invalid = formatOptionsError(input.platforms[0], input.postType, input.formatExtras);
+    if (invalid) return { ok: false, status: "error", errors: [{ message: invalid }] };
+    Object.assign(body, ayrshareFormatOptions(input.platforms[0], input.postType, input.formatExtras));
   }
 
   let data: Record<string, unknown> = {};

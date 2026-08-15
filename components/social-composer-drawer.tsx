@@ -28,6 +28,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
+import { judgeVertical, measureAspect, type Dimensions } from "@/lib/media-aspect";
 import Link from "next/link";
 
 import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
@@ -49,20 +51,24 @@ type NetworkKey =
 
 // Per-platform post formats (master-spec 4A). Each network exposes only its valid
 // formats; the first is the default. Instagram now defaults to a single Post.
+// Google Business Offer and Event are deliberately absent: both require a title
+// and start/end dates that this composer has no fields for, and the firm doesn't
+// post promotions or events to Google — it posts article updates. Offering them
+// would only let someone pick a format that can't publish.
 type PostFormat =
   | "post" | "reel" | "story" | "carousel" | "video"
-  | "whats_new" | "offer" | "event" | "pin" | "short";
+  | "whats_new" | "pin" | "short";
 
 const FORMAT_LABEL: Record<PostFormat, string> = {
   post: "Post", reel: "Reel", story: "Story", carousel: "Carousel", video: "Video",
-  whats_new: "What's new", offer: "Offer", event: "Event", pin: "Pin", short: "Short",
+  whats_new: "What's new", pin: "Pin", short: "Short",
 };
 
 // Media requirement per format, enforced by the media guard before scheduling.
 type MediaRule = "none" | "media" | "vertical" | "carousel";
 const FORMAT_MEDIA: Record<PostFormat, MediaRule> = {
   post: "none", reel: "vertical", story: "vertical", carousel: "carousel", video: "vertical",
-  whats_new: "none", offer: "none", event: "none", pin: "media", short: "vertical",
+  whats_new: "none", pin: "media", short: "vertical",
 };
 
 type NetworkMeta = {
@@ -83,7 +89,7 @@ const KM_NETWORKS: NetworkMeta[] = [
   { key: "linkedin", label: "LinkedIn", formats: ["post"], charLimit: 3000, color: "#0A66C2" },
   { key: "facebook", label: "Facebook", formats: ["post", "reel", "story", "carousel"], charLimit: 2000, color: "#1877F2" },
   { key: "instagram", label: "Instagram", formats: ["post", "reel", "story", "carousel"], charLimit: 2200, color: "#C13584" },
-  { key: "gmb", label: "Google", formats: ["whats_new", "offer", "event"], charLimit: 1500, color: "#34A853" },
+  { key: "gmb", label: "Google", formats: ["whats_new"], charLimit: 1500, color: "#34A853" },
   { key: "tiktok", label: "TikTok", formats: ["video"], charLimit: 2200, color: "#111827" },
 ];
 
@@ -379,14 +385,46 @@ export function SocialComposerDrawer({
   const formatOf = (key: NetworkKey): PostFormat =>
     variations.get(key)?.format ?? defaultFormat(META_BY_KEY.get(key)!);
 
+  // Measured pixel dimensions per media URL, so the vertical guard can check the
+  // shape and not just the count. null = measured and unreadable (CORS, decode
+  // failure); absent = not measured yet. Both are treated as "don't block".
+  const [aspects, setAspects] = useState<Map<string, Dimensions | null>>(new Map());
+
+  useEffect(() => {
+    const urls = new Set<string>();
+    for (const v of variations.values()) for (const u of v.mediaUrls ?? []) urls.add(u);
+    const pending = [...urls].filter((u) => !aspects.has(u));
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    void Promise.all(pending.map(async (u) => [u, await measureAspect(u)] as const)).then((pairs) => {
+      if (cancelled) return;
+      setAspects((prev) => {
+        const next = new Map(prev);
+        for (const [u, d] of pairs) next.set(u, d);
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [variations, aspects]);
+
   // Format-aware media guard: Reel/Story need a vertical asset, carousel needs
   // 2+ images, feed Post needs nothing. Returns the shortfall reason, or null.
   const mediaShortfall = (n: NetworkMeta): string | null => {
     const rule = FORMAT_MEDIA[formatOf(n.key)];
     if (rule === "none") return null;
-    const count = variations.get(n.key)?.mediaUrls?.length ?? 0;
+    const urls = variations.get(n.key)?.mediaUrls ?? [];
+    const count = urls.length;
     if (rule === "carousel") return count >= 2 ? null : "needs 2+ images";
-    if (rule === "vertical") return count >= 1 ? null : "needs a vertical (9:16) video or image";
+    if (rule === "vertical") {
+      if (count < 1) return "needs a vertical (9:16) video or image";
+      // The first attachment is the one that becomes the Reel/Story, so it's the
+      // one whose shape matters. Unmeasured assets pass — see judgeVertical.
+      const verdict = judgeVertical(aspects.get(urls[0]) ?? null);
+      return verdict.ok ? null : verdict.reason;
+    }
     return count >= 1 ? null : "needs an image or video";
   };
   const mediaMissingNets = useMemo(
