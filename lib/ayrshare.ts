@@ -10,10 +10,15 @@
  * The key lives in AYRSHARE_API_KEY (server-only); never expose it to the client.
  */
 
+// Engagement rate is computed with the shared metricool helpers on purpose: a
+// second formula here is what made the KPI screen and the monthly report
+// disagree before (fixed in c141105). These two helpers are pure and read no env.
+import { engagementDenominator, engagementRatePct } from "./metricool";
 import { recordVendorUsage } from "./usage-meter";
 
 const AYRSHARE_POST_URL = "https://api.ayrshare.com/api/post";
 const AYRSHARE_ANALYTICS_URL = "https://api.ayrshare.com/api/analytics/post";
+const AYRSHARE_SOCIAL_ANALYTICS_URL = "https://api.ayrshare.com/api/analytics/social";
 
 /** Platforms Ayrshare accepts in the `platforms` array. */
 export const AYRSHARE_PLATFORMS = [
@@ -299,6 +304,188 @@ export async function getAyrsharePostAnalytics(input: {
       ok: false,
       perPlatform: {},
       error: e instanceof Error ? e.message : "Ayrshare analytics request failed",
+    };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Account-level (profile) analytics — Part 4B                                */
+/* -------------------------------------------------------------------------- */
+
+/** Account-wide totals for one connected platform. */
+export type AccountMetrics = {
+  followers?: number;
+  /** Unique people reached. LinkedIn reports uniqueImpressions; FB reports neither. */
+  reach?: number;
+  impressions?: number;
+  views?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  clicks?: number;
+  /** Lifetime post/video count where the platform reports it. */
+  posts?: number;
+  /** interactions ÷ denominator × 100, via the shared metricool helpers. */
+  engagementRatePct?: number;
+  /** Ayrshare warnings for this platform (e.g. code 395, demographics withheld). */
+  warnings?: Array<{ code?: number; message: string }>;
+  raw?: unknown;
+};
+
+/**
+ * Ayrshare returns -1 for a metric the platform declined to compute (seen on
+ * TikTok's commentCountTotal). Untrapped it becomes a negative interaction count
+ * and drags the engagement rate below zero.
+ */
+function positive(n: number | undefined): number | undefined {
+  return typeof n === "number" && n >= 0 ? n : undefined;
+}
+
+/**
+ * Map one platform's account analytics onto AccountMetrics.
+ *
+ * Field names are NOT aliased/guessed here the way normalizePostMetrics does it:
+ * they were read off a live /api/analytics/social response (2026-08-15, all four
+ * connected networks) and genuinely differ per platform — Instagram's reachCount,
+ * LinkedIn's uniqueImpressionsCount and Facebook's pageMediaView are the same
+ * idea under three names. Re-verify against a live response before adding a
+ * platform.
+ */
+export function normalizeAccountMetrics(platform: string, raw: Record<string, unknown>): AccountMetrics {
+  const n = (...keys: string[]) => positive(pickNum(raw, keys));
+  const base: AccountMetrics = { raw };
+
+  if (platform === "instagram") {
+    Object.assign(base, {
+      followers: n("followersCount"),
+      reach: n("reachCount"),
+      views: n("viewsCount"),
+      likes: n("likeCount"),
+      comments: n("commentsCount"),
+      shares: n("shareCount"),
+      posts: n("mediaCount"),
+    });
+  } else if (platform === "facebook") {
+    // No reach metric on the Page object; pageMediaView is the closest
+    // impressions-style figure. pagePostEngagements is Facebook's own
+    // interaction total and is kept in raw rather than used as likes.
+    const reactions = raw.reactions as Record<string, unknown> | undefined;
+    Object.assign(base, {
+      followers: n("followersCount", "fanCount", "pageFollows"),
+      impressions: n("pageMediaView"),
+      views: n("pageVideoViews"),
+      likes: positive(reactions ? pickNum(reactions, ["total"]) : undefined),
+      posts: undefined,
+    });
+  } else if (platform === "linkedin") {
+    const followers = raw.followers as Record<string, unknown> | undefined;
+    Object.assign(base, {
+      followers: positive(followers ? pickNum(followers, ["totalFollowerCount", "organicFollowerCount"]) : undefined),
+      impressions: n("impressionCount"),
+      reach: n("uniqueImpressionsCount"),
+      likes: n("likeCount"),
+      comments: n("commentCount"),
+      shares: n("shareCount"),
+      clicks: n("clickCount"),
+    });
+  } else if (platform === "tiktok") {
+    Object.assign(base, {
+      followers: n("followerCount"),
+      views: n("viewCountTotal"),
+      likes: n("likeCountTotal"),
+      comments: n("commentCountTotal"),
+      shares: n("shareCountTotal"),
+      posts: n("videoCountTotal"),
+      clicks: n("profileViews"),
+    });
+  }
+
+  // One engagement formula across the app. LinkedIn also reports its own
+  // `engagement` field, but that one counts clicks as interactions (verified:
+  // (likes+comments+shares+clicks) ÷ impressions reproduces it exactly), which
+  // would disagree with the KPI pipeline and the monthly report. Keep ours;
+  // theirs stays available in raw.
+  const interactions = (base.likes ?? 0) + (base.comments ?? 0) + (base.shares ?? 0);
+  const denominator = engagementDenominator(platform, base.reach ?? 0, base.impressions ?? base.views ?? 0);
+  base.engagementRatePct = engagementRatePct(interactions, denominator);
+
+  return base;
+}
+
+export type AyrshareAccountAnalytics = {
+  ok: boolean;
+  perPlatform: Record<string, AccountMetrics>;
+  /** ISO timestamp Ayrshare last refreshed its cache, per platform. */
+  lastUpdated: Record<string, string>;
+  error?: string;
+};
+
+/**
+ * Fetch account-level analytics for the connected profiles.
+ *
+ * NOTE ON DEMOGRAPHICS: this endpoint does NOT reliably return audience
+ * age/gender/city/country. Meta withholds a breakdown until it holds 100+ people
+ * (Ayrshare surfaces this as warning code 395) and TikTok returns empty audience
+ * arrays below its own threshold. The monthly report's Sections 5-6 therefore
+ * stay manually maintained; the warnings are passed through so the UI can say
+ * why rather than showing an unexplained blank.
+ */
+export async function getAyrshareSocialAnalytics(input: {
+  apiKey: string;
+  profileKey?: string | null;
+  platforms: string[];
+}): Promise<AyrshareAccountAnalytics> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${input.apiKey}`,
+    "Content-Type": "application/json",
+  };
+  if (input.profileKey) headers["Profile-Key"] = input.profileKey;
+
+  try {
+    const res = await fetch(AYRSHARE_SOCIAL_ANALYTICS_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ platforms: input.platforms }),
+      signal: AbortSignal.timeout(45_000),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || data.status === "error") {
+      return {
+        ok: false,
+        perPlatform: {},
+        lastUpdated: {},
+        error:
+          (Array.isArray(data.errors) && (data.errors[0] as { message?: string })?.message) ||
+          `Ayrshare account analytics failed (${res.status})`,
+      };
+    }
+
+    const perPlatform: Record<string, AccountMetrics> = {};
+    const lastUpdated: Record<string, string> = {};
+    for (const platform of input.platforms) {
+      const block = data[platform];
+      if (!block || typeof block !== "object") continue;
+      const b = block as Record<string, unknown>;
+      const analytics = (b.analytics && typeof b.analytics === "object" ? b.analytics : b) as Record<
+        string,
+        unknown
+      >;
+      const metrics = normalizeAccountMetrics(platform, analytics);
+      if (Array.isArray(b.warning)) {
+        metrics.warnings = (b.warning as Array<Record<string, unknown>>)
+          .map((w) => ({ code: typeof w.code === "number" ? w.code : undefined, message: String(w.message ?? "") }))
+          .filter((w) => w.message);
+      }
+      perPlatform[platform] = metrics;
+      if (typeof b.lastUpdated === "string") lastUpdated[platform] = b.lastUpdated;
+    }
+    return { ok: true, perPlatform, lastUpdated };
+  } catch (e) {
+    return {
+      ok: false,
+      perPlatform: {},
+      lastUpdated: {},
+      error: e instanceof Error ? e.message : "Ayrshare account analytics request failed",
     };
   }
 }

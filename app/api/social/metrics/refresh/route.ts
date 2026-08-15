@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
+import { refreshAccountAnalytics } from "@/lib/social-account-analytics";
 import { refreshPostMetrics } from "@/lib/social-metrics";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
   }
   const result = await refreshPostMetrics(supabase, DEFAULT_TENANT_ID, { limit: 100 });
-  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+  // Account-level totals ride the same cron: one extra Ayrshare call, and it
+  // must not fail the post refresh that already succeeded.
+  const account = await refreshAccountAnalytics(supabase, DEFAULT_TENANT_ID);
+  return NextResponse.json({ ...result, account }, { status: result.ok ? 200 : 500 });
 }
 
 export async function POST(req: NextRequest) {
@@ -52,5 +56,8 @@ export async function POST(req: NextRequest) {
   const onlyId = typeof body.id === "string" && body.id ? body.id : undefined;
 
   const result = await refreshPostMetrics(supabase, tenantId, { onlyId, limit: 100 });
-  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+  // Refreshing a single post is a post-level action; only pull account totals on
+  // a full refresh so a one-post retry doesn't spend an extra Ayrshare call.
+  const account = onlyId ? undefined : await refreshAccountAnalytics(supabase, tenantId);
+  return NextResponse.json({ ...result, account }, { status: result.ok ? 200 : 500 });
 }

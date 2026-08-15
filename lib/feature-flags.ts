@@ -7,6 +7,7 @@
  *   READABILITY_RULES_ENGINE — score against the 15 KM rules, not Flesch-Kincaid.
  *   EEAT_AUTHORSHIP          — credentialed author bio box on content.
  *   SOCIAL_MULTIFORMAT       — per-platform format → Ayrshare post-type on publish.
+ *   NATIVE_SOCIAL_ANALYTICS  — account-level reach/engagement from Ayrshare.
  */
 
 const TRUE = new Set(["on", "1", "true", "yes"]);
@@ -33,4 +34,9 @@ export function eeatAuthorshipEnabled(): boolean {
 /** Per-platform format → Ayrshare post-type mapping on publish (Part 4A). */
 export function socialMultiformatEnabled(): boolean {
   return enabled("SOCIAL_MULTIFORMAT");
+}
+
+/** Account-level analytics pulled from Ayrshare rather than Metricool (Part 4B). */
+export function nativeSocialAnalyticsEnabled(): boolean {
+  return enabled("NATIVE_SOCIAL_ANALYTICS");
 }
