@@ -38,7 +38,7 @@ import {
 } from "@/lib/readability-rules";
 import { readabilityRulesEngineEnabled, eeatAuthorshipEnabled } from "@/lib/feature-flags";
 import { renderAuthorDirective } from "@/lib/firm-author";
-import { appendAuthorBioBox } from "@/lib/authors";
+import { appendAuthorBioBox, authorForContent } from "@/lib/authors";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { checkStructure } from "@/lib/structure-check";
@@ -115,6 +115,9 @@ export async function POST(req: Request) {
   // Readability engine selection (rule-based vs Flesch) for the prompt + loop.
   const useReadabilityRules = readabilityRulesEngineEnabled();
   const readabilityCT = readabilityContentType(`km_${gapReport.contentType}`);
+  // Author resolved by practice area / pillar (employment → Nicole, judgment
+  // enforcement → Kenneth, collections → Adam).
+  const contentAuthor = authorForContent({ practiceArea, pillarId });
 
   // 2. Allowed internal links — site-wide bidirectional discovery over the
   //    cluster map (site_pages), NOT just the assigned pillar. buildLinkPlan
@@ -207,7 +210,7 @@ export async function POST(req: Request) {
     `- Use a proper Markdown heading hierarchy: exactly one H1 (# ) for the page title, each major section as an H2 (## ), and subsections and FAQ questions as H3 (### ). Never use bold text in place of a heading.\n` +
     factsSection +
     `\n\n${readabilityPromptBlock(readabilityCT, useReadabilityRules)}` +
-    `\n\n${renderAuthorDirective()}` +
+    `\n\n${renderAuthorDirective(contentAuthor)}` +
     keywordBlock +
     linkBlock +
     `\n\nOutput: the full updated page in Markdown only. Start with the H1.`;
@@ -317,7 +320,7 @@ export async function POST(req: Request) {
 
   // E-E-A-T: append the credentialed author bio box (idempotent — replaces any
   // prior one on re-refresh). Behind the flag.
-  if (eeatAuthorshipEnabled()) updatedBody = appendAuthorBioBox(updatedBody);
+  if (eeatAuthorshipEnabled()) updatedBody = appendAuthorBioBox(updatedBody, contentAuthor);
 
   // Heading changes: compare the live page's headings against the redraft's, so
   // the reviewer can see the H1/section changes at a glance (kept vs improved vs

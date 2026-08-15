@@ -43,7 +43,7 @@ import {
 } from "@/lib/readability-rules";
 import { readabilityRulesEngineEnabled, eeatAuthorshipEnabled } from "@/lib/feature-flags";
 import { renderAuthorDirective } from "@/lib/firm-author";
-import { appendAuthorBioBox } from "@/lib/authors";
+import { appendAuthorBioBox, authorForContent } from "@/lib/authors";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { guardUser } from "@/lib/supabase-route";
@@ -321,9 +321,11 @@ export async function POST(req: Request) {
   const readabilityCT = readabilityContentType(`km_${brief.contentType}`);
   userPrompt += `\n\n---\n${readabilityPromptBlock(readabilityCT, useReadabilityRules)}`;
 
-  // Author attribution: byline must be the firm's designated author, never an
-  // invented or carried-forward name.
-  userPrompt += `\n\n---\n${renderAuthorDirective()}`;
+  // Author attribution: resolve the attorney by practice area / pillar (employment
+  // → Nicole, judgment enforcement → Kenneth, collections → Adam), so the byline
+  // matches the expertise and never invents or carries a name forward.
+  const contentAuthor = authorForContent({ practiceArea: brief.practiceArea, pillarId: brief.pillarId });
+  userPrompt += `\n\n---\n${renderAuthorDirective(contentAuthor)}`;
 
   // Sensitive topics (harassment, retaliation, discrimination, wrongful
   // termination) get a tone override that leads with calm, human language before
@@ -440,7 +442,7 @@ export async function POST(req: Request) {
 
     // E-E-A-T: append the credentialed author bio box (deterministic — accurate
     // credentials + real bio link, not model-written). Behind the flag.
-    if (eeatAuthorshipEnabled()) text = appendAuthorBioBox(text);
+    if (eeatAuthorshipEnabled()) text = appendAuthorBioBox(text, contentAuthor);
 
     // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
     // deadlines) so the reviewer verifies them before approval. Attach the

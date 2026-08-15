@@ -31,6 +31,8 @@ export type Author = {
   bioPageUrl: string;
   /** Other profiles for schema `sameAs` (the attorney's own, not the firm's). */
   sameAs: string[];
+  /** WordPress user login, so AutoPilot can publish the post under this author. */
+  wpLogin: string;
 };
 
 export const KENNETH_KATZ: Author = {
@@ -76,13 +78,90 @@ export const KENNETH_KATZ: Author = {
     "https://www.avvo.com/attorneys/10016-ny-kenneth-katz-997510.html",
     "https://lawyers.findlaw.com/new-york/new-york/kenneth-j-katz-NDg0NzM3NV8x/",
   ],
+  wpLogin: "kjkatz",
 };
 
-// Nicole Grunfeld and Adam Sackowitz have bio pages
-// (katzmelinger.com/attorney/nicole-d-grunfeld/, …/adam-j-sackowitz/) and can be
-// seeded here when per-practice-area authorship is wanted. For now bylines are
-// uniformly Kenneth Katz (firm decision), so he is the only seeded author.
-export const AUTHORS: Author[] = [KENNETH_KATZ];
+export const NICOLE_GRUNFELD: Author = {
+  id: "nicole-d-grunfeld",
+  name: "Nicole D. Grunfeld",
+  title: "Partner",
+  firm: "Katz Melinger PLLC",
+  experience: "15+ years",
+  credentials: "J.D., New York University School of Law (Vanderbilt Medal)",
+  barAdmissions: [
+    "New York",
+    "New Jersey",
+    "U.S. District Court, Eastern District of New York",
+    "U.S. District Court, Northern District of New York",
+    "U.S. District Court, Southern District of New York",
+    "U.S. District Court, Western District of New York",
+    "U.S. District Court, District of New Jersey",
+    "U.S. Court of Appeals, Second Circuit",
+  ],
+  education: [
+    "J.D., New York University School of Law (Vanderbilt Medal for Outstanding Contributions)",
+    "B.A., English Language and Literature, Yale University",
+  ],
+  practiceAreas: [
+    "Employment and Labor Law",
+    "Employment Discrimination",
+    "Retaliation",
+    "Wage and Hour",
+    "FMLA",
+    "Civil Litigation",
+  ],
+  // Worker-side framing: the firm represents employees.
+  bio:
+    "Since 2007 she has represented employees across the New York City metro area in " +
+    "employment discrimination, retaliation, and wage-and-hour matters, appearing " +
+    "regularly in state and federal court, arbitrations, mediations, and agency proceedings.",
+  headshotUrl: "https://katzmelinger.com/wp-content/uploads/2026/04/nicole-grunfield.webp",
+  bioPageUrl: "https://katzmelinger.com/attorney/nicole-d-grunfeld/",
+  sameAs: ["https://katzmelinger.com/attorney/nicole-d-grunfeld/"],
+  // TODO: set once the WordPress Author account exists.
+  wpLogin: "",
+};
+
+export const ADAM_SACKOWITZ: Author = {
+  id: "adam-j-sackowitz",
+  name: "Adam J. Sackowitz",
+  title: "Partner",
+  firm: "Katz Melinger PLLC",
+  experience: "10+ years",
+  credentials: "J.D., UCLA School of Law",
+  barAdmissions: [
+    "New York",
+    "New Jersey",
+    "California (inactive)",
+    "U.S. District Court, Southern District of New York",
+    "U.S. District Court, Eastern District of New York",
+    "U.S. District Court, Northern District of New York",
+    "U.S. District Court, District of New Jersey",
+    "U.S. Court of Appeals, Second Circuit",
+  ],
+  education: [
+    "J.D., UCLA School of Law",
+    "B.S., Industrial and Labor Relations, Cornell University",
+  ],
+  practiceAreas: [
+    "Commercial Judgments & Enforcement",
+    "Civil Litigation",
+    "Employment Law",
+    "Wage and Hour",
+    "FMLA",
+  ],
+  // Verb-phrase fragment — the box supplies the name/title/firm intro.
+  bio:
+    "He represents clients in commercial collections and judgment enforcement, as " +
+    "well as employment matters including discrimination, FMLA, and wage-and-hour claims.",
+  headshotUrl: "https://katzmelinger.com/wp-content/uploads/2026/04/adam-sackowitz.webp",
+  bioPageUrl: "https://katzmelinger.com/attorney/adam-j-sackowitz/",
+  sameAs: ["https://katzmelinger.com/attorney/adam-j-sackowitz/"],
+  // TODO: set once the WordPress Author account exists.
+  wpLogin: "",
+};
+
+export const AUTHORS: Author[] = [KENNETH_KATZ, NICOLE_GRUNFELD, ADAM_SACKOWITZ];
 
 export const DEFAULT_AUTHOR_ID = KENNETH_KATZ.id;
 
@@ -96,6 +175,28 @@ export function defaultAuthor(): Author {
 }
 
 /**
+ * Resolve the author for a piece by expertise (firm decision):
+ *   employment            → Nicole Grunfeld
+ *   judgment enforcement  → Kenneth Katz   (its pillars roll up to "collections",
+ *                                            so match the pillar, not practice_area)
+ *   collections (other)   → Adam Sackowitz
+ *   unmapped              → Kenneth Katz (fallback)
+ * Pillar match is fuzzy so DB pillar ids/labels ("judgment-enforcement",
+ * "domestication", …) all resolve regardless of exact slug.
+ */
+export function authorForContent(input: {
+  practiceArea?: string | null;
+  pillarId?: string | null;
+}): Author {
+  const pillar = (input.pillarId ?? "").toLowerCase();
+  if (/judgment|enforcement|domestica/.test(pillar)) return getAuthor("kenneth-j-katz");
+  const pa = (input.practiceArea ?? "").toLowerCase();
+  if (pa === "employment") return getAuthor("nicole-d-grunfeld");
+  if (pa === "collections") return getAuthor("adam-j-sackowitz");
+  return getAuthor(DEFAULT_AUTHOR_ID);
+}
+
+/**
  * Deterministic "About the Author" bio box (Markdown) — accurate credentials and
  * the real bio-page link, built from the author record rather than left to the
  * model. Appended to content so YMYL pages carry a visible E-E-A-T signal.
@@ -105,10 +206,12 @@ export function renderAuthorBioBox(author: Author = defaultAuthor()): string {
     .filter((b) => !b.startsWith("U.S."))
     .join(" and ") || author.barAdmissions[0] || "";
   const admittedLine = admitted ? ` Admitted in ${admitted}.` : "";
+  // "the Managing Partner" but "a Partner".
+  const article = /managing|founding|chief|principal/i.test(author.title) ? "the" : "a";
   return [
     "## About the Author",
     "",
-    `**${author.name}** is the ${author.title} of ${author.firm} with ${author.experience} of experience. ` +
+    `**${author.name}** is ${article} ${author.title} at ${author.firm} with ${author.experience} of experience. ` +
       `${author.bio}${admittedLine} ${author.credentials}. ` +
       `[Read ${author.name.split(" ")[0]}'s full bio](${author.bioPageUrl})`,
   ].join("\n");
