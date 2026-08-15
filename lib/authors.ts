@@ -117,7 +117,14 @@ export const NICOLE_GRUNFELD: Author = {
     "regularly in state and federal court, arbitrations, mediations, and agency proceedings.",
   headshotUrl: "https://katzmelinger.com/wp-content/uploads/2026/04/nicole-grunfield.webp",
   bioPageUrl: "https://katzmelinger.com/attorney/nicole-d-grunfeld/",
-  sameAs: ["https://katzmelinger.com/attorney/nicole-d-grunfeld/"],
+  // External profiles only — the firm bio page is bioPageUrl. A sameAs pointing
+  // back at our own domain corroborates nothing. No Justia profile for her.
+  sameAs: [
+    "https://www.linkedin.com/in/nicole-grunfeld-a2758a3/",
+    "https://profiles.superlawyers.com/new-york/new-york/lawyer/nicole-d-grunfeld/b8d41193-2c7b-41f2-ac37-be55e711d7e6.html",
+    "https://www.avvo.com/attorneys/10016-ny-nicole-grunfeld-4793013.html",
+    "https://lawyers.findlaw.com/new-york/new-york/nicole-d-grunfeld-NDA3NjA0NF8x/",
+  ],
   // TODO: set once the WordPress Author account exists.
   wpLogin: "",
 };
@@ -156,7 +163,13 @@ export const ADAM_SACKOWITZ: Author = {
     "well as employment matters including discrimination, FMLA, and wage-and-hour claims.",
   headshotUrl: "https://katzmelinger.com/wp-content/uploads/2026/04/adam-sackowitz.webp",
   bioPageUrl: "https://katzmelinger.com/attorney/adam-j-sackowitz/",
-  sameAs: ["https://katzmelinger.com/attorney/adam-j-sackowitz/"],
+  // External profiles only — see the note on Nicole's. No Justia profile for him.
+  sameAs: [
+    "https://www.linkedin.com/in/adam-sackowitz-08b88a83/",
+    "https://profiles.superlawyers.com/new-york/new-york/lawyer/adam-j-sackowitz/51da3550-1383-4fbf-810a-532b558f174c.html",
+    "https://www.avvo.com/attorneys/10016-ny-adam-sackowitz-4781911.html",
+    "https://lawyers.findlaw.com/new-york/new-york/adam-j-sackowitz-NDk1ODQyMl8x/",
+  ],
   // TODO: set once the WordPress Author account exists.
   wpLogin: "",
 };
