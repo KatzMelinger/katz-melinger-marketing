@@ -49,8 +49,12 @@ export type CurrentFact = {
 
 // Code-seeded fallback of CONFIRMED figures (as of Jan 1, 2026). The editable
 // current_facts table (admin: /settings/current-facts) overrides this per tenant
-// and is where NJ values and future updates are maintained. Keep these current:
-// when the law changes, update value + effectiveDate + reVerifyBy.
+// and is where future updates are maintained. Keep these current: when the law
+// changes, update value + effectiveDate + reVerifyBy.
+//
+// NJ figures are the same ones the damages calculator uses (katz-melinger-cms
+// app/lib/damages-rates.ts), both taken from NJDOL poster MW-570 (1/26). If one
+// side changes, change the other.
 export const CURRENT_FACTS: CurrentFact[] = [
   {
     id: "ny-min-wage-downstate-2026",
@@ -92,6 +96,56 @@ export const CURRENT_FACTS: CurrentFact[] = [
       "exempt salary", "salary level", "new york city", "nyc", "downstate",
     ],
   },
+  // NJ keywords deliberately omit the bare "nj" abbreviation: keyword matching is
+  // substring-based, and "nj" is inside "injury", "injunction" and "conjunction",
+  // which would pull New Jersey wage figures into unrelated drafts.
+  {
+    id: "nj-min-wage-2026",
+    label: "NJ minimum wage (most employers)",
+    value: "$15.92 per hour",
+    jurisdiction: "New Jersey (employers with 6 or more employees)",
+    effectiveDate: "2026-01-01",
+    unit: "hour",
+    sourceUrl: "https://www.nj.gov/labor/wageandhour/assets/PDFs/minimumwage_postcard.pdf",
+    reVerifyBy: "2027-01-01",
+    keywords: [
+      "minimum wage", "min wage", "hourly wage", "wage rate",
+      "new jersey", "n.j.",
+    ],
+  },
+  {
+    // No generic "minimum wage" keywords here on purpose. Both NJ facts would
+    // then tie on a plain "New Jersey minimum wage" sentence and matchCurrentFact
+    // would return nothing; most employers are the default case, so the sentence
+    // has to actually say "seasonal"/"small" to select this lower rate.
+    id: "nj-min-wage-small-employer-2026",
+    label: "NJ minimum wage (seasonal and small employers)",
+    value: "$15.23 per hour",
+    jurisdiction: "New Jersey (seasonal employers and employers with fewer than 6 employees)",
+    effectiveDate: "2026-01-01",
+    unit: "hour",
+    sourceUrl: "https://www.nj.gov/labor/wageandhour/assets/PDFs/minimumwage_postcard.pdf",
+    reVerifyBy: "2027-01-01",
+    keywords: [
+      "new jersey", "n.j.",
+      "seasonal employer", "seasonal employers", "small employer", "small employers",
+      "fewer than 6 employees", "fewer than six employees",
+    ],
+  },
+  {
+    id: "nj-tipped-cash-wage-2026",
+    label: "NJ cash wage for tipped workers",
+    value: "$6.05 per hour",
+    jurisdiction: "New Jersey (maximum tip credit $9.87 for most employers)",
+    effectiveDate: "2026-01-01",
+    unit: "hour",
+    sourceUrl: "https://www.nj.gov/labor/wageandhour/assets/PDFs/minimumwage_postcard.pdf",
+    reVerifyBy: "2027-01-01",
+    keywords: [
+      "tipped", "tip credit", "cash wage", "tipped minimum wage", "server",
+      "new jersey", "n.j.",
+    ],
+  },
   {
     id: "federal-min-wage",
     label: "Federal minimum wage (FLSA)",
@@ -124,7 +178,25 @@ export const CURRENT_FACTS: CurrentFact[] = [
     jurisdiction: "New York",
     effectiveDate: "",
     unit: "",
-    keywords: ["statute of limitations", "wage lookback", "six-year", "six years", "6 years"],
+    // "new york" is here to outscore the NJ lookback on a New York sentence.
+    // Without it the two tie on the shared keywords and neither is suggested.
+    keywords: [
+      "statute of limitations", "wage lookback", "six-year", "six years", "6 years",
+      "new york", "n.y.",
+    ],
+  },
+  {
+    id: "nj-wage-lookback",
+    label: "NJ wage-claim statute of limitations (lookback)",
+    value: "6 years",
+    jurisdiction: "New Jersey",
+    effectiveDate: "2019-08-06",
+    unit: "",
+    sourceUrl: "https://www.njleg.state.nj.us/bill-search/2018/A2903",
+    keywords: [
+      "statute of limitations", "wage lookback", "six-year", "six years", "6 years",
+      "new jersey", "n.j.", "wage theft act",
+    ],
   },
 ];
 
