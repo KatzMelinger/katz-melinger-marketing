@@ -82,3 +82,45 @@ export async function isPublicUrl(raw: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Fetch a user-supplied URL, re-checking every redirect hop with
+ * assertPublicUrl.
+ *
+ * assertPublicUrl on its own only sees the URL you hand it. Callers that then
+ * used fetch's default redirect:"follow" were still exposed: any open redirect
+ * on a public host — or an attacker's own server answering 302 — reaches
+ * loopback, RFC1918 or 169.254.169.254, and the body comes back to the caller.
+ * Following redirects manually and re-asserting each hop closes that.
+ *
+ * Returns the final Response. Throws with a readable reason, which callers
+ * already handle as a failed fetch.
+ */
+export async function safeFetch(
+  raw: string,
+  opts: { headers?: Record<string, string>; timeoutMs?: number; maxRedirects?: number } = {},
+): Promise<Response> {
+  const { headers = {}, timeoutMs = 15_000, maxRedirects = 5 } = opts;
+
+  let current = raw;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    try {
+      await assertPublicUrl(current);
+    } catch (e) {
+      const why = e instanceof Error ? e.message : "blocked";
+      throw new Error(hop === 0 ? why : `Redirect blocked at hop ${hop}: ${why}`);
+    }
+
+    const res = await fetch(current, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "manual",
+    });
+
+    if (res.status < 300 || res.status > 399) return res;
+    const location = res.headers.get("location");
+    if (!location) return res;
+    current = new URL(location, current).toString();
+  }
+  throw new Error(`Too many redirects (over ${maxRedirects})`);
+}

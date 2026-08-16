@@ -14,7 +14,7 @@
  */
 
 import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
-import { assertPublicUrl } from "@/lib/url-safety";
+import { safeFetch } from "@/lib/url-safety";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -94,10 +94,11 @@ async function resolveSitemapUrls(base: string, host: string): Promise<string[]>
     visited.add(sitemapUrl);
     let xml = "";
     try {
-      const res = await fetch(sitemapUrl, {
+      // A sitemap index names further sitemap URLs, so these are followed
+      // links, not trusted config — check each one and each redirect hop.
+      const res = await safeFetch(sitemapUrl, {
         headers: { "User-Agent": USER_AGENT },
-        signal: AbortSignal.timeout(10_000),
-        redirect: "follow",
+        timeoutMs: 10_000,
       });
       if (!res.ok) return;
       xml = await res.text();
@@ -132,12 +133,12 @@ async function fetchTitleH1(
   url: string,
 ): Promise<{ title: string | null; h1: string | null }> {
   try {
-    // SSRF guard: user-supplied URLs (ingest) must not reach internal addresses.
-    await assertPublicUrl(url);
-    const res = await fetch(url, {
+    // SSRF guard: user-supplied URLs (ingest) must not reach internal
+    // addresses — including via a redirect, which the previous assert-then-
+    // follow could not see.
+    const res = await safeFetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
-      signal: AbortSignal.timeout(12_000),
-      redirect: "follow",
+      timeoutMs: 12_000,
     });
     if (!res.ok) return { title: null, h1: null };
     const html = (await res.text()).slice(0, 60_000);
