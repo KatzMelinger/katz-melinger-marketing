@@ -35,6 +35,7 @@ import {
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 import { freshnessKey } from "@/lib/freshness-classify";
+import type { PipelineStatus } from "@/lib/content-status";
 
 const PROSE_CLASS =
   "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_em]:italic [&_a]:text-brand [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:my-2";
@@ -45,15 +46,6 @@ const PILLAR_LABEL: Record<string, string> = Object.fromEntries(
 const PILLAR_URL: Record<string, string> = Object.fromEntries(
   ALL_KM_PILLARS.map((p) => [p.id, p.url]),
 );
-
-type PipelineStatus =
-  | "idea"
-  | "brief"
-  | "draft"
-  | "review"
-  | "needs_legal"
-  | "approved"
-  | "published";
 
 const STAGES: { key: PipelineStatus; label: string }[] = [
   { key: "idea", label: "Opportunity" },

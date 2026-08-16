@@ -6,18 +6,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
+import { isPipelineStatus } from "@/lib/content-status";
 
 export const runtime = "nodejs";
 
-const VALID_STATUSES = [
-  "idea",
-  "brief",
-  "draft",
-  "review",
-  "needs_legal",
-  "approved",
-  "published",
-] as const;
 const VALID_BUCKETS = ["money_page", "bofu_education", "mofu_trust", "local_authority"] as const;
 const VALID_CONTENT_TYPES = ["website", "social", "email"] as const;
 
@@ -42,7 +34,7 @@ export async function PATCH(
     patch.title = title;
   }
   if (typeof body?.status === "string") {
-    if (!VALID_STATUSES.includes(body.status as (typeof VALID_STATUSES)[number])) {
+    if (!isPipelineStatus(body.status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
     }
     patch.status = body.status;

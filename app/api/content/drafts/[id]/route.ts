@@ -9,6 +9,7 @@ import { getTenantClient } from "@/lib/tenant-db";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
+import { isDraftStatus, isPipelineStatus } from "@/lib/content-status";
 
 export const runtime = "nodejs";
 
@@ -36,27 +37,6 @@ export async function GET(
   return NextResponse.json({ draft: data, latest_analysis: analyses?.[0] ?? null });
 }
 
-const VALID_DRAFT_STATUSES = [
-  "initial_review",
-  "idea",
-  "brief",
-  "draft",
-  "review",
-  "published",
-  "approved",
-  "archived",
-] as const;
-
-const PIPELINE_STATUSES = new Set([
-  "idea",
-  "brief",
-  "draft",
-  "review",
-  "needs_legal",
-  "approved",
-  "published",
-]);
-
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -64,10 +44,7 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
 
-  if (
-    "status" in (body ?? {}) &&
-    !VALID_DRAFT_STATUSES.includes(body.status as (typeof VALID_DRAFT_STATUSES)[number])
-  ) {
+  if ("status" in (body ?? {}) && !isDraftStatus(body.status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
@@ -136,7 +113,7 @@ export async function PATCH(
     }
   }
 
-  if (typeof body?.status === "string" && PIPELINE_STATUSES.has(body.status)) {
+  if (isPipelineStatus(body?.status)) {
     const { data: existing } = await supabase
       .from("content_pipeline")
       .select("id")

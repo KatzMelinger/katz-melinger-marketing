@@ -19,6 +19,7 @@ import {
 } from "@/components/analysis-card";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
+import { DRAFT_STATUSES, type DraftStatus } from "@/lib/content-status";
 
 /**
  * Prose styling for rendered markdown previews — kept identical to the Content
@@ -229,14 +230,10 @@ function draftTypeLabel(d: Draft): string {
 
 
 
-type DraftStatus =
-  | "initial_review"
-  | "brief"
-  | "draft"
-  | "review"
-  | "published";
-
-const DRAFT_STATUSES: DraftStatus[] = [
+// Which statuses this dropdown OFFERS — deliberately narrower than the full
+// DraftStatus vocabulary. `approved` and `needs_legal` are written by the
+// gates (/api/agent/approve, the publish route), not picked by hand.
+const SELECTABLE_DRAFT_STATUSES: DraftStatus[] = [
   "initial_review",
   "brief",
   "draft",
@@ -244,12 +241,18 @@ const DRAFT_STATUSES: DraftStatus[] = [
   "published",
 ];
 
+// Labels/tones cover EVERY status, not just the selectable ones — a draft the
+// compliance or freshness gate parked at `needs_legal` still has to render.
 const DRAFT_STATUS_LABEL: Record<DraftStatus, string> = {
   initial_review: "Initial review",
+  idea: "Opportunity",
   brief: "Brief",
   draft: "Draft",
   review: "Review",
+  needs_legal: "Needs legal",
   published: "Published",
+  approved: "Approved",
+  archived: "Archived",
 };
 
 const DRAFT_STATUS_TONE: Record<
@@ -257,10 +260,14 @@ const DRAFT_STATUS_TONE: Record<
   "violet" | "blue" | "amber" | "neutral" | "emerald" | "red"
 > = {
   initial_review: "amber",
+  idea: "violet",
   brief: "blue",
   draft: "amber",
   review: "neutral",
+  needs_legal: "red",
   published: "emerald",
+  approved: "emerald",
+  archived: "neutral",
 };
 
 export default function DraftsPage() {
@@ -877,7 +884,7 @@ function DraftStatusDropdown({
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div className="absolute top-full right-0 mt-1 z-40 bg-white border border-slate-200 rounded-md shadow-lg py-1 min-w-[160px]">
-            {DRAFT_STATUSES.map((s) => (
+            {SELECTABLE_DRAFT_STATUSES.map((s) => (
               <button
                 key={s}
                 onClick={() => {
