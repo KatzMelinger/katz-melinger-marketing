@@ -36,16 +36,20 @@
 -- Additive and idempotent. Run in the Supabase SQL editor.
 -- ============================================================================
 
--- 1) Derived-value columns ----------------------------------------------------
+-- 1) Derived-value + supersession columns -------------------------------------
 alter table public.current_facts
   add column if not exists derived_from       text;
 alter table public.current_facts
   add column if not exists derived_multiplier numeric;
+alter table public.current_facts
+  add column if not exists supersedes         text[] not null default '{}';
 
 comment on column public.current_facts.derived_from is
   'fact_key this value is CALCULATED from (e.g. the weekly threshold behind an annual one). Null = independently sourced.';
 comment on column public.current_facts.derived_multiplier is
   'Multiplier applied to the source amount. 52 for weekly -> annual.';
+comment on column public.current_facts.supersedes is
+  'Phrases stating the OUTDATED version of this fact (e.g. "four or more employees"). When one appears in a draft the sentence needs a human rewrite — a prose rule cannot be fixed by swapping a token.';
 
 -- 2) Relabel the existing downstate weekly threshold ---------------------------
 -- Was "NY executive/administrative exempt salary threshold (NYC + downstate)",
@@ -63,11 +67,12 @@ where lower(fact_key) = 'ny-exempt-threshold-downstate-2026';
 -- 3) The three missing NY threshold facts + employer-size thresholds -----------
 insert into public.current_facts
   (fact_key, label, value, jurisdiction, effective_date, keywords, unit,
-   source_url, re_verify_by, derived_from, derived_multiplier, sort_order, tenant_id)
+   source_url, re_verify_by, derived_from, derived_multiplier, supersedes,
+   sort_order, tenant_id)
 select
   f.fact_key, f.label, f.value, f.jurisdiction, f.effective_date, f.keywords,
   f.unit, f.source_url, f.re_verify_by, f.derived_from, f.derived_multiplier,
-  f.sort_order, t.tenant_id
+  f.supersedes, f.sort_order, t.tenant_id
 from (values
   (
     'ny-exempt-threshold-upstate-2026',
@@ -85,6 +90,7 @@ from (values
     date '2027-01-01',
     null::text,
     null::numeric,
+    array[]::text[],
     50
   ),
   (
@@ -106,6 +112,7 @@ from (values
     null::date,
     'ny-exempt-threshold-downstate-2026',
     52,
+    array[]::text[],
     51
   ),
   (
@@ -124,6 +131,7 @@ from (values
     null::date,
     'ny-exempt-threshold-upstate-2026',
     52,
+    array[]::text[],
     52
   ),
   (
@@ -141,6 +149,8 @@ from (values
     null::date,
     null::text,
     null::numeric,
+    array['four or more employees', '4 or more employees',
+          'at least four employees', 'fewer than four employees'],
     60
   ),
   (
@@ -160,10 +170,13 @@ from (values
     null::date,
     null::text,
     null::numeric,
+    array['four or more employees', '4 or more employees',
+          'at least four employees', 'fewer than four employees'],
     61
   )
 ) as f (fact_key, label, value, jurisdiction, effective_date, keywords, unit,
-        source_url, re_verify_by, derived_from, derived_multiplier, sort_order)
+        source_url, re_verify_by, derived_from, derived_multiplier, supersedes,
+        sort_order)
 -- tenant_id must be non-null: getCurrentFacts() filters on .eq("tenant_id", ...)
 -- so a null-tenant row is never read, and null never conflicts with null, which
 -- would make a re-run insert duplicates instead of doing nothing.

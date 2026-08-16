@@ -26,6 +26,7 @@ type Row = {
   verify_only: boolean | null;
   derived_from: string | null;
   derived_multiplier: number | string | null;
+  supersedes: string[] | null;
 };
 
 /**
@@ -41,7 +42,7 @@ export async function getCurrentFacts(tenantId?: string): Promise<CurrentFact[]>
     const { data, error } = await sb
       .from("current_facts")
       .select(
-        "fact_key, label, value, jurisdiction, effective_date, keywords, unit, source_url, verified_by, verified_at, re_verify_by, verify_only, derived_from, derived_multiplier",
+        "fact_key, label, value, jurisdiction, effective_date, keywords, unit, source_url, verified_by, verified_at, re_verify_by, verify_only, derived_from, derived_multiplier, supersedes",
       )
       .eq("tenant_id", tid)
       .order("sort_order", { ascending: true });
@@ -67,6 +68,9 @@ export async function getCurrentFacts(tenantId?: string): Promise<CurrentFact[]>
           verifiedAt: (r.verified_at ?? "").trim(),
           reVerifyBy: (r.re_verify_by ?? "").trim(),
           verifyOnly: r.verify_only === true,
+          supersedes: Array.isArray(r.supersedes)
+            ? r.supersedes.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+            : [],
           ...derivedOf(r),
         };
       })

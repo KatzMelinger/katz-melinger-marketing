@@ -24,6 +24,19 @@ const MAX_LEN = 200;
 const str = (v: unknown, max = MAX_LEN): string =>
   typeof v === "string" ? v.trim().slice(0, max) : "";
 
+/** Value denominators the freshness matcher understands. */
+const UNITS = new Set(["", "hour", "week", "year"]);
+
+/** Empty string → null, so date/timestamptz columns don't get "" written to them. */
+const nullIfBlank = (s: string): string | null => (s ? s : null);
+
+const strArray = (v: unknown): string[] =>
+  Array.isArray(v)
+    ? v.filter((k): k is string => typeof k === "string" && k.trim().length > 0).map((k) => k.trim())
+    : typeof v === "string"
+      ? v.split(",").map((k) => k.trim()).filter(Boolean)
+      : [];
+
 export async function GET() {
   try {
     const facts = await getCurrentFacts();
@@ -53,11 +66,23 @@ export async function PUT(req: NextRequest) {
     const id = (str(o.id) || label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    const keywords = Array.isArray(o.keywords)
-      ? o.keywords.filter((k): k is string => typeof k === "string" && k.trim().length > 0).map((k) => k.trim())
-      : typeof o.keywords === "string"
-        ? (o.keywords as string).split(",").map((k) => k.trim()).filter(Boolean)
-        : [];
+    const keywords = strArray(o.keywords);
+    // Every field on CurrentFact is carried through, not just the five the
+    // editor renders inputs for. This used to whitelist label/value/
+    // jurisdiction/effectiveDate/keywords, so the FIRST save on this page
+    // silently dropped unit, verifyOnly, reVerifyBy, sourceUrl, the derived
+    // link, and the supersedes list — and because a non-empty table replaces
+    // the code-seeded list wholesale, they were gone for good. That quietly
+    // undid weekly-vs-annual matching, made the litigated federal threshold
+    // auto-writable, and stopped re-verification dates from ever firing.
+    const unitRaw = str(o.unit, 8).toLowerCase();
+    const derivedRaw =
+      o.derived && typeof o.derived === "object"
+        ? (o.derived as Record<string, unknown>)
+        : null;
+    const derivedFrom = derivedRaw ? str(derivedRaw.fromFactId) : "";
+    const derivedMultiplier = derivedRaw ? Number(derivedRaw.multiplier) : NaN;
+
     facts.push({
       id,
       label,
@@ -65,8 +90,26 @@ export async function PUT(req: NextRequest) {
       jurisdiction: str(o.jurisdiction),
       effectiveDate: str(o.effectiveDate),
       keywords,
+      unit: UNITS.has(unitRaw) ? unitRaw : "",
+      sourceUrl: str(o.sourceUrl, 500),
+      verifiedBy: str(o.verifiedBy),
+      verifiedAt: str(o.verifiedAt, 40),
+      reVerifyBy: str(o.reVerifyBy, 40),
+      verifyOnly: o.verifyOnly === true,
+      supersedes: strArray(o.supersedes),
+      ...(derivedFrom && Number.isFinite(derivedMultiplier) && derivedMultiplier !== 0
+        ? { derived: { fromFactId: derivedFrom, multiplier: derivedMultiplier } }
+        : {}),
     });
     if (facts.length >= MAX_FACTS) break;
+  }
+
+  // Drop derived links that point at a fact not in this payload. Ids are
+  // re-derived from the label, so renaming a source fact would otherwise leave
+  // a dangling reference and the annual figure would silently stop recomputing.
+  const ids = new Set(facts.map((f) => f.id));
+  for (const f of facts) {
+    if (f.derived && !ids.has(f.derived.fromFactId)) delete f.derived;
   }
 
   try {
@@ -82,6 +125,17 @@ export async function PUT(req: NextRequest) {
         jurisdiction: f.jurisdiction,
         effective_date: f.effectiveDate,
         keywords: f.keywords,
+        // These columns are NOT NULL DEFAULT '' — write "" rather than null.
+        unit: f.unit ?? "",
+        source_url: f.sourceUrl ?? "",
+        verified_by: f.verifiedBy ?? "",
+        verify_only: f.verifyOnly === true,
+        // Date / timestamptz columns are nullable — "" is not a valid value.
+        verified_at: nullIfBlank(f.verifiedAt ?? ""),
+        re_verify_by: nullIfBlank(f.reVerifyBy ?? ""),
+        supersedes: f.supersedes ?? [],
+        derived_from: f.derived?.fromFactId ?? null,
+        derived_multiplier: f.derived?.multiplier ?? null,
         sort_order: i,
         tenant_id: tid,
       }));
