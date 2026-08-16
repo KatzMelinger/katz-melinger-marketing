@@ -417,14 +417,16 @@ export async function GET(req: Request) {
   const action = searchParams.get("action") ?? "dashboard";
   const pageToken = searchParams.get("pageToken")?.trim() || undefined;
 
+  // `||`, not `??`: `?accountId=` yields "" from searchParams, which is not
+  // nullish, so `??` would keep the empty value instead of falling back to env.
   const accountId = stripAccountPrefix(
-    searchParams.get("accountId")?.trim() ??
-      process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim() ??
+    searchParams.get("accountId")?.trim() ||
+      process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim() ||
       "",
   );
   const locationId = stripLocationPrefix(
-    searchParams.get("locationId")?.trim() ??
-      process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim() ??
+    searchParams.get("locationId")?.trim() ||
+      process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim() ||
       "",
   );
 

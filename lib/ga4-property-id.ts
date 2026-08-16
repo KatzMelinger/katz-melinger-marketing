@@ -1,8 +1,10 @@
 /** GA4 property numeric ID or full resource name segment (e.g. 123456789). */
 export function ga4PropertyResourceName(): string | null {
+  // `||`, not `??`: a var that is present but blank trims to "", which is not
+  // nullish, so `??` would stop the chain there and never reach the alias.
   const raw =
-    process.env.GOOGLE_ANALYTICS_PROPERTY_ID?.trim() ??
-    process.env.GA4_PROPERTY_ID?.trim() ??
+    process.env.GOOGLE_ANALYTICS_PROPERTY_ID?.trim() ||
+    process.env.GA4_PROPERTY_ID?.trim() ||
     "";
   if (!raw) return null;
   const id = raw.replace(/^properties\//i, "");
