@@ -23,6 +23,21 @@ import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
+import {
+  CONTENT_TYPE_TO_INTENT,
+  isCompoundKeyword,
+  kmSearchIntentFor,
+  normalizeIntent,
+  resolvePrimaryKeyword,
+  type SearchIntent,
+} from "@/lib/keyword-intent";
+import {
+  getPillarById,
+  KM_HUB_LINKS,
+  type KMContentType,
+  type KMPracticeArea,
+} from "@/lib/km-content-system";
+import { inferPillar } from "@/lib/strategy-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +103,60 @@ function deriveTitle(content: string, fallbackTopic: string): string {
   return "Untitled draft";
 }
 
+/**
+ * Which KM content type a request produces. Template key wins when present
+ * because it is more specific than the coarse content_type.
+ *
+ * Only WEB content maps here. Social posts and email campaigns are not indexed
+ * pages, carry no SEO metadata bar, and are deliberately left out — gating them
+ * on a primary keyword would break those flows for no benefit.
+ */
+const TEMPLATE_TO_KM_CONTENT_TYPE: Record<string, KMContentType> = {
+  webpage: "practice_page",
+  case_study: "case_result",
+  blog_general: "blog_post",
+  faq: "blog_post",
+  guide: "blog_post",
+};
+
+function kmContentTypeFor(contentType: string, templateKey: string): KMContentType | null {
+  if (templateKey && TEMPLATE_TO_KM_CONTENT_TYPE[templateKey]) {
+    return TEMPLATE_TO_KM_CONTENT_TYPE[templateKey];
+  }
+  return contentType === "blog" ? "blog_post" : null;
+}
+
+const COLLECTIONS_HINTS = [
+  "collection", "creditor", "debt", "judgment", "judgement", "levy",
+  "garnishment", "restraining notice", "turnover", "domesticat", "subpoena",
+];
+
+function kmPracticeAreaFor(practiceArea: string, scopeText: string): KMPracticeArea {
+  const hay = `${practiceArea} ${scopeText}`.toLowerCase();
+  return COLLECTIONS_HINTS.some((h) => hay.includes(h)) ? "collections" : "employment";
+}
+
+/** URL-safe slug from a title or keyword. Bounded so it stays a usable path. */
+function toSlug(input: string): string {
+  return (input ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80)
+    .replace(/-$/, "");
+}
+
+/** Meta description capped at the 155 chars validateBrief enforces. */
+function clampMetaDescription(input: string): string {
+  const clean = (input ?? "").replace(/\s+/g, " ").trim();
+  if (clean.length <= 155) return clean;
+  const cut = clean.slice(0, 155);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 100 ? cut.slice(0, lastSpace) : cut).trim();
+}
+
 export async function POST(req: Request) {
   const denied = await guardUser();
   if (denied) return denied;
@@ -141,13 +210,57 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "topic required" }, { status: 400 });
   }
 
+  // Classification gate (web content only). A page may not be generated without
+  // a single content type and a single clean primary keyword — the defect that
+  // shipped drafts to Approve with Type / Primary keyword / Pillar all showing
+  // "—", and let a comma-merged compound become the tracked target keyword.
+  //
+  // Social posts and email campaigns are exempt: they are not indexed pages and
+  // have no SEO metadata to populate.
+  const isWebContent = contentType === "blog";
+  const kmContentType = kmContentTypeFor(contentType, templateKey);
+  // The real target keyword, not the headline. Falls back to the topic for
+  // callers that don't send target_keywords.
+  const primaryKeyword = resolvePrimaryKeyword(targetKeywords[0], topic);
+
+  if (isWebContent) {
+    if (!kmContentType) {
+      return NextResponse.json(
+        {
+          error:
+            "Content type could not be determined. Set template_key or content_type before generating.",
+          classification: "content_type_missing",
+        },
+        { status: 400 },
+      );
+    }
+    if (!primaryKeyword) {
+      const merged = [targetKeywords[0], topic].find(
+        (k): k is string => typeof k === "string" && isCompoundKeyword(k),
+      );
+      return NextResponse.json(
+        {
+          error: merged
+            ? `Primary keyword "${merged}" merges two phrases into one string — a clustering failure, not a valid keyword. Split it and pick one intent before generating.`
+            : "A single primary keyword is required before generating.",
+          classification: merged ? "primary_keyword_compound" : "primary_keyword_missing",
+          ...(merged ? { compoundKeyword: merged } : {}),
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   // Duplicate guard — block creating a second piece for the same keyword/cluster
   // across drafts, briefs, the board, published pages, and the keyword cluster.
+  // Deduping on the resolved primary keyword rather than the topic matters for
+  // the Recommendations / Fan-out paths, where the topic is a long headline and
+  // the keyword is the thing that actually competes in search.
   // A manual user can override with { force: true } ("Create anyway").
   if (o.force !== true) {
     const dup = await findExistingContent({
       tenantId: await resolveTenantId(),
-      keyword: topic,
+      keyword: primaryKeyword ?? topic,
       secondaryKeywords: targetKeywords,
     });
     if (dup) {
@@ -224,8 +337,9 @@ Requirements:
 - Provide a compelling, specific title (the article's H1).
 - Structure the body with clear section headings using Markdown ## (H2) and ### (H3). Include at least 3 section headings.
 - Do NOT repeat the title as a heading at the top of the body.
+- Provide SEO metadata: a meta title (<= 60 characters), a meta description (<= 155 characters), and a lowercase hyphenated URL slug. Work the primary keyword "${primaryKeyword ?? topic}" into the meta title and description naturally — do not keyword-stuff.
 
-Return JSON only with keys: "title" (string) and "body" (string, the full article in Markdown with ## / ### headings).`;
+Return JSON only with keys: "title" (string), "body" (string, the full article in Markdown with ## / ### headings), "metaTitle" (string), "metaDescription" (string), and "urlSlug" (string).`;
   } else if (contentType === "social") {
     // Social posts get a title/label for the library but no forced headings.
     userPrompt = `Write a ${platform || "social"} post.
@@ -309,6 +423,7 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       body: string,
       title: string,
       metadata: Record<string, unknown> = {},
+      seoExtra: Record<string, unknown> = {},
     ) {
       const supabase = getSupabaseServer();
       if (!supabase) return null;
@@ -335,8 +450,8 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
               ...(originContext ? { origin_context: originContext } : {}),
             },
             seo_brief:
-              targetKeywords.length > 0 || seoBrief
-                ? { targetKeywords, ...(seoBrief ?? {}) }
+              targetKeywords.length > 0 || seoBrief || Object.keys(seoExtra).length > 0
+                ? { targetKeywords, ...(seoBrief ?? {}), ...seoExtra }
                 : null,
           })
           .select("id")
@@ -384,21 +499,98 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     }
 
     // Blog (incl. webpage/guide/faq/case_study) and social now return
-    // { title, body } JSON. Parse it; fall back to the raw text as the body
-    // and a derived title so a non-JSON response still saves cleanly.
+    // { title, body } JSON — web content also returns SEO metadata. Parse it;
+    // fall back to the raw text as the body and a derived title so a non-JSON
+    // response still saves cleanly.
     let body = text;
     let title = "";
+    let metaTitle = "";
+    let metaDescription = "";
+    let urlSlug = "";
     try {
-      const parsed = extractJSON<{ title?: string; body?: string }>(text);
+      const parsed = extractJSON<{
+        title?: string;
+        body?: string;
+        metaTitle?: string;
+        metaDescription?: string;
+        urlSlug?: string;
+      }>(text);
       if (typeof parsed?.body === "string" && parsed.body.trim()) body = parsed.body;
       if (typeof parsed?.title === "string") title = parsed.title.trim();
+      if (typeof parsed?.metaTitle === "string") metaTitle = parsed.metaTitle.trim();
+      if (typeof parsed?.metaDescription === "string") {
+        metaDescription = parsed.metaDescription.trim();
+      }
+      if (typeof parsed?.urlSlug === "string") urlSlug = parsed.urlSlug.trim();
     } catch {
       /* non-JSON — keep raw text as body, derive a title below */
     }
     title = title || deriveTitle(body, topic);
 
+    // The Per-Page Brief this generation ran under. Written to metadata.km_brief
+    // so the reviewer's SEO metadata bar and Content Info panel read real values
+    // instead of "—". Every field is either model-provided or derived here;
+    // nothing is left blank on a web draft.
+    const kmBrief =
+      isWebContent && kmContentType && primaryKeyword
+        ? (() => {
+            const practiceAreaKey = kmPracticeAreaFor(
+              practiceArea,
+              `${topic} ${targetKeywords.join(" ")}`,
+            );
+            const pillarId = inferPillar(
+              {
+                clusterName: topic,
+                primaryKeyword,
+                secondaryKeywords: targetKeywords,
+              },
+              practiceAreaKey,
+            );
+            const intent: SearchIntent =
+              normalizeIntent(originContext?.intent) ??
+              CONTENT_TYPE_TO_INTENT[kmContentType];
+            return {
+              contentType: kmContentType,
+              practiceArea: practiceAreaKey,
+              primaryKeyword,
+              secondaryKeywords: targetKeywords.filter((k) => k !== primaryKeyword),
+              searchIntent: kmSearchIntentFor(intent),
+              pillarId,
+              internalPillarLink:
+                getPillarById(pillarId)?.url ?? KM_HUB_LINKS[practiceAreaKey],
+              urlSlug: toSlug(urlSlug || title || primaryKeyword),
+              metaTitle: metaTitle || title,
+              metaDescription: clampMetaDescription(metaDescription || title),
+              h1: title,
+              // Not confirmed by a human here — the pre-generation duplicate
+              // gate ran, but that is not the reviewer's cannibalization sign-off.
+              cannibalizationConfirmed: false,
+              // Marks the brief as derived by this route rather than built in
+              // the wizard, so the reviewer knows the metadata wasn't authored.
+              derivedBrief: true,
+            };
+          })()
+        : null;
+
     const draftFormat = contentType === "social" ? "social" : "blog";
-    const draftId = await autosave(draftFormat, body, title);
+    const draftId = await autosave(
+      draftFormat,
+      body,
+      title,
+      kmBrief ? { km_brief: kmBrief } : {},
+      kmBrief
+        ? {
+            primaryKeyword: kmBrief.primaryKeyword,
+            searchIntent: kmBrief.searchIntent,
+            pillarId: kmBrief.pillarId,
+            urlSlug: kmBrief.urlSlug,
+            metaTitle: kmBrief.metaTitle,
+            metaDescription: kmBrief.metaDescription,
+            h1: kmBrief.h1,
+            secondaryKeywords: kmBrief.secondaryKeywords,
+          }
+        : {},
+    );
     scheduleDraftAnalysis({
       draftId,
       body,

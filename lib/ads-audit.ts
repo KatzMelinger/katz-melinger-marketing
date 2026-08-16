@@ -24,8 +24,10 @@
 
 import {
   KEYWORD_RESEARCH_MODEL,
+  cachedSystemPrompt,
   extractJSON,
   getAnthropic,
+  logCacheUsage,
 } from "@/lib/anthropic";
 
 export type AuditPlatform =
@@ -170,12 +172,15 @@ Return ONLY the JSON object. Cite real numbers from the report. ${
       : "Return an empty negativeKeywordSuggestions array — this is a social platform."
   }`;
 
+  // SYSTEM_PROMPT is a module constant (~1.2k tokens) and clears this model's
+  // 1024-token cache minimum, so every audit after the first reads it back.
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
     max_tokens: 6000,
-    system: SYSTEM_PROMPT,
+    system: cachedSystemPrompt(SYSTEM_PROMPT, KEYWORD_RESEARCH_MODEL),
     messages: [{ role: "user", content: userPrompt }],
   });
+  logCacheUsage("ads-audit", response.usage);
 
   const text =
     response.content[0]?.type === "text" ? response.content[0].text : "";

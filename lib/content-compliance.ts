@@ -16,8 +16,10 @@
 
 import {
   KEYWORD_RESEARCH_MODEL,
+  cachedSystemPrompt,
   extractJSON,
   getAnthropic,
+  logCacheUsage,
 } from "@/lib/anthropic";
 import {
   COMMON_FAILURE_MODES,
@@ -173,12 +175,17 @@ ${truncated}
 
 Return ONLY the JSON object — no preamble, no markdown fences. Be strict on superlatives and result guarantees. If the content is clean, return a high score and an empty violations array — but still surface any required disclaimers.`;
 
+  // Runs on every approve with the same tenant rules block, so this is the
+  // highest-repeat prefix in the app. Whether it clears the model's minimum
+  // depends on how large the tenant's compliance rules are — set
+  // ANTHROPIC_LOG_CACHE to see which side of the line a tenant falls on.
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
     max_tokens: 4096,
-    system: systemPrompt,
+    system: cachedSystemPrompt(systemPrompt, KEYWORD_RESEARCH_MODEL),
     messages: [{ role: "user", content: userPrompt }],
   });
+  logCacheUsage("content-compliance", response.usage);
 
   const text =
     response.content[0]?.type === "text" ? response.content[0].text : "";

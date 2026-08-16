@@ -73,8 +73,8 @@ const TOKEN_SYNONYMS: Record<string, string[]> = {
 /** Filler tokens that carry no disambiguating signal for keyword identity. */
 const STOPWORDS = new Set(["a", "an", "the", "in", "for", "of", "near", "me", "best", "top", "and"]);
 
-/** Expand one string into its canonical, stopword-stripped token list. */
-function expandTokens(s: string): string[] {
+/** Synonym-expanded, stopword-stripped tokens — before market-geo removal. */
+function expandSynonyms(s: string): string[] {
   const out: string[] = [];
   for (const tok of normalizeKeyword(s).split(" ")) {
     if (!tok || STOPWORDS.has(tok)) continue;
@@ -83,6 +83,68 @@ function expandTokens(s: string): string[] {
     else out.push(tok);
   }
   return out;
+}
+
+/**
+ * Market-geo phrases stripped before keyword identity is computed.
+ *
+ * The firm serves one metro market, so a bare service keyword and the same
+ * keyword with the market name appended are the SAME search target. Without
+ * this, the geo tokens read as disambiguating signal: "workplace discrimination
+ * attorney" and "workplace discrimination lawyer new york" share 3 of 5 union
+ * tokens (0.60), under the 0.85 match floor, so the pre-generation duplicate
+ * gate never fires and both become live pages competing for one query.
+ *
+ * Deliberately excludes New Jersey — NY and NJ are separate markets the firm
+ * serves separately, so a NJ page is a legitimately distinct target. That
+ * separation survives because "nj" expands to new + jersey and only the "new
+ * york" phrase is stripped; bare "new" is never a stopword (it would also eat
+ * "new hire", "new employer").
+ *
+ * Phrases are matched AFTER synonym expansion (so "nyc" → new york city →
+ * stripped) and longest-first (so "new york city" is consumed before "new
+ * york"). Per-tenant override: CONTENT_DEDUP_MARKET_GEO, comma-separated.
+ */
+const MARKET_GEO_PHRASES: string[][] = (() => {
+  const raw = (process.env.CONTENT_DEDUP_MARKET_GEO ?? "").trim();
+  const phrases = raw
+    ? raw.split(",")
+    : [
+        "new york city", "new york state", "new york", "nyc", "ny",
+        "manhattan", "brooklyn", "queens", "bronx", "staten island",
+        "long island", "westchester", "nassau", "suffolk",
+      ];
+  return phrases
+    .map((p) => expandSynonyms(p))
+    .filter((toks) => toks.length > 0)
+    // Longest first so "new york city" is consumed before "new york".
+    .sort((a, b) => b.length - a.length);
+})();
+
+/** Remove contiguous market-geo runs from an expanded token list. */
+function stripMarketGeo(tokens: string[]): string[] {
+  if (MARKET_GEO_PHRASES.length === 0) return tokens;
+  const out: string[] = [];
+  let i = 0;
+  outer: while (i < tokens.length) {
+    for (const phrase of MARKET_GEO_PHRASES) {
+      if (phrase.every((t, k) => tokens[i + k] === t)) {
+        i += phrase.length;
+        continue outer;
+      }
+    }
+    out.push(tokens[i]);
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * Expand one string into its canonical token list: synonym-expanded,
+ * stopword-stripped, and with the firm's own market geo removed.
+ */
+function expandTokens(s: string): string[] {
+  return stripMarketGeo(expandSynonyms(s));
 }
 
 /**

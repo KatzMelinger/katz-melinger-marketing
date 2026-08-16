@@ -22,6 +22,14 @@ export type FreshnessFlag = {
   match: string;
   /** The enclosing sentence, so the reviewer sees exactly what to check. */
   sentence: string;
+  /**
+   * 0-based index of this token among IDENTICAL tokens in the same sentence.
+   *
+   * "at least $1,275.00 per week, which is $1,275.00 a year" is two different
+   * facts wearing the same number. Without this they collapse into one flag,
+   * one row, and one fix — leaving the other figure wrong on the page.
+   */
+  occurrence: number;
 };
 
 const DOLLAR_RE = /\$\s?\d[\d,]*(?:\.\d+)?/g;
@@ -29,7 +37,7 @@ const YEAR_RE = /\b(?:19|20)\d{2}\b/g;
 const CURRENCY_PHRASE_RE =
   /\b(currently|as of|effective(?: on| as of)?|starting|beginning(?: in| on)?|this year|per year|in \d{4})\b/gi;
 const THRESHOLD_RE =
-  /\b(minimum wage|tipped (?:minimum )?wage|salary (?:threshold|basis|exemption|level|cap)|exempt(?:ion)? threshold|overtime threshold|statute of limitations|filing deadline|deadline to file)\b/gi;
+  /\b(minimum wage|tipped (?:minimum )?wage|salary (?:threshold|basis|exemption|level|cap)|exempt(?:ion)? threshold|overtime threshold|statute of limitations|filing deadline|deadline to file|employer size|(?:four|4|five|5|fifteen|15|twenty|20) or more employees|fewer than (?:four|4|six|6|fifteen|15) employees|regardless of size|employers of any size)\b/gi;
 
 // Markup / non-prose patterns stripped BEFORE figure detection, so the scanner
 // only ever sees the text a reader sees. Order matters — see toSentences.
@@ -89,11 +97,17 @@ export function findTimeSensitiveFacts(body: string): FreshnessFlag[] {
   const flags: FreshnessFlag[] = [];
   const seen = new Set<string>();
 
+  // Occurrence counter per (kind, token, sentence) so repeated tokens in one
+  // sentence become separate, separately-resolvable flags instead of collapsing.
+  const counts = new Map<string, number>();
   const push = (kind: FreshnessKind, match: string, sentence: string) => {
-    const key = `${kind}::${match.toLowerCase()}::${sentence.slice(0, 60).toLowerCase()}`;
+    const base = `${kind}::${match.trim().toLowerCase()}::${sentence.slice(0, 60).toLowerCase()}`;
+    const occurrence = counts.get(base) ?? 0;
+    counts.set(base, occurrence + 1);
+    const key = `${base}::${occurrence}`;
     if (seen.has(key)) return;
     seen.add(key);
-    flags.push({ kind, match: match.trim(), sentence: sentence.trim() });
+    flags.push({ kind, match: match.trim(), sentence: sentence.trim(), occurrence });
   };
 
   for (const s of sentences) {

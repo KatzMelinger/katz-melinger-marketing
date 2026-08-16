@@ -65,12 +65,19 @@ export async function POST() {
   const now = new Date().toISOString();
   let clustered = 0;
   let pillars = 0;
+  let intentRouted = 0;
 
   for (const c of clusters) {
     const clusterId = clusterIdFor(c.primaryKeyword);
     if (c.type === "pillar") pillars += 1;
+    if (c.recommendedContentType) intentRouted += 1;
 
     // Shared fields for every keyword in the cluster (default role = member).
+    // Clusters are intent-pure by construction, so every member routes to the
+    // same content type — this is what stops a cluster labelled "Practice Page"
+    // from containing Blog-intent keywords. Left untouched when the cluster
+    // carries no intent data, so we never overwrite a real classification with
+    // a guess.
     const { error: memberErr } = await db.raw
       .from("seo_opportunities")
       .update({
@@ -79,6 +86,9 @@ export async function POST() {
         cluster_primary_keyword: c.primaryKeyword,
         cluster_role: "member",
         clustered_at: now,
+        ...(c.recommendedContentType
+          ? { recommended_content_type: c.recommendedContentType }
+          : {}),
       })
       .eq("tenant_id", tenantId)
       .in("keyword", c.keywords);
@@ -104,6 +114,11 @@ export async function POST() {
     clusters: clusters.length,
     pillars,
     standalone: clusters.length - pillars,
-    message: `Grouped ${clustered} keywords into ${clusters.length} clusters (${pillars} pillar, ${clusters.length - pillars} standalone).`,
+    intentRouted,
+    message:
+      `Grouped ${clustered} keywords into ${clusters.length} clusters (${pillars} pillar, ${clusters.length - pillars} standalone).` +
+      (intentRouted > 0
+        ? ` ${intentRouted} routed to a content type by search intent.`
+        : " No intent labels available, so no content-type routing was applied."),
   });
 }

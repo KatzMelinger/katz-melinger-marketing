@@ -23,8 +23,40 @@
 import { NextResponse } from "next/server";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
+import { semanticKey } from "@/lib/content-dedup";
 
 export const runtime = "nodejs";
+
+/**
+ * Synonym pairs that mean the same page but aren't caught by the generic
+ * keyword normalizer (which handles word order, plurals, and attorney/lawyer).
+ * Each entry maps a phrase to its canonical form before the semantic key is
+ * taken, so "nyc lunch break law" resolves to the same page as "nyc meal break
+ * law" instead of showing up unmapped.
+ */
+const PHRASE_SYNONYMS: [RegExp, string][] = [
+  [/\blunch\s+break/gi, "meal break"],
+  [/\bmeal\s+period/gi, "meal break"],
+  [/\brest\s+break/gi, "meal break"],
+  [/\bunjust\s+dismissal/gi, "wrongful termination"],
+  [/\bunfair\s+dismissal/gi, "wrongful termination"],
+  [/\bfired\s+unfairly/gi, "wrongful termination"],
+  // Spanish variants of the same query differ only by preposition and number:
+  // "abogados de/por/para despido(s) injustificado(s)/injusto(s)".
+  [/\bdespidos\b/gi, "despido"],
+  [/\binjustificados\b/gi, "injustificado"],
+  [/\binjustos\b/gi, "injustificado"],
+  [/\binjusto\b/gi, "injustificado"],
+  [/\babogado\b/gi, "abogados"],
+  [/\b(?:de|por|para)\s+despido/gi, "despido"],
+];
+
+/** Canonical identity for keyword→URL matching: phrase synonyms, then semanticKey. */
+function mappingKey(keyword: string): string {
+  let s = keyword ?? "";
+  for (const [re, to] of PHRASE_SYNONYMS) s = s.replace(re, to);
+  return semanticKey(s);
+}
 
 type Stage = { kind: string; label: string; order: number };
 
@@ -75,7 +107,7 @@ export async function GET() {
   // Opportunities (the SEO Opportunity Radar) now live in Content Studio, not on
   // this board — the board shows the production pipeline (brief → published) plus
   // position-drop pages for Optimize/Repurpose.
-  const [{ data: pipe }, { data: tracked }] = await Promise.all([
+  const [{ data: pipe }, { data: tracked }, { data: sitePages }] = await Promise.all([
     supabase
       .from("content_pipeline")
       .select("id, title, keywords, status, bucket, url, draft_id, suggestion_id, notes")
@@ -87,6 +119,9 @@ export async function GET() {
       .from("seo_keywords")
       .select("id, keyword, url, current_rank, previous_rank, search_volume, practice_area")
       .not("current_rank", "is", null),
+    // Second mapping source for keywords Search Console couldn't attach a URL
+    // to — the live page may exist under a different phrasing.
+    supabase.from("site_pages").select("url, title, h1").limit(2000),
   ]);
 
   type Item = {
@@ -119,6 +154,16 @@ export async function GET() {
     rankDrop?: number;
     currentRank?: number | null;
     previousRank?: number | null;
+    /**
+     * How this row's URL was resolved:
+     *   tracked  — Search Console attached it directly.
+     *   variant  — matched a phrasing variant / synonym of an already-mapped
+     *              keyword, or a live page title.
+     *   unmapped — no page could be found. The card must SAY so; silently
+     *              dropping the URL and both action buttons made a mapping
+     *              failure look identical to a keyword with nothing to do.
+     */
+    urlSource?: "tracked" | "variant" | "unmapped";
   };
   const items: Item[] = [];
 
@@ -161,6 +206,28 @@ export async function GET() {
   const LOW_RANK = 10; // worse than #10 = off page 1 = "scoring low"
   const DROP = 5; // dropped more than 5 positions
   const seenUrls = new Set(items.filter((i) => i.url).map((i) => (i.url as string).toLowerCase()));
+
+  // Keyword → URL index for the variant fallback. Built from every tracked
+  // keyword that already HAS a URL, plus live page titles. This is what makes
+  // "abogados de despidos injustos" resolve to the same page as "abogados de
+  // despido injustificado", and "nyc lunch break law" to the meal-break page.
+  const urlByKey = new Map<string, string>();
+  for (const t of tracked ?? []) {
+    const url = ((t.url as string) ?? "").trim();
+    const keyword = ((t.keyword as string) ?? "").trim();
+    if (!url || !keyword) continue;
+    const key = mappingKey(keyword);
+    if (key && !urlByKey.has(key)) urlByKey.set(key, url);
+  }
+  for (const p of (sitePages ?? []) as { url: string; title: string | null; h1: string | null }[]) {
+    const url = (p.url ?? "").trim();
+    if (!url) continue;
+    for (const label of [p.title, p.h1]) {
+      const key = label ? mappingKey(label) : "";
+      if (key && !urlByKey.has(key)) urlByKey.set(key, url);
+    }
+  }
+
   for (const t of tracked ?? []) {
     const cur = t.current_rank as number | null;
     const prev = t.previous_rank as number | null;
@@ -169,7 +236,20 @@ export async function GET() {
     const slipped = prev != null && drop > DROP;
     const lowRank = cur > LOW_RANK;
     if (!slipped && !lowRank) continue;
-    const url = (t.url as string) ?? null;
+
+    const trackedUrl = ((t.url as string) ?? "").trim();
+    // Before treating a keyword as unmapped, check whether it's a phrasing
+    // variant or synonym of one that already resolves to a live page.
+    const variantUrl = trackedUrl
+      ? ""
+      : (urlByKey.get(mappingKey((t.keyword as string) ?? "")) ?? "");
+    const url = trackedUrl || variantUrl || null;
+    const urlSource: Item["urlSource"] = trackedUrl
+      ? "tracked"
+      : variantUrl
+        ? "variant"
+        : "unmapped";
+
     if (url && seenUrls.has(url.toLowerCase())) continue;
     if (url) seenUrls.add(url.toLowerCase());
     items.push({
@@ -196,6 +276,7 @@ export async function GET() {
       rankDrop: slipped ? drop : undefined,
       currentRank: cur,
       previousRank: prev,
+      urlSource,
     });
   }
 
@@ -203,6 +284,9 @@ export async function GET() {
     new: items.filter((i) => i.tab === "new").length,
     existing: items.filter((i) => i.tab === "existing").length,
     needsReview: items.filter((i) => i.needsReview).length,
+    // Surfaced so a mapping regression is visible as a number, not just as
+    // cards that quietly do nothing.
+    unmapped: items.filter((i) => i.urlSource === "unmapped").length,
   };
 
   return NextResponse.json({ stages, buckets, pillars, items, counts });

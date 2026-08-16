@@ -490,10 +490,18 @@ export function AnalysisCard({
 }
 
 /**
- * Content-overlap panel — on demand, checks the site_pages cluster map for
- * existing pages that already cover this draft's keywords/title, and surfaces
- * "link, don't redefine" recommendations. Decoupled from the main analysis
- * pipeline so it never slows a re-analyze.
+ * Content-overlap panel — on demand, checks BOTH the published site_pages
+ * cluster map ("link, don't redefine") and the live production pipeline
+ * (drafts, briefs, board items, keyword clusters) for anything already
+ * targeting this keyword. Decoupled from the main analysis pipeline so it never
+ * slows a re-analyze.
+ *
+ * The pipeline half matters because two unpublished drafts are invisible to a
+ * site-only check: both report clean, both get approved, and the firm ends up
+ * with two live pages competing for one query.
+ *
+ * `terms[0]` is the draft's primary target keyword (target_keyword_hits is
+ * ordered primary-first), which is what the pipeline scan keys on.
  */
 /** Friendly label for why a page is the recommended link target. */
 function pageTypeLabel(t?: string): string {
@@ -526,6 +534,15 @@ function ContentOverlapPanel({
   const [matches, setMatches] = useState<
     { term: string; pages: { url: string; title: string | null; page_type?: string }[] }[]
   >([]);
+  // Something already targeting this keyword elsewhere in production — a draft,
+  // a brief, a board item, or a sibling keyword in the same cluster. Distinct
+  // from `matches`, which only covers PUBLISHED pages.
+  const [inFlight, setInFlight] = useState<{
+    kind: string;
+    label: string;
+    status?: string | null;
+    message: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Track which term→url link is being applied / has been applied.
   const [applying, setApplying] = useState<string | null>(null);
@@ -555,6 +572,7 @@ function ContentOverlapPanel({
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "check failed");
       setMatches(json.matches ?? []);
+      setInFlight(json.inFlight ?? null);
       setChecked(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "check failed");
@@ -577,14 +595,34 @@ function ContentOverlapPanel({
           disabled={loading || terms.length === 0}
           className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:border-slate-400 disabled:opacity-50"
         >
-          {loading ? "Checking…" : "Check site for overlap"}
+          {loading ? "Checking…" : "Check for overlap"}
         </button>
       </div>
       {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
-      {checked && matches.length === 0 && !error && (
+      {/* A near-duplicate that is not live yet. Shown before the published
+          matches because it is the case the old site-only check missed: two
+          drafts can both read "no overlap" and then publish against each other. */}
+      {inFlight && (
+        <div className="mt-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs">
+          <span className="font-medium text-red-900">
+            Already in production — resolve before publishing:
+          </span>
+          <p className="mt-1 text-red-800">{inFlight.message}</p>
+          <p className="mt-1 text-[11px] text-red-700">
+            Decide which piece should exist. Publishing both puts two of the firm&apos;s
+            own pages in competition for this keyword.
+          </p>
+        </div>
+      )}
+      {checked && matches.length === 0 && !inFlight && !error && (
         <p className="mt-2 text-xs text-emerald-700">
-          No overlap found in the cluster map — nothing to link instead of
-          redefine.
+          No overlap found — nothing published, in draft, or on the board targets
+          this keyword.
+        </p>
+      )}
+      {checked && matches.length === 0 && inFlight && !error && (
+        <p className="mt-2 text-xs text-slate-500">
+          No published page covers these terms — but see the production match above.
         </p>
       )}
       {matches.length > 0 && (
