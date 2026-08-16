@@ -17,8 +17,11 @@
  * getTenantClient). Routes that use the service-role client bypass RLS, so they
  * must still scope reads and stamp writes with this tenant id.
  *
+ * A signed-in user whose app_users lookup ERRORS now fails closed — see
+ * resolveTenantId. Only "no session" and "no row" fall back.
+ *
  * TODO (when tenant onboarding lands): once every real user has an app_users
- * row, make an authenticated-but-tenantless user fail closed instead of
+ * row, make an authenticated-but-tenantless user fail closed too instead of
  * inheriting the KM tenant.
  */
 
@@ -39,13 +42,23 @@ export async function resolveTenantId(): Promise<string> {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return DEFAULT_TENANT_ID;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("app_users")
       .select("tenant_id")
       .eq("user_id", user.id)
       .maybeSingle();
+    // A FAILED lookup is not the same as "this user has no row". Treating a
+    // transient database error as "no row" hands an authenticated user of some
+    // other tenant the default tenant's data. No row still falls back (single
+    // tenant, pre-onboarding); a query error refuses.
+    if (error) {
+      throw new Error(`Could not resolve tenant for the signed-in user: ${error.message}`);
+    }
     return (data?.tenant_id as string | undefined) ?? DEFAULT_TENANT_ID;
-  } catch {
+  } catch (e) {
+    // Only the unauthenticated / no-session path may fall back here. Rethrow a
+    // resolution failure for a user we know is signed in.
+    if (e instanceof Error && e.message.startsWith("Could not resolve tenant")) throw e;
     return DEFAULT_TENANT_ID;
   }
 }
