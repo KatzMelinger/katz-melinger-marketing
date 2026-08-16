@@ -58,6 +58,8 @@ type Item = {
   rankDrop?: number;
   currentRank?: number | null;
   previousRank?: number | null;
+  /** How the URL was resolved — "unmapped" means no live page was found. */
+  urlSource?: "tracked" | "variant" | "unmapped";
 };
 type Payload = {
   stages: Stage[];
@@ -491,6 +493,11 @@ export default function ContentProductionPage() {
             <span>
               Optimize — published pages ranking low or that dropped (current vs previous
               tracked rank). Showing {existingItems.length} page(s).
+              {existingItems.filter((i) => !i.url).length > 0 && (
+                <span className="ml-1 text-amber-700">
+                  {existingItems.filter((i) => !i.url).length} with no mapped page.
+                </span>
+              )}
             </span>
             <span className="flex items-center gap-2">
               <span className="text-xs font-medium text-slate-500">Sort by:</span>
@@ -939,7 +946,19 @@ function Card({
             </span>
           ))}
       </div>
-      {showUrl && item.url && <div className="mt-0.5 truncate text-xs text-slate-400">{item.url}</div>}
+      {showUrl && item.url && (
+        <div className="mt-0.5 truncate text-xs text-slate-400">
+          {item.url}
+          {item.urlSource === "variant" && (
+            <span
+              title="Matched to this page as a phrasing variant or synonym of an already-mapped keyword"
+              className="ml-1 rounded bg-slate-100 px-1 text-[10px] font-medium uppercase text-slate-500"
+            >
+              variant
+            </span>
+          )}
+        </div>
+      )}
       <div className="mt-1.5 flex flex-wrap gap-1">
         {bucketLabel && item.bucket && (
           <span className="rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700">
@@ -1010,6 +1029,16 @@ function Card({
               {repurposing ? "Generating variations…" : "Repurpose into social →"}
             </button>
           )}
+        </div>
+      )}
+      {/* No page to act on. Say so — an entry that shows a rank and then nothing
+          reads as "nothing worth doing" when it actually means the keyword ranks
+          via the homepage or hub and no dedicated page exists to redraft. */}
+      {onRedraft && item.source === "page" && !item.url && (
+        <div className="mt-2 rounded border border-dashed border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+          <span className="font-medium">No page mapped to this keyword.</span> It
+          likely ranks through the homepage or a hub page rather than a dedicated
+          one. Build a page targeting it, or map it on the Site Inventory.
         </div>
       )}
       {onGeneratePosts && (

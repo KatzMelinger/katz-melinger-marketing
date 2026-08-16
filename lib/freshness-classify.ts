@@ -23,6 +23,8 @@ export type ClassifiedFreshnessFlag = {
   kind: FreshnessKind;
   match: string;
   sentence: string;
+  /** Which occurrence of this token in the sentence — see FreshnessFlag. */
+  occurrence: number;
   status: FreshnessStatus;
   /** Backward-compatible fields the drawer already reads. */
   current_value?: string;
@@ -34,6 +36,16 @@ export type ClassifiedFreshnessFlag = {
   reason?: string;
   /** current_facts id/fact_key this figure mapped to. */
   fact_key?: string;
+  /**
+   * What resolving this figure actually does:
+   *   replace     — a sourced value; write the newly verified number.
+   *   recalculate — a derived value (e.g. weekly × 52); recompute from source.
+   * The reviewer needs to know which, because recalculating is not a claim that
+   * anyone re-verified the underlying figure.
+   */
+  update_action?: "replace" | "recalculate";
+  /** For a derived figure, the fact_key it is calculated from. */
+  derived_from?: string;
 };
 
 /** First numeric value in a string, commas removed. "$1,275.00 per week" → 1275. */
@@ -54,7 +66,12 @@ function classifyFlag(
   facts: CurrentFact[],
   asOf: Date,
 ): ClassifiedFreshnessFlag | null {
-  const base = { kind: flag.kind, match: flag.match, sentence: flag.sentence };
+  const base = {
+    kind: flag.kind,
+    match: flag.match,
+    sentence: flag.sentence,
+    occurrence: flag.occurrence ?? 0,
+  };
   const fact = matchCurrentFact(flag, facts);
 
   if (!fact) {
@@ -73,7 +90,27 @@ function classifyFlag(
     current_label: fact.label,
     effective_date: fact.effectiveDate,
     fact_key: fact.id,
+    ...(fact.derived
+      ? { update_action: "recalculate" as const, derived_from: fact.derived.fromFactId }
+      : { update_action: "replace" as const }),
   };
+
+  // A superseded prose rule still in the sentence ("four or more employees" for
+  // a law that now covers every employer). Not auto-appliable — swapping a token
+  // would leave broken prose — so it routes to a human rewrite and blocks
+  // approval until they confirm. Checked before verifyOnly / re-verification
+  // because a wrong statement of law outranks a stale-date warning.
+  if (fact.supersedes?.length) {
+    const sentence = (flag.sentence ?? "").toLowerCase();
+    const stale = fact.supersedes.find((p) => sentence.includes(p.toLowerCase()));
+    if (stale) {
+      return {
+        ...withFact,
+        status: "verify",
+        reason: `“${stale}” is superseded — ${fact.label} is now ${fact.value}. Reword this sentence.`,
+      };
+    }
+  }
 
   // Never auto-apply a litigated or expired value — force a human check.
   if (fact.verifyOnly) {
@@ -136,8 +173,11 @@ export function freshnessKey(f: {
   fact_key?: string;
   match?: string;
   sentence?: string;
+  occurrence?: number;
 }): string {
-  return `${f.fact_key ?? ""}|${f.match ?? ""}|${(f.sentence ?? "").slice(0, 48)}`;
+  // Occurrence is part of the identity: two identical tokens in one sentence are
+  // two facts, and resolving one must not mark the other resolved.
+  return `${f.fact_key ?? ""}|${f.match ?? ""}|${(f.sentence ?? "").slice(0, 48)}|${f.occurrence ?? 0}`;
 }
 
 /**

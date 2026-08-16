@@ -26,6 +26,7 @@ import {
   CONTENT_SHORT_FORM_MODEL,
   extractJSON,
   getAnthropic,
+  logCacheUsage,
 } from "./anthropic";
 import { stripEmDashes, hasEmDash } from "./sanitize-content";
 import { isSensitiveTopic, sensitiveToneBlock } from "./sensitive-topic";
@@ -139,9 +140,10 @@ async function callSocial(system: string, user: string): Promise<SocialClaudeOut
   const resp = await getAnthropic().messages.create({
     model: CONTENT_SHORT_FORM_MODEL,
     max_tokens: 4096,
-    system: cachedSystemPrompt(system),
+    system: cachedSystemPrompt(system, CONTENT_SHORT_FORM_MODEL),
     messages: [{ role: "user", content: user }],
   });
+  logCacheUsage("content-social", resp.usage);
   await recordVendorUsage("anthropic", {
     provider: "anthropic",
     endpoint: "content-social",

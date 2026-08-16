@@ -33,6 +33,7 @@ import {
   CONTENT_SHORT_FORM_MODEL,
   extractJSON,
   getAnthropic,
+  logCacheUsage,
 } from "./anthropic";
 
 export type FormatKey =
@@ -178,12 +179,16 @@ async function callClaudeForFormats(args: {
   system: string;
   user: string;
 }): Promise<ClaudeMultiOutput> {
+  // Short-form batches run on Haiku, whose cache minimum is 4096 tokens — 4× the
+  // Sonnet one. A social system prompt rarely reaches that, so this marker is
+  // often a no-op despite looking cached. ANTHROPIC_LOG_CACHE shows which.
   const resp = await getAnthropic().messages.create({
     model: args.model,
     max_tokens: 8192,
-    system: cachedSystemPrompt(args.system),
+    system: cachedSystemPrompt(args.system, args.model),
     messages: [{ role: "user", content: args.user }],
   });
+  logCacheUsage(`content-multiformat:${args.model}`, resp.usage);
   // Advisory metering: record Anthropic token usage (best-effort; resolves tenant).
   await recordVendorUsage("anthropic", {
     provider: "anthropic",

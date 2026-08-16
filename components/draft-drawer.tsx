@@ -214,6 +214,8 @@ type FreshnessFlagMeta = {
   kind?: string;
   match?: string;
   sentence?: string;
+  /** Which occurrence of this token within the sentence (0-based). */
+  occurrence?: number;
   /** Authoritative current value, when the flag maps to a known current fact. */
   current_value?: string;
   current_label?: string;
@@ -225,7 +227,137 @@ type FreshnessFlagMeta = {
   /** Why it needs attention, e.g. "litigated — attorney must verify". */
   reason?: string;
   fact_key?: string;
+  /** replace = write a newly verified number; recalculate = derived from another fact. */
+  update_action?: "replace" | "recalculate";
+  derived_from?: string;
 };
+
+/** Phrases that name a figure's denominator. Mirrors UNIT_CUES in lib/current-facts.ts. */
+const FRESH_UNIT_CUES: { unit: string; cues: string[] }[] = [
+  { unit: "hour", cues: ["per hour", "an hour", "each hour", "hourly", "/hour", "/hr"] },
+  { unit: "week", cues: ["per week", "a week", "each week", "weekly", "/week", "/wk"] },
+  {
+    unit: "year",
+    cues: ["per year", "a year", "each year", "per annum", "annually", "annualized", "/year", "/yr"],
+  },
+];
+
+/** The unit a tracked value is expressed in, read off its own text. */
+function unitOfValue(value?: string): string | null {
+  const v = (value ?? "").toLowerCase();
+  for (const { unit, cues } of FRESH_UNIT_CUES) {
+    if (cues.some((c) => v.includes(c))) return unit;
+  }
+  return null;
+}
+
+/** Comparable form for fuzzy sentence matching — markup and spacing removed. */
+function flatten(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9$.]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Sentence spans over the raw body, using the same boundary rule as the
+ * scanner (lib/freshness-check.ts) so a flag's sentence lines up with a span.
+ *
+ * The boundary requires whitespace after the terminator, which is what keeps
+ * the period inside "$16.00" from splitting a sentence mid-figure.
+ */
+function sentenceSpans(body: string): { start: number; end: number }[] {
+  const spans: { start: number; end: number }[] = [];
+  const re = /(?<=[.!?])\s+(?=[A-Z0-9$"'(])|\n{2,}/g;
+  let start = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > start) spans.push({ start, end: m.index });
+    start = m.index + m[0].length;
+  }
+  if (start < body.length) spans.push({ start, end: body.length });
+  return spans;
+}
+
+/**
+ * Index of the ONE occurrence of `token` this flag refers to, or null when it
+ * can't be pinned down.
+ *
+ * A page states the same figure several times with different meanings — weekly
+ * and annual, downstate and rest-of-state — and they can share a sentence, so
+ * neither the token nor the sentence alone identifies which one a flag means.
+ * Occurrences are scored on the unit words that follow them (the strongest
+ * signal: "$X per week" vs "$X a year") and on how well their surroundings match
+ * the flagged sentence. A tie returns null so the reviewer edits by hand rather
+ * than having four figures rewritten from one click.
+ */
+function findFigureOccurrence(
+  body: string,
+  token: string,
+  opts: { unit: string | null; sentence: string; occurrence: number },
+): number | null {
+  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`${esc}(?!\\d)`, "g");
+  const hits: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    hits.push(m.index);
+    if (m.index === re.lastIndex) re.lastIndex += 1; // zero-width guard
+  }
+  if (hits.length === 0) return null;
+  if (hits.length === 1) return hits[0];
+
+  const wantUnit = opts.unit;
+  const cues = wantUnit ? (FRESH_UNIT_CUES.find((u) => u.unit === wantUnit)?.cues ?? []) : [];
+  // The body sentence this flag came from, matched by word overlap against the
+  // scanner's normalized copy. Occurrences inside it, in document order, let the
+  // flag's own occurrence index act as a tiebreaker when two identical tokens
+  // share a sentence and neither carries a unit cue.
+  const want = flatten(opts.sentence);
+  const wantSet = new Set(want.split(" ").filter((w) => w.length > 3));
+  let span: { start: number; end: number } | null = null;
+  let spanScore = 0;
+  if (wantSet.size > 0) {
+    for (const s of sentenceSpans(body)) {
+      const got = new Set(flatten(body.slice(s.start, s.end)).split(" "));
+      let hit = 0;
+      for (const w of wantSet) if (got.has(w)) hit += 1;
+      const score = hit / wantSet.size;
+      if (score > spanScore) {
+        spanScore = score;
+        span = s;
+      }
+    }
+  }
+  // Below this the "match" is coincidental word overlap, not the sentence.
+  const inSentence =
+    span && spanScore >= 0.6
+      ? hits.filter((at) => at >= span.start && at < span.end)
+      : [];
+  const nth = inSentence[opts.occurrence];
+
+  let best: number | null = null;
+  let bestScore = -Infinity;
+  let tied = false;
+  for (const at of hits) {
+    // Unit words immediately after this figure, stopping at the next figure so
+    // a later one can't lend its unit to this occurrence.
+    const after = body.slice(at + token.length, at + token.length + 40).toLowerCase();
+    const nextFigure = after.search(/\$\s?\d/);
+    const window = nextFigure >= 0 ? after.slice(0, nextFigure) : after;
+    const unitScore = cues.length > 0 && cues.some((c) => window.includes(c)) ? 10 : 0;
+    // Inside the flagged sentence at all, and specifically its Nth occurrence.
+    const inSpanScore = inSentence.includes(at) ? 5 : 0;
+    const nthScore = nth !== undefined && at === nth ? 3 : 0;
+    const score = unitScore + inSpanScore + nthScore;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = at;
+      tied = false;
+    } else if (score === bestScore) {
+      tied = true;
+    }
+  }
+  return tied ? null : best;
+}
 
 /**
  * Time-sensitive figures flagged at generation/refresh (lib/freshness-check.ts).
@@ -575,38 +707,61 @@ export function DraftDrawer({
     }
   };
 
-  // Apply a current value over an outdated figure (one click). Replaces the stale
-  // dollar token in the body with the current value and re-saves; the PATCH route
-  // recomputes freshness, so the figure comes back reclassified as "current".
+  // Apply a current value over an outdated figure (one click).
+  //
+  // SCOPED TO THE FLAGGED SENTENCE. A page states the same kind of figure more
+  // than once — downstate vs upstate, weekly vs annual — and those are different
+  // facts that happen to share a token. A body-wide replace rewrites all of them
+  // from one click, which is how "$1,275.00 a year" reached a live draft for the
+  // rest of the state. Only the occurrence inside this flag's own sentence moves.
   const applyFreshnessUpdate = async (flag: FreshnessFlagMeta) => {
     if (!draft || !flag.match || !flag.suggested_value) return;
     const newToken = (flag.suggested_value.match(/\$[\d,]+(?:\.\d+)?/) ?? [flag.suggested_value])[0];
     const source = draft.body ?? "";
-    const esc = flag.match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`${esc}(?!\\d)`, "g");
-    if (!re.test(source)) {
-      setMsg(`Couldn't find ${flag.match} in the draft — edit it manually.`);
+
+    const at = findFigureOccurrence(source, flag.match, {
+      unit: unitOfValue(flag.current_value),
+      sentence: flag.sentence ?? "",
+      occurrence: flag.occurrence ?? 0,
+    });
+    if (at === null) {
+      setMsg(
+        `${flag.match} appears more than once and this draft doesn't say clearly which one is the ${
+          flag.current_label ?? "flagged"
+        } figure. Edit it by hand so the other figures aren't changed.`,
+      );
       return;
     }
-    const newBody = source.replace(re, newToken);
+
+    const newBody = source.slice(0, at) + newToken + source.slice(at + flag.match.length);
+    const isRecalc = flag.update_action === "recalculate";
     setApplyingFresh(freshnessKey(flag));
-    const res = await fetch(`/api/content/drafts/${draft.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: newBody }),
-    });
-    setApplyingFresh(null);
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/content/drafts/${draft.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: newBody }),
+      });
+      if (!res.ok) {
+        setMsg("Failed to apply the update.");
+        return;
+      }
       const returned = (await res.json().catch(() => null)) as DraftRow | null;
       const next: DraftRow =
         returned && typeof returned === "object" ? returned : { ...draft, body: newBody };
       setDraft(next);
       setEditBody(next.body ?? newBody);
-      setMsg(`Updated ${flag.match} → ${newToken}.`);
+      setMsg(
+        `${isRecalc ? "Recalculated" : "Updated"} ${flag.match} → ${newToken} (${
+          flag.current_label ?? "this figure"
+        }). Other figures on the page were left alone.`,
+      );
       onChanged();
+      // Held until the re-analysis finishes too — it takes 10+ seconds, and
+      // clearing the busy state before it returns reads as a frozen button.
       await runAnalysis(next);
-    } else {
-      setMsg("Failed to apply the update.");
+    } finally {
+      setApplyingFresh(null);
     }
   };
 
@@ -1392,7 +1547,19 @@ export function DraftDrawer({
                                 <FreshPill status={resolved ? "current" : st} />
                               </div>
                               {f.current_label && (
-                                <div className="mt-0.5 truncate text-slate-500">{f.current_label}</div>
+                                <div className="mt-0.5 truncate text-slate-500">
+                                  {f.current_label}
+                                  {f.update_action === "recalculate" ? " · calculated" : ""}
+                                </div>
+                              )}
+                              {/* The sentence is what separates two rows for the
+                                  same kind of figure — downstate vs rest-of-state,
+                                  weekly vs annual — so the reviewer can see which
+                                  occurrence each row is about. */}
+                              {f.sentence && (
+                                <div className="mt-0.5 line-clamp-2 text-[10px] italic text-slate-400">
+                                  “{f.sentence}”
+                                </div>
                               )}
                               {st === "outdated" && f.suggested_value && (
                                 <div className="mt-0.5 text-emerald-700">
@@ -1418,7 +1585,11 @@ export function DraftDrawer({
                                   disabled={applyingFresh === key}
                                   className="rounded bg-blue-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                                 >
-                                  {applyingFresh === key ? "Applying…" : "Apply update"}
+                                  {applyingFresh === key
+                                    ? "Applying…"
+                                    : f.update_action === "recalculate"
+                                      ? "Recalculate"
+                                      : "Apply update"}
                                 </button>
                               ) : st === "verify" ? (
                                 <button
