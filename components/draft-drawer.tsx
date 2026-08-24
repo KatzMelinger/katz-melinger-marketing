@@ -34,6 +34,9 @@ import {
 } from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
+// Type-only: analysis-fingerprint pulls in node:crypto, which must never reach
+// the client bundle. `import type` is erased at build time.
+import type { Staleness } from "@/lib/analysis-fingerprint";
 import { freshnessKey } from "@/lib/freshness-classify";
 import type { PipelineStatus } from "@/lib/content-status";
 
@@ -416,6 +419,9 @@ export function DraftDrawer({
   const suggestionId = item.suggestion_id ?? "";
   const [draft, setDraft] = useState<DraftRow | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  // Whether `analysis` still measures the CURRENT body under the CURRENT
+  // engine. Computed server-side so the drawer and the approval gate agree.
+  const [staleness, setStaleness] = useState<Staleness | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState("");
@@ -467,6 +473,7 @@ export function DraftDrawer({
           if (cancelled) return;
           setDraft(data.draft ?? null);
           setAnalysis(data.latest_analysis ?? null);
+          setStaleness(data.analysis_staleness ?? null);
           setEditBody(data.draft?.body ?? "");
           setCerts(readCertifications(data.draft ?? null));
           setCertMsg(null);
@@ -575,7 +582,11 @@ export function DraftDrawer({
     structure: structureCheck ? structureCheck.passed : true,
     // Readability floor. No analysis yet = treated as passing (advisory until
     // the score exists); gated only when an analysis is present (see qaRequired).
-    readability: analysis ? analysis.readability_score >= READABILITY_FLOOR : true,
+    // A STALE score cannot pass: it is a measurement of a draft that no longer
+    // exists, or one taken with a different instrument.
+    readability: analysis
+      ? !staleness?.stale && analysis.readability_score >= READABILITY_FLOOR
+      : true,
     wordCount: wordCount >= 600,
     titleLen: metaTitle.length > 0 && metaTitle.length <= 60,
   };
@@ -611,7 +622,9 @@ export function DraftDrawer({
   if (analysis) {
     qaRequired.push({
       key: "readability",
-      label: `Readability ${READABILITY_FLOOR}+ (aim ${READABILITY_TARGET})`,
+      label: staleness?.stale
+        ? "Readability — re-run the analysis (score is out of date)"
+        : `Readability ${READABILITY_FLOOR}+ (aim ${READABILITY_TARGET})`,
     });
   }
   const qaFailed = qaRequired.filter((c) => !qa[c.key]);
@@ -649,7 +662,11 @@ export function DraftDrawer({
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (res.ok) setAnalysis(data);
+      if (res.ok) {
+        setAnalysis(data);
+        // Just computed against the body we sent — fresh by construction.
+        setStaleness(null);
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -673,6 +690,7 @@ export function DraftDrawer({
         const dj = await r.json();
         setDraft(dj.draft ?? null);
         setAnalysis(dj.latest_analysis ?? null);
+        setStaleness(dj.analysis_staleness ?? null);
         setEditBody(dj.draft?.body ?? "");
         setBriefOnly(null);
         setStatus("draft");
@@ -1740,9 +1758,29 @@ export function DraftDrawer({
             {draft &&
               (analysis ? (
                 <div className="mt-4">
+                  {staleness?.stale && (
+                    <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                      <p className="text-xs font-medium text-amber-900">
+                        These scores are out of date
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800">
+                        {staleness.message} Until then the numbers below describe an
+                        earlier version of this draft, and approval is blocked.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void runAnalysis(draft)}
+                        disabled={analyzing}
+                        className="mt-1.5 rounded border border-amber-400 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        {analyzing ? "Re-running…" : "Re-run analysis"}
+                      </button>
+                    </div>
+                  )}
                   <AnalysisCard
                     key={applyNonce}
                     analysis={analysis}
+                    stale={staleness?.stale ?? false}
                     onRerun={() => runAnalysis(draft)}
                     rerunning={analyzing}
                     onApplyFindings={(fs) => {

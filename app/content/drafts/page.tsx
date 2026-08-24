@@ -282,6 +282,9 @@ export default function DraftsPage() {
   const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
   const [composing, setComposing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  // Whether `analysis` still measures the current body under the current
+  // engine. Server-computed, so this screen and the approval gate agree.
+  const [staleness, setStaleness] = useState<{ stale: boolean; message: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
@@ -344,6 +347,7 @@ export default function DraftsPage() {
     if (!selectedId) {
       setSelectedDraft(null);
       setAnalysis(null);
+      setStaleness(null);
       return;
     }
     fetch(`/api/content/drafts/${selectedId}`)
@@ -351,6 +355,7 @@ export default function DraftsPage() {
       .then((data) => {
         setSelectedDraft(data.draft);
         setAnalysis(data.latest_analysis);
+        setStaleness(data.analysis_staleness ?? null);
         setEditTitle(data.draft?.title ?? "");
         setEditBody(data.draft?.body ?? "");
       });
@@ -439,7 +444,10 @@ export default function DraftsPage() {
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (res.ok) setAnalysis(data);
+      if (res.ok) {
+        setAnalysis(data);
+        setStaleness(null);
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -534,7 +542,10 @@ export default function DraftsPage() {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data) setAnalysis(data);
+        if (data) {
+          setAnalysis(data);
+          setStaleness(null);
+        }
       })
       .catch(() => {});
   };
@@ -770,9 +781,29 @@ export default function DraftsPage() {
                 }}
               />
 
+              {analysis && staleness?.stale && (
+                <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-900">
+                    These scores are out of date
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800">
+                    {staleness.message} Until then the numbers below describe an earlier
+                    version of this draft, and approval is blocked.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={analyze}
+                    disabled={analyzing}
+                    className="mt-1.5 rounded border border-amber-400 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    {analyzing ? "Re-running…" : "Re-run analysis"}
+                  </button>
+                </div>
+              )}
               {analysis && (
                 <AnalysisCard
                   analysis={analysis}
+                  stale={staleness?.stale ?? false}
                   onRerun={analyze}
                   rerunning={analyzing}
                   onApplyFindings={(fs) => setApplyingFindings(fs)}

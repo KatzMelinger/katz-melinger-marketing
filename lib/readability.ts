@@ -20,6 +20,21 @@ export const HARD_MAX_SENTENCE_WORDS = 35;
 // Flesch-Kincaid grade above which a single sentence reads as too complex.
 export const HIGH_GRADE = 14;
 // Approval gate: block below the floor; show the target as the goal.
+//
+// These are Flesch reading-ease bands (60-70 is the conventional "plain
+// English" range) and they were written for the Flesch scorer. When the rules
+// engine took over, `readability_score` stopped meaning reading ease and
+// started meaning share-of-the-15-rules-passed — but these two constants came
+// along unchanged, so the gate was comparing a new measurement against a
+// threshold nobody had chosen for it.
+//
+// They are kept at 60/70 for the rules engine, but now by decision rather than
+// by inheritance. Measured across all 176 live draft bodies (deterministic
+// rules only): median 63, and 59% clear 60 while 44% clear 70. That is a
+// working gate — strict enough to catch a genuinely unreadable draft, loose
+// enough not to block the queue on day one. Revisit it against the evaluation
+// set rather than by feel; a rules score of 60 means "failed 6 of 15 rules",
+// which is a real claim and worth confirming against known-good content.
 export const READABILITY_FLOOR = 60;
 export const READABILITY_TARGET = 70;
 // Generator ceiling on passive voice.

@@ -91,6 +91,7 @@ export type Analysis = {
 
 export function AnalysisCard({
   analysis,
+  stale,
   onRerun,
   rerunning,
   onApplyFindings,
@@ -99,6 +100,11 @@ export function AnalysisCard({
   currentTitle,
 }: {
   analysis: Analysis;
+  /** These scores no longer describe the current draft (edited since scoring,
+   *  or scored by a retired engine). Apply actions are withheld: every finding
+   *  quotes an excerpt that may no longer be in the body, so applying one would
+   *  hand Claude a rewrite target that does not exist. */
+  stale?: boolean;
   onRerun?: () => void;
   rerunning?: boolean;
   /** Called when the user invokes Apply — either via a single row's button
@@ -114,6 +120,14 @@ export function AnalysisCard({
   /** Current draft title — used to mark the active title in the picker. */
   currentTitle?: string | null;
 }) {
+  // A stale analysis exposes no Apply affordances at all. Disabling them at the
+  // top means the grouped readability view, the per-row buttons, the batch bar
+  // and the title/link pickers all go read-only together, rather than each
+  // needing to remember.
+  const applyFindings = stale ? undefined : onApplyFindings;
+  const applyTitle = stale ? undefined : onApplyTitle;
+  const applyLink = stale ? undefined : onApplyLink;
+
   // Set of finding strings the user has checked for batch-apply. Spans all
   // categories (SEO + AEO + CASH + brand voice + linkability) so the user
   // can mix and match before sending one Claude call.
@@ -130,8 +144,8 @@ export function AnalysisCard({
   };
   const clearFindingSelection = () => setSelectedFindings(new Set());
   const handleApplySelected = () => {
-    if (selectedFindings.size === 0 || !onApplyFindings) return;
-    onApplyFindings(Array.from(selectedFindings));
+    if (selectedFindings.size === 0 || !applyFindings) return;
+    applyFindings(Array.from(selectedFindings));
     // Don't clear yet — wait until the modal closes (the user might Discard
     // and want to re-try). Cleared in onAccept via parent state reset.
   };
@@ -149,7 +163,7 @@ export function AnalysisCard({
   // and there are sentence-level findings to fix.
   const readabilityFindingsList = analysis.readability_findings ?? [];
   const canAutoFixReadability =
-    !!onApplyFindings &&
+    !!applyFindings &&
     readabilityFindingsList.length > 0 &&
     analysis.readability_score < READABILITY_TARGET;
 
@@ -161,7 +175,7 @@ export function AnalysisCard({
           {canAutoFixReadability && selectedCount === 0 && (
             <button
               type="button"
-              onClick={() => onApplyFindings?.(readabilityFindingsList)}
+              onClick={() => applyFindings?.(readabilityFindingsList)}
               className="text-xs px-2.5 py-1 rounded border border-brand/40 bg-brand/5 text-brand hover:bg-brand/10 inline-flex items-center gap-1.5 font-medium"
               title={`Rewrite all ${readabilityFindingsList.length} hard-to-read sentences in one shot — shortens and de-passivizes them. You review the diff before it saves.`}
             >
@@ -169,7 +183,7 @@ export function AnalysisCard({
               Auto-fix readability ({readabilityFindingsList.length})
             </button>
           )}
-          {onApplyFindings && selectedCount > 0 && (
+          {applyFindings && selectedCount > 0 && (
             <>
               <button
                 type="button"
@@ -285,42 +299,42 @@ export function AnalysisCard({
             findings={analysis.readability_findings}
             score={analysis.readability_score}
             grade={analysis.reading_grade_level}
-            onApply={onApplyFindings}
+            onApply={applyFindings}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         )}
         {analysis.seo_findings && analysis.seo_findings.length > 0 && (
           <FindingsList
             label="SEO findings"
             findings={analysis.seo_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         )}
         <FindingsList
           label="AEO findings"
           findings={analysis.aeo_findings}
-          onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+          onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
           selected={selectedFindings}
-          onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          onToggleSelected={applyFindings ? toggleFinding : undefined}
         />
         {analysis.cash_findings && analysis.cash_findings.length > 0 && (
           <FindingsList
             label="CASH findings"
             findings={analysis.cash_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         )}
         <FindingsList
           label="Brand voice findings"
           findings={analysis.brand_voice_findings}
-          onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+          onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
           selected={selectedFindings}
-          onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          onToggleSelected={applyFindings ? toggleFinding : undefined}
         />
       </div>
       {analysis.linkability_findings && analysis.linkability_findings.length > 0 && (
@@ -328,9 +342,9 @@ export function AnalysisCard({
           <FindingsList
             label="Linkability findings"
             findings={analysis.linkability_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         </div>
       )}
@@ -397,10 +411,10 @@ export function AnalysisCard({
                   <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
                     {t.length} chars
                   </span>
-                  {onApplyTitle && !isCurrent && (
+                  {applyTitle && !isCurrent && (
                     <button
                       type="button"
-                      onClick={() => onApplyTitle(t)}
+                      onClick={() => applyTitle(t)}
                       className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand shrink-0"
                       title="Use this as the draft title"
                     >
@@ -478,7 +492,7 @@ export function AnalysisCard({
           ...Object.keys(analysis.target_keyword_hits ?? {}),
           ...(currentTitle ? [currentTitle] : []),
         ]}
-        onApplyLink={onApplyLink}
+        onApplyLink={applyLink}
       />
 
       {analysis.summary && (

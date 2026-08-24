@@ -11,6 +11,7 @@ import { classifyFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { isDraftStatus, isPipelineStatus } from "@/lib/content-status";
 import { gatedStatusMessage, isGatedStatus } from "@/lib/content-transitions";
+import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,22 @@ export async function GET(
     .order("created_at", { ascending: false })
     .limit(1);
 
-  return NextResponse.json({ draft: data, latest_analysis: analyses?.[0] ?? null });
+  // Staleness is computed here rather than in the client: it needs a hash of
+  // the body and knowledge of the current engine, and the answer must be the
+  // same one the approval gate uses. One source of truth, server-side.
+  const latest = analyses?.[0] ?? null;
+  const staleness = latest
+    ? analysisStaleness(
+        (latest as { scored_against?: AnalysisFingerprint | null }).scored_against,
+        typeof (data as { body?: string }).body === "string" ? (data as { body: string }).body : "",
+      )
+    : null;
+
+  return NextResponse.json({
+    draft: data,
+    latest_analysis: latest,
+    analysis_staleness: staleness,
+  });
 }
 
 export async function PATCH(
