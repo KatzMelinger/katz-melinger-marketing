@@ -10,14 +10,28 @@
  *
  * Dry-run by default. Nothing is written until you pass --apply.
  *
- *   npx jiti scripts/rescore-stale-analyses.ts              # report only
- *   npx jiti scripts/rescore-stale-analyses.ts --apply      # re-score
- *   npx jiti scripts/rescore-stale-analyses.ts --apply --limit 10
- *   npx jiti scripts/rescore-stale-analyses.ts --apply --status review
+ *   node scripts/run.mjs scripts/rescore-stale-analyses.ts              # report
+ *   node scripts/run.mjs scripts/rescore-stale-analyses.ts --apply
+ *   node scripts/run.mjs scripts/rescore-stale-analyses.ts --apply --limit 10
+ *   node scripts/run.mjs scripts/rescore-stale-analyses.ts --apply --status review
  *
- * Each re-score is a full analyzeDraft() pass — several Claude calls, ~10s and
- * real tokens per draft. Start with --limit and --status review: the drafts in
- * the approval path are the ones where a stale score actually blocks someone.
+ * MUST go through scripts/run.mjs. --apply lazily imports lib/content-analysis,
+ * which transitively uses `@/lib/...` path aliases that bare `jiti` and Node's
+ * type stripping both fail to resolve. Run directly and the dry run works while
+ * --apply dies with MODULE_NOT_FOUND the moment it starts doing real work.
+ *
+ * Each re-score is a full analyzeDraft() pass — several Claude calls, ~30s and
+ * real tokens per draft. Start with --status review: the drafts in the approval
+ * path are the ones where a stale score actually blocks someone.
+ *
+ * KNOWN LIMITATION: outside a request there is no session, so the compliance
+ * rule store cannot read firm-customized state_compliance_rules and falls back
+ * to the built-in NY/NJ rules ("Rule load failed, using defaults" in the log —
+ * caught and handled, not a failure). The resulting compliance_score is
+ * advisory and may differ slightly from what the approve/publish gate computes
+ * in-request. Fix, when it matters: thread the tenant through to
+ * listStateRules() and use getTenantJobDb(tenantId), the established
+ * background-context helper.
  *
  * Requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, plus the
  * ANTHROPIC_API_KEY the analyzer needs, all read from .env.local.
