@@ -759,9 +759,11 @@ function ReadabilityFindings({
         {grade}, target 8 or lower
       </div>
       <p className="mb-1.5 text-[10px] leading-relaxed text-slate-500">
-        {rulesFailing} rule{rulesFailing === 1 ? "" : "s"} failing. The score counts a rule
-        as passed only once <em>every</em> instance is fixed — so clearing one whole rule
-        moves the number, while fixing a few sentences across several rules does not.
+        {rulesFailing} rule{rulesFailing === 1 ? "" : "s"} failing. A rule counts as passed
+        once its instances drop under a small share of the document, so clearing most of
+        one rule moves the score while fixing a sentence here and there across several
+        does not. Every instance is still listed and worth fixing — the score is a floor,
+        not the goal.
       </p>
       <div className="space-y-2">
         {ordered.map((g) => {

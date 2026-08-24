@@ -29,8 +29,15 @@ import { createHash } from "node:crypto";
 
 import { readabilityRulesEngineEnabled } from "./feature-flags";
 
-/** Bump when the meaning of a score changes. See the note above. */
-const ENGINE_REVISION = 1;
+/**
+ * Bump when the meaning of a score changes. See the note above.
+ *
+ * 2 — readability rules moved from presence-based to density-based failure
+ *     (RULE_TOLERANCE_RATE), and READABILITY_FLOOR/TARGET were recalibrated to
+ *     70/85. A stored "53" from revision 1 and a "53" from revision 2 are not
+ *     the same claim, so every prior score is invalidated and must be re-run.
+ */
+const ENGINE_REVISION = 2;
 
 export type AnalysisFingerprint = {
   /** sha256 of the exact body text that was scored. */

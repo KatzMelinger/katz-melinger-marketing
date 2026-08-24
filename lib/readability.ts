@@ -21,22 +21,37 @@ export const HARD_MAX_SENTENCE_WORDS = 35;
 export const HIGH_GRADE = 14;
 // Approval gate: block below the floor; show the target as the goal.
 //
-// These are Flesch reading-ease bands (60-70 is the conventional "plain
-// English" range) and they were written for the Flesch scorer. When the rules
-// engine took over, `readability_score` stopped meaning reading ease and
-// started meaning share-of-the-15-rules-passed — but these two constants came
-// along unchanged, so the gate was comparing a new measurement against a
-// threshold nobody had chosen for it.
+// 60/70 were Flesch reading-ease bands, written for the Flesch scorer and left
+// unchanged when the rules engine took over — so the gate was judging a new
+// measurement against a threshold nobody had picked for it. Recalibrated
+// against all 176 live draft bodies once density-based rule failure landed
+// (see RULE_TOLERANCE_RATE in readability-rules.ts, which is the fix that
+// actually mattered — before it the score tracked document length).
 //
-// They are kept at 60/70 for the rules engine, but now by decision rather than
-// by inheritance. Measured across all 176 live draft bodies (deterministic
-// rules only): median 63, and 59% clear 60 while 44% clear 70. That is a
-// working gate — strict enough to catch a genuinely unreadable draft, loose
-// enough not to block the queue on day one. Revisit it against the evaluation
-// set rather than by feel; a rules score of 60 means "failed 6 of 15 rules",
-// which is a real claim and worth confirming against known-good content.
-export const READABILITY_FLOOR = 60;
-export const READABILITY_TARGET = 70;
+// Pass rate by floor and length band, after the fix:
+//
+//     floor   <500w   500-2k   2k+    spread
+//       70     100%     93%    97%     7 pts   <- length-invariant
+//       80      94%     70%    73%    24 pts
+//       90      69%     39%    35%    34 pts
+//
+// The score only holds still across lengths near the bottom of its range; push
+// the floor higher and long-form is penalized again for being long. So the
+// floor is 70 — the strictest value that judges a 2,000-word article and a
+// 400-word page by the same standard.
+//
+// That is DELIBERATELY PERMISSIVE: it catches the genuinely broken, not the
+// merely imperfect, and roughly 2% of current drafts fail it. That is the right
+// trade for now. A gate that blocked 7 of 8 real drafts (which the old
+// threshold did) does not get respected, it gets overridden, and then no gate
+// is trusted. The readability WORK lives in the findings, which are unchanged
+// and still per-instance; the floor only stops the disasters.
+//
+// To tighten this properly you need labelled content — Diana's evaluation set
+// (E3). Do not raise it by feel until that exists: the numbers above show a
+// higher floor buys strictness by reintroducing the length bias.
+export const READABILITY_FLOOR = 70;
+export const READABILITY_TARGET = 85;
 // Generator ceiling on passive voice.
 export const MAX_PASSIVE_PCT = 10;
 
