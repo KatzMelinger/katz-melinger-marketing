@@ -121,6 +121,14 @@ type DraftRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+/** A reviewer sign-off, stamped server-side by /api/content/drafts/[id]/certify. */
+type DraftCertification = { by: string; by_email: string; at: string };
+
+function readCertifications(draft: DraftRow | null): Record<string, DraftCertification> {
+  const meta = (draft?.metadata ?? {}) as Record<string, unknown>;
+  return (meta.certifications as Record<string, DraftCertification> | undefined) ?? {};
+}
+
 function readBrief(draft: DraftRow): Brief {
   const meta = (draft.metadata ?? {}) as Record<string, unknown>;
   const km = (meta.km_brief ?? {}) as Record<string, unknown>;
@@ -414,8 +422,14 @@ export function DraftDrawer({
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [status, setStatus] = useState<PipelineStatus>(item.status);
-  const [legalReview, setLegalReview] = useState(false);
-  const [proofread, setProofread] = useState(false);
+  // Reviewer certifications, persisted on the draft with who and when. These
+  // were session-only useState booleans: nothing was stored, no name was
+  // attached, and a refresh cleared them — so the two boxes certified nothing
+  // while looking, on screen, exactly like a sign-off.
+  const [certs, setCerts] = useState<Record<string, DraftCertification>>({});
+  const [certMsg, setCertMsg] = useState<string | null>(null);
+  const legalReview = !!certs.legal_review;
+  const proofread = !!certs.proofread;
   const [msg, setMsg] = useState<string | null>(null);
   // When the row has no draft yet (brief stage), we load the linked brief so
   // the reviewer still sees the brief they built — not "Draft not found".
@@ -454,6 +468,8 @@ export function DraftDrawer({
           setDraft(data.draft ?? null);
           setAnalysis(data.latest_analysis ?? null);
           setEditBody(data.draft?.body ?? "");
+          setCerts(readCertifications(data.draft ?? null));
+          setCertMsg(null);
           setLoading(false);
           if (data.draft && !data.latest_analysis) void runAnalysis(data.draft);
         })
@@ -540,9 +556,16 @@ export function DraftDrawer({
   // Automatic QA checks — computed from the linked record + latest analysis.
   const metaTitle = brief.metaTitle || item.title;
   const primaryKw = (brief.primaryKeyword || "").toLowerCase();
+  // The body's markdown H1, if any. The title field is NOT the H1 — a draft can
+  // have a perfect title and no heading in the body at all, which is both an SEO
+  // miss and what blocks metadata generation downstream.
+  const bodyH1 = (draft?.body ?? "").match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
   const qa = {
     metaDescription: !!brief.metaDescription,
     h1Keyword: !!primaryKw && (draft?.title ?? item.title).toLowerCase().includes(primaryKw),
+    // Exactly one H1, and it carries the primary keyword.
+    bodyH1: !!bodyH1 && ((draft?.body ?? "").match(/^#\s+/gm) ?? []).length === 1 &&
+      (!primaryKw || bodyH1.toLowerCase().includes(primaryKw)),
     pillarLink: !!(brief.internalPillarLink || brief.pillarId),
     // Passes when 3+ internal links resolve to live Cluster-Map pages and none
     // are unverified. Null (still checking) reads as not-yet-passed (advisory).
@@ -566,10 +589,18 @@ export function DraftDrawer({
   // not the compliance gate — the owner can override with a deliberate tick.
   const qaRequired: { key: keyof typeof qa; label: string }[] = [
     { key: "metaDescription", label: "Meta description present" },
-    { key: "h1Keyword", label: "H1 contains primary keyword" },
+    { key: "h1Keyword", label: "Title contains primary keyword" },
+    { key: "bodyH1", label: "Body has exactly one H1, containing the keyword" },
     { key: "pillarLink", label: "Pillar link present" },
     { key: "wordCount", label: "Word count meets minimum" },
   ];
+  // Internal links were computed and displayed but never enforced, so
+  // "Linkability 38, zero links inserted" could pass QA untouched. Gated only
+  // once the verification has actually returned — null means still checking, and
+  // a pending check must not read as a failure.
+  if (linkVerify) {
+    qaRequired.push({ key: "internalLinks", label: "3+ confirmed internal links" });
+  }
   // Required section structure is a hard gate only when the draft carries a
   // structure check (KM generator). A failed check means sections are missing.
   if (structureCheck) {
@@ -587,6 +618,27 @@ export function DraftDrawer({
   const qaGatePassed = qaFailed.length === 0;
 
   const canPublish = legalReview && proofread;
+
+  /**
+   * Record or clear one certification. The server stamps the reviewer and the
+   * time, and refuses the legal tick while the compliance check is failing —
+   * so a refusal here is the check doing its job, and is shown, not swallowed.
+   */
+  const toggleCertification = async (key: "legal_review" | "proofread", next: boolean) => {
+    if (!draftId) return;
+    setCertMsg(null);
+    const res = await fetch(`/api/content/drafts/${draftId}/certify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value: next }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setCertMsg(data?.error ?? "Couldn’t record that certification.");
+      return;
+    }
+    setCerts(data.certifications ?? {});
+  };
 
   async function runAnalysis(d: DraftRow) {
     setAnalyzing(true);
@@ -820,21 +872,14 @@ export function DraftDrawer({
     }
   };
 
-  const changeStatus = async (next: PipelineStatus, note: string) => {
-    setStatus(next);
-    setMsg(note);
-    await fetch(`/api/content/pipeline/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    onChanged();
-  };
+  // `changeStatus` used to live here — an unused helper that PATCHed the board
+  // row's status directly. Dead code, but a ready-made bypass of the gates, so
+  // it is gone rather than left for someone to wire a button to.
 
   // Move the draft's editorial status. When a draft_id exists we go through the
-  // draft endpoint so content_drafts and content_pipeline stay in lockstep (and
-  // the site_pages ingest fires on publish); brief-only rows fall back to the
-  // pipeline row.
+  // draft endpoint so content_drafts and content_pipeline stay in lockstep;
+  // brief-only rows fall back to the pipeline row. Gated statuses are refused by
+  // both endpoints — approval and publishing go through their own routes.
   const setDraftStage = async (next: PipelineStatus, note: string) => {
     setStatus(next);
     setMsg(note);
@@ -1633,14 +1678,37 @@ export function DraftDrawer({
                     Manual certification
                   </div>
                   <div className="mt-1 space-y-1">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
-                      <input type="checkbox" checked={legalReview} onChange={(e) => setLegalReview(e.target.checked)} />
-                      Legal review complete
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
-                      <input type="checkbox" checked={proofread} onChange={(e) => setProofread(e.target.checked)} />
-                      Proofread and on-brand
-                    </label>
+                    {(
+                      [
+                        { key: "legal_review", label: "Legal review complete" },
+                        { key: "proofread", label: "Proofread and on-brand" },
+                      ] as const
+                    ).map(({ key, label }) => {
+                      const cert = certs[key];
+                      return (
+                        <label
+                          key={key}
+                          className="flex cursor-pointer items-start gap-2 text-xs text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={!!cert}
+                            onChange={(e) => void toggleCertification(key, e.target.checked)}
+                          />
+                          <span>
+                            {label}
+                            {cert && (
+                              <span className="block text-[10px] text-slate-400">
+                                {cert.by_email?.split("@")[0] ?? "unknown"} ·{" "}
+                                {new Date(cert.at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {certMsg && <p className="text-[10px] text-red-600">{certMsg}</p>}
                   </div>
                 </div>
 

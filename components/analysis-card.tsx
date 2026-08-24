@@ -281,10 +281,11 @@ export function AnalysisCard({
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
         {analysis.readability_findings && analysis.readability_findings.length > 0 && (
-          <FindingsList
-            label={`Readability findings (${analysis.readability_score}/100, aim ${READABILITY_TARGET}+) · reading level grade ${analysis.reading_grade_level}, target 8 or lower`}
+          <ReadabilityFindings
             findings={analysis.readability_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            score={analysis.readability_score}
+            grade={analysis.reading_grade_level}
+            onApply={onApplyFindings}
             selected={selectedFindings}
             onToggleSelected={onApplyFindings ? toggleFinding : undefined}
           />
@@ -693,6 +694,103 @@ function ContentOverlapPanel({
  * (e.g. for findings about meta-issues that don't have a clear in-body fix),
  * the component falls back to the original bulleted display.
  */
+/**
+ * Readability findings, grouped by the rule they break.
+ *
+ * The score counts a rule as PASSED only when every instance of it is gone
+ * (share of rules passed, not share of sentences fixed). The findings, though,
+ * are emitted one per instance. Listed flat, that combination is actively
+ * misleading: fixing three of twelve passive sentences is real work that moves
+ * the number by exactly zero, which is what "applying fixes does nothing" was.
+ *
+ * Grouping makes the arithmetic visible — each rule shows how many instances
+ * are left and what clearing it is worth — and gives each rule a single action
+ * that can actually flip it. Rules are ordered by instance count, so the rule
+ * closest to clearing is not buried under the one with thirty findings.
+ */
+function ReadabilityFindings({
+  findings,
+  score,
+  grade,
+  onApply,
+  selected,
+  onToggleSelected,
+}: {
+  findings: string[];
+  score: number;
+  grade: number;
+  onApply?: (findings: string[]) => void;
+  selected?: Set<string>;
+  onToggleSelected?: (finding: string) => void;
+}) {
+  // Findings are formatted as `Rule NN: <description>. <fix> "<excerpt>"`.
+  // Anything without that prefix (an older analysis, or an AI rule phrased
+  // differently) falls into an "Other" group rather than being dropped.
+  const groups = new Map<string, { title: string; items: string[] }>();
+  for (const f of findings) {
+    const m = f.match(/^Rule\s+(\d+):\s*([^.]+)\./);
+    const key = m ? m[1] : "other";
+    const title = m ? `Rule ${m[1]} · ${m[2].trim()}` : "Other readability notes";
+    const existing = groups.get(key);
+    if (existing) existing.items.push(f);
+    else groups.set(key, { title, items: [f] });
+  }
+  const ordered = [...groups.values()].sort((a, b) => a.items.length - b.items.length);
+  const rulesFailing = ordered.length;
+
+  return (
+    <div>
+      <div className="mb-1 text-xs font-medium text-slate-700">
+        Readability findings ({score}/100, aim {READABILITY_TARGET}+) · reading level grade{" "}
+        {grade}, target 8 or lower
+      </div>
+      <p className="mb-1.5 text-[10px] leading-relaxed text-slate-500">
+        {rulesFailing} rule{rulesFailing === 1 ? "" : "s"} failing. The score counts a rule
+        as passed only once <em>every</em> instance is fixed — so clearing one whole rule
+        moves the number, while fixing a few sentences across several rules does not.
+      </p>
+      <div className="space-y-2">
+        {ordered.map((g) => {
+          const selectedHere = onToggleSelected
+            ? g.items.filter((f) => selected?.has(f)).length
+            : 0;
+          return (
+            <div key={g.title} className="rounded-md border border-slate-200 bg-white/60 p-2">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] font-medium text-slate-700">
+                  {g.title}
+                  <span className="ml-1.5 font-normal text-slate-500">
+                    · {g.items.length} left{selectedHere > 0 ? `, ${selectedHere} selected` : ""}
+                  </span>
+                </div>
+                {onApply && (
+                  <button
+                    type="button"
+                    onClick={() => onApply(g.items)}
+                    className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] text-slate-600 hover:border-brand hover:text-brand"
+                    title={`Rewrite all ${g.items.length} instance${
+                      g.items.length === 1 ? "" : "s"
+                    } of this rule in one pass. Clearing the whole rule is what moves the score. You review the diff before it saves.`}
+                  >
+                    Fix all {g.items.length}
+                  </button>
+                )}
+              </div>
+              <FindingsList
+                label=""
+                findings={g.items}
+                onApply={onApply ? (f) => onApply([f]) : undefined}
+                selected={selected}
+                onToggleSelected={onToggleSelected}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function FindingsList({
   label,
   findings,
@@ -746,8 +844,12 @@ function FindingsList({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-medium text-slate-700">{label}</div>
+      {/* Nested inside a rule group the label is empty — the group header
+          already names the rule, so only the select-all control is rendered. */}
+      <div
+        className={`flex items-center justify-between ${label ? "mb-1" : "mb-0.5 justify-end"}`}
+      >
+        {label && <div className="text-xs font-medium text-slate-700">{label}</div>}
         {onToggleSelected && applicableCount > 1 && (
           <button
             type="button"

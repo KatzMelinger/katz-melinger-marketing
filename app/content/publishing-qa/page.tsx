@@ -9,11 +9,18 @@
  * rest are editor self-certifications (legal review, schema, internal links,
  * citations, proofreading).
  *
- * "Approve & Publish" stays disabled until every check passes, then promotes
- * the item to Published. "Send back to Draft" returns it for more work.
+ * "Approve & Publish" stays disabled until every check passes, then runs the
+ * real gates. "Send back to Draft" returns it for more work.
  *
- * The self-cert toggles are an in-session gate — they force the review ritual
- * before publish; the publish/return action itself is what persists.
+ * It used to PATCH the board row straight from review to published, which
+ * skipped `approved` — and with it the compliance gate, the freshness gate, and
+ * the publish route's own re-check. The button was named for a thing it did not
+ * do. It now calls /api/agent/approve and then the draft publish route, so a
+ * held draft stops here with its violations shown instead of going live.
+ *
+ * The self-certifications persist per draft with the reviewer's identity and a
+ * timestamp (POST .../certify), so a sign-off survives a refresh and can be
+ * attributed. The legal one is refused while compliance is failing.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -35,6 +42,8 @@ type ReviewItem = {
   owner_user_id: string | null;
   owner_email: string | null;
   status_updated_at: string;
+  /** Persisted reviewer sign-offs, keyed by MANUAL_CHECKS key. */
+  certifications: Record<string, Certification>;
 };
 
 /** Checks computed from the item itself — the editor can't fake these. */
@@ -50,14 +59,20 @@ const AUTO_CHECKS: { key: string; label: string; test: (i: ReviewItem) => boolea
   },
 ];
 
-/** Checks the editor self-certifies before publish (session state). */
+/**
+ * Checks the editor self-certifies before publish. The keys are the shared
+ * certification vocabulary in /api/content/drafts/[id]/certify — each tick is
+ * stored on the draft with the reviewer's id, email, and timestamp.
+ */
 const MANUAL_CHECKS: { key: string; label: string }[] = [
-  { key: "legal", label: "Legal / attorney review complete" },
+  { key: "legal_review", label: "Legal / attorney review complete" },
   { key: "schema", label: "Schema markup added" },
-  { key: "links", label: "Internal links added & verified" },
+  { key: "internal_links", label: "Internal links added & verified" },
   { key: "citations", label: "Sources & citations verified" },
-  { key: "proof", label: "Proofread & on-brand" },
+  { key: "proofread", label: "Proofread & on-brand" },
 ];
+
+type Certification = { by: string; by_email: string; at: string };
 
 const TOTAL_CHECKS = AUTO_CHECKS.length + MANUAL_CHECKS.length;
 
@@ -65,9 +80,12 @@ export default function PublishingQAPage() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // itemId → { manualCheckKey: true }
-  const [certs, setCerts] = useState<Record<number, Record<string, boolean>>>({});
   const [busyId, setBusyId] = useState<number | null>(null);
+  // itemId → outcome of the last publish attempt, so a gate hold is explained
+  // on the card that was held rather than vanishing into a reload.
+  const [notice, setNotice] = useState<
+    Record<number, { tone: "ok" | "error"; text: string }>
+  >({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,20 +107,107 @@ export default function PublishingQAPage() {
     load();
   }, [load]);
 
-  function toggle(itemId: number, key: string) {
-    setCerts((prev) => ({
-      ...prev,
-      [itemId]: { ...prev[itemId], [key]: !prev[itemId]?.[key] },
-    }));
+  /**
+   * Persist one certification against the linked draft. The server stamps who
+   * and when, and refuses the legal tick while compliance is failing — so a
+   * rejection here is information, not a glitch, and gets surfaced.
+   */
+  async function toggle(item: ReviewItem, key: string) {
+    if (!item.draft_id) {
+      setNotice((n) => ({
+        ...n,
+        [item.id]: { tone: "error", text: "Link a draft before certifying." },
+      }));
+      return;
+    }
+    const next = !item.certifications?.[key];
+    const res = await fetch(`/api/content/drafts/${item.draft_id}/certify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value: next }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setNotice((n) => ({
+        ...n,
+        [item.id]: { tone: "error", text: data?.error ?? "Couldn’t record that check." },
+      }));
+      return;
+    }
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === item.id ? { ...i, certifications: data.certifications ?? {} } : i,
+      ),
+    );
+    setNotice((n) => {
+      if (!(item.id in n)) return n;
+      const rest = { ...n };
+      delete rest[item.id];
+      return rest;
+    });
   }
 
-  async function move(id: number, status: "published" | "draft") {
+  /**
+   * Approve & Publish, for real: the compliance and freshness gates run at
+   * approve, then the publish route re-checks compliance at the moment of
+   * publishing. A 422 at either step means the draft was HELD — it is now at
+   * needs_legal with its violations recorded, and it does not go live.
+   */
+  async function publish(item: ReviewItem) {
+    if (!item.draft_id) return;
+    setBusyId(item.id);
+    try {
+      const approveRes = await fetch("/api/agent/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "content", id: item.draft_id, action: "approve" }),
+      });
+      const approveData = await approveRes.json().catch(() => ({}));
+      if (!approveRes.ok) {
+        const held = approveRes.status === 422;
+        setNotice((n) => ({
+          ...n,
+          [item.id]: {
+            tone: "error",
+            text: held
+              ? `${approveData?.error ?? "Held by a gate."} Open the draft to resolve it — it was not published.`
+              : (approveData?.error ?? "Approve failed."),
+          },
+        }));
+        await load();
+        return;
+      }
+
+      const publishRes = await fetch(`/api/content/drafts/${item.draft_id}/publish`, {
+        method: "POST",
+      });
+      const publishData = await publishRes.json().catch(() => ({}));
+      if (!publishRes.ok) {
+        setNotice((n) => ({
+          ...n,
+          [item.id]: {
+            tone: "error",
+            text: `${publishData?.error ?? "Publish failed."} The draft stays approved — nothing went live.`,
+          },
+        }));
+        await load();
+        return;
+      }
+      setNotice((n) => ({ ...n, [item.id]: { tone: "ok", text: "Published." } }));
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** Send back to Draft — an ungated transition, so the board PATCH is fine. */
+  async function returnToDraft(id: number) {
     setBusyId(id);
     try {
       await fetch(`/api/content/pipeline/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status: "draft" }),
       });
       await load();
     } finally {
@@ -165,11 +270,11 @@ export default function PublishingQAPage() {
             <QACard
               key={item.id}
               item={item}
-              certs={certs[item.id] ?? {}}
               busy={busyId === item.id}
-              onToggle={(key) => toggle(item.id, key)}
-              onPublish={() => move(item.id, "published")}
-              onReturn={() => move(item.id, "draft")}
+              notice={notice[item.id]}
+              onToggle={(key) => toggle(item, key)}
+              onPublish={() => publish(item)}
+              onReturn={() => returnToDraft(item.id)}
             />
           ))}
         </div>
@@ -180,19 +285,20 @@ export default function PublishingQAPage() {
 
 function QACard({
   item,
-  certs,
   busy,
+  notice,
   onToggle,
   onPublish,
   onReturn,
 }: {
   item: ReviewItem;
-  certs: Record<string, boolean>;
   busy: boolean;
+  notice?: { tone: "ok" | "error"; text: string };
   onToggle: (key: string) => void;
   onPublish: () => void;
   onReturn: () => void;
 }) {
+  const certs = item.certifications ?? {};
   const autoPassed = AUTO_CHECKS.filter((c) => c.test(item)).length;
   const manualPassed = MANUAL_CHECKS.filter((c) => certs[c.key]).length;
   const passed = autoPassed + manualPassed;
@@ -256,17 +362,26 @@ function QACard({
           </p>
           <ul className="space-y-1">
             {MANUAL_CHECKS.map((c) => {
-              const ok = !!certs[c.key];
+              const cert = certs[c.key];
+              const ok = !!cert;
               return (
                 <li key={c.key}>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <label className="flex cursor-pointer items-start gap-2 text-sm">
                     <input
                       type="checkbox"
                       checked={ok}
                       onChange={() => onToggle(c.key)}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand/30"
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand/30"
                     />
-                    <span className={ok ? "text-slate-700" : "text-slate-500"}>{c.label}</span>
+                    <span className={ok ? "text-slate-700" : "text-slate-500"}>
+                      {c.label}
+                      {cert && (
+                        <span className="block text-[11px] text-slate-400">
+                          {cert.by_email?.split("@")[0] ?? "unknown"} ·{" "}
+                          {new Date(cert.at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </span>
                   </label>
                 </li>
               );
@@ -275,18 +390,29 @@ function QACard({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-        <DashButton onClick={onPublish} disabled={!ready || busy}>
-          {busy ? <DashSpinner /> : "Approve & Publish"}
-        </DashButton>
-        <DashButton variant="outline" onClick={onReturn} disabled={busy}>
-          Send back to Draft
-        </DashButton>
-        {!ready && (
-          <span className="text-xs text-slate-500">
-            {TOTAL_CHECKS - passed} check{TOTAL_CHECKS - passed === 1 ? "" : "s"} left before
-            publish
-          </span>
+      <div className="space-y-2 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <DashButton onClick={onPublish} disabled={!ready || busy}>
+            {busy ? <DashSpinner /> : "Approve & Publish"}
+          </DashButton>
+          <DashButton variant="outline" onClick={onReturn} disabled={busy}>
+            Send back to Draft
+          </DashButton>
+          {!ready && (
+            <span className="text-xs text-slate-500">
+              {TOTAL_CHECKS - passed} check{TOTAL_CHECKS - passed === 1 ? "" : "s"} left before
+              publish
+            </span>
+          )}
+        </div>
+        {notice && (
+          <p
+            className={`text-xs ${
+              notice.tone === "error" ? "text-red-600" : "text-emerald-700"
+            }`}
+          >
+            {notice.text}
+          </p>
         )}
       </div>
     </DashCard>

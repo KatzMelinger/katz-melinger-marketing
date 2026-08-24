@@ -16,7 +16,18 @@ import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
-const VALID_STATUSES = ["idea", "brief", "draft", "review", "published"] as const;
+// Mirrors PIPELINE_STATUSES. `needs_legal` and `approved` were missing, which
+// meant a draft held by a gate could not be filtered for or counted — the board
+// simply had no view of its own blocked items.
+const VALID_STATUSES = [
+  "idea",
+  "brief",
+  "draft",
+  "review",
+  "needs_legal",
+  "approved",
+  "published",
+] as const;
 const VALID_BUCKETS = ["money_page", "bofu_education", "mofu_trust", "local_authority"] as const;
 const VALID_CONTENT_TYPES = ["website", "social", "email"] as const;
 
@@ -104,7 +115,36 @@ export async function GET(req: NextRequest) {
     ) as Record<string, number>,
   };
 
-  return NextResponse.json({ items: attachOwners(filtered, owners), stats });
+  // Reviewer certifications live on the linked draft's metadata. Attach them to
+  // the filtered rows so Publishing QA can render who signed off and when
+  // without a fetch per card. Scoped to `filtered`, so this is one small query.
+  const items = attachOwners(filtered, owners);
+  const draftIds = items
+    .map((i) => i.draft_id)
+    .filter((d): d is string => typeof d === "string" && d.length > 0);
+  let certsByDraft = new Map<string, Record<string, unknown>>();
+  if (draftIds.length > 0) {
+    const { data: draftRows } = await supabase
+      .from("content_drafts")
+      .select("id, metadata")
+      .in("id", draftIds);
+    certsByDraft = new Map(
+      ((draftRows ?? []) as { id: string; metadata: Record<string, unknown> | null }[]).map(
+        (d) => [
+          d.id,
+          ((d.metadata ?? {}).certifications as Record<string, unknown> | undefined) ?? {},
+        ],
+      ),
+    );
+  }
+
+  return NextResponse.json({
+    items: items.map((i) => ({
+      ...i,
+      certifications: i.draft_id ? (certsByDraft.get(i.draft_id) ?? {}) : {},
+    })),
+    stats,
+  });
 }
 
 export async function POST(req: NextRequest) {

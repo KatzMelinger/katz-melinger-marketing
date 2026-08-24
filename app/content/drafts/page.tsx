@@ -230,15 +230,15 @@ function draftTypeLabel(d: Draft): string {
 
 
 
-// Which statuses this dropdown OFFERS — deliberately narrower than the full
-// DraftStatus vocabulary. `approved` and `needs_legal` are written by the
-// gates (/api/agent/approve, the publish route), not picked by hand.
+// Which statuses this dropdown OFFERS. `approved`, `published`, and
+// `needs_legal` are written by the gated routes, and the drafts PATCH route now
+// refuses them (lib/content-transitions.ts) — offering `published` here was a
+// one-click way to skip the compliance and freshness gates entirely.
 const SELECTABLE_DRAFT_STATUSES: DraftStatus[] = [
   "initial_review",
   "brief",
   "draft",
   "review",
-  "published",
 ];
 
 // Labels/tones cover EVERY status, not just the selectable ones — a draft the
@@ -412,7 +412,13 @@ export default function DraftsPage() {
       }
       setSelectedDraft(data);
       refresh();
-      setSaveMsg({ ok: true, text: "Saved." });
+      // Re-score against the SAVED body. Without this the panel kept showing the
+      // pre-edit score and findings that pointed at sentences already changed —
+      // the "readability doesn't work" report. The Production Board drawer has
+      // always re-run here; this editor never did.
+      setSaveMsg({ ok: true, text: "Saved — re-scoring…" });
+      await analyze();
+      setSaveMsg({ ok: true, text: "Saved. Scores updated." });
     } catch (e) {
       setSaveMsg({
         ok: false,
@@ -441,11 +447,18 @@ export default function DraftsPage() {
 
   const updateStatus = async (status: string) => {
     if (!selectedDraft) return;
-    await fetch(`/api/content/drafts/${selectedDraft.id}`, {
+    const res = await fetch(`/api/content/drafts/${selectedDraft.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
+    // A gated status comes back 409. Say so rather than silently not moving —
+    // the message names the route that owns the transition.
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setSaveMsg({ ok: false, text: data?.error ?? `Couldn’t change status (${res.status}).` });
+      return;
+    }
     refresh();
     fetch(`/api/content/drafts/${selectedDraft.id}`)
       .then((r) => r.json())
@@ -482,6 +495,11 @@ export default function DraftsPage() {
       // their accepted edit immediately.
       setSelectedDraft(data.draft ?? data);
       setEditBody(newBody);
+      setApplyingFindings(null);
+      // Re-score so the number and the findings reflect the applied fix. An
+      // Apply that leaves a stale score reads as an Apply that did nothing.
+      await analyze();
+      return;
     }
     setApplyingFindings(null);
   };

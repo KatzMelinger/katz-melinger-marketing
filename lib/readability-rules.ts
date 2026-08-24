@@ -392,19 +392,35 @@ export function readabilityContentType(format?: string | null): ReadabilityConte
  * contract and the Apply-findings UI. Each names its rule and gives that rule's
  * specific fix — no single canned fix.
  */
+/**
+ * Findings as display strings, capped PER RULE rather than across the list.
+ *
+ * The cap used to be 25 across everything, which quietly broke the only action
+ * that can move the score. A rule counts as passed once every instance is gone,
+ * so a draft with 40 long sentences showed 25 of them, and fixing all 25 still
+ * left the rule failing — the reviewer did the work and the number sat still.
+ * A per-rule cap keeps each rule individually clearable, and the total stays
+ * bounded because there are only 15 rules.
+ *
+ * `perRuleCap` is generous rather than unlimited: a single rule with hundreds of
+ * hits is a draft that needs rewriting, not a longer list.
+ */
 export function formatReadabilityFindings(
   findings: ReadabilityFinding[],
-  cap = 25,
+  perRuleCap = 40,
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
+  const perRule = new Map<RuleId, number>();
   for (const f of findings) {
+    const used = perRule.get(f.ruleId) ?? 0;
+    if (used >= perRuleCap) continue;
     const head = [f.rule, f.detail].filter(Boolean).join(" ");
     const s = `Rule ${f.ruleId}: ${head}. ${f.fix} "${f.excerpt}"`.replace(/\s+/g, " ").trim();
     if (seen.has(s)) continue;
     seen.add(s);
     out.push(s);
-    if (out.length >= cap) break;
+    perRule.set(f.ruleId, used + 1);
   }
   return out;
 }
