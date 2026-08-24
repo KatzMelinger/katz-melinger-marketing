@@ -148,6 +148,7 @@ export function KMContentGenerator() {
             : [],
           faqQuestions,
           cannibalizationConfirmed: coverage.length === 0,
+          cannibalizationStatus: coverage.length === 0 ? "clear" : "conflict",
           cannibalizationNotes,
           specialInstructions: instructions,
         }));

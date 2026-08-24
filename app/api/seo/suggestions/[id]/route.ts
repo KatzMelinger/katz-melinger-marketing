@@ -105,6 +105,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           : {};
     }
     base.cannibalizationConfirmed = true;
+    base.cannibalizationStatus = "clear";
     patch.suggested_brief = base;
   }
 

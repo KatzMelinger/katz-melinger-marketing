@@ -236,7 +236,14 @@ export function KMPerPageBriefForm({
             type="checkbox"
             className="mt-1"
             checked={value.cannibalizationConfirmed ?? false}
-            onChange={(e) => patch({ cannibalizationConfirmed: e.target.checked })}
+            onChange={(e) =>
+              patch({
+                // A human search of the site is a real check, so this records a
+                // result rather than leaving the brief at "unchecked".
+                cannibalizationStatus: e.target.checked ? "clear" : "unchecked",
+                cannibalizationConfirmed: e.target.checked,
+              })
+            }
           />
           <span>
             I searched the site and confirmed this page does not duplicate any

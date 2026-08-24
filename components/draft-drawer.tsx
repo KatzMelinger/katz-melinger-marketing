@@ -34,6 +34,13 @@ import {
 } from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
+import {
+  CANNIBALIZATION_LABEL,
+  cannibalizationBlocks,
+  readCannibalizationStatus,
+  type CannibalizationStatus,
+  type KMPerPageBrief,
+} from "@/lib/km-content-system";
 // Type-only: analysis-fingerprint pulls in node:crypto, which must never reach
 // the client bundle. `import type` is erased at build time.
 import type { Staleness } from "@/lib/analysis-fingerprint";
@@ -112,6 +119,7 @@ type Brief = {
   internalPillarLink?: string;
   internalLinks?: { url: string; anchor: string; section: string }[];
   cannibalizationConfirmed?: boolean;
+  cannibalizationStatus?: CannibalizationStatus;
   contentType?: string;
 };
 
@@ -166,6 +174,9 @@ function readBrief(draft: DraftRow): Brief {
     internalPillarLink: pick("internalPillarLink"),
     internalLinks: links,
     cannibalizationConfirmed: km.cannibalizationConfirmed === true,
+    // Tri-state, so the gate can tell a real conflict from a check that never
+    // ran. The old boolean flattened those together into `false`.
+    cannibalizationStatus: readCannibalizationStatus(km as Partial<KMPerPageBrief>),
     contentType: pick("contentType"),
   };
 }
@@ -567,9 +578,14 @@ export function DraftDrawer({
   // have a perfect title and no heading in the body at all, which is both an SEO
   // miss and what blocks metadata generation downstream.
   const bodyH1 = (draft?.body ?? "").match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
+  const cannibalizationStatus = brief.cannibalizationStatus ?? "unchecked";
   const qa = {
     metaDescription: !!brief.metaDescription,
     h1Keyword: !!primaryKw && (draft?.title ?? item.title).toLowerCase().includes(primaryKw),
+    // Only a LIVE, unaccepted conflict fails. "Not checked" stays advisory —
+    // most of the library has never been checked, and gating on an unrun check
+    // would block the queue on a default value rather than on a finding.
+    cannibalization: !cannibalizationBlocks(cannibalizationStatus),
     // Exactly one H1, and it carries the primary keyword.
     bodyH1: !!bodyH1 && ((draft?.body ?? "").match(/^#\s+/gm) ?? []).length === 1 &&
       (!primaryKw || bodyH1.toLowerCase().includes(primaryKw)),
@@ -611,6 +627,14 @@ export function DraftDrawer({
   // a pending check must not read as a failure.
   if (linkVerify) {
     qaRequired.push({ key: "internalLinks", label: "3+ confirmed internal links" });
+  }
+  // Gated only when the check actually found something. Accepting a conflict is
+  // a valid answer and clears the gate — the reviewer looked and decided.
+  if (cannibalizationBlocks(cannibalizationStatus)) {
+    qaRequired.push({
+      key: "cannibalization",
+      label: "Cannibalization conflict unresolved",
+    });
   }
   // Required section structure is a hard gate only when the draft carries a
   // structure check (KM generator). A failed check means sections are missing.
@@ -1740,8 +1764,14 @@ export function DraftDrawer({
                     <InfoRow label="Word count" value={wordCount.toLocaleString()} />
                     <InfoRow
                       label="Cannibalization"
-                      value={brief.cannibalizationConfirmed ? "No conflict" : "Review"}
-                      valueClass={brief.cannibalizationConfirmed ? "text-emerald-600" : "text-amber-600"}
+                      value={CANNIBALIZATION_LABEL[cannibalizationStatus]}
+                      valueClass={
+                        cannibalizationStatus === "conflict"
+                          ? "text-red-600"
+                          : cannibalizationStatus === "unchecked"
+                            ? "text-slate-500"
+                            : "text-emerald-600"
+                      }
                     />
                     <InfoRow label="Source" value={sourceLabel} />
                     <InfoRow label="Generated" value={generated} />
