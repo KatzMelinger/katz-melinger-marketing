@@ -91,6 +91,7 @@ export type Analysis = {
 
 export function AnalysisCard({
   analysis,
+  stale,
   onRerun,
   rerunning,
   onApplyFindings,
@@ -99,6 +100,11 @@ export function AnalysisCard({
   currentTitle,
 }: {
   analysis: Analysis;
+  /** These scores no longer describe the current draft (edited since scoring,
+   *  or scored by a retired engine). Apply actions are withheld: every finding
+   *  quotes an excerpt that may no longer be in the body, so applying one would
+   *  hand Claude a rewrite target that does not exist. */
+  stale?: boolean;
   onRerun?: () => void;
   rerunning?: boolean;
   /** Called when the user invokes Apply — either via a single row's button
@@ -114,6 +120,14 @@ export function AnalysisCard({
   /** Current draft title — used to mark the active title in the picker. */
   currentTitle?: string | null;
 }) {
+  // A stale analysis exposes no Apply affordances at all. Disabling them at the
+  // top means the grouped readability view, the per-row buttons, the batch bar
+  // and the title/link pickers all go read-only together, rather than each
+  // needing to remember.
+  const applyFindings = stale ? undefined : onApplyFindings;
+  const applyTitle = stale ? undefined : onApplyTitle;
+  const applyLink = stale ? undefined : onApplyLink;
+
   // Set of finding strings the user has checked for batch-apply. Spans all
   // categories (SEO + AEO + CASH + brand voice + linkability) so the user
   // can mix and match before sending one Claude call.
@@ -130,8 +144,8 @@ export function AnalysisCard({
   };
   const clearFindingSelection = () => setSelectedFindings(new Set());
   const handleApplySelected = () => {
-    if (selectedFindings.size === 0 || !onApplyFindings) return;
-    onApplyFindings(Array.from(selectedFindings));
+    if (selectedFindings.size === 0 || !applyFindings) return;
+    applyFindings(Array.from(selectedFindings));
     // Don't clear yet — wait until the modal closes (the user might Discard
     // and want to re-try). Cleared in onAccept via parent state reset.
   };
@@ -149,7 +163,7 @@ export function AnalysisCard({
   // and there are sentence-level findings to fix.
   const readabilityFindingsList = analysis.readability_findings ?? [];
   const canAutoFixReadability =
-    !!onApplyFindings &&
+    !!applyFindings &&
     readabilityFindingsList.length > 0 &&
     analysis.readability_score < READABILITY_TARGET;
 
@@ -161,7 +175,7 @@ export function AnalysisCard({
           {canAutoFixReadability && selectedCount === 0 && (
             <button
               type="button"
-              onClick={() => onApplyFindings?.(readabilityFindingsList)}
+              onClick={() => applyFindings?.(readabilityFindingsList)}
               className="text-xs px-2.5 py-1 rounded border border-brand/40 bg-brand/5 text-brand hover:bg-brand/10 inline-flex items-center gap-1.5 font-medium"
               title={`Rewrite all ${readabilityFindingsList.length} hard-to-read sentences in one shot — shortens and de-passivizes them. You review the diff before it saves.`}
             >
@@ -169,7 +183,7 @@ export function AnalysisCard({
               Auto-fix readability ({readabilityFindingsList.length})
             </button>
           )}
-          {onApplyFindings && selectedCount > 0 && (
+          {applyFindings && selectedCount > 0 && (
             <>
               <button
                 type="button"
@@ -281,45 +295,46 @@ export function AnalysisCard({
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
         {analysis.readability_findings && analysis.readability_findings.length > 0 && (
-          <FindingsList
-            label={`Readability findings (${analysis.readability_score}/100, aim ${READABILITY_TARGET}+) · reading level grade ${analysis.reading_grade_level}, target 8 or lower`}
+          <ReadabilityFindings
             findings={analysis.readability_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            score={analysis.readability_score}
+            grade={analysis.reading_grade_level}
+            onApply={applyFindings}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         )}
         {analysis.seo_findings && analysis.seo_findings.length > 0 && (
           <FindingsList
             label="SEO findings"
             findings={analysis.seo_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         )}
         <FindingsList
           label="AEO findings"
           findings={analysis.aeo_findings}
-          onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+          onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
           selected={selectedFindings}
-          onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          onToggleSelected={applyFindings ? toggleFinding : undefined}
         />
         {analysis.cash_findings && analysis.cash_findings.length > 0 && (
           <FindingsList
             label="CASH findings"
             findings={analysis.cash_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         )}
         <FindingsList
           label="Brand voice findings"
           findings={analysis.brand_voice_findings}
-          onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+          onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
           selected={selectedFindings}
-          onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+          onToggleSelected={applyFindings ? toggleFinding : undefined}
         />
       </div>
       {analysis.linkability_findings && analysis.linkability_findings.length > 0 && (
@@ -327,9 +342,9 @@ export function AnalysisCard({
           <FindingsList
             label="Linkability findings"
             findings={analysis.linkability_findings}
-            onApply={onApplyFindings ? (f) => onApplyFindings([f]) : undefined}
+            onApply={applyFindings ? (f) => applyFindings([f]) : undefined}
             selected={selectedFindings}
-            onToggleSelected={onApplyFindings ? toggleFinding : undefined}
+            onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         </div>
       )}
@@ -396,10 +411,10 @@ export function AnalysisCard({
                   <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
                     {t.length} chars
                   </span>
-                  {onApplyTitle && !isCurrent && (
+                  {applyTitle && !isCurrent && (
                     <button
                       type="button"
-                      onClick={() => onApplyTitle(t)}
+                      onClick={() => applyTitle(t)}
                       className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:border-brand hover:text-brand shrink-0"
                       title="Use this as the draft title"
                     >
@@ -477,7 +492,7 @@ export function AnalysisCard({
           ...Object.keys(analysis.target_keyword_hits ?? {}),
           ...(currentTitle ? [currentTitle] : []),
         ]}
-        onApplyLink={onApplyLink}
+        onApplyLink={applyLink}
       />
 
       {analysis.summary && (
@@ -693,6 +708,105 @@ function ContentOverlapPanel({
  * (e.g. for findings about meta-issues that don't have a clear in-body fix),
  * the component falls back to the original bulleted display.
  */
+/**
+ * Readability findings, grouped by the rule they break.
+ *
+ * The score counts a rule as PASSED only when every instance of it is gone
+ * (share of rules passed, not share of sentences fixed). The findings, though,
+ * are emitted one per instance. Listed flat, that combination is actively
+ * misleading: fixing three of twelve passive sentences is real work that moves
+ * the number by exactly zero, which is what "applying fixes does nothing" was.
+ *
+ * Grouping makes the arithmetic visible — each rule shows how many instances
+ * are left and what clearing it is worth — and gives each rule a single action
+ * that can actually flip it. Rules are ordered by instance count, so the rule
+ * closest to clearing is not buried under the one with thirty findings.
+ */
+function ReadabilityFindings({
+  findings,
+  score,
+  grade,
+  onApply,
+  selected,
+  onToggleSelected,
+}: {
+  findings: string[];
+  score: number;
+  grade: number;
+  onApply?: (findings: string[]) => void;
+  selected?: Set<string>;
+  onToggleSelected?: (finding: string) => void;
+}) {
+  // Findings are formatted as `Rule NN: <description>. <fix> "<excerpt>"`.
+  // Anything without that prefix (an older analysis, or an AI rule phrased
+  // differently) falls into an "Other" group rather than being dropped.
+  const groups = new Map<string, { title: string; items: string[] }>();
+  for (const f of findings) {
+    const m = f.match(/^Rule\s+(\d+):\s*([^.]+)\./);
+    const key = m ? m[1] : "other";
+    const title = m ? `Rule ${m[1]} · ${m[2].trim()}` : "Other readability notes";
+    const existing = groups.get(key);
+    if (existing) existing.items.push(f);
+    else groups.set(key, { title, items: [f] });
+  }
+  const ordered = [...groups.values()].sort((a, b) => a.items.length - b.items.length);
+  const rulesFailing = ordered.length;
+
+  return (
+    <div>
+      <div className="mb-1 text-xs font-medium text-slate-700">
+        Readability findings ({score}/100, aim {READABILITY_TARGET}+) · reading level grade{" "}
+        {grade}, target 8 or lower
+      </div>
+      <p className="mb-1.5 text-[10px] leading-relaxed text-slate-500">
+        {rulesFailing} rule{rulesFailing === 1 ? "" : "s"} failing. A rule counts as passed
+        once its instances drop under a small share of the document, so clearing most of
+        one rule moves the score while fixing a sentence here and there across several
+        does not. Every instance is still listed and worth fixing — the score is a floor,
+        not the goal.
+      </p>
+      <div className="space-y-2">
+        {ordered.map((g) => {
+          const selectedHere = onToggleSelected
+            ? g.items.filter((f) => selected?.has(f)).length
+            : 0;
+          return (
+            <div key={g.title} className="rounded-md border border-slate-200 bg-white/60 p-2">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] font-medium text-slate-700">
+                  {g.title}
+                  <span className="ml-1.5 font-normal text-slate-500">
+                    · {g.items.length} left{selectedHere > 0 ? `, ${selectedHere} selected` : ""}
+                  </span>
+                </div>
+                {onApply && (
+                  <button
+                    type="button"
+                    onClick={() => onApply(g.items)}
+                    className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] text-slate-600 hover:border-brand hover:text-brand"
+                    title={`Rewrite all ${g.items.length} instance${
+                      g.items.length === 1 ? "" : "s"
+                    } of this rule in one pass. Clearing the whole rule is what moves the score. You review the diff before it saves.`}
+                  >
+                    Fix all {g.items.length}
+                  </button>
+                )}
+              </div>
+              <FindingsList
+                label=""
+                findings={g.items}
+                onApply={onApply ? (f) => onApply([f]) : undefined}
+                selected={selected}
+                onToggleSelected={onToggleSelected}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function FindingsList({
   label,
   findings,
@@ -746,8 +860,12 @@ function FindingsList({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-medium text-slate-700">{label}</div>
+      {/* Nested inside a rule group the label is empty — the group header
+          already names the rule, so only the select-all control is rendered. */}
+      <div
+        className={`flex items-center justify-between ${label ? "mb-1" : "mb-0.5 justify-end"}`}
+      >
+        {label && <div className="text-xs font-medium text-slate-700">{label}</div>}
         {onToggleSelected && applicableCount > 1 && (
           <button
             type="button"

@@ -10,6 +10,8 @@ import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { isDraftStatus, isPipelineStatus } from "@/lib/content-status";
+import { gatedStatusMessage, isGatedStatus } from "@/lib/content-transitions";
+import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 
 export const runtime = "nodejs";
 
@@ -34,7 +36,22 @@ export async function GET(
     .order("created_at", { ascending: false })
     .limit(1);
 
-  return NextResponse.json({ draft: data, latest_analysis: analyses?.[0] ?? null });
+  // Staleness is computed here rather than in the client: it needs a hash of
+  // the body and knowledge of the current engine, and the answer must be the
+  // same one the approval gate uses. One source of truth, server-side.
+  const latest = analyses?.[0] ?? null;
+  const staleness = latest
+    ? analysisStaleness(
+        (latest as { scored_against?: AnalysisFingerprint | null }).scored_against,
+        typeof (data as { body?: string }).body === "string" ? (data as { body: string }).body : "",
+      )
+    : null;
+
+  return NextResponse.json({
+    draft: data,
+    latest_analysis: latest,
+    analysis_staleness: staleness,
+  });
 }
 
 export async function PATCH(
@@ -46,6 +63,16 @@ export async function PATCH(
 
   if ("status" in (body ?? {}) && !isDraftStatus(body.status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+  // A valid status is not necessarily one THIS route may write. approved /
+  // published / needs_legal belong to the gated routes (see
+  // lib/content-transitions.ts) — accepting them here is what let a draft reach
+  // Approved without the compliance and freshness gates ever running.
+  if (isGatedStatus(body?.status)) {
+    return NextResponse.json(
+      { error: gatedStatusMessage(body.status) },
+      { status: 409 },
+    );
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -84,34 +111,10 @@ export async function PATCH(
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Auto-refresh the site_pages cluster map when a draft is published. We
-  // accept any of several metadata keys for the public URL, so as long as the
-  // dashboard (or a future WP-publish hook) records one of them, the new page
-  // lands in the inventory immediately. If no URL is set, the daily cron will
-  // catch it within 24h.
-  if (body?.status === "published") {
-    try {
-      const draftRow = data as { metadata?: Record<string, unknown> | null };
-      const meta = (draftRow.metadata ?? {}) as Record<string, unknown>;
-      const candidate =
-        meta.publishedUrl ??
-        meta.published_url ??
-        meta.public_url ??
-        meta.publicUrl ??
-        meta.permalink ??
-        meta.url;
-      if (typeof candidate === "string" && /^https?:\/\//i.test(candidate)) {
-        const { ingestUrls } = await import("@/lib/site-inventory");
-        // Fire-and-forget — the PATCH response shouldn't wait on Claude.
-        // Pass tenantId so the background ingest is scoped even off-request.
-        void ingestUrls([candidate], tenantId).catch((err) =>
-          console.warn("[drafts] site-inventory ingest failed:", err),
-        );
-      }
-    } catch {
-      /* non-fatal */
-    }
-  }
+  // The site_pages cluster-map refresh that used to live here fired on
+  // `status === "published"`, which this route no longer accepts. The publish
+  // route owns that ingest now (it has the real published URL in hand, rather
+  // than guessing among six metadata keys), so this is not a lost behavior.
 
   if (isPipelineStatus(body?.status)) {
     const { data: existing } = await supabase

@@ -241,7 +241,15 @@ export function KmBriefWizard({
         // Automatic cannibalization check: the link-plan builder flags any live
         // page that already targets this exact primary keyword. No flag = safe,
         // so we auto-confirm. A flag requires explicit reviewer acknowledgment.
-        set({ cannibalizationConfirmed: plan.flagged.length === 0 });
+        //
+        // Record the FINDING, not just a yes/no. "conflict" is what downstream
+        // gates need to see; the legacy boolean is written alongside so older
+        // readers keep working.
+        const clear = plan.flagged.length === 0;
+        set({
+          cannibalizationStatus: clear ? "clear" : "conflict",
+          cannibalizationConfirmed: clear,
+        });
       })
       .catch(() => setLinkPlan({ links: [], flagged: [] }))
       .finally(() => setLinkPlanLoading(false));
@@ -725,8 +733,15 @@ export function KmBriefWizard({
                         <input
                           type="checkbox"
                           className="mt-0.5"
-                          checked={!!brief.cannibalizationConfirmed}
-                          onChange={(e) => set({ cannibalizationConfirmed: e.target.checked })}
+                          checked={brief.cannibalizationStatus === "accepted" || !!brief.cannibalizationConfirmed}
+                          onChange={(e) =>
+                            set({
+                              // A reviewer accepting a real conflict is its own
+                              // state — not the same claim as "no conflict".
+                              cannibalizationStatus: e.target.checked ? "accepted" : "conflict",
+                              cannibalizationConfirmed: e.target.checked,
+                            })
+                          }
                         />
                         <span>I&apos;ve reviewed this and want to target the keyword anyway.</span>
                       </label>

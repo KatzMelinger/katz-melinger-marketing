@@ -26,6 +26,7 @@ import {
   buildBriefUserPrompt,
   KM_CONTENT_TYPE_LABELS,
   KM_HUB_LINKS,
+  readCannibalizationStatus,
   renderStructureBlock,
   validateBrief,
   type KMContentType,
@@ -121,6 +122,9 @@ function parseBrief(o: Record<string, unknown>): Partial<KMPerPageBrief> {
     h1: asString(o.h1).trim(),
     internalPillarLink: asString(o.internalPillarLink).trim(),
     cannibalizationConfirmed: o.cannibalizationConfirmed === true,
+    // Preserve the finding, not just the boolean — the approval gate needs to
+    // tell a real conflict apart from a check that never ran.
+    cannibalizationStatus: readCannibalizationStatus(o as Partial<KMPerPageBrief>),
     cannibalizationNotes: asString(o.cannibalizationNotes).trim() || undefined,
     secondaryKeywords: asStringArray(o.secondaryKeywords),
     statutes: asStringArray(o.statutes),

@@ -97,6 +97,65 @@ export const KM_HUB_LINKS: Record<KMPracticeArea, string> = {
  * live page from the Cluster Map (site_pages) or a known pillar/hub URL — the
  * generator is constrained to these and may not invent other internal links.
  */
+/**
+ * Whether this page competes with one the firm already has.
+ *
+ * This was a single boolean, and the false case carried two different meanings:
+ * "the check ran and found a conflict" and "no check has ever run". Those need
+ * opposite handling — the first should block an approval, the second must not,
+ * because it describes most of the library. Every brief that is not built in
+ * the wizard initialises the flag to false, so a gate on the boolean would have
+ * blocked the whole queue on a default value.
+ *
+ * The four states keep the reviewer's decision distinct from the machine's
+ * finding: `accepted` is a human looking at a real conflict and choosing to
+ * target the keyword anyway, which is a legitimate answer and should not be
+ * indistinguishable from "no conflict exists".
+ */
+export type CannibalizationStatus =
+  /** No check has run. Advisory only — never blocks. */
+  | "unchecked"
+  /** Checked; no live page targets this keyword. */
+  | "clear"
+  /** Checked; a live page already targets this keyword. Blocks approval. */
+  | "conflict"
+  /** A conflict a reviewer deliberately accepted. Does not block. */
+  | "accepted";
+
+/**
+ * Read the status from a brief, tolerating briefs written before the field
+ * existed.
+ *
+ * Legacy `true` meant a confirmed check, which was either "clear" or an
+ * accepted conflict — indistinguishable now, so it reads as the non-blocking
+ * `clear`. Legacy `false` was the ambiguous one, and it resolves to `unchecked`
+ * rather than `conflict`: treating an unrun check as a found conflict would
+ * block content on the absence of evidence.
+ */
+export function readCannibalizationStatus(
+  brief: Partial<Pick<KMPerPageBrief, "cannibalizationStatus" | "cannibalizationConfirmed">>
+    | null
+    | undefined,
+): CannibalizationStatus {
+  const explicit = brief?.cannibalizationStatus;
+  if (explicit === "unchecked" || explicit === "clear" || explicit === "conflict" || explicit === "accepted") {
+    return explicit;
+  }
+  return brief?.cannibalizationConfirmed === true ? "clear" : "unchecked";
+}
+
+/** Does this status stop the piece being approved? Only a live, unaccepted conflict. */
+export function cannibalizationBlocks(status: CannibalizationStatus): boolean {
+  return status === "conflict";
+}
+
+export const CANNIBALIZATION_LABEL: Record<CannibalizationStatus, string> = {
+  unchecked: "Not checked",
+  clear: "No conflict",
+  conflict: "Conflict",
+  accepted: "Conflict accepted",
+};
+
 export type KMInternalLink = {
   /** Relative path or absolute URL of the live page to link to. */
   url: string;
@@ -117,7 +176,13 @@ export type KMPerPageBrief = {
   metaDescription: string;
   h1: string;
   internalPillarLink: string;
+  /**
+   * LEGACY. Kept so existing briefs and every current reader keep working.
+   * Prefer `cannibalizationStatus` — see CannibalizationStatus for why a
+   * boolean could not express what this needs to say.
+   */
   cannibalizationConfirmed: boolean;
+  cannibalizationStatus?: CannibalizationStatus;
   cannibalizationNotes?: string;
   secondaryKeywords?: string[];
   statutes?: string[];
@@ -152,8 +217,18 @@ export function validateBrief(brief: Partial<KMPerPageBrief>): string[] {
   }
   if (!brief.h1?.trim()) errors.push("H1 is required");
   if (!brief.internalPillarLink?.trim()) errors.push("Internal pillar link is required");
-  if (!brief.cannibalizationConfirmed) {
-    errors.push("Cannibalization check must be confirmed before generating");
+  // Generation still requires a settled answer — inside the wizard the check
+  // always runs, so `unchecked` here means the reviewer skipped ahead. Only a
+  // resolved conflict (accepted) or a clear result may generate. This preserves
+  // the previous behavior exactly; the loosened case is the APPROVAL gate, which
+  // must not block on `unchecked`.
+  const cannibalization = readCannibalizationStatus(brief);
+  if (cannibalization !== "clear" && cannibalization !== "accepted") {
+    errors.push(
+      cannibalization === "conflict"
+        ? "A live page already targets this keyword — resolve or accept the conflict before generating"
+        : "Cannibalization check must be confirmed before generating",
+    );
   }
   return errors;
 }

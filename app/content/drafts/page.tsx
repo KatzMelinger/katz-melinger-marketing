@@ -230,15 +230,15 @@ function draftTypeLabel(d: Draft): string {
 
 
 
-// Which statuses this dropdown OFFERS — deliberately narrower than the full
-// DraftStatus vocabulary. `approved` and `needs_legal` are written by the
-// gates (/api/agent/approve, the publish route), not picked by hand.
+// Which statuses this dropdown OFFERS. `approved`, `published`, and
+// `needs_legal` are written by the gated routes, and the drafts PATCH route now
+// refuses them (lib/content-transitions.ts) — offering `published` here was a
+// one-click way to skip the compliance and freshness gates entirely.
 const SELECTABLE_DRAFT_STATUSES: DraftStatus[] = [
   "initial_review",
   "brief",
   "draft",
   "review",
-  "published",
 ];
 
 // Labels/tones cover EVERY status, not just the selectable ones — a draft the
@@ -282,6 +282,9 @@ export default function DraftsPage() {
   const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
   const [composing, setComposing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  // Whether `analysis` still measures the current body under the current
+  // engine. Server-computed, so this screen and the approval gate agree.
+  const [staleness, setStaleness] = useState<{ stale: boolean; message: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
@@ -344,6 +347,7 @@ export default function DraftsPage() {
     if (!selectedId) {
       setSelectedDraft(null);
       setAnalysis(null);
+      setStaleness(null);
       return;
     }
     fetch(`/api/content/drafts/${selectedId}`)
@@ -351,6 +355,7 @@ export default function DraftsPage() {
       .then((data) => {
         setSelectedDraft(data.draft);
         setAnalysis(data.latest_analysis);
+        setStaleness(data.analysis_staleness ?? null);
         setEditTitle(data.draft?.title ?? "");
         setEditBody(data.draft?.body ?? "");
       });
@@ -412,7 +417,13 @@ export default function DraftsPage() {
       }
       setSelectedDraft(data);
       refresh();
-      setSaveMsg({ ok: true, text: "Saved." });
+      // Re-score against the SAVED body. Without this the panel kept showing the
+      // pre-edit score and findings that pointed at sentences already changed —
+      // the "readability doesn't work" report. The Production Board drawer has
+      // always re-run here; this editor never did.
+      setSaveMsg({ ok: true, text: "Saved — re-scoring…" });
+      await analyze();
+      setSaveMsg({ ok: true, text: "Saved. Scores updated." });
     } catch (e) {
       setSaveMsg({
         ok: false,
@@ -433,7 +444,10 @@ export default function DraftsPage() {
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (res.ok) setAnalysis(data);
+      if (res.ok) {
+        setAnalysis(data);
+        setStaleness(null);
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -441,11 +455,18 @@ export default function DraftsPage() {
 
   const updateStatus = async (status: string) => {
     if (!selectedDraft) return;
-    await fetch(`/api/content/drafts/${selectedDraft.id}`, {
+    const res = await fetch(`/api/content/drafts/${selectedDraft.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
+    // A gated status comes back 409. Say so rather than silently not moving —
+    // the message names the route that owns the transition.
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setSaveMsg({ ok: false, text: data?.error ?? `Couldn’t change status (${res.status}).` });
+      return;
+    }
     refresh();
     fetch(`/api/content/drafts/${selectedDraft.id}`)
       .then((r) => r.json())
@@ -482,6 +503,11 @@ export default function DraftsPage() {
       // their accepted edit immediately.
       setSelectedDraft(data.draft ?? data);
       setEditBody(newBody);
+      setApplyingFindings(null);
+      // Re-score so the number and the findings reflect the applied fix. An
+      // Apply that leaves a stale score reads as an Apply that did nothing.
+      await analyze();
+      return;
     }
     setApplyingFindings(null);
   };
@@ -516,7 +542,10 @@ export default function DraftsPage() {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data) setAnalysis(data);
+        if (data) {
+          setAnalysis(data);
+          setStaleness(null);
+        }
       })
       .catch(() => {});
   };
@@ -752,9 +781,29 @@ export default function DraftsPage() {
                 }}
               />
 
+              {analysis && staleness?.stale && (
+                <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-900">
+                    These scores are out of date
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800">
+                    {staleness.message} Until then the numbers below describe an earlier
+                    version of this draft, and approval is blocked.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={analyze}
+                    disabled={analyzing}
+                    className="mt-1.5 rounded border border-amber-400 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    {analyzing ? "Re-running…" : "Re-run analysis"}
+                  </button>
+                </div>
+              )}
               {analysis && (
                 <AnalysisCard
                   analysis={analysis}
+                  stale={staleness?.stale ?? false}
                   onRerun={analyze}
                   rerunning={analyzing}
                   onApplyFindings={(fs) => setApplyingFindings(fs)}

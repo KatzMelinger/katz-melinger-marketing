@@ -14,6 +14,7 @@
  */
 
 import {
+  MAX_PASSIVE_PCT,
   PROTECTED_TERMS,
   readabilityStats,
   READABILITY_TARGET,
@@ -26,34 +27,91 @@ export type RuleId =
 export type RuleType = "deterministic" | "ai";
 export type ReadabilityContentType = "web" | "blog" | "social";
 
+/**
+ * What a rule gets measured against — its denominator when deciding whether the
+ * rule has actually been broken, as opposed to tripped once.
+ *
+ * "document" rules are about the piece as a whole (is there an FAQ at all), so
+ * one instance IS the failure. The rest fire per sentence or per paragraph, and
+ * for those a raw count is not a verdict: a lone passive sentence in a 90-
+ * sentence article is not the same defect as forty of them.
+ */
+export type RuleUnit = "sentence" | "paragraph" | "document";
+
 export type ReadabilityRule = {
   id: RuleId;
   type: RuleType;
   description: string;
   fix: string;
   scope: ReadabilityContentType[];
+  unit: RuleUnit;
 };
+
+/**
+ * How much of a rule a draft may break before the rule counts as failed.
+ *
+ * Scoring was presence-based: one instance anywhere failed the rule outright
+ * and cost a full 1/15 of the score. That made the score a proxy for LENGTH.
+ * Measured across the 176 live drafts, documents under 500 words had a median
+ * of 75 and 89% cleared the floor of 60, while documents over 1000 words had a
+ * median of 40 and 18% cleared it — because a longer piece simply has more
+ * chances to trip each rule once. A 2,000-word blog could not pass no matter
+ * how well written, and no choice of floor could fix that: raise it and short
+ * pages sail through, keep it and long-form is permanently blocked.
+ *
+ * It also punished trivia at full price. Of the drafts failing Rule 09
+ * ("there is" openers) 86% failed on a SINGLE occurrence; Rule 07 (weak
+ * qualifiers) 70%; Rules 06 and 15, 67%. Four stray words could cost 27 points.
+ *
+ * A rule now fails when its instances exceed a share of the opportunities it
+ * had to fire. The rate matches MAX_PASSIVE_PCT in lib/readability.ts, the
+ * ceiling the generator was already held to for passive voice — this applies
+ * that existing standard to the scorer rather than inventing a second one, and
+ * keeps the two coherent: content the generator is permitted to write is not
+ * then punished by the scorer for containing it.
+ *
+ * Rates from 2% to 10% were measured across the corpus. Below ~5% the scorer
+ * becomes stricter than the generator's own ceiling (so generated drafts fail
+ * Rule 04 by construction); at 10% the score is length-invariant up to a floor
+ * of 70, which is where READABILITY_FLOOR is now set. See the table in
+ * lib/readability.ts.
+ *
+ * The `max(1, …)` floor means one instance never fails a rule, at any length.
+ * That is deliberate: a single occurrence is noise, and treating it as a defect
+ * is what taught reviewers the score was not worth reading.
+ *
+ * NOTE: this changes only WHEN a rule counts as broken. The score is still the
+ * share of applicable rules passed, and findings are still emitted per instance
+ * so every occurrence remains visible and fixable.
+ */
+export const RULE_TOLERANCE_RATE = MAX_PASSIVE_PCT / 100;
+
+/** Instances a rule may have before it counts as failed, given its opportunities. */
+export function ruleTolerance(unit: RuleUnit, opportunities: number): number {
+  if (unit === "document") return 0;
+  return Math.max(1, Math.floor(opportunities * RULE_TOLERANCE_RATE));
+}
 
 const WEB_BLOG: ReadabilityContentType[] = ["web", "blog"];
 const ALL: ReadabilityContentType[] = ["web", "blog", "social"];
 
 /** One source of truth read by the scorer (to flag) and the generator (to instruct). */
 export const READABILITY_RULES: ReadabilityRule[] = [
-  { id: "01", type: "deterministic", description: "Sentence over 25 words", fix: "Split into shorter sentences.", scope: ALL },
-  { id: "02", type: "deterministic", description: "Paragraph over 4 sentences", fix: "Break into smaller paragraphs.", scope: ALL },
-  { id: "03", type: "deterministic", description: "Three or more consecutive similar-length sentences", fix: "Vary the rhythm — combine or expand some.", scope: ALL },
-  { id: "04", type: "deterministic", description: "Passive voice (a form of 'to be' + past participle)", fix: "Rewrite in active voice.", scope: ALL },
-  { id: "05", type: "deterministic", description: "Contraction on a web or blog page", fix: "Expand the contraction.", scope: WEB_BLOG },
-  { id: "06", type: "deterministic", description: "Two or more hedges in one sentence", fix: "State it directly.", scope: ALL },
-  { id: "07", type: "deterministic", description: "Weak qualifier (very, really, quite, somewhat…)", fix: "Remove it or replace with a specific term.", scope: ALL },
-  { id: "08", type: "ai", description: "Vague instead of specific ('significant', 'many')", fix: "Name the specific fact or number.", scope: ALL },
-  { id: "09", type: "deterministic", description: "'There is' / 'There are' opener", fix: "Rewrite the sentence directly.", scope: ALL },
-  { id: "10", type: "deterministic", description: "First person (we/our/us) on a web or blog page", fix: "Replace with 'Katz Melinger' or 'the firm'.", scope: WEB_BLOG },
-  { id: "11", type: "ai", description: "An H2's first sentence isn't a factual, extractable answer", fix: "Lead the section with a direct answer.", scope: ALL },
-  { id: "12", type: "ai", description: "A legal claim without a specific law or authority", fix: "Name the statute or source.", scope: ALL },
-  { id: "13", type: "ai", description: "An H2 that isn't a question with a direct answer", fix: "Convert the heading to a question and answer it.", scope: ALL },
-  { id: "14", type: "ai", description: "No FAQ, lists, or one-sentence definitions", fix: "Add structured, extractable elements.", scope: ALL },
-  { id: "15", type: "deterministic", description: "Complex word with a plain synonym", fix: "Swap to the plain word (unless it is a legal term of art).", scope: ALL },
+  { id: "01", type: "deterministic", description: "Sentence over 25 words", fix: "Split into shorter sentences.", scope: ALL , unit: "sentence" },
+  { id: "02", type: "deterministic", description: "Paragraph over 4 sentences", fix: "Break into smaller paragraphs.", scope: ALL , unit: "paragraph" },
+  { id: "03", type: "deterministic", description: "Three or more consecutive similar-length sentences", fix: "Vary the rhythm — combine or expand some.", scope: ALL , unit: "paragraph" },
+  { id: "04", type: "deterministic", description: "Passive voice (a form of 'to be' + past participle)", fix: "Rewrite in active voice.", scope: ALL , unit: "sentence" },
+  { id: "05", type: "deterministic", description: "Contraction on a web or blog page", fix: "Expand the contraction.", scope: WEB_BLOG , unit: "sentence" },
+  { id: "06", type: "deterministic", description: "Two or more hedges in one sentence", fix: "State it directly.", scope: ALL , unit: "sentence" },
+  { id: "07", type: "deterministic", description: "Weak qualifier (very, really, quite, somewhat…)", fix: "Remove it or replace with a specific term.", scope: ALL , unit: "sentence" },
+  { id: "08", type: "ai", description: "Vague instead of specific ('significant', 'many')", fix: "Name the specific fact or number.", scope: ALL , unit: "sentence" },
+  { id: "09", type: "deterministic", description: "'There is' / 'There are' opener", fix: "Rewrite the sentence directly.", scope: ALL , unit: "sentence" },
+  { id: "10", type: "deterministic", description: "First person (we/our/us) on a web or blog page", fix: "Replace with 'Katz Melinger' or 'the firm'.", scope: WEB_BLOG , unit: "sentence" },
+  { id: "11", type: "ai", description: "An H2's first sentence isn't a factual, extractable answer", fix: "Lead the section with a direct answer.", scope: ALL , unit: "paragraph" },
+  { id: "12", type: "ai", description: "A legal claim without a specific law or authority", fix: "Name the statute or source.", scope: ALL , unit: "sentence" },
+  { id: "13", type: "ai", description: "An H2 that isn't a question with a direct answer", fix: "Convert the heading to a question and answer it.", scope: ALL , unit: "paragraph" },
+  { id: "14", type: "ai", description: "No FAQ, lists, or one-sentence definitions", fix: "Add structured, extractable elements.", scope: ALL , unit: "document" },
+  { id: "15", type: "deterministic", description: "Complex word with a plain synonym", fix: "Swap to the plain word (unless it is a legal term of art).", scope: ALL , unit: "sentence" },
 ];
 
 export function rule(id: RuleId): ReadabilityRule {
@@ -365,15 +423,39 @@ export function scoreReadabilityRules(
       evaluated.has(r.id) &&
       !config.disabledRuleIds.includes(r.id),
   );
-  const failed = new Set(findings.map((f) => f.ruleId));
-  const rulesPassed = applicable.filter((r) => !failed.has(r.id)).length;
+
+  // A rule fails on DENSITY, not presence. Counting one instance as a full
+  // failure made the score track document length rather than readability (see
+  // RULE_TOLERANCE_RATE). Opportunities come from the same block parse the
+  // findings did, so the denominator matches what was actually measured.
+  const blocks = parseBlocks(body);
+  const paragraphs = blocks.filter((b) => b.type === "paragraph");
+  const opportunities: Record<RuleUnit, number> = {
+    sentence: paragraphs.reduce(
+      (n, p) => n + (p as Extract<Block, { type: "paragraph" }>).sentences.length,
+      0,
+    ),
+    paragraph: paragraphs.length,
+    document: 1,
+  };
+
+  const instanceCount = new Map<RuleId, number>();
+  for (const f of findings) {
+    instanceCount.set(f.ruleId, (instanceCount.get(f.ruleId) ?? 0) + 1);
+  }
+
+  const failedRuleIds = applicable
+    .filter((r) => (instanceCount.get(r.id) ?? 0) > ruleTolerance(r.unit, opportunities[r.unit]))
+    .map((r) => r.id);
+  const failed = new Set(failedRuleIds);
+  const rulesPassed = applicable.length - failed.size;
   const score = applicable.length ? Math.round((rulesPassed / applicable.length) * 100) : 100;
 
   return {
     score,
     rulesApplicable: applicable.length,
     rulesPassed,
-    failedRuleIds: applicable.filter((r) => failed.has(r.id)).map((r) => r.id),
+    failedRuleIds,
     findings,
     gradeReadout: readabilityStats(body).grade,
   };
@@ -392,19 +474,35 @@ export function readabilityContentType(format?: string | null): ReadabilityConte
  * contract and the Apply-findings UI. Each names its rule and gives that rule's
  * specific fix — no single canned fix.
  */
+/**
+ * Findings as display strings, capped PER RULE rather than across the list.
+ *
+ * The cap used to be 25 across everything, which quietly broke the only action
+ * that can move the score. A rule counts as passed once every instance is gone,
+ * so a draft with 40 long sentences showed 25 of them, and fixing all 25 still
+ * left the rule failing — the reviewer did the work and the number sat still.
+ * A per-rule cap keeps each rule individually clearable, and the total stays
+ * bounded because there are only 15 rules.
+ *
+ * `perRuleCap` is generous rather than unlimited: a single rule with hundreds of
+ * hits is a draft that needs rewriting, not a longer list.
+ */
 export function formatReadabilityFindings(
   findings: ReadabilityFinding[],
-  cap = 25,
+  perRuleCap = 40,
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
+  const perRule = new Map<RuleId, number>();
   for (const f of findings) {
+    const used = perRule.get(f.ruleId) ?? 0;
+    if (used >= perRuleCap) continue;
     const head = [f.rule, f.detail].filter(Boolean).join(" ");
     const s = `Rule ${f.ruleId}: ${head}. ${f.fix} "${f.excerpt}"`.replace(/\s+/g, " ").trim();
     if (seen.has(s)) continue;
     seen.add(s);
     out.push(s);
-    if (out.length >= cap) break;
+    perRule.set(f.ruleId, used + 1);
   }
   return out;
 }

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 import { isPipelineStatus } from "@/lib/content-status";
+import { gatedStatusMessage, isGatedStatus } from "@/lib/content-transitions";
 
 export const runtime = "nodejs";
 
@@ -36,6 +37,15 @@ export async function PATCH(
   if (typeof body?.status === "string") {
     if (!isPipelineStatus(body.status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+    // The board row is a mirror of the draft's status, so the same gate applies
+    // here — otherwise moving the card is a way to launder a status the draft
+    // route just refused. This is the path Publishing QA used to publish with.
+    if (isGatedStatus(body.status)) {
+      return NextResponse.json(
+        { error: gatedStatusMessage(body.status) },
+        { status: 409 },
+      );
     }
     patch.status = body.status;
   }

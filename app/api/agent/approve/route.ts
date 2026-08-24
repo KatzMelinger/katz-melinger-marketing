@@ -25,6 +25,7 @@ import { classifyFreshness, outstandingFreshness } from "@/lib/freshness-classif
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { freshnessGateEnabled } from "@/lib/feature-flags";
 import { logEvent } from "@/lib/telemetry";
+import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,6 +104,47 @@ async function approveContent(
       { error: `Only items awaiting review can be approved (status: ${draft.status}).` },
       { status: 409 },
     );
+  }
+
+  // A stale analysis cannot satisfy the QA gate. Recomputing is asynchronous
+  // and never blocks editing — approval is the one place that has to insist on
+  // a current measurement, because it is the last point where a wrong number is
+  // still cheap to fix. Covers all three ways a score goes stale: the body was
+  // edited since scoring, the scoring engine changed underneath it, or the row
+  // predates fingerprinting and its provenance is simply unknown.
+  {
+    const currentBody = typeof draft.body === "string" ? draft.body : "";
+    const { data: analyses, error: analysisError } = await supabase
+      .from("content_analyses")
+      .select("scored_against")
+      .eq("draft_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    // Before supabase/content_analyses_fingerprint.sql is run the column does
+    // not exist and this errors. That case fails OPEN deliberately: the gate is
+    // inert until the migration lands, rather than blocking every approval in
+    // the app on a migration nobody has run yet. It is logged so an unrelated
+    // query failure does not disable the gate quietly.
+    if (analysisError) {
+      console.warn("[approve] staleness check skipped:", analysisError.message);
+    }
+    const latest = analyses?.[0] as { scored_against?: AnalysisFingerprint | null } | undefined;
+    // No analysis at all stays advisory (matches the existing QA behavior —
+    // an unscored draft is not retroactively blocked). A PRESENT but stale one
+    // blocks, because it is actively showing a number that is not true.
+    if (latest) {
+      const staleness = analysisStaleness(latest.scored_against, currentBody);
+      if (staleness.stale) {
+        logEvent("approve_blocked_stale_analysis", { draftId: id, reason: staleness.reason });
+        return NextResponse.json(
+          {
+            error: `${staleness.message} The draft was not approved.`,
+            staleness,
+          },
+          { status: 409 },
+        );
+      }
+    }
   }
 
   // Freshness HARD gate (feature-flagged). Recompute time-sensitive figures from

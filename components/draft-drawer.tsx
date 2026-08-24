@@ -34,6 +34,16 @@ import {
 } from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
+import {
+  CANNIBALIZATION_LABEL,
+  cannibalizationBlocks,
+  readCannibalizationStatus,
+  type CannibalizationStatus,
+  type KMPerPageBrief,
+} from "@/lib/km-content-system";
+// Type-only: analysis-fingerprint pulls in node:crypto, which must never reach
+// the client bundle. `import type` is erased at build time.
+import type { Staleness } from "@/lib/analysis-fingerprint";
 import { freshnessKey } from "@/lib/freshness-classify";
 import type { PipelineStatus } from "@/lib/content-status";
 
@@ -109,6 +119,7 @@ type Brief = {
   internalPillarLink?: string;
   internalLinks?: { url: string; anchor: string; section: string }[];
   cannibalizationConfirmed?: boolean;
+  cannibalizationStatus?: CannibalizationStatus;
   contentType?: string;
 };
 
@@ -120,6 +131,14 @@ type DraftRow = {
   seo_brief?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
 };
+
+/** A reviewer sign-off, stamped server-side by /api/content/drafts/[id]/certify. */
+type DraftCertification = { by: string; by_email: string; at: string };
+
+function readCertifications(draft: DraftRow | null): Record<string, DraftCertification> {
+  const meta = (draft?.metadata ?? {}) as Record<string, unknown>;
+  return (meta.certifications as Record<string, DraftCertification> | undefined) ?? {};
+}
 
 function readBrief(draft: DraftRow): Brief {
   const meta = (draft.metadata ?? {}) as Record<string, unknown>;
@@ -155,6 +174,9 @@ function readBrief(draft: DraftRow): Brief {
     internalPillarLink: pick("internalPillarLink"),
     internalLinks: links,
     cannibalizationConfirmed: km.cannibalizationConfirmed === true,
+    // Tri-state, so the gate can tell a real conflict from a check that never
+    // ran. The old boolean flattened those together into `false`.
+    cannibalizationStatus: readCannibalizationStatus(km as Partial<KMPerPageBrief>),
     contentType: pick("contentType"),
   };
 }
@@ -408,14 +430,23 @@ export function DraftDrawer({
   const suggestionId = item.suggestion_id ?? "";
   const [draft, setDraft] = useState<DraftRow | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  // Whether `analysis` still measures the CURRENT body under the CURRENT
+  // engine. Computed server-side so the drawer and the approval gate agree.
+  const [staleness, setStaleness] = useState<Staleness | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState("");
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [status, setStatus] = useState<PipelineStatus>(item.status);
-  const [legalReview, setLegalReview] = useState(false);
-  const [proofread, setProofread] = useState(false);
+  // Reviewer certifications, persisted on the draft with who and when. These
+  // were session-only useState booleans: nothing was stored, no name was
+  // attached, and a refresh cleared them — so the two boxes certified nothing
+  // while looking, on screen, exactly like a sign-off.
+  const [certs, setCerts] = useState<Record<string, DraftCertification>>({});
+  const [certMsg, setCertMsg] = useState<string | null>(null);
+  const legalReview = !!certs.legal_review;
+  const proofread = !!certs.proofread;
   const [msg, setMsg] = useState<string | null>(null);
   // When the row has no draft yet (brief stage), we load the linked brief so
   // the reviewer still sees the brief they built — not "Draft not found".
@@ -453,7 +484,10 @@ export function DraftDrawer({
           if (cancelled) return;
           setDraft(data.draft ?? null);
           setAnalysis(data.latest_analysis ?? null);
+          setStaleness(data.analysis_staleness ?? null);
           setEditBody(data.draft?.body ?? "");
+          setCerts(readCertifications(data.draft ?? null));
+          setCertMsg(null);
           setLoading(false);
           if (data.draft && !data.latest_analysis) void runAnalysis(data.draft);
         })
@@ -540,9 +574,21 @@ export function DraftDrawer({
   // Automatic QA checks — computed from the linked record + latest analysis.
   const metaTitle = brief.metaTitle || item.title;
   const primaryKw = (brief.primaryKeyword || "").toLowerCase();
+  // The body's markdown H1, if any. The title field is NOT the H1 — a draft can
+  // have a perfect title and no heading in the body at all, which is both an SEO
+  // miss and what blocks metadata generation downstream.
+  const bodyH1 = (draft?.body ?? "").match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
+  const cannibalizationStatus = brief.cannibalizationStatus ?? "unchecked";
   const qa = {
     metaDescription: !!brief.metaDescription,
     h1Keyword: !!primaryKw && (draft?.title ?? item.title).toLowerCase().includes(primaryKw),
+    // Only a LIVE, unaccepted conflict fails. "Not checked" stays advisory —
+    // most of the library has never been checked, and gating on an unrun check
+    // would block the queue on a default value rather than on a finding.
+    cannibalization: !cannibalizationBlocks(cannibalizationStatus),
+    // Exactly one H1, and it carries the primary keyword.
+    bodyH1: !!bodyH1 && ((draft?.body ?? "").match(/^#\s+/gm) ?? []).length === 1 &&
+      (!primaryKw || bodyH1.toLowerCase().includes(primaryKw)),
     pillarLink: !!(brief.internalPillarLink || brief.pillarId),
     // Passes when 3+ internal links resolve to live Cluster-Map pages and none
     // are unverified. Null (still checking) reads as not-yet-passed (advisory).
@@ -552,7 +598,11 @@ export function DraftDrawer({
     structure: structureCheck ? structureCheck.passed : true,
     // Readability floor. No analysis yet = treated as passing (advisory until
     // the score exists); gated only when an analysis is present (see qaRequired).
-    readability: analysis ? analysis.readability_score >= READABILITY_FLOOR : true,
+    // A STALE score cannot pass: it is a measurement of a draft that no longer
+    // exists, or one taken with a different instrument.
+    readability: analysis
+      ? !staleness?.stale && analysis.readability_score >= READABILITY_FLOOR
+      : true,
     wordCount: wordCount >= 600,
     titleLen: metaTitle.length > 0 && metaTitle.length <= 60,
   };
@@ -566,10 +616,26 @@ export function DraftDrawer({
   // not the compliance gate — the owner can override with a deliberate tick.
   const qaRequired: { key: keyof typeof qa; label: string }[] = [
     { key: "metaDescription", label: "Meta description present" },
-    { key: "h1Keyword", label: "H1 contains primary keyword" },
+    { key: "h1Keyword", label: "Title contains primary keyword" },
+    { key: "bodyH1", label: "Body has exactly one H1, containing the keyword" },
     { key: "pillarLink", label: "Pillar link present" },
     { key: "wordCount", label: "Word count meets minimum" },
   ];
+  // Internal links were computed and displayed but never enforced, so
+  // "Linkability 38, zero links inserted" could pass QA untouched. Gated only
+  // once the verification has actually returned — null means still checking, and
+  // a pending check must not read as a failure.
+  if (linkVerify) {
+    qaRequired.push({ key: "internalLinks", label: "3+ confirmed internal links" });
+  }
+  // Gated only when the check actually found something. Accepting a conflict is
+  // a valid answer and clears the gate — the reviewer looked and decided.
+  if (cannibalizationBlocks(cannibalizationStatus)) {
+    qaRequired.push({
+      key: "cannibalization",
+      label: "Cannibalization conflict unresolved",
+    });
+  }
   // Required section structure is a hard gate only when the draft carries a
   // structure check (KM generator). A failed check means sections are missing.
   if (structureCheck) {
@@ -580,13 +646,36 @@ export function DraftDrawer({
   if (analysis) {
     qaRequired.push({
       key: "readability",
-      label: `Readability ${READABILITY_FLOOR}+ (aim ${READABILITY_TARGET})`,
+      label: staleness?.stale
+        ? "Readability — re-run the analysis (score is out of date)"
+        : `Readability ${READABILITY_FLOOR}+ (aim ${READABILITY_TARGET})`,
     });
   }
   const qaFailed = qaRequired.filter((c) => !qa[c.key]);
   const qaGatePassed = qaFailed.length === 0;
 
   const canPublish = legalReview && proofread;
+
+  /**
+   * Record or clear one certification. The server stamps the reviewer and the
+   * time, and refuses the legal tick while the compliance check is failing —
+   * so a refusal here is the check doing its job, and is shown, not swallowed.
+   */
+  const toggleCertification = async (key: "legal_review" | "proofread", next: boolean) => {
+    if (!draftId) return;
+    setCertMsg(null);
+    const res = await fetch(`/api/content/drafts/${draftId}/certify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value: next }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setCertMsg(data?.error ?? "Couldn’t record that certification.");
+      return;
+    }
+    setCerts(data.certifications ?? {});
+  };
 
   async function runAnalysis(d: DraftRow) {
     setAnalyzing(true);
@@ -597,7 +686,11 @@ export function DraftDrawer({
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (res.ok) setAnalysis(data);
+      if (res.ok) {
+        setAnalysis(data);
+        // Just computed against the body we sent — fresh by construction.
+        setStaleness(null);
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -621,6 +714,7 @@ export function DraftDrawer({
         const dj = await r.json();
         setDraft(dj.draft ?? null);
         setAnalysis(dj.latest_analysis ?? null);
+        setStaleness(dj.analysis_staleness ?? null);
         setEditBody(dj.draft?.body ?? "");
         setBriefOnly(null);
         setStatus("draft");
@@ -820,21 +914,14 @@ export function DraftDrawer({
     }
   };
 
-  const changeStatus = async (next: PipelineStatus, note: string) => {
-    setStatus(next);
-    setMsg(note);
-    await fetch(`/api/content/pipeline/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    onChanged();
-  };
+  // `changeStatus` used to live here — an unused helper that PATCHed the board
+  // row's status directly. Dead code, but a ready-made bypass of the gates, so
+  // it is gone rather than left for someone to wire a button to.
 
   // Move the draft's editorial status. When a draft_id exists we go through the
-  // draft endpoint so content_drafts and content_pipeline stay in lockstep (and
-  // the site_pages ingest fires on publish); brief-only rows fall back to the
-  // pipeline row.
+  // draft endpoint so content_drafts and content_pipeline stay in lockstep;
+  // brief-only rows fall back to the pipeline row. Gated statuses are refused by
+  // both endpoints — approval and publishing go through their own routes.
   const setDraftStage = async (next: PipelineStatus, note: string) => {
     setStatus(next);
     setMsg(note);
@@ -1633,14 +1720,37 @@ export function DraftDrawer({
                     Manual certification
                   </div>
                   <div className="mt-1 space-y-1">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
-                      <input type="checkbox" checked={legalReview} onChange={(e) => setLegalReview(e.target.checked)} />
-                      Legal review complete
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
-                      <input type="checkbox" checked={proofread} onChange={(e) => setProofread(e.target.checked)} />
-                      Proofread and on-brand
-                    </label>
+                    {(
+                      [
+                        { key: "legal_review", label: "Legal review complete" },
+                        { key: "proofread", label: "Proofread and on-brand" },
+                      ] as const
+                    ).map(({ key, label }) => {
+                      const cert = certs[key];
+                      return (
+                        <label
+                          key={key}
+                          className="flex cursor-pointer items-start gap-2 text-xs text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={!!cert}
+                            onChange={(e) => void toggleCertification(key, e.target.checked)}
+                          />
+                          <span>
+                            {label}
+                            {cert && (
+                              <span className="block text-[10px] text-slate-400">
+                                {cert.by_email?.split("@")[0] ?? "unknown"} ·{" "}
+                                {new Date(cert.at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {certMsg && <p className="text-[10px] text-red-600">{certMsg}</p>}
                   </div>
                 </div>
 
@@ -1654,8 +1764,14 @@ export function DraftDrawer({
                     <InfoRow label="Word count" value={wordCount.toLocaleString()} />
                     <InfoRow
                       label="Cannibalization"
-                      value={brief.cannibalizationConfirmed ? "No conflict" : "Review"}
-                      valueClass={brief.cannibalizationConfirmed ? "text-emerald-600" : "text-amber-600"}
+                      value={CANNIBALIZATION_LABEL[cannibalizationStatus]}
+                      valueClass={
+                        cannibalizationStatus === "conflict"
+                          ? "text-red-600"
+                          : cannibalizationStatus === "unchecked"
+                            ? "text-slate-500"
+                            : "text-emerald-600"
+                      }
                     />
                     <InfoRow label="Source" value={sourceLabel} />
                     <InfoRow label="Generated" value={generated} />
@@ -1672,9 +1788,29 @@ export function DraftDrawer({
             {draft &&
               (analysis ? (
                 <div className="mt-4">
+                  {staleness?.stale && (
+                    <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                      <p className="text-xs font-medium text-amber-900">
+                        These scores are out of date
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800">
+                        {staleness.message} Until then the numbers below describe an
+                        earlier version of this draft, and approval is blocked.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void runAnalysis(draft)}
+                        disabled={analyzing}
+                        className="mt-1.5 rounded border border-amber-400 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        {analyzing ? "Re-running…" : "Re-run analysis"}
+                      </button>
+                    </div>
+                  )}
                   <AnalysisCard
                     key={applyNonce}
                     analysis={analysis}
+                    stale={staleness?.stale ?? false}
                     onRerun={() => runAnalysis(draft)}
                     rerunning={analyzing}
                     onApplyFindings={(fs) => {

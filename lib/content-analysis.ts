@@ -29,6 +29,7 @@ import {
   readabilityContentType,
 } from "./readability-rules";
 import { readabilityRulesEngineEnabled } from "./feature-flags";
+import { buildFingerprint, type AnalysisFingerprint } from "./analysis-fingerprint";
 import { evaluateAiReadabilityRules } from "./readability-ai";
 import { logEvent } from "./telemetry";
 
@@ -118,6 +119,10 @@ export type ContentAnalysis = {
   suggested_titles_conflicts_avoided?: number;
   suggested_images: SuggestedImage[];
   summary: string;
+  /** The body + engine these scores were computed against. See
+   *  lib/analysis-fingerprint.ts — a mismatch means the score is stale and
+   *  must not be displayed as current or used to satisfy a gate. */
+  scored_against?: AnalysisFingerprint;
 };
 
 function basicMetrics(body: string): {
@@ -842,6 +847,13 @@ export async function analyzeDraft(args: {
    * it. Omit for the code-seeded defaults.
    */
   readabilityConfig?: ReadabilityConfig;
+  /**
+   * Tenant to file the analysis under. Omit inside a request — it resolves from
+   * the session. Pass it explicitly OUTSIDE one (a backfill script, a cron),
+   * where there is no session and resolveTenantId() falls back to the default
+   * tenant, which would silently misfile every row written.
+   */
+  tenantId?: string;
 }): Promise<ContentAnalysis> {
   const {
     draftId,
@@ -852,9 +864,10 @@ export async function analyzeDraft(args: {
     format = null,
     template = null,
     readabilityConfig,
+    tenantId,
   } = args;
   const supabase = getSupabaseAdmin();
-  const tid = await resolveTenantId();
+  const tid = tenantId ?? (await resolveTenantId());
 
   const { words } = basicMetrics(body);
   // Displayed readability is computed by the remediation engine's scorer, which
@@ -969,6 +982,9 @@ export async function analyzeDraft(args: {
     suggested_titles_conflicts_avoided: filtered.dropped.length,
     suggested_images: enhancements.images,
     summary: brand.summary,
+    // Stamp the exact body and engine these numbers came from, so a later read
+    // can tell a current score from one the draft has outgrown.
+    scored_against: buildFingerprint(body),
   };
 
   // Strip live-only fields (cannibalization detail) before persisting —
@@ -986,7 +1002,18 @@ export async function analyzeDraft(args: {
     draft_id: draftId,
     ...persistable,
   });
-  // Newest column first: drop readability_findings if not migrated yet.
+  // Newest column first: drop scored_against if not migrated yet. Losing the
+  // fingerprint means every row reads as stale rather than as fresh, which is
+  // the safe direction to fail — a re-run costs a few seconds, a wrongly
+  // trusted score costs a wrong figure in published content.
+  if (error && /scored_against/.test(error.message)) {
+    delete (persistable as Record<string, unknown>).scored_against;
+    const retry = await supabase.from("content_analyses").insert({ tenant_id: tid,
+      draft_id: draftId,
+      ...persistable,
+    });
+    error = retry.error;
+  }
   if (error && /readability_findings/.test(error.message)) {
     delete (persistable as Record<string, unknown>).readability_findings;
     const retry = await supabase.from("content_analyses").insert({ tenant_id: tid,
