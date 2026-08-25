@@ -29,6 +29,7 @@ import {
   type BaseComplianceResult,
   type Jurisdiction,
 } from "@/lib/compliance-core";
+import { findFeeLanguage } from "@/lib/fee-language";
 
 export type ContentSurface =
   | "blog"
@@ -192,8 +193,31 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
 
   const raw = extractJSON<Partial<ContentComplianceResult>>(text);
   const base = normalizeComplianceResult(raw);
+
+  // Fee arrangements are an ABSOLUTE firm rule, so they are matched
+  // deterministically and merged in rather than left to the model. The prompt
+  // also names the rule, so paraphrases still get caught — but the known
+  // phrasings can never slip through on an unlucky sampling. Matched against
+  // the FULL content, not the truncated copy sent to the model: a fee claim in
+  // the closing CTA of a long page is exactly the one worth catching.
+  const feeHits = findFeeLanguage(content);
+  const feeViolations = feeHits.map((h) => ({
+    rule: "Firm rule — fee arrangements",
+    severity: "high" as const,
+    excerpt: h.match,
+    reason:
+      "Content must never state or imply how the firm charges. A free initial consultation may be mentioned; fee arrangements may not.",
+    fix: "Remove the fee language. If a call to action is needed, offer a free initial consultation instead.",
+  }));
+
+  const violations = [...base.violations, ...feeViolations];
   return {
     ...base,
+    violations,
+    // A deterministic high-severity violation cannot leave the piece marked
+    // compliant, whatever the model scored it.
+    status: feeViolations.length > 0 ? "non_compliant" : base.status,
+    score: feeViolations.length > 0 ? Math.min(base.score, 35) : base.score,
     suggestedRewrite:
       typeof raw?.suggestedRewrite === "string" ? raw.suggestedRewrite : "",
   };

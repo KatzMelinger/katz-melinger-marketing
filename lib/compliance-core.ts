@@ -13,6 +13,7 @@ import {
   getDisclaimersForJurisdictions,
   getRulesForJurisdictions,
 } from "@/lib/compliance-rules-store";
+import { FEE_LANGUAGE_RULE } from "@/lib/fee-language";
 
 // Any jurisdiction code (or comma-separated list, e.g. "NY,NJ") now that rules
 // are data-driven. Kept as a string alias for back-compat with call sites.
@@ -64,7 +65,8 @@ export const COMMON_FAILURE_MODES = `COMMON FAILURE MODES YOU MUST FLAG (high se
 6. Missing "Attorney Advertising" label where the surface requires it
 7. Implying personal endorsement by judges or government bodies
 8. Solicitation that violates RPC 7.3 (targeting prospective clients improperly)
-9. Statements that could be read as legal advice / creating an attorney-client relationship without an appropriate disclaimer`;
+9. Statements that could be read as legal advice / creating an attorney-client relationship without an appropriate disclaimer
+10. ${FEE_LANGUAGE_RULE}`;
 
 export const SCORE_GUIDE = `Score guide:
 - 90-100: ready to publish, only minor warnings

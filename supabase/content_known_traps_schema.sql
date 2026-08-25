@@ -134,6 +134,26 @@ values
     'critical',
     'New York is a deferral state: the EEOC charge deadline is 300 days, not 180. Check which deadline the draft gives.'
   ),
+  -- Firm-fact rule (Diana 2026-08-25 §6/§7): no content may state or imply how
+  -- the firm charges. These are the trap-list view of the same rule the
+  -- compliance gate now enforces deterministically (lib/fee-language.ts), so a
+  -- reviewer can see the whole library at once rather than one draft at a time.
+  (
+    'Fee or contingency language',
+    'regex',
+    '\b(contingency|contingent[-\s]fee|no\s+(fee|fees|cost|costs)\s+unless|you\s+(do\s+not|don''t|will\s+not|won''t)\s+pay\s+(us\s+)?unless|you\s+(pay|owe)\s+nothing\s+unless|no\s+(up[-\s]?front|upfront|out[-\s]?of[-\s]?pocket)\s+(cost|costs|fee|fees))\b',
+    '{}',
+    'critical',
+    'No content may state or imply how the firm charges. Remove contingency and fee-arrangement language entirely. A free initial consultation may be mentioned; fee arrangements may not.'
+  ),
+  (
+    'Outcome guarantee or superlative',
+    'regex',
+    '\b(maximum compensation|we\s+win|aggressive representation|best\s+(employment\s+)?lawyer|guaranteed?\s+(result|recovery|outcome))\b',
+    '{}',
+    'critical',
+    'No outcome guarantees and no superlatives. Attorney-advertising rules prohibit claims that cannot be substantiated.'
+  ),
   (
     'Gender identity or orientation attributed only to the NYCHRL',
     'all_of_unless',
