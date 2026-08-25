@@ -30,6 +30,7 @@ import {
   type Jurisdiction,
 } from "@/lib/compliance-core";
 import { findFeeLanguage } from "@/lib/fee-language";
+import { findFirmFactClaims } from "@/lib/firm-facts";
 
 export type ContentSurface =
   | "blog"
@@ -210,14 +211,35 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
     fix: "Remove the fee language. If a call to action is needed, offer a free initial consultation instead.",
   }));
 
-  const violations = [...base.violations, ...feeViolations];
+  // Firm-fact claims. Diana's §7 framing is that these need a HUMAN to look,
+  // not a machine to decide — a pattern can spot the candidate claim but cannot
+  // judge whether the sentence is right. So only the outright bans (outcome
+  // guarantees) join the violations; the rest are warnings that surface for
+  // review without failing the draft.
+  const firmHits = findFirmFactClaims(content);
+  const firmViolations = firmHits
+    .filter((h) => h.severity === "ban")
+    .map((h) => ({
+      rule: `Firm rule — ${h.rule}`,
+      severity: "high" as const,
+      excerpt: h.match,
+      reason: h.reason,
+      fix: "Remove the claim, or restate it so it is verifiable.",
+    }));
+  const firmWarnings = firmHits
+    .filter((h) => h.severity === "flag")
+    .map((h) => `${h.rule}: "${h.match}" — ${h.reason}`);
+
+  const violations = [...base.violations, ...feeViolations, ...firmViolations];
+  const hardViolations = feeViolations.length + firmViolations.length;
   return {
     ...base,
     violations,
+    warnings: [...base.warnings, ...firmWarnings],
     // A deterministic high-severity violation cannot leave the piece marked
     // compliant, whatever the model scored it.
-    status: feeViolations.length > 0 ? "non_compliant" : base.status,
-    score: feeViolations.length > 0 ? Math.min(base.score, 35) : base.score,
+    status: hardViolations > 0 ? "non_compliant" : base.status,
+    score: hardViolations > 0 ? Math.min(base.score, 35) : base.score,
     suggestedRewrite:
       typeof raw?.suggestedRewrite === "string" ? raw.suggestedRewrite : "",
   };
