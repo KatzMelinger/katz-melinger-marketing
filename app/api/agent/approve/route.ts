@@ -26,6 +26,8 @@ import { getCurrentFacts } from "@/lib/current-facts-store";
 import { freshnessGateEnabled } from "@/lib/feature-flags";
 import { logEvent } from "@/lib/telemetry";
 import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
+import { recordAuditEvent } from "@/lib/content-findings-store";
+import { getCurrentUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -188,6 +190,12 @@ async function approveContent(
         outdated: outstanding.filter((f) => f.status === "outdated").length,
         verify: outstanding.filter((f) => f.status === "verify").length,
       });
+      await recordAuditEvent({
+        tenantId,
+        draftId: id,
+        event: "draft_held_freshness",
+        detail: { outstanding: outstanding.length },
+      });
       return NextResponse.json(
         {
           error: "Held for legal — resolve the time-sensitive figures before approving.",
@@ -262,6 +270,22 @@ async function approveContent(
   }
 
   await setDraftStatus(supabase, tenantId, id, "approved");
+  // Who approved this, and what the checks said at the time. Approval was the
+  // one action with no durable record of either.
+  const approver = await getCurrentUser();
+  await recordAuditEvent({
+    tenantId,
+    draftId: id,
+    event: "draft_approved",
+    actorUserId: approver?.id ?? null,
+    actorEmail: approver?.email ?? null,
+    detail: {
+      compliance_score: verdict.score,
+      compliance_status: verdict.status,
+      freshness_gate: freshnessGateEnabled() ? "enforced" : "off",
+      freshness_verified_keys: Array.from(verifiedKeys),
+    },
+  });
   return NextResponse.json({ id, status: "approved" });
 }
 

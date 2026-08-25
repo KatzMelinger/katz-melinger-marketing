@@ -26,6 +26,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
+import { recordAuditEvent } from "@/lib/content-findings-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,6 +131,15 @@ export async function POST(
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
+
+  await recordAuditEvent({
+    tenantId,
+    draftId: id,
+    event: value ? "certification_granted" : "certification_cleared",
+    actorUserId: user.id,
+    actorEmail: user.email,
+    detail: { key },
+  });
 
   return NextResponse.json({ id, certifications });
 }

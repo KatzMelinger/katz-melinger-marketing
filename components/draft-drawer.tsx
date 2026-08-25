@@ -33,6 +33,7 @@ import {
   type Analysis,
 } from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
+import { FindingsPanel } from "@/components/findings-panel";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 import {
   CANNIBALIZATION_LABEL,
@@ -433,6 +434,9 @@ export function DraftDrawer({
   // Whether `analysis` still measures the CURRENT body under the CURRENT
   // engine. Computed server-side so the drawer and the approval gate agree.
   const [staleness, setStaleness] = useState<Staleness | null>(null);
+  // Bumped whenever an analysis completes — that is when findings are synced,
+  // so the panel must re-read then, not only after an Apply.
+  const [findingsNonce, setFindingsNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState("");
@@ -690,6 +694,7 @@ export function DraftDrawer({
         setAnalysis(data);
         // Just computed against the body we sent — fresh by construction.
         setStaleness(null);
+        setFindingsNonce((n) => n + 1);
       }
     } finally {
       setAnalyzing(false);
@@ -1785,6 +1790,12 @@ export function DraftDrawer({
             {/* Analysis results — full width, at the bottom. The same rich card
                 used in the Drafts studio: scores, findings (apply-to-rewrite),
                 suggested titles/images/links, compliance, and overlap. */}
+            {draft && (
+              <div className="mt-4">
+                <FindingsPanel draftId={draft.id} nonce={findingsNonce} />
+              </div>
+            )}
+
             {draft &&
               (analysis ? (
                 <div className="mt-4">

@@ -30,6 +30,12 @@ import {
 } from "./readability-rules";
 import { readabilityRulesEngineEnabled } from "./feature-flags";
 import { buildFingerprint, type AnalysisFingerprint } from "./analysis-fingerprint";
+import {
+  normalizeComplianceFindings,
+  normalizeStringFindings,
+  type NormalizedFinding,
+} from "./content-findings";
+import { syncFindings } from "./content-findings-store";
 import { evaluateAiReadabilityRules } from "./readability-ai";
 import { logEvent } from "./telemetry";
 
@@ -1086,6 +1092,29 @@ export async function analyzeDraft(args: {
       brand_voice_findings: analysis.brand_voice_findings,
       summary: analysis.summary,
     });
+  }
+
+  // Mirror the findings into the tracked table. The string[] columns above stay
+  // exactly as they were — they drive the Apply-to-rewrite flow, which works on
+  // finding TEXT — while this gives each finding an identity and a status that
+  // survive the next run. Best-effort: a findings failure must not fail the
+  // analysis the caller actually asked for.
+  try {
+    const tracked: NormalizedFinding[] = [
+      ...normalizeStringFindings("readability", analysis.readability_findings),
+      ...normalizeStringFindings("seo", analysis.seo_findings),
+      ...normalizeStringFindings("aeo", analysis.aeo_findings),
+      ...normalizeStringFindings("cash", analysis.cash_findings),
+      ...normalizeStringFindings("brand_voice", analysis.brand_voice_findings),
+      ...normalizeStringFindings("linkability", analysis.linkability_findings),
+      ...normalizeComplianceFindings(analysis.compliance_violations),
+    ];
+    const summary = await syncFindings({ draftId, tenantId: tid, incoming: tracked });
+    if (summary.inserted || summary.reopened || summary.autoResolved) {
+      logEvent("findings_synced", { draftId, ...summary });
+    }
+  } catch (e) {
+    console.warn("[content-analysis] finding sync failed:", e);
   }
 
   return analysis;

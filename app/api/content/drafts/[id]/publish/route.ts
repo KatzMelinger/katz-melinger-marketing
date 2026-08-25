@@ -32,8 +32,9 @@ import {
   postToAyrshare,
   type AyrsharePlatform,
 } from "@/lib/ayrshare";
-import { guardUser } from "@/lib/supabase-route";
+import { getCurrentUser, guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
+import { recordAuditEvent } from "@/lib/content-findings-store";
 import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
@@ -49,6 +50,7 @@ export async function POST(
   if (denied) return denied;
   const { id } = await params;
 
+  const publisher = await getCurrentUser();
   const { supabase, tenantId } = await getTenantClient();
 
   const { data: draft, error } = await supabase
@@ -253,5 +255,13 @@ export async function POST(
     }
   }
 
+  await recordAuditEvent({
+    tenantId,
+    draftId: id,
+    event: "draft_published",
+    actorUserId: publisher?.id ?? null,
+    actorEmail: publisher?.email ?? null,
+    detail: { channel, publishedUrl: publishedUrl ?? null },
+  });
   return NextResponse.json({ ok: true, status: "published", channel, postUrls, publishedUrl });
 }
