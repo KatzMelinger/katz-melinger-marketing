@@ -77,9 +77,21 @@ export async function syncFindings(args: {
   draftId: string;
   tenantId: string;
   incoming: NormalizedFinding[];
-}): Promise<{ inserted: number; reopened: number; autoResolved: number; touched: number }> {
+}): Promise<{
+  inserted: number;
+  reopened: number;
+  autoResolved: number;
+  touched: number;
+  /** The findings actually inserted — what a notification should be about. */
+  insertedFindings: NormalizedFinding[];
+  /** Re-opened findings: previously marked fixed, still reported. Also news. */
+  reopenedFindings: NormalizedFinding[];
+}> {
   const { draftId, tenantId, incoming } = args;
-  const empty = { inserted: 0, reopened: 0, autoResolved: 0, touched: 0 };
+  const empty = {
+    inserted: 0, reopened: 0, autoResolved: 0, touched: 0,
+    insertedFindings: [] as NormalizedFinding[], reopenedFindings: [] as NormalizedFinding[],
+  };
   const sb = getSupabaseAdmin();
 
   const existing = await listFindings(draftId);
@@ -166,6 +178,8 @@ export async function syncFindings(args: {
     reopened: plan.reopen.length,
     autoResolved: plan.autoResolve.length,
     touched: plan.touch.length,
+    insertedFindings: plan.insert,
+    reopenedFindings: plan.reopen.map((r) => r.finding),
   };
 }
 

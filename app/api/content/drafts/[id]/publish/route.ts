@@ -35,6 +35,7 @@ import {
 import { getCurrentUser, guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 import { recordAuditEvent } from "@/lib/content-findings-store";
+import { notifyDraftBlocked } from "@/lib/content-notifications";
 import { getTenantConfig } from "@/lib/tenant-config";
 
 export const runtime = "nodejs";
@@ -116,6 +117,26 @@ export async function POST(
       .update({ status: "needs_legal" })
       .eq("draft_id", id)
       .eq("tenant_id", tenantId);
+    // A hold at the moment of publishing is the latest and most surprising
+    // point for one to appear — the draft was already approved. Say so.
+    await recordAuditEvent({
+      tenantId,
+      draftId: id,
+      event: "draft_held_compliance_at_publish",
+      actorUserId: publisher?.id ?? null,
+      actorEmail: publisher?.email ?? null,
+      detail: { violations: verdict?.violations.length ?? 0 },
+    });
+    await notifyDraftBlocked({
+      draftId: id,
+      tenantId,
+      reason: "compliance",
+      detail: verdict
+        ? `Held at publish time. ${verdict.violations.length} violation${
+            verdict.violations.length === 1 ? "" : "s"
+          }: ${verdict.violations.map((v) => v.reason).slice(0, 5).join("; ")}`
+        : "The compliance check could not run at publish time, so the draft was held.",
+    });
     return NextResponse.json(
       {
         error:

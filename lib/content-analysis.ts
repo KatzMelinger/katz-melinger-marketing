@@ -36,6 +36,7 @@ import {
   type NormalizedFinding,
 } from "./content-findings";
 import { syncFindings } from "./content-findings-store";
+import { notifyNewFindings } from "./content-notifications";
 import { evaluateAiReadabilityRules } from "./readability-ai";
 import { logEvent } from "./telemetry";
 
@@ -1111,8 +1112,21 @@ export async function analyzeDraft(args: {
     ];
     const summary = await syncFindings({ draftId, tenantId: tid, incoming: tracked });
     if (summary.inserted || summary.reopened || summary.autoResolved) {
-      logEvent("findings_synced", { draftId, ...summary });
+      logEvent("findings_synced", {
+        draftId,
+        inserted: summary.inserted,
+        reopened: summary.reopened,
+        autoResolved: summary.autoResolved,
+        touched: summary.touched,
+      });
     }
+    // Notify on what is NEW or has come BACK — never on the standing list, or
+    // the channel becomes noise and the blocked drafts go unseen again.
+    await notifyNewFindings({
+      draftId,
+      tenantId: tid,
+      findings: [...summary.insertedFindings, ...summary.reopenedFindings],
+    });
   } catch (e) {
     console.warn("[content-analysis] finding sync failed:", e);
   }

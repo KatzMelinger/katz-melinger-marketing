@@ -27,6 +27,7 @@ import { freshnessGateEnabled } from "@/lib/feature-flags";
 import { logEvent } from "@/lib/telemetry";
 import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 import { recordAuditEvent } from "@/lib/content-findings-store";
+import { notifyDraftBlocked } from "@/lib/content-notifications";
 import { getCurrentUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
@@ -196,6 +197,14 @@ async function approveContent(
         event: "draft_held_freshness",
         detail: { outstanding: outstanding.length },
       });
+      await notifyDraftBlocked({
+        draftId: id,
+        tenantId,
+        reason: "freshness",
+        detail: `${outstanding.length} time-sensitive figure${
+          outstanding.length === 1 ? "" : "s"
+        } need resolving: ${outstanding.map((f) => f.match).slice(0, 5).join(", ")}`,
+      });
       return NextResponse.json(
         {
           error: "Held for legal — resolve the time-sensitive figures before approving.",
@@ -258,6 +267,26 @@ async function approveContent(
       .eq("draft_id", id)
       .eq("tenant_id", tenantId);
 
+    await recordAuditEvent({
+      tenantId,
+      draftId: id,
+      event: "draft_held_compliance",
+      detail: {
+        score: compliance.score,
+        status: compliance.status,
+        violations: verdict?.violations.length ?? 0,
+      },
+    });
+    await notifyDraftBlocked({
+      draftId: id,
+      tenantId,
+      reason: "compliance",
+      detail: verdict
+        ? `${verdict.violations.length} violation${
+            verdict.violations.length === 1 ? "" : "s"
+          }: ${verdict.violations.map((v) => v.reason).slice(0, 5).join("; ")}`
+        : "The compliance check could not run, so the draft was held.",
+    });
     return NextResponse.json(
       {
         error:
