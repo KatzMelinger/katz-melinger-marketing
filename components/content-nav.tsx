@@ -30,6 +30,7 @@ const TYPE_SCOPED_TABS = [
 const WORKSPACE_TABS = [
   { href: "/brand-voice", label: "Brand voice & directions" },
   { href: "/content/sources", label: "Source material" },
+  { href: "/content/traps", label: "Known traps" },
 ];
 
 export function ContentNav() {

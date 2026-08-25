@@ -14,11 +14,18 @@
  *   node scripts/run.mjs scripts/rescore-stale-analyses.ts --apply
  *   node scripts/run.mjs scripts/rescore-stale-analyses.ts --apply --limit 10
  *   node scripts/run.mjs scripts/rescore-stale-analyses.ts --apply --status review
+ *   node scripts/run.mjs scripts/rescore-stale-analyses.ts --apply --all
  *
  * MUST go through scripts/run.mjs. --apply lazily imports lib/content-analysis,
  * which transitively uses `@/lib/...` path aliases that bare `jiti` and Node's
  * type stripping both fail to resolve. Run directly and the dry run works while
  * --apply dies with MODULE_NOT_FOUND the moment it starts doing real work.
+ *
+ * --all re-scores every draft, not only the stale ones. Normally that is waste:
+ * a current score does not need recomputing. It is the right flag after a change
+ * that adds something analysis PRODUCES rather than something it measures — the
+ * findings table, for instance, which only populates when a draft is analyzed
+ * and so stays empty on drafts whose scores are already current.
  *
  * Each re-score is a full analyzeDraft() pass — several Claude calls, ~30s and
  * real tokens per draft. Start with --status review: the drafts in the approval
@@ -82,6 +89,7 @@ async function main() {
   const apply = args.includes("--apply");
   const limitArg = args.indexOf("--limit");
   const limit = limitArg >= 0 ? Number(args[limitArg + 1]) : Infinity;
+  const all = args.includes("--all");
   const statusArg = args.indexOf("--status");
   const statusFilter = statusArg >= 0 ? args[statusArg + 1] : null;
 
@@ -136,12 +144,19 @@ async function main() {
     if (!a) return false;
     const s = analysisStaleness(a.scored_against, d.body ?? "");
     if (s.stale) byReason[s.reason] = (byReason[s.reason] ?? 0) + 1;
-    return s.stale;
+    // --all keeps every analyzed draft, stale or not. Drafts with NO analysis
+    // are still skipped: they were never scored, which is a different problem
+    // and not one this script should quietly decide to spend tokens on.
+    return all || s.stale;
   });
 
   console.log(`Drafts examined:        ${drafts.length}${statusFilter ? ` (status=${statusFilter})` : ""}`);
   console.log(`With an analysis:       ${drafts.filter((d) => latest.has(d.id)).length}`);
-  console.log(`Stale, needing re-score:${String(stale.length).padStart(4)}`);
+  console.log(
+    all
+      ? `Selected (--all, every analyzed draft):${String(stale.length).padStart(4)}`
+      : `Stale, needing re-score:${String(stale.length).padStart(4)}`,
+  );
   console.log(`  by reason:`, byReason);
 
   const byStatus: Record<string, number> = {};
