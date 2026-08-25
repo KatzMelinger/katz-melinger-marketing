@@ -861,6 +861,15 @@ export async function analyzeDraft(args: {
    * tenant, which would silently misfile every row written.
    */
   tenantId?: string;
+  /**
+   * Send notifications for newly raised critical/important findings.
+   * Defaults to true — a person analysing a draft should hear about what turned
+   * up. Set false for BULK work: a backfill over the library is a maintenance
+   * action, not N separate events, and letting it notify sends a burst of mail
+   * that trains people to mute the channel. Learned the hard way — the first
+   * --all sweep raised 36 alerts from a script.
+   */
+  notify?: boolean;
 }): Promise<ContentAnalysis> {
   const {
     draftId,
@@ -872,6 +881,7 @@ export async function analyzeDraft(args: {
     template = null,
     readabilityConfig,
     tenantId,
+    notify = true,
   } = args;
   const supabase = getSupabaseAdmin();
   const tid = tenantId ?? (await resolveTenantId());
@@ -1122,11 +1132,13 @@ export async function analyzeDraft(args: {
     }
     // Notify on what is NEW or has come BACK — never on the standing list, or
     // the channel becomes noise and the blocked drafts go unseen again.
-    await notifyNewFindings({
-      draftId,
-      tenantId: tid,
-      findings: [...summary.insertedFindings, ...summary.reopenedFindings],
-    });
+    if (notify) {
+      await notifyNewFindings({
+        draftId,
+        tenantId: tid,
+        findings: [...summary.insertedFindings, ...summary.reopenedFindings],
+      });
+    }
   } catch (e) {
     console.warn("[content-analysis] finding sync failed:", e);
   }

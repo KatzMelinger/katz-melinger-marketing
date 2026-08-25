@@ -194,6 +194,11 @@ async function main() {
         // Explicit: a script has no session, and letting the analyzer fall back
         // to the default tenant would file these under the wrong firm.
         tenantId: d.tenant_id ?? undefined,
+        // A sweep is one maintenance action, not N events. Notifying per draft
+        // sends a burst of mail nobody asked for and teaches people to mute the
+        // channel — which is exactly how a blocked draft goes unseen again.
+        // The findings are still recorded; only the announcing is suppressed.
+        notify: false,
       });
       ok++;
       console.log("done");
