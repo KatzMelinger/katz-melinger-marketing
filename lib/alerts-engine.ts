@@ -21,7 +21,11 @@ export type AlertType =
   | "aeo_gain"
   | "sentiment_shift"
   | "new_citation"
-  | "cannibalization";
+  | "cannibalization"
+  // Content QA (B4). A draft stopped by a gate, and newly raised critical or
+  // important findings — the two things that need a person, now.
+  | "content_blocked"
+  | "content_finding";
 
 export type AlertSeverity = "low" | "medium" | "high";
 
