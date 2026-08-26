@@ -125,13 +125,12 @@ export const NICOLE_GRUNFELD: Author = {
     "https://www.avvo.com/attorneys/10016-ny-nicole-grunfeld-4793013.html",
     "https://lawyers.findlaw.com/new-york/new-york/nicole-d-grunfeld-NDA3NjA0NF8x/",
   ],
-  // WordPress user_login, supplied by the firm 2026-08-26.
-  // NOTE: unverified. Kenneth's login is "kjkatz" (initials + surname, lower
-  // case) and Adam's follows the same shape, so a login containing a space and
-  // matching the DISPLAY name may in fact be the display name rather than the
-  // user_login. Confirm in WP Admin > Users (the Username column). A wrong
-  // login does not error — the plugin falls back to its default account and the
-  // byline silently does not appear.
+  // WordPress user_login. Confirmed by Kenneth 2026-08-26.
+  // The SPACE is correct and deliberate — do not "tidy" it to ndgrunfeld to
+  // match the shape of kjkatz and Asackowitz. WordPress permits a space in
+  // user_login, and changing it here would break the byline silently: the
+  // plugin cannot resolve an unknown login, so it falls back to its default
+  // account and the post publishes with no attorney attribution and no error.
   wpLogin: "Nicole Grunfeld",
 };
 
