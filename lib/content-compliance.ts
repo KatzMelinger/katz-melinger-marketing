@@ -29,7 +29,7 @@ import {
   type BaseComplianceResult,
   type Jurisdiction,
 } from "@/lib/compliance-core";
-import { findFeeLanguage } from "@/lib/fee-language";
+import { blockingFeeHits, findFeeLanguage, reviewableFeeHits } from "@/lib/fee-language";
 import { findFirmFactClaims } from "@/lib/firm-facts";
 
 export type ContentSurface =
@@ -202,14 +202,22 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
   // the FULL content, not the truncated copy sent to the model: a fee claim in
   // the closing CTA of a long page is exactly the one worth catching.
   const feeHits = findFeeLanguage(content);
-  const feeViolations = feeHits.map((h) => ({
+  const feeViolations = blockingFeeHits(feeHits).map((h) => ({
     rule: "Firm rule — fee arrangements",
     severity: "high" as const,
     excerpt: h.match,
     reason:
-      "Content must never state or imply how the firm charges. A free initial consultation may be mentioned; fee arrangements may not.",
-    fix: "Remove the fee language. If a call to action is needed, offer a free initial consultation instead.",
+      "This states how Katz Melinger charges. The firm is flat-fee and has never worked on contingency, so the claim is also inaccurate.",
+    fix: "Delete the fee reference. Do not replace it with \"flat fee\" — that still tells the reader how the firm charges. A free initial consultation may be offered instead.",
   }));
+
+  // Borderline hits (usually a passive construction with no clear subject) go
+  // to a human rather than blocking. Diana's instruction is explicit on this:
+  // borderline cases go to review, never auto-block.
+  const feeWarnings = reviewableFeeHits(feeHits).map(
+    (h) =>
+      `Fee language, unclear subject: "${h.match}" — confirm this describes the market and not Katz Melinger. Context: "${h.sentence.slice(0, 120)}"`,
+  );
 
   // Firm-fact claims. Diana's §7 framing is that these need a HUMAN to look,
   // not a machine to decide — a pattern can spot the candidate claim but cannot
@@ -235,7 +243,7 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
   return {
     ...base,
     violations,
-    warnings: [...base.warnings, ...firmWarnings],
+    warnings: [...base.warnings, ...feeWarnings, ...firmWarnings],
     // A deterministic high-severity violation cannot leave the piece marked
     // compliant, whatever the model scored it.
     status: hardViolations > 0 ? "non_compliant" : base.status,

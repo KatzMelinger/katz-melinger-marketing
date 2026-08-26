@@ -125,8 +125,13 @@ export const NICOLE_GRUNFELD: Author = {
     "https://www.avvo.com/attorneys/10016-ny-nicole-grunfeld-4793013.html",
     "https://lawyers.findlaw.com/new-york/new-york/nicole-d-grunfeld-NDA3NjA0NF8x/",
   ],
-  // TODO: set once the WordPress Author account exists.
-  wpLogin: "",
+  // WordPress user_login. Confirmed by Kenneth 2026-08-26.
+  // The SPACE is correct and deliberate — do not "tidy" it to ndgrunfeld to
+  // match the shape of kjkatz and Asackowitz. WordPress permits a space in
+  // user_login, and changing it here would break the byline silently: the
+  // plugin cannot resolve an unknown login, so it falls back to its default
+  // account and the post publishes with no attorney attribution and no error.
+  wpLogin: "Nicole Grunfeld",
 };
 
 export const ADAM_SACKOWITZ: Author = {
@@ -170,8 +175,9 @@ export const ADAM_SACKOWITZ: Author = {
     "https://www.avvo.com/attorneys/10016-ny-adam-sackowitz-4781911.html",
     "https://lawyers.findlaw.com/new-york/new-york/adam-j-sackowitz-NDk1ODQyMl8x/",
   ],
-  // TODO: set once the WordPress Author account exists.
-  wpLogin: "",
+  // WordPress user_login, supplied by the firm 2026-08-26. Matches the shape of
+  // Kenneth's verified "kjkatz" (initial + surname), so this one is plausible.
+  wpLogin: "Asackowitz",
 };
 
 export const AUTHORS: Author[] = [KENNETH_KATZ, NICOLE_GRUNFELD, ADAM_SACKOWITZ];

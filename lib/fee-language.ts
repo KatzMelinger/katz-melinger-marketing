@@ -1,10 +1,27 @@
 /**
  * Fee and contingency language — a hard firm rule, checked deterministically.
  *
- * The rule (Diana, 2026-08-25 §6): no content may state or imply how the firm
- * charges. No contingency fees, no "no fee unless you win", no "you do not pay
- * unless you recover". A free initial consultation MAY be mentioned; fee
- * arrangements may not.
+ * The rule (Diana, 2026-08-25 §6, refined 2026-08-26): no content may state or
+ * imply how KATZ MELINGER charges. The firm is flat-fee and has never worked on
+ * contingency, so "we work on contingency" is not merely off-policy, it is
+ * false.
+ *
+ * But the rule is about the FIRM, not about the word. "Most employment lawyers
+ * handle overtime cases on contingency" describes the market, is accurate, and
+ * stays — blocking it would gut legitimate legal education, which is most of
+ * what the library is for. So every hit is classified by who the sentence is
+ * about:
+ *
+ *   firm       the sentence names the firm or uses we/our/us   -> BLOCKS
+ *   general    the sentence is about other lawyers or the market -> allowed
+ *   ambiguous  no clear subject (usually a passive construction) -> REVIEW
+ *
+ * Ambiguous goes to a human rather than to either extreme. Diana's instruction
+ * is explicit: borderline cases go to review, never auto-block.
+ *
+ * A free initial consultation MAY be mentioned; fee arrangements may not. When
+ * removing fee language, DELETE the reference — do not substitute "flat fee",
+ * because that is still telling the reader how the firm charges.
  *
  * Why this is not left to the compliance model: that check is a prompt, and a
  * prompt is probabilistic. This rule is absolute, and the phrasings are a small
@@ -21,9 +38,14 @@
  * on every draft.
  */
 
+/** Who the sentence is about — which decides whether the hit blocks. */
+export type FeeSubject = "firm" | "general" | "ambiguous";
+
 export type FeeLanguageHit = {
   /** Which pattern fired, for the reviewer and for grouping. */
   rule: string;
+  /** firm blocks; general is permitted; ambiguous routes to a human. */
+  subject: FeeSubject;
   /** The matched text. */
   match: string;
   /** The sentence it sits in, so a reviewer can judge without opening the draft. */
@@ -102,7 +124,41 @@ function isAllowed(body: string, index: number, length: number): boolean {
   return false;
 }
 
-/** Every fee-arrangement phrasing in this text. Empty array means clean. */
+/** The sentence is about Katz Melinger. First person counts — it is our site. */
+const FIRM_SUBJECT =
+  /\b(?:we|we['’]re|our|us|the\s+firm|this\s+firm|Katz\s+Melinger|our\s+(?:firm|attorneys|lawyers|team))\b/i;
+
+/**
+ * The sentence is about other lawyers or the market generally.
+ *
+ * Requires an explicit third-party subject — "most employment lawyers", "some
+ * attorneys", "many firms". A bare passive ("cases are handled on contingency")
+ * does NOT qualify: on the firm's own site a reader may fairly read that as the
+ * firm's own practice, which is exactly the borderline Diana routed to a human.
+ */
+const GENERAL_SUBJECT =
+  /\b(?:most|many|some|other|certain|typical(?:ly)?|generally|often|usually)\s+(?:\w+\s+){0,2}?(?:lawyers?|attorneys?|law\s+firms?|firms?|practitioners?)\b|\b(?:lawyers?|attorneys?|law\s+firms?)\s+(?:in\s+(?:New\s+York|NYC|New\s+Jersey)\s+)?(?:often|typically|generally|usually|may|can|will)\b/i;
+
+/**
+ * Who is this sentence about?
+ *
+ * Firm reference wins outright: a sentence that mentions both the market and the
+ * firm ("many lawyers work on contingency, and we do too") is a firm claim, and
+ * treating it as market commentary would let the exact wrong sentence through.
+ */
+export function classifyFeeSubject(sentence: string): FeeSubject {
+  if (FIRM_SUBJECT.test(sentence)) return "firm";
+  if (GENERAL_SUBJECT.test(sentence)) return "general";
+  return "ambiguous";
+}
+
+/**
+ * Every fee-arrangement phrasing in this text, each classified by subject.
+ *
+ * Returns `general` hits too — the caller decides what to do with them. The
+ * compliance gate ignores them; a library sweep still wants to count them so a
+ * reviewer can confirm the classification is behaving.
+ */
 export function findFeeLanguage(body: string): FeeLanguageHit[] {
   if (!body) return [];
   const hits: FeeLanguageHit[] = [];
@@ -117,15 +173,38 @@ export function findFeeLanguage(body: string): FeeLanguageHit[] {
       if (claimed.has(index)) continue;
       if (isAllowed(body, index, m[0].length)) continue;
       claimed.add(index);
-      hits.push({ rule, match: m[0], sentence: sentenceAround(body, index), index });
+      const sentence = sentenceAround(body, index);
+      hits.push({
+        rule,
+        subject: classifyFeeSubject(sentence),
+        match: m[0],
+        sentence,
+        index,
+      });
     }
   }
   return hits.sort((a, b) => a.index - b.index);
 }
 
+/** Hits that must block: the firm's own fee arrangements. */
+export function blockingFeeHits(hits: readonly FeeLanguageHit[]): FeeLanguageHit[] {
+  return hits.filter((h) => h.subject === "firm");
+}
+
+/** Hits a human should look at, without failing the draft. */
+export function reviewableFeeHits(hits: readonly FeeLanguageHit[]): FeeLanguageHit[] {
+  return hits.filter((h) => h.subject === "ambiguous");
+}
+
 /** The rule as prose, for the compliance prompt and for reviewer-facing text. */
 export const FEE_LANGUAGE_RULE =
-  "FEE ARRANGEMENTS (firm rule, absolute): content must never state or imply how the firm charges. " +
-  "No contingency fees, no \"no fee unless you win\", no \"you do not pay unless you recover\", no " +
-  "percentage-of-recovery figures, no \"no upfront cost\". A free initial consultation MAY be " +
-  "mentioned — that is the only fee-adjacent statement permitted.";
+  "FEE ARRANGEMENTS (firm rule): content must never state or imply how KATZ MELINGER charges. " +
+  "The firm is flat-fee and has never worked on contingency, so any claim that it does is false. " +
+  "Flag: contingency, \"no fee unless you win\", \"you do not pay unless you recover\", " +
+  "percentage-of-recovery figures, \"no upfront cost\" — WHEN the sentence is about this firm " +
+  "(we/our/the firm/Katz Melinger). " +
+  "Do NOT flag accurate general statements about other lawyers or the market, e.g. \"most " +
+  "employment lawyers handle overtime cases on contingency\" — those are legitimate legal " +
+  "education and stay. A free initial consultation MAY be mentioned. When removing fee language, " +
+  "delete the reference; do not substitute \"flat fee\", which still tells the reader how the " +
+  "firm charges.";

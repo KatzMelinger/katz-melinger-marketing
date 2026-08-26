@@ -135,6 +135,15 @@ export async function listApprovedWpContent(args: {
       pickMeta(metadata, seoBrief, "pillarId", "pillar_id") ||
       (typeof km?.pillarId === "string" ? km.pillarId : "");
     const author = authorForContent({ practiceArea: d.practice_area as string | null, pillarId });
+    // No mapped login means the plugin quietly uses its default account and the
+    // "Reviewed by" byline does not appear. That is a silent failure of an
+    // E-E-A-T signal, so say it out loud — the same is true of a login that is
+    // set but wrong, which WordPress resolves to nothing.
+    if (!author.wpLogin) {
+      console.warn(
+        `[wp-publish] ${author.name} has no WordPress login mapped; this post will publish under the plugin's default account and carry no attorney byline.`,
+      );
+    }
 
     out.push({
       id: d.id as string,

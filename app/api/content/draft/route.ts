@@ -37,6 +37,7 @@ import {
   type KMContentType,
   type KMPracticeArea,
 } from "@/lib/km-content-system";
+import { renderFirmFactsBlock } from "@/lib/firm-facts";
 import { inferPillar } from "@/lib/strategy-engine";
 
 export const dynamic = "force-dynamic";
@@ -308,6 +309,9 @@ export async function POST(req: Request) {
   const system = `You are a marketing copywriter for a law firm. Use the firm's details, practice areas, and audience from the firm context below — never fabricate firm information. Voice: professional but approachable, focused on helping clients understand their rights—never corporate or cold.
 
 ${firmContext}
+
+${renderFirmFactsBlock()}
+
 ${ANTI_AI_VOICE_RULES}
 
 ${skillsContext ? `${skillsContext}\n` : ""}

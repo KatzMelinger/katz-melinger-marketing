@@ -144,7 +144,7 @@ values
     '\b(contingency|contingent[-\s]fee|no\s+(fee|fees|cost|costs)\s+unless|you\s+(do\s+not|don''t|will\s+not|won''t)\s+pay\s+(us\s+)?unless|you\s+(pay|owe)\s+nothing\s+unless|no\s+(up[-\s]?front|upfront|out[-\s]?of[-\s]?pocket)\s+(cost|costs|fee|fees))\b',
     '{}',
     'critical',
-    'No content may state or imply how the firm charges. Remove contingency and fee-arrangement language entirely. A free initial consultation may be mentioned; fee arrangements may not.'
+    'Content must not state or imply how Katz Melinger charges — the firm is flat-fee and has never worked on contingency. Remove the reference where the sentence is about THIS firm (we/our/the firm/Katz Melinger); do not replace it with "flat fee". Accurate general statements about other lawyers or the market are fine and stay. Borderline cases go to review.'
   ),
   (
     'Outcome guarantee or superlative',

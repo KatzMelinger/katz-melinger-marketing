@@ -31,6 +31,7 @@ import {
 import { stripEmDashes, hasEmDash } from "./sanitize-content";
 import { isSensitiveTopic, sensitiveToneBlock } from "./sensitive-topic";
 import { checkMonthlyDuplicates, type AngleConflict } from "./social-duplicate";
+import { renderFirmFactsBlock } from "./firm-facts";
 import {
   SOCIAL_CAPS,
   validateSocial,
@@ -221,7 +222,9 @@ export async function generateSocialPosts(args: {
     buildSkillsContext({ platforms: args.formats, practiceArea: args.practiceArea }, tid),
   ]);
 
-  const system = buildSocialSystemPrompt(firm, skillsContext);
+  const system = `${buildSocialSystemPrompt(firm, skillsContext)}
+
+${renderFirmFactsBlock()}`;
   const sensitive = isSensitiveTopic(args.source.title, args.source.text.slice(0, 2000));
   const sensitiveBlock = sensitiveToneBlock(args.source.title, args.source.text.slice(0, 2000));
 
