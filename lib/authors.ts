@@ -125,8 +125,14 @@ export const NICOLE_GRUNFELD: Author = {
     "https://www.avvo.com/attorneys/10016-ny-nicole-grunfeld-4793013.html",
     "https://lawyers.findlaw.com/new-york/new-york/nicole-d-grunfeld-NDA3NjA0NF8x/",
   ],
-  // TODO: set once the WordPress Author account exists.
-  wpLogin: "",
+  // WordPress user_login, supplied by the firm 2026-08-26.
+  // NOTE: unverified. Kenneth's login is "kjkatz" (initials + surname, lower
+  // case) and Adam's follows the same shape, so a login containing a space and
+  // matching the DISPLAY name may in fact be the display name rather than the
+  // user_login. Confirm in WP Admin > Users (the Username column). A wrong
+  // login does not error — the plugin falls back to its default account and the
+  // byline silently does not appear.
+  wpLogin: "Nicole Grunfeld",
 };
 
 export const ADAM_SACKOWITZ: Author = {
@@ -170,8 +176,9 @@ export const ADAM_SACKOWITZ: Author = {
     "https://www.avvo.com/attorneys/10016-ny-adam-sackowitz-4781911.html",
     "https://lawyers.findlaw.com/new-york/new-york/adam-j-sackowitz-NDk1ODQyMl8x/",
   ],
-  // TODO: set once the WordPress Author account exists.
-  wpLogin: "",
+  // WordPress user_login, supplied by the firm 2026-08-26. Matches the shape of
+  // Kenneth's verified "kjkatz" (initial + surname), so this one is plausible.
+  wpLogin: "Asackowitz",
 };
 
 export const AUTHORS: Author[] = [KENNETH_KATZ, NICOLE_GRUNFELD, ADAM_SACKOWITZ];
