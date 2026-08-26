@@ -46,6 +46,7 @@ import { readabilityRulesEngineEnabled, eeatAuthorshipEnabled } from "@/lib/feat
 import { renderAuthorDirective } from "@/lib/firm-author";
 import { appendAuthorBioBox, authorForContent } from "@/lib/authors";
 import { renderCurrentFactsBlock } from "@/lib/current-facts";
+import { renderFirmFactsBlock } from "@/lib/firm-facts";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
@@ -354,7 +355,9 @@ export async function POST(req: Request) {
     const msg = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
       max_tokens: maxTokens,
-      system: cachedSystemPrompt(tenantConfig.systemPrompt),
+      system: cachedSystemPrompt(`${tenantConfig.systemPrompt}
+
+${renderFirmFactsBlock()}`),
       messages: [{ role: "user", content: userPrompt }],
     });
 

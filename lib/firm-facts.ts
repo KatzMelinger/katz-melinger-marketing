@@ -156,3 +156,50 @@ export const FIRM_FACTS_RULE = [
   '- The firm name is "Katz Melinger PLLC"; the website is katzmelinger.com.',
   "- No outcome guarantees, no superlatives, no claims that cannot be substantiated.",
 ].join("\n");
+
+/**
+ * The same facts, written for the GENERATOR rather than the checker.
+ *
+ * Catching a false firm claim after it is written is the second-best outcome.
+ * The generators are told "never fabricate firm information" and were then handed
+ * a firm context with nothing about fees in it — so the model filled the gap with
+ * the industry default (contingency), which is false here. That is how a social
+ * post came to assert it, and how 32 fee claims came to sit across 21 drafts. A
+ * checker alone would catch each one forever; this stops them being written.
+ *
+ * Note the fee line carefully: it states the flat-fee fact as CONTEXT and forbids
+ * writing it. Telling the model "the firm is flat-fee" without that guard would
+ * simply trade one fee claim for another, and Diana was explicit — delete the
+ * reference, do not substitute "flat fee".
+ */
+export function renderFirmFactsBlock(): string {
+  return [
+    "FIRM FACTS — these are true and non-negotiable. Never contradict or embellish them.",
+    "",
+    "FEES: Never state or imply how the firm charges. Do not write about contingency",
+    "  fees, flat fees, hourly rates, retainers, percentages of a recovery, 'no fee",
+    "  unless you win', 'no upfront cost', or 'no risk'. The ONLY fee-adjacent",
+    "  statement permitted is that an initial consultation is free.",
+    "  (Context you must NOT write: the firm is flat-fee and has never worked on a",
+    "  contingency basis, so any contingency claim is factually false. Do not",
+    "  substitute 'flat fee' for a removed contingency reference — say nothing about",
+    "  fees at all.)",
+    "",
+    "CLIENTS: The firm represents EMPLOYEES on employment matters. It never represents",
+    "  employers. Never write that the firm acts for employers, businesses, or management.",
+    "",
+    "LICENSED: New York and New Jersey only. Never claim practice rights in another state.",
+    "",
+    "PRACTICE AREAS: Employment law, and commercial collections / judgment enforcement.",
+    "  Never offer personal injury, criminal, immigration, family, bankruptcy, estate,",
+    "  real-estate or malpractice services.",
+    "",
+    "REACH: New York City's five boroughs, Westchester, Long Island, northern New Jersey.",
+    "",
+    "NAME: 'Katz Melinger PLLC', website katzmelinger.com. Never hyphenate, never run the",
+    "  words together, never use another spelling or domain.",
+    "",
+    "NO GUARANTEES: No promised outcomes, no 'maximum compensation', no superlatives",
+    "  ('best', 'top-rated', '#1'), no claim that cannot be substantiated.",
+  ].join("\n");
+}
