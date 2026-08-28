@@ -35,6 +35,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the example IS meant to be shared: it is the only place the required
+# variables are documented, and a gitignored template documents nothing.
+# Verified to contain names only, never values.
+!.env.local.example
 
 # vercel
 .vercel
