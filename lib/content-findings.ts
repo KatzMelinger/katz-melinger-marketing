@@ -55,6 +55,56 @@ export function isFindingStatus(v: unknown): v is FindingStatus {
   return typeof v === "string" && (FINDING_STATUSES as readonly string[]).includes(v);
 }
 
+/**
+ * Which bucket a legal claim fell into (Diana §2/§8).
+ *
+ * Only `factual_mismatch` is machine-verifiable — a number, a date, or a
+ * citation that an authority states directly. Everything else needs a person,
+ * and the reason is worth stating: no authority page asserts a negative, so
+ * "the FMLA is not enforced by the EEOC" cannot be confirmed by any lookup, no
+ * matter how good the retrieval is.
+ *
+ * `unclassified` is not a failure state. It is the tie-breaker Diana confirmed:
+ * anything ambiguous defaults to human review rather than auto-approval. An
+ * unnecessary review costs a minute; a wrong statement of law on the firm's
+ * site costs a great deal more.
+ */
+export type LegalClaimType =
+  | "factual_mismatch"
+  | "interpretation"
+  | "negative_statement"
+  | "firm_claim"
+  | "unclassified";
+
+/** Which body of law the claim sits under. */
+export type LegalJurisdiction = "federal" | "NY" | "NJ";
+
+/** What the reviewing attorney did about it. */
+export type FindingResolution = "fixed" | "approved_as_is" | "removed";
+
+/** Claim types a lookup can settle. Everything else routes to an attorney. */
+export const AUTO_CHECKABLE: ReadonlySet<LegalClaimType> = new Set<LegalClaimType>([
+  "factual_mismatch",
+]);
+
+export function isAutoCheckable(type: LegalClaimType): boolean {
+  return AUTO_CHECKABLE.has(type);
+}
+
+export const CLAIM_TYPE_LABEL: Record<LegalClaimType, string> = {
+  factual_mismatch: "Factual mismatch",
+  interpretation: "Interpretation",
+  negative_statement: "Negative statement",
+  firm_claim: "Firm claim",
+  unclassified: "Unclassified",
+};
+
+export const RESOLUTION_LABEL: Record<FindingResolution, string> = {
+  fixed: "Fixed",
+  approved_as_is: "Approved as-is",
+  removed: "Removed",
+};
+
 /** A finding as produced by a check, before it meets the database. */
 export type NormalizedFinding = {
   fingerprint: string;
@@ -72,6 +122,11 @@ export type StoredFinding = NormalizedFinding & {
   id: string;
   draftId: string;
   status: FindingStatus;
+  /** Legal layer only; null on every other finding source. */
+  claimType: LegalClaimType | null;
+  sourceChecked: string | null;
+  jurisdiction: LegalJurisdiction | null;
+  resolution: FindingResolution | null;
   resolvedByEmail: string | null;
   resolvedAt: string | null;
   resolutionNote: string | null;
