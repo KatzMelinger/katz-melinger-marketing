@@ -128,11 +128,11 @@ values
   ),
   (
     'EEOC deadline stated as 180 days',
-    'all_of',
+    'all_of_unless',
     '["EEOC","180 days"]',
-    '{}',
+    '{"300 days","deferral","extended to 300","300-day"}',
     'critical',
-    'New York is a deferral state: the EEOC charge deadline is 300 days, not 180. Check which deadline the draft gives.'
+    'New York AND New Jersey are both deferral states, so the EEOC charge deadline is 300 days in each. A bare 180-day figure is wrong for our jurisdictions. Cleared automatically when the draft also mentions the 300-day extension or deferral, because 180 days IS the correct federal baseline and explaining the relationship is accurate legal education, not an error.'
   ),
   -- Firm-fact rule (Diana 2026-08-25 §6/§7): no content may state or imply how
   -- the firm charges. These are the trap-list view of the same rule the

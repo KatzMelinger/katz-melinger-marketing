@@ -8,8 +8,14 @@
  * on it.
  *
  *   Employment                        -> Nicole D. Grunfeld
- *   Commercial collections            -> Kenneth J. Katz
- *   Judgment enforcement              -> Adam J. Sackowitz
+ *   Commercial collections            -> Adam J. Sackowitz
+ *   Judgment enforcement              -> Kenneth J. Katz
+ *
+ * NOTE: the collections pair is SWAPPED relative to Diana's §5 document,
+ * which had Kenneth on commercial collections and Adam on judgment
+ * enforcement. Corrected by Kenneth 2026-08-28. Flagged here because the
+ * written spec still says the other way round, and someone reconciling the
+ * two later should know this is deliberate rather than a transcription slip.
  *
  * The system models two practice areas (`employment`, `collections`) while
  * Diana names three, splitting collections into commercial collections and
@@ -31,8 +37,8 @@ export type ReviewArea = "employment" | "commercial_collections" | "judgment_enf
 
 const REVIEWER_BY_AREA: Record<ReviewArea, string> = {
   employment: "nicole-d-grunfeld",
-  commercial_collections: "kenneth-j-katz",
-  judgment_enforcement: "adam-j-sackowitz",
+  commercial_collections: "adam-j-sackowitz",
+  judgment_enforcement: "kenneth-j-katz",
 };
 
 export const REVIEW_AREA_LABEL: Record<ReviewArea, string> = {
