@@ -23,7 +23,9 @@
  * two corpora reliably is worth having; one that gestures at fifteen sources of
  * uneven quality is how a green scoreboard gets rebuilt.
  *
- * Pure module — no IO. The fetching lives in lib/legal-retrieval.ts.
+ * No IO here — the fetching lives in lib/legal-retrieval.ts. The one impurity
+ * is reading NY_LEGISLATION_API_KEY, because whether a NY citation is
+ * addressable at all depends on whether that key is configured.
  */
 
 export type CitationCorpus =
@@ -160,9 +162,19 @@ export function findCitations(body: string): ParsedCitation[] {
  */
 export function authorityFetchUrl(c: ParsedCitation, asOf: string): string | null {
   switch (c.corpus) {
-    case "ny_consolidated":
-      // The public section page serves clean text to machine traffic.
-      return c.url;
+    case "ny_consolidated": {
+      // NOT the public page. nysenate.gov answers curl but 403s Node's fetch
+      // regardless of headers — it fingerprints the client, not the request.
+      // OpenLegislation is the state's official API for exactly this and is the
+      // route a production system should use anyway: stable, documented, and
+      // sanctioned rather than scraped.
+      //
+      // It needs a free key. Without one this returns null, which routes every
+      // NY citation to an attorney — the correct failure, and a loud one.
+      const key = process.env.NY_LEGISLATION_API_KEY?.trim();
+      if (!key) return null;
+      return `https://legislation.nysenate.gov/api/3/laws/${c.book}/${c.section.toUpperCase()}?key=${encodeURIComponent(key)}`;
+    }
     case "cfr": {
       const part = c.section.split(".")[0];
       return `https://www.ecfr.gov/api/versioner/v1/full/${asOf}/title-${c.book}.xml?part=${part}&section=${c.section}`;
