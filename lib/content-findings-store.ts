@@ -36,6 +36,12 @@ function rowToFinding(r: Row): StoredFinding {
     excerpt: r.excerpt ?? null,
     fix: r.fix ?? null,
     status: r.status,
+    // Legal-layer fields. Null on every finding the other checks produce,
+    // and null on legal findings written before the migration.
+    claimType: r.claim_type ?? null,
+    sourceChecked: r.source_checked ?? null,
+    jurisdiction: r.jurisdiction ?? null,
+    resolution: r.resolution ?? null,
     resolvedByEmail: r.resolved_by_email ?? null,
     resolvedAt: r.resolved_at ?? null,
     resolutionNote: r.resolution_note ?? null,
@@ -113,6 +119,11 @@ export async function syncFindings(args: {
           excerpt: f.excerpt,
           fix: f.fix,
           status: "open",
+          // Legal-layer columns; undefined on every other source, which
+          // Postgres stores as NULL — the correct value for them.
+          claim_type: f.claimType ?? null,
+          source_checked: f.sourceChecked ?? null,
+          jurisdiction: f.jurisdiction ?? null,
           first_seen_at: now,
           last_seen_at: now,
         })),

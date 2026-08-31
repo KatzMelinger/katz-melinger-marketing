@@ -15,6 +15,8 @@ export type Author = {
   /** Stable slug / id. */
   id: string;
   name: string;
+  /** Firm address. Used to route a Legal Review hold to this attorney. */
+  email: string;
   title: string;
   firm: string;
   /** e.g. "15+ years". */
@@ -38,6 +40,7 @@ export type Author = {
 export const KENNETH_KATZ: Author = {
   id: "kenneth-j-katz",
   name: "Kenneth J. Katz",
+  email: "kjkatz@katzmelinger.com",
   title: "Managing Partner and Founding Member",
   firm: "Katz Melinger PLLC",
   experience: "15+ years",
@@ -84,6 +87,7 @@ export const KENNETH_KATZ: Author = {
 export const NICOLE_GRUNFELD: Author = {
   id: "nicole-d-grunfeld",
   name: "Nicole D. Grunfeld",
+  email: "ndgrunfeld@katzmelinger.com",
   title: "Partner",
   firm: "Katz Melinger PLLC",
   experience: "15+ years",
@@ -137,6 +141,7 @@ export const NICOLE_GRUNFELD: Author = {
 export const ADAM_SACKOWITZ: Author = {
   id: "adam-j-sackowitz",
   name: "Adam J. Sackowitz",
+  email: "ajsackowitz@katzmelinger.com",
   title: "Partner",
   firm: "Katz Melinger PLLC",
   experience: "10+ years",

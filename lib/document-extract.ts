@@ -42,7 +42,7 @@ export function isSupportedUpload(filename: string): boolean {
   return SUPPORTED_UPLOAD_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-function stripHtml(html: string): string {
+export function stripHtml(html: string): string {
   return html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
