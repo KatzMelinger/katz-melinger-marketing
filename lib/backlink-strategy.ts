@@ -19,6 +19,9 @@
 
 import { logger } from "./logger";
 import { getTenantConfig } from "./tenant-config";
+// The page list below comes out of a remote sitemap's <loc> values, so the
+// URLs being fetched are controlled by whatever answers that domain — not by us.
+import { safeFetch } from "./url-safety";
 
 const USER_AGENT = "MarketingDashboard-BacklinkAnalyzer/1.0";
 const MAX_PAGES_TO_SCAN = 15;
@@ -114,9 +117,9 @@ export async function analyzeOutboundLinkProfile(): Promise<BacklinkProfile> {
   let sitePages: string[] = [];
 
   try {
-    const res = await fetch(`${baseUrl}/sitemap.xml`, {
+    const res = await safeFetch(`${baseUrl}/sitemap.xml`, {
       headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(10_000),
+      timeoutMs: 10_000,
     });
     if (res.ok) {
       const xml = await res.text();
@@ -137,10 +140,9 @@ export async function analyzeOutboundLinkProfile(): Promise<BacklinkProfile> {
 
   for (const url of targets) {
     try {
-      const res = await fetch(url, {
+      const res = await safeFetch(url, {
         headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
-        signal: AbortSignal.timeout(10_000),
-        redirect: "follow",
+        timeoutMs: 10_000,
       });
       if (!res.ok) continue;
       const html = await res.text();

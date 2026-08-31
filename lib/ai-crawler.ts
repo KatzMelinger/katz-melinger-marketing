@@ -12,6 +12,10 @@
 import { getGoogleAccessToken } from "@/lib/google-access-token";
 import { gscSiteUrlEncoded } from "@/lib/gsc-site-url";
 import { logger } from "@/lib/logger";
+// The crawl target reaches here from POST /api/ai-search/crawl's body, so every
+// fetch built from it goes through the SSRF guard. lib/site-inventory.ts already
+// did this; this module was missed.
+import { safeFetch } from "@/lib/url-safety";
 
 const MAX_CRAWL_PAGES = 10;
 const GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
@@ -151,9 +155,9 @@ async function fetchRobotsTxt(baseUrl: string): Promise<RobotsTxtResult> {
   };
 
   try {
-    const res = await fetch(`${baseUrl}/robots.txt`, {
+    const res = await safeFetch(`${baseUrl}/robots.txt`, {
       headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(10000),
+      timeoutMs: 10000,
     });
 
     if (!res.ok) return result;
@@ -328,10 +332,13 @@ function countImages(html: string): { total: number; withAlt: number; withoutAlt
 }
 
 async function crawlPageForAI(url: string, host: string): Promise<AIReadinessPageData> {
-  const res = await fetch(url, {
+  // redirect:"follow" here was the exact hole safeFetch exists to close: an
+  // open redirect on a public host, or an attacker's own 302, lands on
+  // loopback or 169.254.169.254 and the body comes back. safeFetch follows
+  // manually and re-validates every hop.
+  const res = await safeFetch(url, {
     headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
-    signal: AbortSignal.timeout(15000),
-    redirect: "follow",
+    timeoutMs: 15000,
   });
 
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
@@ -476,9 +483,9 @@ async function crawlPageForAI(url: string, host: string): Promise<AIReadinessPag
 async function fetchSitemapUrls(base: string, host: string): Promise<string[]> {
   const urls: string[] = [];
   try {
-    const res = await fetch(`${base}/sitemap.xml`, {
+    const res = await safeFetch(`${base}/sitemap.xml`, {
       headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(10000),
+      timeoutMs: 10000,
     });
     if (!res.ok) return urls;
     const xml = await res.text();

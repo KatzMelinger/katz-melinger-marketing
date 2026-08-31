@@ -66,14 +66,54 @@ function hasValidCronBearer(req: NextRequest): boolean {
   return req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
+/**
+ * Is this a deployed environment rather than someone's laptop?
+ *
+ * VERCEL is set in every Vercel environment — production, preview and their
+ * local `vercel dev` — so a preview deploy with a broken env is treated as
+ * seriously as production. NODE_ENV covers a production build hosted elsewhere.
+ */
+function isDeployed(): boolean {
+  return Boolean(process.env.VERCEL) || process.env.NODE_ENV === "production";
+}
+
 export async function proxy(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !anon) {
-    // Auth not configured — let everything through so the app still boots.
-    // The /integrations page will flag the missing env vars.
-    return NextResponse.next();
+    // FAIL CLOSED WHEN DEPLOYED.
+    //
+    // This branch used to return NextResponse.next() unconditionally, which
+    // meant one missing environment variable turned the default-deny gate above
+    // into an open door for ~150 API routes — silently. The app booted, pages
+    // rendered, nothing errored, and every route was public. A typo in a Vercel
+    // env var was the whole security model.
+    //
+    // An auth proxy that cannot reach its auth provider cannot tell a user from
+    // a stranger. The only honest answer is to serve nothing and say why, which
+    // is loud enough that somebody fixes the env instead of never noticing.
+    //
+    // Local development without Supabase configured still passes through, so
+    // the app boots on a fresh clone.
+    if (!isDeployed()) return NextResponse.next();
+
+    const { pathname } = req.nextUrl;
+    const detail =
+      "Authentication is not configured: NEXT_PUBLIC_SUPABASE_URL or " +
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY is missing from this deployment.";
+    console.error(`[proxy] refusing all traffic — ${detail}`);
+
+    if (pathname === "/api" || pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Service unavailable", detail },
+        { status: 503, headers: { "cache-control": "no-store" } },
+      );
+    }
+    return new NextResponse(
+      "Service unavailable.\n\n" + detail + "\n",
+      { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } },
+    );
   }
 
   const res = NextResponse.next();
