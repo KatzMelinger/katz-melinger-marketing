@@ -42,16 +42,41 @@ removes the one control against fabricated contradictions.
 
 `node scripts/run.mjs scripts/ingest-nj-statute.ts --list` shows what is held.
 
-## Priority sections
+## What is held
 
-The ones that would retire the most attorney routing, in order:
+| section | | |
+|---|---|---|
+| **34:19-3** | CEPA — retaliatory action prohibited | held |
+| **34:19-2** | CEPA — definitions | held |
+| **34:11B-3** | NJFLA — definitions (text effective 17 Jul 2026) | held |
+| **10:5-12** | NJLAD — unlawful employment practices | **still needed** |
+| **10:5-5** | NJLAD — definitions | **still needed** |
+| 34:11-4.2 | wage payment frequency | optional — the DOL page may cover it |
 
-- **N.J.S.A. 10:5-12** — NJLAD, unlawful employment practices
-- **N.J.S.A. 10:5-5** — NJLAD definitions
-- **N.J.S.A. 34:19-3** — CEPA, retaliatory action prohibited
-- **N.J.S.A. 34:19-2** — CEPA definitions
-- **N.J.S.A. 34:11-4.2** — payment of wages, frequency
-- **N.J.S.A. 34:11B-3** — Family Leave Act
+The two NJLAD sections matter most of what is left: most NJ discrimination
+disputes turn on whether someone is an "employer" or "employee" under 10:5-5,
+so without it those claims route to a person even once 10:5-12 is loaded.
+
+## Westlaw exports: what to send, and what not to
+
+The three sections held here came from Westlaw N.J.S.A. exports, which arrive as
+RTF with a `.doc` extension. Two things to know.
+
+**Send the SECTION, not the chapter.** A "Westlaw Advantage — N full text items
+for Chapter X" export is the *New Jersey Practice Series*, a Thomson Reuters
+treatise written by their editorial staff. It is copyrighted, and it is not
+authority — verifying a claim against a practice guide's summary of cases would
+have the system quote a secondary source as if it were the statute. Those files
+were reviewed and deliberately not ingested.
+
+**Westlaw's editorial apparatus is stripped on ingest** — the KeyCite flag,
+breadcrumbs, the "Currentness" marker, footnote tables, and the Thomson Reuters
+copyright line. That notice asserts rights in *their* additions while
+disclaiming the government text, so keeping their apparatus would be storing
+their work. Credits (`L.1986, c. 105, § 2, eff. Sept. 5, 1986`) are kept: session
+law history is public and is what tells a reviewer how current the text is.
+
+The statutory text itself is stored character for character.
 
 ## Keeping it current
 
