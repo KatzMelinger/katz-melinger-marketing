@@ -35,6 +35,7 @@ import {
   getAnthropic,
   logCacheUsage,
 } from "./anthropic";
+import { AD_TERMS_RULE } from "@/lib/ad-terms";
 
 export type FormatKey =
   | "blog"
@@ -105,6 +106,8 @@ ${ANTI_AI_VOICE_RULES}
 ${args.skillsContext ? `\n${args.skillsContext}\n` : ""}
 Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.
 Avoid legalese. Never fabricate case results or guarantees. Stay compliant — recommend speaking with an attorney rather than asserting outcomes.
+
+${AD_TERMS_RULE}
 ${langBlock ? `\n${langBlock}\n` : ""}
 For each requested format, return:
 - title (or subject for email)

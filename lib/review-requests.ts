@@ -29,6 +29,7 @@ import { getFirmContext } from "@/lib/firm-context";
 import { dispatch, type SendChannel } from "@/lib/messaging";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getTenantClient } from "@/lib/tenant-db";
+import { AD_TERMS_RULE } from "@/lib/ad-terms";
 
 export type ReviewRequestStatus =
   | "queued"
@@ -126,6 +127,8 @@ export async function generateRequestMessage(input: {
   const isSms = input.channel === "sms";
 
   const system = `You are drafting a short, warm message asking a former client of a NY/NJ plaintiff-side employment law firm to leave an honest Google review. ${firm}
+
+${AD_TERMS_RULE}
 
 Hard constraints — not optional:
 1. This is an ask for an HONEST review. Never imply we only want positive reviews, never offer anything of value in exchange, never pressure.

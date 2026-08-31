@@ -27,6 +27,7 @@ import {
   gbpFetch,
 } from "./gbp-http";
 import { getGoogleAccessToken } from "./google-access-token";
+import { AD_TERMS_RULE } from "@/lib/ad-terms";
 
 export type ReviewToReply = {
   reviewId: string;
@@ -57,6 +58,8 @@ Constraints — these are not optional:
 5. Positive reviews (4–5 stars): thank them warmly, briefly reinforce one firm value (e.g. responsiveness, fighting for workers).
 6. Keep replies under ${MAX_TARGET_CHARS} characters. Plain, professional prose. No emojis. No exclamation marks beyond one for a thank-you.
 7. Sign off with the firm name only — no individual attorney names unless the review references them.
+
+${AD_TERMS_RULE}
 
 Return ONLY the reply text. No preface, no quotes around it.`;
 

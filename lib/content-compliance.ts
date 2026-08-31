@@ -29,6 +29,7 @@ import {
   type BaseComplianceResult,
   type Jurisdiction,
 } from "@/lib/compliance-core";
+import { blockingAdHits, findAdTerms, marketingCopyViolations, reviewableAdHits } from "@/lib/ad-terms";
 import { blockingFeeHits, findFeeLanguage, reviewableFeeHits } from "@/lib/fee-language";
 import { findFirmFactClaims } from "@/lib/firm-facts";
 
@@ -238,12 +239,49 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
     .filter((h) => h.severity === "flag")
     .map((h) => `${h.rule}: "${h.match}" — ${h.reason}`);
 
-  const violations = [...base.violations, ...feeViolations, ...firmViolations];
-  const hardViolations = feeViolations.length + firmViolations.length;
+  // Attorney-advertising terms. Same treatment as fees and for the same reason:
+  // lib/compliance-core.ts states RPC 7.4 and 7.1(a) in the prompt, and on
+  // 2026-08-31 the metadata generator produced fifteen descriptions calling the
+  // firm an "expert" anyway. A prompt is a request; this is the rule.
+  //
+  // SHORT MARKETING SURFACES ARE STRICTER. In a long article an unattributed
+  // "requires real expertise" may genuinely describe the field, so it goes to a
+  // human. In a meta description or a social caption there is no surrounding
+  // text that could make it mean anything but the firm, so ambiguous blocks too.
+  // The short public surfaces: a caption, a Google review reply, a forum reply.
+  // "email" is deliberately NOT here — a client email is prose long enough for
+  // an unattributed sentence to genuinely be about the field.
+  const shortSurface =
+    input.surface === "social" ||
+    input.surface === "gbp_reply" ||
+    input.surface === "community_reply";
+  const adHits = findAdTerms(content);
+  const adBlocking = shortSurface ? marketingCopyViolations(content) : blockingAdHits(adHits);
+  const adViolations = adBlocking.map((h) => ({
+    rule: `Attorney advertising — ${h.rule}`,
+    severity: "high" as const,
+    excerpt: h.match,
+    reason: h.why,
+    fix:
+      h.rule === "credential"
+        ? 'Replace with "experienced", or name the practice area. The firm holds no specialist certification.'
+        : h.rule === "superlative"
+          ? "Remove the comparative claim, or state a fact that can be substantiated."
+          : "Remove the promise of a result. Saying outcomes cannot be guaranteed is correct and may stay.",
+  }));
+  const adWarnings = shortSurface
+    ? []
+    : reviewableAdHits(adHits).map(
+        (h) =>
+          `Advertising term, unclear subject: "${h.match}" — confirm this is not a claim about Katz Melinger. ${h.why}. Context: "${h.sentence.slice(0, 120)}"`,
+      );
+
+  const violations = [...base.violations, ...feeViolations, ...firmViolations, ...adViolations];
+  const hardViolations = feeViolations.length + firmViolations.length + adViolations.length;
   return {
     ...base,
     violations,
-    warnings: [...base.warnings, ...feeWarnings, ...firmWarnings],
+    warnings: [...base.warnings, ...feeWarnings, ...firmWarnings, ...adWarnings],
     // A deterministic high-severity violation cannot leave the piece marked
     // compliant, whatever the model scored it.
     status: hardViolations > 0 ? "non_compliant" : base.status,
