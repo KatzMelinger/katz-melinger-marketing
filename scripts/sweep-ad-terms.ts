@@ -21,6 +21,8 @@ for (const l of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
 
 const LIVE = process.argv.includes("--live");
 
+type Row = Record<string, unknown>;
+
 async function main() {
   // Every URL that could not be read, printed at the end. A sweep that silently
   // skips pages reports "all clear" for copy it never saw.
@@ -34,11 +36,11 @@ async function main() {
   const items: Item[] = [];
 
   const d = await sb.from("content_drafts").select("id,title,topic,body,status,metadata").neq("status", "archived");
-  for (const r of (d.data ?? []) as any[]) {
-    items.push({ surface: "draft body", label: (r.title ?? r.topic ?? r.id), text: String(r.body ?? ""), short: false, extra: r.status });
-    const km = ((r.metadata ?? {}).km_brief ?? {}) as any;
-    const meta = [km.metaTitle, km.metaDescription].filter(Boolean).join(". ");
-    if (meta) items.push({ surface: "draft metadata", label: (r.title ?? r.topic ?? r.id), text: meta, short: true, extra: r.status });
+  for (const r of (d.data ?? []) as Row[]) {
+    items.push({ surface: "draft body", label: (r.title ?? r.topic ?? String(r.id)), text: String(r.body ?? ""), short: false, extra: r.status });
+    const km = (((r.metadata ?? {}) as Row).km_brief ?? {}) as Row;
+    const metaText = [km.metaTitle, km.metaDescription].filter(Boolean).join(". ");
+    if (metaText) items.push({ surface: "draft metadata", label: (r.title ?? r.topic ?? String(r.id)), text: metaText, short: true, extra: r.status });
   }
 
   // site_pages is a CRAWL INDEX, not a content store: url, title, h1, scores.
@@ -46,10 +48,10 @@ async function main() {
   // never answer "what does the live site say". Titles and H1s are checked here;
   // --live fetches the pages themselves.
   const p = await sb.from("site_pages").select("id,url,title,h1").limit(2000);
-  const pages = (p.data ?? []) as any[];
+  const pages = (p.data ?? []) as Row[];
   for (const r of pages) {
     const meta = [r.title, r.h1].filter(Boolean).join(". ");
-    if (meta) items.push({ surface: "LIVE title/H1", label: r.url ?? r.id, text: meta, short: true });
+    if (meta) items.push({ surface: "LIVE title/H1", label: r.url ?? String(r.id), text: meta, short: true });
   }
 
   if (LIVE) {
@@ -82,15 +84,15 @@ async function main() {
     }
   }
   const s = await sb.from("social_posts").select("id,platform,content").limit(500);
-  for (const r of (s.data ?? []) as any[]) {
+  for (const r of (s.data ?? []) as Row[]) {
     const text = String(r.content ?? "");
-    if (text) items.push({ surface: "social post", label: `${r.platform ?? "?"} ${r.id}`, text, short: true });
+    if (text) items.push({ surface: "social post", label: `${r.platform ?? "?"} ${String(r.id)}`, text, short: true });
   }
 
   const rr = await sb.from("review_requests").select("id,subject,message").limit(500);
-  for (const r of (rr.data ?? []) as any[]) {
+  for (const r of (rr.data ?? []) as Row[]) {
     const text = [r.subject, r.message].filter(Boolean).join(". ");
-    if (text) items.push({ surface: "review request", label: r.id, text, short: true });
+    if (text) items.push({ surface: "review request", label: String(r.id), text, short: true });
   }
 
   const bySurface = new Map<string, { scanned: number; blocking: number; review: number; general: number; items: number }>();
