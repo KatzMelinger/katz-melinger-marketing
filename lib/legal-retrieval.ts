@@ -24,6 +24,7 @@ import {
   authorityFetchUrl,
   type ParsedCitation,
 } from "./legal-citation";
+import { lookupCorpus } from "./nj-statute-corpus";
 
 /**
  * Identifying, but in the shape a UA filter accepts.
@@ -177,6 +178,74 @@ function extractOpenLegislationText(body: string): string {
   }
 }
 
+/**
+ * Pull one section out of the New Jersey wage-and-hour page.
+ *
+ * That page is a single document holding the whole Wage and Hour Law and
+ * N.J.A.C. 12:56, so a section number appears in three different roles: as a
+ * line in the table of contents, as its own heading followed by its text, and
+ * inside other sections that cross-reference it.
+ *
+ * Two things make naive matching return the wrong thing, and both were caught
+ * by testing against the live page rather than a fixture:
+ *
+ *   Substring collision. "11-56a4" is a prefix of "11-56a4.10", so a plain
+ *   indexOf finds sections that merely start the same way. Section numbers are
+ *   therefore compared as whole tokens, never as substrings.
+ *
+ *   Cross-references win on length. Taking the longest run to the next section
+ *   number picked a passage that BEGAN at "...pursuant to 34:11-56a4)" deep
+ *   inside a different section, because nothing else was cited for a while
+ *   afterwards. So a candidate must look like a heading — the number, a period,
+ *   then a capitalised title — which a parenthetical cross-reference does not.
+ *
+ * Between the surviving candidates (the contents line and the real one) the
+ * longest run wins, because in the contents the next section number is a few
+ * words away and in the body it is a section later.
+ *
+ * Returns "" when the section is not on the page, which the caller turns into a
+ * retrieval failure. That matters more here than anywhere else in this module:
+ * New Jersey's failure mode is a page that answers 200 and simply does not
+ * contain what was asked for.
+ */
+export function extractNjSection(pageText: string, section: string): string {
+  const flat = pageText.replace(/\s+/g, " ");
+  const want = section.toLowerCase();
+  const esc = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  // "34:11-56a4. Minimum wage rate" — the number, a period, a capitalised
+  // title. Excludes "34:11-56a4)" and "34:11-56a4 and N.J.A.C. ..." .
+  const headingRe = new RegExp(`(?:^|[\\s(])\\d{1,2}[A-Z]?:${esc}\\s*\\.\\s+[A-Z]`, "gi");
+  // Any section number, so a run can be stopped at the next one.
+  const anySectionRe = /\b(\d{1,2}[A-Z]?):(\d+[-\w.]*)/g;
+
+  const candidates: number[] = [];
+  for (const m of flat.matchAll(headingRe)) {
+    // Start at the number itself, not at the leading space or bracket.
+    const lead = m[0].match(/[\s(]/) && /^[\s(]/.test(m[0]) ? 1 : 0;
+    candidates.push((m.index ?? 0) + lead);
+  }
+  if (candidates.length === 0) return "";
+
+  let best = "";
+  for (const start of candidates) {
+    anySectionRe.lastIndex = start + section.length;
+    let end = flat.length;
+    for (;;) {
+      const m = anySectionRe.exec(flat);
+      if (!m) break;
+      // Whole-token comparison. "11-56a4.10" is a different section from
+      // "11-56a4"; treating it as the same is what let a contents line run on
+      // into the rest of the document.
+      if (m[2].toLowerCase() === want) continue;
+      end = m.index;
+      break;
+    }
+    const run = flat.slice(start, Math.min(end, start + 20_000)).trim();
+    if (run.length > best.length) best = run;
+  }
+  return best;
+}
 function looksLikeAuthorityText(text: string, citation: ParsedCitation): boolean {
   if (text.trim().length < 200) return false;
   const lower = text.toLowerCase();
@@ -314,7 +383,8 @@ async function writeCache(
 /** How long this corpus's text should be trusted between fetches. */
 function freshnessFor(citation: ParsedCitation): FreshnessClass {
   // Regulations are revised more often than consolidated statutes.
-  return citation.corpus === "cfr" ? "volatile" : "standard";
+  if (citation.corpus === "cfr" || citation.corpus === "njac") return "volatile";
+  return "standard";
 }
 
 /**
@@ -334,6 +404,27 @@ export async function retrieveAuthority(
     if (cached) return { ok: true, value: cached };
   }
 
+  // Locally held New Jersey text, checked before any fetch. NJLAD and CEPA are
+  // not retrievable from anywhere — see lib/nj-statute-corpus.ts — so for those
+  // a stored copy with recorded provenance IS the authority.
+  if (citation.corpus === "nj_statute" || citation.corpus === "njac") {
+    const held = lookupCorpus(citation);
+    if (held) {
+      return {
+        ok: true,
+        value: {
+          citation,
+          text: held.text,
+          // The provenance travels with the text. A reviewer seeing this needs
+          // to know it came from a stored copy and how old that copy is, not to
+          // be handed words with no origin.
+          sourceUrl: held.sourceUrl ?? `${held.source} (as of ${held.asOf})`,
+          retrievedAt: new Date().toISOString(),
+          fromCache: true,
+        },
+      };
+    }
+  }
   const url = authorityFetchUrl(citation, opts.asOf ?? today());
   if (!url) {
     return {
@@ -372,7 +463,11 @@ export async function retrieveAuthority(
       ? extractCfrText(res.body)
       : citation.corpus === "ny_consolidated"
         ? extractOpenLegislationText(res.body)
-        : stripHtml(res.body);
+        : citation.corpus === "nj_statute" || citation.corpus === "njac"
+          ? // One page holds every wage-and-hour section, so the section has to
+            // be located inside it rather than assumed to be the whole document.
+            extractNjSection(stripHtml(res.body), citation.section)
+          : stripHtml(res.body);
   if (!looksLikeAuthorityText(raw, citation)) {
     return {
       ok: false,
