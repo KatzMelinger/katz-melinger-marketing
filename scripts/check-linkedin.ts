@@ -28,6 +28,8 @@ import {
   fetchFollowerStatistics,
   fetchFollowerCount,
   fetchLabelMap,
+  fetchGeoLabels,
+  urnId,
   type LinkedInResult,
 } from "@/lib/linkedin-api";
 import { mapFollowerStatistics } from "@/lib/linkedin-audience";
@@ -77,10 +79,25 @@ async function main() {
   const seniorities = report("seniorities", await fetchLabelMap("seniorities"));
   const industries = report("industries", await fetchLabelMap("industries"));
 
+  // Only the rows that will be displayed. The location breakdown has a hundred
+  // entries and the report shows nine; resolving the rest spends a day-limited
+  // quota on labels nobody sees.
+  const geoBuckets = (stats.followerCountsByGeo ?? stats.followerCountsByGeoCountry ?? []) as Record<string, unknown>[];
+  const size = (b: Record<string, unknown>) => {
+    const c = (b.followerCounts ?? {}) as { organicFollowerCount?: number; paidFollowerCount?: number };
+    return (c.organicFollowerCount ?? 0) + (c.paidFollowerCount ?? 0);
+  };
+  const topGeoIds = [...geoBuckets]
+    .sort((a, b) => size(b) - size(a))
+    .slice(0, 12)
+    .map((b) => urnId(String(b.geo ?? "")));
+  const geo = await fetchGeoLabels(topGeoIds);
+  console.log(`  ok      geo labels (${Object.keys(geo).length}/${topGeoIds.length} resolved)`);
   const mapped = mapFollowerStatistics(stats, followers, {
     functions: functions ?? undefined,
     seniorities: seniorities ?? undefined,
     industries: industries ?? undefined,
+    geo,
   });
 
   console.log(`\n  Mapped for the report (followers: ${mapped.audience.totalFollowers ?? "unknown"}):\n`);
@@ -112,20 +129,32 @@ async function main() {
     auth: { persistSession: false },
   });
   const tenantId = "00000000-0000-0000-0000-000000000001";
-  const { data } = await sb
-    .from("social_insights").select("id, report_audience")
-    .eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(1);
-  const row = (data ?? [])[0] as { id?: string; report_audience?: Record<string, unknown> } | undefined;
-  if (!row?.id) {
-    console.log("\nNo social_insights row to write into — open the monthly report once first.");
+  // social_insights is keyed by tenant_id and has NO id column. Selecting "id"
+  // made the read error, and the code then reported "no row to write into"
+  // while a row sat there — a wrong-column read that looks exactly like an
+  // empty table. The error is checked now rather than discarded.
+  const { data, error: readErr } = await sb
+    .from("social_insights")
+    .select("tenant_id, report_audience")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (readErr) {
+    console.log("\nCould not read social_insights: " + readErr.message);
+    process.exit(1);
+  }
+  if (!data) {
+    console.log("\nNo social_insights row for this tenant — open the monthly report once first.");
     return;
   }
-  // Instagram's hand-entered numbers are left exactly as they are. Only the
+  const current = ((data as Record<string, unknown>).report_audience ?? {}) as Record<string, unknown>;
+
+  // Instagram is still hand-entered and stays exactly as it is. Only the
   // LinkedIn half has a source to replace it.
-  const next = { ...(row.report_audience ?? {}), linkedin: mapped.audience };
+  const next = { ...current, linkedin: mapped.audience };
   const { error } = await sb
-    .from("social_insights").update({ report_audience: next })
-    .eq("id", row.id).eq("tenant_id", tenantId);
+    .from("social_insights")
+    .update({ report_audience: next, updated_at: new Date().toISOString() })
+    .eq("tenant_id", tenantId);
   if (error) { console.log("\nWrite failed: " + error.message); process.exit(1); }
   console.log("\nWritten. The LinkedIn section of the monthly report is now filled from the API.");
   console.log("Instagram's hand-entered figures were left untouched.");

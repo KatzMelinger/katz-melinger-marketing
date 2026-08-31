@@ -83,6 +83,7 @@ export function mapFollowerStatistics(
     functions?: Record<string, string>;
     seniorities?: Record<string, string>;
     industries?: Record<string, string>;
+    geo?: Record<string, string>;
   } = {},
 ): MappedAudience {
   const viaMap = (map: Record<string, string> | undefined) => (raw: string) =>
@@ -93,12 +94,14 @@ export function mapFollowerStatistics(
   const ind = toRows(stats.followerCountsByIndustry, "industry", viaMap(labels.industries));
   const size = toRows(stats.followerCountsByStaffCountRange, "staffCountRange", staffCountLabel);
 
-  // LinkedIn has used both shapes for geography depending on version; take
-  // whichever is present rather than assuming one and reporting an empty chart.
-  const geoBuckets = stats.followerCountsByGeoCountry ?? stats.followerCountsByRegion;
-  const geoKey = stats.followerCountsByGeoCountry ? "geo" : "region";
-  const loc = toRows(geoBuckets, geoKey, (raw) => raw);
-
+  // Metro areas, not countries. followerCountsByGeoCountry exists and is 93.7%
+  // "United States", which tells a New York employment firm nothing;
+  // followerCountsByGeo resolves to "New York City Metropolitan Area, 1,267",
+  // which is the number the report is actually for. Country data is the
+  // fallback when the finer breakdown is absent.
+  const geoBuckets = stats.followerCountsByGeo ?? stats.followerCountsByGeoCountry ?? stats.followerCountsByRegion;
+  const geoKey = stats.followerCountsByGeo ? "geo" : stats.followerCountsByGeoCountry ? "geo" : "region";
+  const loc = toRows(geoBuckets, geoKey, viaMap(labels.geo));
   const cov = (r: { described: number }) => ({
     described: r.described,
     ofFollowers: followers ? Math.round((r.described / followers) * 1000) / 10 : null,
