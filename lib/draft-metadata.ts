@@ -102,15 +102,55 @@ export function slugFrom(text: string): string {
     .slice(0, 80);
 }
 
+/**
+ * Attorney-advertising terms that are barred outright, checked deterministically.
+ *
+ * lib/compliance-core.ts already states these rules — RPC 7.4 forbids "expert"
+ * and "specialist" absent certification, and records that Katz Melinger holds
+ * none — but it states them as PROSE IN A MODEL PROMPT. A model asked for
+ * "compelling" marketing copy reaches for "Expert" every time, and nothing
+ * downstream was checking meta descriptions against those rules at all.
+ *
+ * That is exactly what happened: the first backfill produced eight descriptions
+ * led by "Expert", each a per-se RPC 7.4 violation on a page meant to rank.
+ *
+ * So the prompt asks, and this list enforces. A prompt is a request; a regex is
+ * a rule. For a constraint the firm can be disciplined over, the rule wins.
+ */
+const BARRED_AD_TERMS: { re: RegExp; why: string }[] = [
+  { re: /\b(expert|experts|expertise)\b/i, why: "RPC 7.4 — 'expert' requires certification the firm does not hold" },
+  { re: /\b(specialist|specialists|specializ(?:e|es|ing))\b/i, why: "RPC 7.4 — 'specialist' requires certification the firm does not hold" },
+  { re: /\b(best|top|#\s*1|number one|premier|leading|unmatched|unrivall?ed|most experienced)\b/i, why: "RPC 7.1(a) — unsubstantiable comparative claim" },
+  { re: /\b(guarantee[ds]?|guaranteeing|we win|will win|no risk|risk[-\s]free)\b/i, why: "RPC 7.1 — prediction or guarantee of result" },
+];
+
+/** Which barred terms appear in this copy, with the rule each one breaks. */
+export function barredAdTerms(text: string): { term: string; why: string }[] {
+  const out: { term: string; why: string }[] = [];
+  for (const t of BARRED_AD_TERMS) {
+    const m = text.match(t.re);
+    if (m) out.push({ term: m[0], why: t.why });
+  }
+  return out;
+}
+
 async function generate(args: {
   primaryKeyword: string;
   h1: string;
   practiceArea: string;
   contentType: string;
+  /** Violations from a previous attempt, quoted back so the retry is informed. */
+  priorViolations?: { term: string; why: string }[];
 }): Promise<{ metaTitle: string; metaDescription: string } | null> {
   const firmName = (await getTenantConfig()).firmName || "the firm";
   const areaLabel =
     args.practiceArea === "collections" ? "commercial collections" : "employment law";
+  const retryNote = args.priorViolations?.length
+    ? `
+Your previous attempt used ${args.priorViolations
+        .map((v) => `"${v.term}" (${v.why})`)
+        .join(" and ")}. Rewrite without those words.`
+    : "";
   const prompt = [
     `You are writing SEO meta tags for a ${areaLabel} ${args.contentType.replace("_", " ")} for the law firm ${firmName}.`,
     `Primary keyword: "${args.primaryKeyword}".`,
@@ -119,6 +159,14 @@ async function generate(args: {
     "Return ONLY a JSON object with two fields:",
     `- "metaTitle": a compelling page title, 50-60 characters, includes the primary keyword, ends with " | ${firmName}" if it fits.`,
     `- "metaDescription": a benefit-driven description, MAXIMUM 155 characters, includes the primary keyword naturally. Never exceed 155 characters.`,
+    "",
+    "ATTORNEY ADVERTISING RULES — these are not style preferences, they are NY/NJ",
+    "Rules of Professional Conduct and this copy is regulated speech:",
+    `- NEVER use "expert", "expertise", "specialist" or "specializing". RPC 7.4 permits them only with a certification ${firmName} does not hold. Write "experienced" or name the practice area instead.`,
+    '- NEVER use superlatives or comparative claims ("best", "top", "#1", "leading", "premier"). RPC 7.1(a) bars claims that cannot be factually substantiated.',
+    '- NEVER predict or guarantee an outcome ("we win", "risk-free", "guaranteed").',
+    "- Do not state or imply how the firm charges. You may say an initial consultation is free; say nothing else about fees.",
+    retryNote,
   ]
     .filter(Boolean)
     .join("\n");
@@ -188,12 +236,37 @@ export async function ensureDraftMetadata(
     return { status: "skipped", reason: "No H1 in the body (a line starting with '# ')." };
   }
 
-  const generated = await generate({
+  const base = {
     primaryKeyword: keyword,
     h1,
     practiceArea: (draft.practice_area ?? "employment").toLowerCase(),
     contentType: (draft.format ?? "blog_post").replace(/^km_/, ""),
-  });
+  };
+  // Generate, check against the advertising rules, and retry ONCE naming the
+  // violation. If the second attempt still breaks a rule, write nothing: an
+  // empty meta description is a task on someone's list, while a compliant-
+  // looking one that says "expert" is a regulatory exposure nobody is looking at.
+  let generated = await generate(base);
+  if (generated) {
+    const violations = barredAdTerms(`${generated.metaTitle} ${generated.metaDescription}`);
+    if (violations.length) {
+      console.warn(
+        `[draft-metadata] ${draftId}: retrying, barred term(s) ${violations.map((v) => v.term).join(", ")}`,
+      );
+      const retry = await generate({ ...base, priorViolations: violations });
+      const stillBad = retry ? barredAdTerms(`${retry.metaTitle} ${retry.metaDescription}`) : violations;
+      if (retry && stillBad.length === 0) {
+        generated = retry;
+      } else {
+        return {
+          status: "skipped",
+          reason: `Generated copy broke an attorney-advertising rule twice: ${stillBad
+            .map((v) => `"${v.term}" — ${v.why}`)
+            .join("; ")}. Write this one by hand.`,
+        };
+      }
+    }
+  }
   if (!generated) return { status: "skipped", reason: "The metadata generator did not return usable output." };
 
   const meta = (draft.metadata ?? {}) as Record<string, unknown>;
