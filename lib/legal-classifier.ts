@@ -194,7 +194,9 @@ const SYSTEM = `You classify legal claims in law-firm marketing content so a sys
 
 Return ONE classification per claim, from exactly these:
 
-- "factual_mismatch": a SINGLE lookup-able fact an authority states directly — a number (deadline, filing window, dollar amount, percentage), a date (effective or amendment date), or a citation whose content can be checked. Nothing else in the sentence requires judgment.
+- "factual_mismatch": a SINGLE lookup-able fact an authority states directly — a number (deadline, filing window, dollar amount, percentage), a date (effective or amendment date), or a claim about WHAT A NAMED, CITED SECTION SAYS. Nothing else in the sentence requires judgment.
+  IMPORTANT: a sentence that names a specific section and asserts what that section covers, requires, or prohibits IS "factual_mismatch", even when phrased as legal effect. "NYLL 198-c is an anti-waiver provision" and "Section 2611(4) defines employee eligibility" are both checkable: you fetch the section and read it. Do NOT call these "interpretation" merely because they describe what a provision does.
+  The line is whether a SPECIFIC CITED SECTION is being described. "The law generally protects employees" cites nothing and is interpretation; "Section 296 prohibits discrimination based on age" names a section and is checkable.
 - "interpretation": what the law means, whether it applies, how it is enforced, or any conclusion drawn from it.
 - "negative_statement": says what the law does NOT do, does not cover, or does not require.
 - "firm_claim": a statement about the law firm itself.

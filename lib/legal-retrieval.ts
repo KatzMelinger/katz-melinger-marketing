@@ -133,8 +133,27 @@ function extractOpenLegislationText(body: string): string {
     };
     if (json.success === false) return "";
     const r = json.result;
-    const text = r?.text ?? r?.documents?.text ?? "";
-    const title = r?.title ? r.title + String.fromCharCode(10) : "";
+    // OpenLegislation embeds literal backslash-n sequences in the statute text
+    // rather than real line breaks. Left alone they are two ordinary characters,
+    // so whitespace normalisation cannot touch them — which broke quote
+    // verification: the model quotes the passage as a person reads it, and the
+    // stored copy has "\n" wedged mid-sentence. It also made the text
+    // unpleasant for a reviewer. Convert to real whitespace at the source.
+    // OpenLegislation embeds LITERAL backslash-n sequences in the statute text
+    // rather than real line breaks, so they are two ordinary characters that no
+    // whitespace normalisation can touch. Left in, they wedge themselves
+    // mid-word ("any other\npenalty") and quote verification against the
+    // authority fails even when the model has quoted the passage correctly.
+    const unescape = (t: string) =>
+      t
+        .split("\\r\\n").join(" ")
+        .split("\\n").join(" ")
+        .split("\\r").join(" ")
+        .split("\\t").join(" ")
+        .replace(/[ ]+/g, " ")
+        .trim();
+    const text = unescape(r?.text ?? r?.documents?.text ?? "");
+    const title = r?.title ? unescape(r.title) + " " : "";
     return `${title}${text}`.trim();
   } catch {
     return "";
@@ -160,7 +179,14 @@ function looksLikeAuthorityText(text: string, citation: ParsedCitation): boolean
 async function fetchText(url: string): Promise<{ ok: true; body: string } | { ok: false; reason: string }> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/xml,text/plain" },
+      // JSON must be listed: OpenLegislation serves application/json and
+      // answers 406 Not Acceptable to an Accept header that omits it. curl
+      // sends */* and so never hit this, which is why the key tested fine
+      // by hand and failed through the client.
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "application/json,application/xml,text/html,text/plain,*/*",
+      },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       redirect: "follow",
     });

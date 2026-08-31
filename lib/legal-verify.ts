@@ -25,6 +25,12 @@
  * contradiction it cannot point to is exactly the confident-wrong-answer this
  * layer exists to prevent, and asking it nicely is not a control.
  *
+ * A subject-matter mismatch counts as a contradiction, not a silence: a
+ * section about employer payment obligations, claimed to be an anti-waiver
+ * rule, is being misdescribed. Treating that as "inconclusive" would miss the
+ * commonest legal error in the library — a real provision cited for a
+ * proposition it does not stand for.
+ *
  * Contradictions are also checked twice, independently. They are the only
  * verdict that blocks a draft and puts an attorney's time on the clock, so one
  * sampling is not enough to spend either.
@@ -62,13 +68,28 @@ Rules:
 2. For "contradicted" you MUST quote the exact passage from the authority text that conflicts. Copy it verbatim. If you cannot quote it, the answer is "inconclusive".
 3. Do not reason from what you know about the law. Only from the text given.
 4. A claim that is broadly consistent but adds detail the text does not cover is "inconclusive", not "contradicted".
+5. SUBJECT-MATTER MISMATCH IS A CONTRADICTION. When the claim asserts what a cited section covers, and the section's own text is about a materially different subject, answer "contradicted" and quote the passage showing what the section is actually about. A section governing employer payment obligations does not become "inconclusive" on a claim that it is an anti-waiver rule — its text shows it is about something else, and that is a conflict, not a silence. This is distinct from rule 1: rule 1 is about a section that does not speak to the point at all; this is about a section that speaks to a DIFFERENT point than the one claimed.
 
 Return JSON only:
 {"verdict":"supported|contradicted|inconclusive","quote":"<verbatim passage, or empty>","reason":"<one sentence>"}`;
 
-/** Normalise for quote-checking: whitespace and case must not defeat it. */
+/**
+ * Normalise for quote-checking.
+ *
+ * The check must survive how a model transcribes a passage — it re-types the
+ * words, not the byte sequence. Section symbols, smart quotes, hyphenation and
+ * spacing all differ harmlessly. So both sides are reduced to lowercase words,
+ * and only the words have to line up.
+ *
+ * This stays a real control. A fabricated quote does not survive it: the words
+ * simply are not in the source, in any punctuation.
+ */
 function canon(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, " ").replace(/[“”"'’]/g, "").trim();
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function askOnce(
