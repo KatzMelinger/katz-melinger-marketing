@@ -138,6 +138,21 @@ function splitSentences(body: string): { text: string; index: number }[] {
 }
 
 /**
+ * Is this sentence just a pointer to a citation, rather than a claim?
+ *
+ * Legal writing separates the assertion from its authority: "Employees may take
+ * 12 weeks of leave. See 29 CFR 825.100." The second sentence asserts nothing —
+ * it exists to support the first. Treated as a claim in its own right it is
+ * always inconclusive, and worse, the real claim next to it is left with no
+ * citation and so is never checked at all.
+ */
+function isBareCitationPointer(text: string): boolean {
+  if (findCitations(text).length === 0) return false;
+  if (text.length > 120) return false;
+  return /^(?:see|see also|see generally|under|pursuant to|per|cf\.)\b/i.test(text.trim());
+}
+
+/**
  * Classify one sentence without a model.
  *
  * Returns a claim type when the answer is unambiguous, or null when the model
@@ -294,5 +309,23 @@ export async function classifyLegalClaims(body: string): Promise<LegalClaim[]> {
     });
   }
 
-  return claims;
+  // Attach a trailing "See <citation>" to the claim it supports, and drop it
+  // as a claim of its own. Only an ADJACENT bare pointer is borrowed: pulling a
+  // citation from anywhere else risks checking a claim against an authority
+  // that has nothing to do with it, which would produce a confident wrong
+  // verdict — worse than not checking.
+  const merged: LegalClaim[] = [];
+  for (const c of claims) {
+    if (isBareCitationPointer(c.sentence) && merged.length > 0) {
+      const prev = merged[merged.length - 1];
+      if (prev.citations.length === 0) {
+        prev.citations = c.citations;
+        prev.autoCheckable = prev.claimType === "factual_mismatch" && c.citations.length > 0;
+      }
+      continue;
+    }
+    merged.push(c);
+  }
+
+  return merged;
 }

@@ -115,6 +115,15 @@ export type NormalizedFinding = {
   detail: string | null;
   excerpt: string | null;
   fix: string | null;
+  /**
+   * Legal-layer fields, absent on every other check. Carried on the normalized
+   * shape rather than added later so a legal finding arrives complete — a
+   * finding that claims to be factual must be able to name the source it was
+   * checked against in the same breath.
+   */
+  claimType?: LegalClaimType;
+  sourceChecked?: string | null;
+  jurisdiction?: LegalJurisdiction | null;
 };
 
 /** A finding as stored, with the parts only the database knows. */

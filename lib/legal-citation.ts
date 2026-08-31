@@ -196,3 +196,17 @@ export function authorityFetchUrl(c: ParsedCitation, asOf: string): string | nul
 export function isRetrievable(c: ParsedCitation, asOf = "2026-01-01"): boolean {
   return authorityFetchUrl(c, asOf) !== null;
 }
+
+/** The citation as a reader would write it: "29 CFR 825.100", "NY LAB 198-c". */
+export function formatCitation(c: ParsedCitation): string {
+  switch (c.corpus) {
+    case "cfr":
+      return `${c.book} CFR ${c.section}`;
+    case "usc":
+      return `${c.book} U.S.C. ${c.section}`;
+    case "ny_consolidated":
+      return `NY ${c.book} ${c.section}`;
+    default:
+      return c.raw;
+  }
+}

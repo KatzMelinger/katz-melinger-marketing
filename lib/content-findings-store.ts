@@ -119,6 +119,11 @@ export async function syncFindings(args: {
           excerpt: f.excerpt,
           fix: f.fix,
           status: "open",
+          // Legal-layer columns; undefined on every other source, which
+          // Postgres stores as NULL — the correct value for them.
+          claim_type: f.claimType ?? null,
+          source_checked: f.sourceChecked ?? null,
+          jurisdiction: f.jurisdiction ?? null,
           first_seen_at: now,
           last_seen_at: now,
         })),
