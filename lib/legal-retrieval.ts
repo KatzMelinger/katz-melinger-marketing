@@ -39,6 +39,23 @@ const USER_AGENT =
   "Mozilla/5.0 (compatible; KatzMelinger-LegalCheck/1.0; +https://katzmelinger.com)";
 const FETCH_TIMEOUT_MS = 20_000;
 
+/**
+ * Which parser produced the cached text.
+ *
+ * The cache expires by TIME already, which covers a statute being amended. It
+ * does not cover the parser changing underneath text that was stored correctly
+ * for the parser of the day — and that has happened once here: OpenLegislation
+ * embeds literal backslash-n sequences, the extractor was fixed to strip them,
+ * and every cached row kept its corrupted copy while the fix looked applied.
+ *
+ * Bump this whenever a change alters the TEXT that comes out. Rows from an
+ * older revision are then stale however recently they were fetched. Do NOT bump
+ * it for a change that leaves the output identical.
+ *
+ *   1 — strip literal backslash-n/r/t sequences from OpenLegislation text
+ */
+export const EXTRACTOR_REVISION = 1;
+
 /** How long a snapshot may be served before it must be fetched again. */
 export type FreshnessClass = "volatile" | "standard" | "stable";
 
@@ -225,6 +242,17 @@ async function readCache(
     // A flagged row means a previous fetch was inconclusive. It must never
     // satisfy a check — serving it would launder an unresolved lookup.
     if (row.confirmation_status === "flagged") return null;
+    // A row produced by an older parser is stale no matter how fresh it is:
+    // the text itself is wrong, not merely out of date.
+    //
+    // `undefined` and 0 are NOT the same thing here. undefined means the column
+    // does not exist yet (migration unrun), in which case there is nothing to
+    // compare and the row is judged on time alone — otherwise the cache would
+    // silently disable itself until someone ran a migration. 0 means the column
+    // exists and this row predates the current parser, which IS stale.
+    if (row.extracted_by !== undefined && Number(row.extracted_by) !== EXTRACTOR_REVISION) {
+      return null;
+    }
     if (!isFresh(String(row.retrieved_at), row.freshness_class as FreshnessClass)) return null;
     return {
       citation,
@@ -243,25 +271,39 @@ async function writeCache(
   tenantId: string,
   freshness: FreshnessClass,
 ): Promise<void> {
+  const sb = getSupabaseAdmin();
+  const base = {
+    tenant_id: tenantId,
+    corpus: value.citation.corpus,
+    book: value.citation.book,
+    // Stored lowercase so the unique index can be a plain column index,
+    // which ON CONFLICT requires — see the migration for why.
+    section: value.citation.section.toLowerCase(),
+    source_url: value.sourceUrl,
+    authority_text: value.text,
+    retrieved_at: value.retrievedAt,
+    freshness_class: freshness,
+    updated_at: new Date().toISOString(),
+  };
+  const onConflict = { onConflict: "tenant_id,corpus,book,section" };
   try {
-    const sb = getSupabaseAdmin();
-    await sb.from("legal_facts_cache").upsert(
-      {
-        tenant_id: tenantId,
-        corpus: value.citation.corpus,
-        book: value.citation.book,
-        // Stored lowercase so the unique index can be a plain column index,
-        // which ON CONFLICT requires — see the migration for why.
-        section: value.citation.section.toLowerCase(),
-        source_url: value.sourceUrl,
-        authority_text: value.text,
-        retrieved_at: value.retrievedAt,
-        freshness_class: freshness,
-        confirmation_status: "auto",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "tenant_id,corpus,book,section" },
-    );
+    const { error } = await sb
+      .from("legal_facts_cache")
+      .upsert({ ...base, extracted_by: EXTRACTOR_REVISION }, onConflict);
+    if (!error) return;
+    // Graceful column-degradation, matching how the analyzer handles an
+    // unmigrated column: drop the field and retry, so the cache keeps working
+    // before legal_facts_cache_extractor.sql has been run. Without the column
+    // every row reads as revision 0 and simply refetches, which is slower but
+    // never wrong.
+    if (/extracted_by/.test(error.message)) {
+      const retry = await sb.from("legal_facts_cache").upsert(base, onConflict);
+      if (retry.error) {
+        console.warn("[legal-retrieval] cache write failed:", retry.error.message);
+      }
+      return;
+    }
+    console.warn("[legal-retrieval] cache write failed:", error.message);
   } catch (e) {
     // A cache write failing costs a refetch, nothing more. Never let it break
     // the check that succeeded.
