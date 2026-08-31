@@ -44,18 +44,21 @@ removes the one control against fabricated contradictions.
 
 ## What is held
 
-| section | | |
+| section | | as of |
 |---|---|---|
-| **34:19-3** | CEPA — retaliatory action prohibited | held |
-| **34:19-2** | CEPA — definitions | held |
-| **34:11B-3** | NJFLA — definitions (text effective 17 Jul 2026) | held |
-| **10:5-12** | NJLAD — unlawful employment practices | **still needed** |
-| **10:5-5** | NJLAD — definitions | **still needed** |
-| 34:11-4.2 | wage payment frequency | optional — the DOL page may cover it |
+| **10:5-12** | NJLAD — unlawful employment practice or unlawful discrimination | 2026-08-31 |
+| **10:5-5** | NJLAD — definitions | 2026-08-31 |
+| **34:19-3** | CEPA — retaliatory action prohibited | 2026-08-31 |
+| **34:19-2** | CEPA — definitions | 2026-08-31 |
+| **34:11B-3** | NJFLA — definitions (text effective 17 Jul 2026) | 2026-08-31 |
 
-The two NJLAD sections matter most of what is left: most NJ discrimination
-disputes turn on whether someone is an "employer" or "employee" under 10:5-5,
-so without it those claims route to a person even once 10:5-12 is loaded.
+All five priority sections are in. `34:11-4.2` (wage payment frequency) is not,
+and probably does not need to be — the Department of Labor page covers Title
+34:11 live.
+
+Note on 10:5-12: Westlaw carries a KeyCite flag recording that a PRIOR version's
+limitation was recognised in *Affrunti v. Reed Smith LLP* (N.J. Super. A.D., 20
+Nov 2025). The text held here is the current one, effective 20 January 2026.
 
 ## Westlaw exports: what to send, and what not to
 
