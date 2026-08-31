@@ -37,6 +37,7 @@
  */
 
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { focusedExcerpt, quoteRelatesToClaim } from "./authority-excerpt";
 import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
 import { classifyLegalClaims, type LegalClaim } from "./legal-classifier";
 import { retrieveAuthority } from "./legal-retrieval";
@@ -103,7 +104,7 @@ async function askOnce(
     messages: [
       {
         role: "user",
-        content: `CLAIM:\n"""\n${claim}\n"""\n\nAUTHORITY TEXT:\n"""\n${authorityText.slice(0, 12_000)}\n"""`,
+        content: `CLAIM:\n"""\n${claim}\n"""\n\nAUTHORITY TEXT:\n"""\n${focusedExcerpt(authorityText, claim)}\n"""`,
       },
     ],
   });
@@ -154,6 +155,20 @@ export async function verifyClaimAgainst(
       quote: null,
       reason:
         "A conflict was suggested but the supporting passage could not be found in the authority text, so it was not accepted.",
+    };
+  }
+
+  // Present in the source is not the same as about the claim. A contradiction
+  // of "sexual orientation is not protected" came back quoting a proviso on
+  // private school admissions criteria — right verdict, unrelated evidence,
+  // and the evidence is what a reviewer actually reads. An anchor that shares
+  // nothing with the claim is not an anchor.
+  if (!quoteRelatesToClaim(first.quote, claimSentence)) {
+    return {
+      verdict: "inconclusive",
+      quote: null,
+      reason:
+        "A conflict was suggested, but the passage offered as support is about something else, so it was not accepted.",
     };
   }
 

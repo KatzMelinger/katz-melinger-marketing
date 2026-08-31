@@ -44,7 +44,7 @@ async function main() {
   console.log("\nOnly what the wage-and-hour page covers is addressable:");
   t("34:11-56a4 (wage and hour) IS retrievable", isRetrievable(mw!));
   t("12:56-6.1 (wage regs) IS retrievable", isRetrievable(njac!));
-  t("10:5-12 (NJLAD) is NOT — no source, goes to an attorney", !isRetrievable(lad!));
+  t("10:5-12 (NJLAD) has no FETCH route — it is served from the corpus", !isRetrievable(lad!));
   t("34:19-3 (CEPA) is NOT", !isRetrievable(parseCitation("N.J.S.A. 34:19-3")!));
 
   console.log("\nSection extraction from the monolithic page:");
@@ -86,10 +86,26 @@ async function main() {
     t("fetched N.J.S.A. 34:11-56a4 — " + res.failure.reason, false);
   }
 
+  // NJLAD is now HELD LOCALLY, so it must resolve — from the corpus, not the
+  // network. This assertion used to say the opposite; it was true until the
+  // text was ingested, which is exactly the kind of stale test that keeps
+  // passing after the world moves and quietly stops meaning anything.
   const ladRes = await retrieveAuthority(lad!, { tenantId: "00000000-0000-0000-0000-000000000001", skipCache: true });
-  t("NJLAD FAILS with a reason rather than returning something",
-    !ladRes.ok && /no approved machine-readable source/i.test(ladRes.failure.reason));
-  if (!ladRes.ok) console.log("      " + formatCitation(lad!) + ": " + ladRes.failure.reason);
+  if (ladRes.ok) {
+    t(`NJLAD 10:5-12 served from the corpus (${ladRes.value.text.length.toLocaleString()} chars)`, ladRes.value.text.length > 10_000);
+    t("  and its provenance travels with it", /Westlaw|as of/i.test(ladRes.value.sourceUrl));
+  } else {
+    t("NJLAD 10:5-12 served from the corpus — " + ladRes.failure.reason, false);
+  }
+
+  // A New Jersey section with neither a fetch route nor a corpus entry must
+  // still fail loudly. This is the guarantee that matters: no source means no
+  // answer, never a confident one drawn from somewhere else.
+  const absent = parseCitation("N.J.S.A. 10:5-29")!;
+  const absentRes = await retrieveAuthority(absent, { tenantId: "00000000-0000-0000-0000-000000000001", skipCache: true });
+  t("an un-ingested NJ section FAILS with a reason",
+    !absentRes.ok && /no approved machine-readable source/i.test(absentRes.failure.reason));
+  if (!absentRes.ok) console.log("      " + formatCitation(absent) + ": " + absentRes.failure.reason);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exit(1);
