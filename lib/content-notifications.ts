@@ -29,6 +29,7 @@ import { recordAuditEvent } from "./content-findings-store";
 import { dispatch } from "./messaging";
 import { getSupabaseAdmin } from "./supabase-server";
 import type { NormalizedFinding } from "./content-findings";
+import { reviewersFor } from "./legal-reviewers";
 
 
 /** Where the app lives, for links in emails. */
@@ -236,5 +237,76 @@ export async function notifyNewFindings(args: {
     });
   } catch (e) {
     console.warn("[notify] finding notification failed:", e);
+  }
+}
+
+/**
+ * A draft is held for legal review — tell the attorney who owns it.
+ *
+ * Diana's §5 routing: the practice-area attorney is notified, and the other two
+ * are copied because any of them may clear it. A hold that only one person can
+ * lift is a hold that waits for a holiday to end.
+ */
+export async function notifyLegalReview(args: {
+  draftId: string;
+  tenantId: string;
+  practiceArea?: string | null;
+  pillarId?: string | null;
+  topic?: string | null;
+  title?: string | null;
+  criticalCount: number;
+  summary: string;
+}): Promise<void> {
+  try {
+    const title = await draftTitle(args.draftId);
+    const reviewers = reviewersFor({
+      practiceArea: args.practiceArea,
+      pillarId: args.pillarId,
+      topic: args.topic,
+      title: args.title,
+    });
+    const owner = reviewers[0];
+    const heading = `Legal review needed: ${title}`;
+
+    const wrote = await writeAlert(
+      {
+        type: "content_blocked",
+        severity: "high",
+        source: "content",
+        title: heading,
+        body: `${args.criticalCount} legal finding(s) to clear. Assigned to ${owner?.name ?? "an attorney"}.
+
+${args.summary}`,
+        payload: { draft_id: args.draftId, reason: "legal", reviewer: owner?.id ?? null },
+        dedupeKey: `blocked:${args.draftId}:legal`,
+      },
+      args.tenantId,
+    );
+    if (!wrote) return;
+
+    // The owning attorney first, the other two as backup.
+    const to = reviewers.map((r) => r.email).filter(Boolean);
+    const sent = await sendEmails(
+      to,
+      `[Huraqan] ${heading}`,
+      `${args.criticalCount} legal finding(s) need an attorney before this can be approved.
+
+` +
+        `Assigned to ${owner?.name ?? "an attorney"} (the other reviewers are copied and may also clear it).
+
+` +
+        `${args.summary}
+
+${appBaseUrl()}/content-production`,
+    );
+
+    await recordAuditEvent({
+      tenantId: args.tenantId,
+      draftId: args.draftId,
+      event: "notified_legal_review",
+      detail: { reviewer: owner?.id ?? null, critical: args.criticalCount, emails_sent: sent },
+    });
+  } catch (e) {
+    console.warn("[notify] legal review notification failed:", e);
   }
 }

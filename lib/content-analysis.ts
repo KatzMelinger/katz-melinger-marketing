@@ -37,6 +37,7 @@ import {
 } from "./content-findings";
 import { syncFindings } from "./content-findings-store";
 import { notifyNewFindings } from "./content-notifications";
+import { ensureDraftMetadata } from "./draft-metadata";
 import { evaluateAiReadabilityRules } from "./readability-ai";
 import { logEvent } from "./telemetry";
 
@@ -1143,5 +1144,19 @@ export async function analyzeDraft(args: {
     console.warn("[content-analysis] finding sync failed:", e);
   }
 
+  // D1: generate SEO metadata for drafts the Brief Wizard never touched.
+  // Analysis is the one place every draft passes through regardless of how it
+  // was created — generated, imported, or hand-written — which is exactly the
+  // set Diana's D1 is about. Only runs when the metadata is missing AND the
+  // draft has a keyword and an H1, so it is a no-op on the drafts that already
+  // have it, and it never overwrites a title a person wrote.
+  try {
+    const meta = await ensureDraftMetadata(draftId, tid);
+    if (meta.status !== "already_present") {
+      logEvent("draft_metadata", { draftId, status: meta.status });
+    }
+  } catch (e) {
+    console.warn("[content-analysis] metadata generation failed:", e);
+  }
   return analysis;
 }

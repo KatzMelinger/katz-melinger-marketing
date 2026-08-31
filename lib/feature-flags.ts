@@ -8,6 +8,7 @@
  *   EEAT_AUTHORSHIP          — credentialed author bio box on content.
  *   SOCIAL_MULTIFORMAT       — per-platform format → Ayrshare post-type on publish.
  *   NATIVE_SOCIAL_ANALYTICS  — account-level reach/engagement from Ayrshare.
+ *   LEGAL_ACCURACY           — verify legal claims against approved authorities.
  */
 
 const TRUE = new Set(["on", "1", "true", "yes"]);
@@ -39,4 +40,18 @@ export function socialMultiformatEnabled(): boolean {
 /** Account-level analytics pulled from Ayrshare rather than Metricool (Part 4B). */
 export function nativeSocialAnalyticsEnabled(): boolean {
   return enabled("NATIVE_SOCIAL_ANALYTICS");
+}
+
+/**
+ * Legal-accuracy checking at the approval gate (Diana's A1).
+ *
+ * Off by default and deliberately so. It costs a classification call plus a
+ * retrieval and up to two verification calls PER CHECKABLE CLAIM, so it is not
+ * something to switch on for a whole library without watching what it does
+ * first. It also needs NY_LEGISLATION_API_KEY to check New York at all — the
+ * flag being on without the key means every NY claim routes to an attorney,
+ * which is safe but pointless.
+ */
+export function legalAccuracyEnabled(): boolean {
+  return enabled("LEGAL_ACCURACY");
 }

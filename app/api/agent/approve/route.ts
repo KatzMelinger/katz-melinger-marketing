@@ -23,11 +23,13 @@ import {
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness, outstandingFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
-import { freshnessGateEnabled } from "@/lib/feature-flags";
+import { freshnessGateEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
 import { logEvent } from "@/lib/telemetry";
 import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 import { recordAuditEvent } from "@/lib/content-findings-store";
-import { notifyDraftBlocked } from "@/lib/content-notifications";
+import { notifyDraftBlocked, notifyLegalReview } from "@/lib/content-notifications";
+import { runLegalCheck } from "@/lib/legal-verify";
+import { syncFindings } from "@/lib/content-findings-store";
 import { getCurrentUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
@@ -76,7 +78,7 @@ async function approveContent(
   // RLS scopes this read to the caller's tenant — a cross-tenant id returns null.
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("id, status, body, format, practice_area, metadata")
+    .select("id, status, body, title, topic, format, practice_area, metadata")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -298,6 +300,85 @@ async function approveContent(
     );
   }
 
+  // LEGAL ACCURACY (Diana's A1), feature-flagged and last because it is the
+  // most expensive gate: a classification call plus a retrieval and up to two
+  // verification calls per checkable claim. Running it here rather than on save
+  // is her Q3 answer — the blocking point is approval, not editing.
+  //
+  // Findings are synced whatever the verdict, so the reviewer sees the whole
+  // picture: what was verified, what was contradicted, and what no lookup could
+  // settle. Only a CRITICAL finding holds the draft.
+  if (legalAccuracyEnabled()) {
+    try {
+      const legal = await runLegalCheck(
+        typeof draft.body === "string" ? draft.body : "",
+        { tenantId },
+      );
+      await syncFindings({ draftId: id, tenantId, incoming: legal.findings });
+
+      const critical = legal.findings.filter((f) => f.severity === "critical");
+      logEvent("legal_check", { draftId: id, ...legal.stats, critical: critical.length });
+
+      if (critical.length > 0) {
+        const summary = critical
+          .slice(0, 5)
+          .map((f) => `- ${f.title}: "${(f.excerpt ?? "").slice(0, 120)}"`)
+          .join("\n");
+        await supabase
+          .from("content_drafts")
+          .update({ status: "needs_legal" })
+          .eq("id", id)
+          .eq("tenant_id", tenantId);
+        await supabase
+          .from("content_pipeline")
+          .update({ status: "needs_legal" })
+          .eq("draft_id", id)
+          .eq("tenant_id", tenantId);
+        await recordAuditEvent({
+          tenantId,
+          draftId: id,
+          event: "draft_held_legal",
+          detail: { critical: critical.length, ...legal.stats },
+        });
+        await notifyLegalReview({
+          draftId: id,
+          tenantId,
+          practiceArea: (draft.practice_area as string | null) ?? null,
+          topic: (draft.topic as string | null) ?? null,
+          title: (draft.title as string | null) ?? null,
+          criticalCount: critical.length,
+          summary,
+        });
+        return NextResponse.json(
+          {
+            error: `Held for legal review — ${critical.length} claim(s) conflict with the authority they cite.`,
+            status: "needs_legal",
+            legal: {
+              stats: legal.stats,
+              critical: critical.map((f) => ({
+                title: f.title,
+                excerpt: f.excerpt,
+                source: f.sourceChecked,
+              })),
+            },
+          },
+          { status: 422 },
+        );
+      }
+    } catch (e) {
+      // The legal check failing must not silently approve. Hold the draft and
+      // say why — an unavailable checker is not a clean bill of health.
+      console.warn("[approve] legal check failed:", e);
+      return NextResponse.json(
+        {
+          error:
+            "The legal-accuracy check could not run, so this was not approved. Try again, or have an attorney clear it manually.",
+          status: draft.status,
+        },
+        { status: 503 },
+      );
+    }
+  }
   await setDraftStatus(supabase, tenantId, id, "approved");
   // Who approved this, and what the checks said at the time. Approval was the
   // one action with no durable record of either.
