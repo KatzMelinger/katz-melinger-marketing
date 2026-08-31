@@ -34,7 +34,11 @@ export type CitationCorpus =
   /** Code of Federal Regulations, e.g. 29 CFR 825.100. */
   | "cfr"
   /** United States Code, e.g. 29 U.S.C. § 2611. */
-  | "usc";
+  | "usc"
+  /** New Jersey statutes, e.g. N.J.S.A. 34:11-56a4. */
+  | "nj_statute"
+  /** New Jersey administrative code, e.g. N.J.A.C. 12:56-6.1. */
+  | "njac";
 
 export type ParsedCitation = {
   corpus: CitationCorpus;
@@ -86,6 +90,31 @@ function ecfrUrl(title: string, section: string): string {
   return `https://www.ecfr.gov/current/title-${title}/part-${part}/section-${section}`;
 }
 
+
+/**
+ * The one New Jersey page that actually serves statutory text to a machine.
+ *
+ * Every other NJ route was tested and rejected: njoag.gov 403s Node behind
+ * Incapsula, the Civil Service EEO page contains no statutory text at all, and
+ * the Legislature's own statutes system (lis.njleg.state.nj.us) is a
+ * session-based NXT portal that answers "<Not initialized yet>" and a search
+ * form. This page carries the full text of the Wage and Hour Law AND the
+ * N.J.A.C. 12:56 regulations, in one document.
+ *
+ * It is a single monolithic page rather than a URL per section, so retrieval
+ * fetches it once and locates the section inside. That is why scope is checked
+ * here: asking this page for N.J.S.A. 10:5-12 would return a 200 containing no
+ * such section, which is exactly the shape of a check that looks like it ran.
+ */
+const NJ_WAGE_HOUR_URL =
+  "https://www.nj.gov/labor/wageandhour/tools-resources/laws/wageandhourlaws.shtml";
+
+/** Titles this page covers: the Wage and Hour Law and its regulations. */
+function njPageCovers(c: ParsedCitation): boolean {
+  if (c.corpus === "nj_statute") return c.book === "34" && /^11-/.test(c.section);
+  if (c.corpus === "njac") return c.book === "12" && /^56-/.test(c.section);
+  return false;
+}
 /**
  * Parse one citation. Returns null when the string is not a citation this
  * module can address — which routes the claim to a human rather than
@@ -112,6 +141,35 @@ export function parseCitation(input: string): ParsedCitation | null {
     return { corpus: "usc", book: usc[1], section, url: null, raw };
   }
 
+  // N.J.S.A. 34:11-56a4 / NJSA 10:5-12 / N.J. Stat. Ann. 34:19-3
+  const njsa = raw.match(
+    /\bN\.?\s*J\.?\s*S\.?\s*A\.?\s*§?\s*(\d{1,2}[A-Z]?):(\d+[\w.-]*)/i,
+  );
+  if (njsa) {
+    const section = normaliseSection(njsa[2]);
+    const c: ParsedCitation = {
+      corpus: "nj_statute",
+      book: njsa[1],
+      section,
+      url: null,
+      raw,
+    };
+    // Only the wage-and-hour page has a readable address; everything else in
+    // New Jersey is served from the local corpus or goes to an attorney.
+    c.url = njPageCovers(c) ? NJ_WAGE_HOUR_URL : null;
+    return c;
+  }
+
+  // N.J.A.C. 12:56-6.1
+  const njac = raw.match(
+    /\bN\.?\s*J\.?\s*A\.?\s*C\.?\s*§?\s*(\d{1,2}[A-Z]?):(\d+[\w.-]*)/i,
+  );
+  if (njac) {
+    const section = normaliseSection(njac[2]);
+    const c: ParsedCitation = { corpus: "njac", book: njac[1], section, url: null, raw };
+    c.url = njPageCovers(c) ? NJ_WAGE_HOUR_URL : null;
+    return c;
+  }
   // NY: "NY Labor Law § 198-c", "NYLL 198-c", "Executive Law § 296"
   for (const [phrase, code] of Object.entries(NY_LAW_CODES)) {
     const re = new RegExp(
@@ -181,6 +239,15 @@ export function authorityFetchUrl(c: ParsedCitation, asOf: string): string | nul
     }
     case "usc":
       return null;
+    case "nj_statute":
+    case "njac": {
+      // The fetch URL and the display URL are the same page here, because New
+      // Jersey serves one document rather than a URL per section. Scope is what
+      // makes this safe: outside the Wage and Hour Law and N.J.A.C. 12:56 the
+      // page would answer 200 with nothing relevant in it, so anything else
+      // returns null and goes to an attorney.
+      return njPageCovers(c) ? NJ_WAGE_HOUR_URL : null;
+    }
     default:
       return null;
   }
