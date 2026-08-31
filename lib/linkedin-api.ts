@@ -13,15 +13,15 @@
  * Ayrshare stays where it is. It handles posting and headline metrics well; it
  * does not expose follower demographics, which is the specific gap this fills.
  *
- * NOTHING HERE WAS TESTED AGAINST THE LIVE API
+ * VERIFIED AGAINST THE LIVE API ON 2026-08-31
  *
- * There was no token when this was written, so the endpoint shapes come from
- * LinkedIn's documented contract rather than from a response anyone has seen.
- * That is exactly the situation that produces a client which looks right and
- * silently returns zeros, so every failure path names what actually happened —
- * the status, LinkedIn's own message, and which call it came from — and
- * scripts/check-linkedin.ts exists to make the first real response visible
- * before anything depends on it.
+ * It was written without a token, from LinkedIn's documented contract, and the
+ * first real response corrected four things the docs did not: the version was
+ * dead, /industries silently returns ten rows without an explicit count, the
+ * follower total is served from /v2 rather than /rest, and the useful geography
+ * is metro areas rather than countries. Every one of those failed quietly.
+ * scripts/check-linkedin.ts is how they were found and is how the next one will
+ * be.
  *
  * VERSIONING
  *
@@ -31,9 +31,42 @@
  * env var, not a deploy.
  */
 
-/** Default API version. Override with LINKEDIN_API_VERSION when this lapses. */
-const DEFAULT_VERSION = "202506";
+/**
+ * Known-good API version, confirmed live on 2026-08-31.
+ *
+ * LinkedIn retires versions on a rolling window, so any constant here has an
+ * expiry date — the first value shipped was "202506", which is June 2025 and was
+ * already dead. Rather than leave a landmine that detonates in a year, a 426 is
+ * recovered from: see negotiateVersion below.
+ */
+const DEFAULT_VERSION = "202608";
 const BASE = "https://api.linkedin.com/rest";
+
+/**
+ * Versions to try when LinkedIn rejects the configured one.
+ *
+ * Walks back month by month from the current date — the same shape as the eCFR
+ * date ladder in lib/legal-retrieval.ts, and for the same reason: an API
+ * addressed by date will 4xx for a date it does not serve, and "unreachable" is
+ * the wrong conclusion to draw from "not dated today".
+ *
+ * Deliberately NOT walked forward. A future version may exist and behave
+ * differently; the point is to keep working, not to opt into an untested
+ * contract on its release day.
+ */
+function versionLadder(from = new Date()): string[] {
+  const out: string[] = [];
+  const y = from.getUTCFullYear();
+  const m = from.getUTCMonth(); // 0-based
+  for (let back = 0; back < 18; back++) {
+    const d = new Date(Date.UTC(y, m - back, 1));
+    out.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+/** The version that last worked, so one negotiation serves the whole run. */
+let negotiated: string | null = null;
 
 export type LinkedInFailure = {
   ok: false;
@@ -52,13 +85,47 @@ export function linkedInConfigured(): boolean {
   return Boolean(process.env.LINKEDIN_ACCESS_TOKEN?.trim());
 }
 
-function headers(): Record<string, string> {
+function headers(version?: string): Record<string, string> {
   return {
     Authorization: `Bearer ${process.env.LINKEDIN_ACCESS_TOKEN?.trim() ?? ""}`,
-    "LinkedIn-Version": process.env.LINKEDIN_API_VERSION?.trim() || DEFAULT_VERSION,
+    "LinkedIn-Version":
+      version ?? process.env.LINKEDIN_API_VERSION?.trim() ?? negotiated ?? DEFAULT_VERSION,
     "X-Restli-Protocol-Version": "2.0.0",
     Accept: "application/json",
   };
+}
+
+/**
+ * Find a version LinkedIn will accept, cheaply and once.
+ *
+ * Called only after a 426, so the common path costs nothing. The result is
+ * remembered for the process, and reported, because a rolling window means the
+ * pinned value should eventually be updated rather than rediscovered on every
+ * cold start.
+ */
+async function negotiateVersion(path: string): Promise<string | null> {
+  for (const v of versionLadder()) {
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        headers: headers(v),
+        signal: AbortSignal.timeout(20_000),
+      });
+      // 426 means only "wrong version". Anything else — including 401 and 403 —
+      // means the version was accepted and the problem lies elsewhere, so stop
+      // and let the caller report the real failure.
+      if (res.status !== 426) {
+        negotiated = v;
+        console.warn(
+          `[linkedin] version ${headers()["LinkedIn-Version"]} was rejected; using ${v}. ` +
+            `Set LINKEDIN_API_VERSION=${v} to pin it.`,
+        );
+        return v;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -80,6 +147,18 @@ async function get<T>(path: string, step: string): Promise<LinkedInResult<T>> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, { headers: headers(), signal: AbortSignal.timeout(20_000) });
+    // A retired version is recoverable, and recovering beats telling someone to
+    // go and read a changelog. Only tried when no version was pinned by hand:
+    // an explicit LINKEDIN_API_VERSION is a decision, not a default to override.
+    if (res.status === 426 && !process.env.LINKEDIN_API_VERSION?.trim()) {
+      const v = await negotiateVersion(path);
+      if (v) {
+        res = await fetch(`${BASE}${path}`, {
+          headers: headers(v),
+          signal: AbortSignal.timeout(20_000),
+        });
+      }
+    }
   } catch (e) {
     return { ok: false, step, status: null, message: (e as Error).message };
   }
@@ -175,6 +254,7 @@ export type FollowerStatistics = {
   followerCountsBySeniority?: Bucket[];
   followerCountsByIndustry?: Bucket[];
   followerCountsByStaffCountRange?: Bucket[];
+  followerCountsByGeo?: Bucket[];
   followerCountsByGeoCountry?: Bucket[];
   followerCountsByRegion?: Bucket[];
   followerCountsByAssociationType?: Bucket[];
@@ -200,20 +280,41 @@ export async function fetchFollowerStatistics(
   return { ok: true, value: first };
 }
 
-/** Total followers, which the report shows alongside the breakdowns. */
+/**
+ * Total followers.
+ *
+ * This one endpoint is served from the /v2 base, NOT /rest, and the URN must be
+ * percent-encoded in the path. Every other combination answers 400 "Syntax
+ * exception in path variables", which is a useless message to receive and the
+ * reason this is spelled out rather than left to be rediscovered.
+ *
+ * The follower statistics response cannot supply this: its associationType
+ * bucket counts EMPLOYEES (9 here, against 1,883 followers), and the other
+ * buckets each omit followers whose attribute LinkedIn does not know, so every
+ * one of them is a floor rather than a total.
+ */
 export async function fetchFollowerCount(orgUrn: string): Promise<LinkedInResult<number>> {
-  const res = await get<{ firstDegreeSize?: number }>(
-    `/networkSizes/${encodeURIComponent(orgUrn)}?edgeType=CompanyFollowedByMember`,
-    "fetch follower count",
-  );
-  if (!res.ok) return res;
-  const n = res.value.firstDegreeSize;
-  if (typeof n !== "number") {
-    return { ok: false, step: "fetch follower count", status: 200, message: "no firstDegreeSize in response" };
+  const step = "fetch follower count";
+  if (!linkedInConfigured()) {
+    return { ok: false, step, status: null, message: "LINKEDIN_ACCESS_TOKEN is not set" };
   }
-  return { ok: true, value: n };
+  const url =
+    "https://api.linkedin.com/v2/networkSizes/" +
+    encodeURIComponent(orgUrn) +
+    "?edgeType=CompanyFollowedByMember";
+  try {
+    const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(20_000) });
+    const body = await res.text();
+    if (!res.ok) return { ok: false, step, status: res.status, message: body.slice(0, 200) };
+    const n = (JSON.parse(body) as { firstDegreeSize?: number }).firstDegreeSize;
+    if (typeof n !== "number") {
+      return { ok: false, step, status: 200, message: "no firstDegreeSize in response" };
+    }
+    return { ok: true, value: n };
+  } catch (e) {
+    return { ok: false, step, status: null, message: (e as Error).message };
+  }
 }
-
 // ---------------------------------------------------------------- URN labels
 
 /**
@@ -229,8 +330,11 @@ export async function fetchLabelMap(
 ): Promise<LinkedInResult<Record<string, string>>> {
   const path =
     kind === "industries"
-      ? "/industries?locale=(language:en,country:US)"
-      : `/${kind}`;
+      ? // Without an explicit count this returns TEN industries and silently
+        // truncates, which showed up as "urn:li:industry:43" sitting in a
+        // finished report row.
+        "/industries?locale=(language:en,country:US)&count=500"
+      : `/${kind}?count=500`;
   const res = await get<{ elements?: { id?: number | string; name?: { localized?: Record<string, string> }; localizedName?: string }[] }>(
     path,
     `fetch ${kind}`,
@@ -258,4 +362,42 @@ export function staffCountLabel(value: string): string {
   const m = value.match(/^SIZE_(.+)$/);
   if (!m) return value;
   return m[1].replace(/_TO_/g, "-").replace(/_OR_MORE/g, "+").replace(/_/g, " ").toLowerCase();
+}
+
+
+/** Geo names never change, so one lookup per place per process is plenty. */
+const geoMemo = new Map<string, string>();
+
+/**
+ * Resolve geo URNs to place names.
+ *
+ * ONE ID PER CALL, and only for ids the caller actually intends to display.
+ *
+ * The batch form (/geo?ids=List(a,b,c)) exists and is tempting, but it sits
+ * behind its own APPLICATION DAY throttle that a single afternoon of probing
+ * exhausted — after which it answers 429 while /geo/{id} keeps working. The
+ * location breakdown has a hundred rows and the report shows nine of them, so
+ * resolving all hundred was buying a rate-limit failure with requests whose
+ * results were going to be discarded.
+ *
+ * `limit` is a floor under that: a caller that forgets to trim still cannot
+ * spend the quota.
+ */
+export async function fetchGeoLabels(ids: string[], limit = 15): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const wanted = [...new Set(ids)].filter(Boolean).slice(0, limit);
+  for (const id of wanted) {
+    const memo = geoMemo.get(id);
+    if (memo) { out[id] = memo; continue; }
+    const res = await get<{ defaultLocalizedName?: { value?: string } }>(
+      `/geo/${encodeURIComponent(id)}`,
+      "fetch geo label",
+    );
+    // A lookup that fails leaves that row showing its URN — visibly broken, so
+    // it gets fixed. It does not blank the row, which would get believed.
+    if (!res.ok) continue;
+    const name = res.value.defaultLocalizedName?.value;
+    if (name) { geoMemo.set(id, name); out[id] = name; }
+  }
+  return out;
 }
