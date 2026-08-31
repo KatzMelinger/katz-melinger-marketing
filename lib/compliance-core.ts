@@ -13,6 +13,7 @@ import {
   getDisclaimersForJurisdictions,
   getRulesForJurisdictions,
 } from "@/lib/compliance-rules-store";
+import { AD_TERMS_RULE } from "@/lib/ad-terms";
 import { FEE_LANGUAGE_RULE } from "@/lib/fee-language";
 import { FIRM_FACTS_RULE } from "@/lib/firm-facts";
 
@@ -68,6 +69,8 @@ export const COMMON_FAILURE_MODES = `COMMON FAILURE MODES YOU MUST FLAG (high se
 8. Solicitation that violates RPC 7.3 (targeting prospective clients improperly)
 9. Statements that could be read as legal advice / creating an attorney-client relationship without an appropriate disclaimer
 10. ${FEE_LANGUAGE_RULE}
+
+${AD_TERMS_RULE}
 
 ${FIRM_FACTS_RULE}`;
 
