@@ -56,6 +56,10 @@
     {
       "path": "/api/seo/citations/weekly-audit",
       "schedule": "0 13 * * 1"
+    },
+    {
+      "path": "/api/social/linkedin/health",
+      "schedule": "0 14 * * *"
     }
   ]
 }
