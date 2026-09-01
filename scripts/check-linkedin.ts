@@ -124,38 +124,22 @@ async function main() {
     return;
   }
 
+  // The SAME function the monthly cron calls. A probe that exercises different
+  // code from the job it is probing is not evidence of anything.
   const { createClient } = await import("@supabase/supabase-js");
+  const { refreshLinkedInAudience } = await import("@/lib/linkedin-audience-refresh");
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false },
   });
-  const tenantId = "00000000-0000-0000-0000-000000000001";
-  // social_insights is keyed by tenant_id and has NO id column. Selecting "id"
-  // made the read error, and the code then reported "no row to write into"
-  // while a row sat there — a wrong-column read that looks exactly like an
-  // empty table. The error is checked now rather than discarded.
-  const { data, error: readErr } = await sb
-    .from("social_insights")
-    .select("tenant_id, report_audience")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-  if (readErr) {
-    console.log("\nCould not read social_insights: " + readErr.message);
+  const written = await refreshLinkedInAudience(sb, "00000000-0000-0000-0000-000000000001");
+  if (!written.ok) {
+    console.log(`\nWrite failed at ${written.step}: ${written.reason}`);
     process.exit(1);
   }
-  if (!data) {
-    console.log("\nNo social_insights row for this tenant — open the monthly report once first.");
+  if (written.skipped) {
+    console.log(`\nSkipped: ${written.reason}`);
     return;
   }
-  const current = ((data as Record<string, unknown>).report_audience ?? {}) as Record<string, unknown>;
-
-  // Instagram is still hand-entered and stays exactly as it is. Only the
-  // LinkedIn half has a source to replace it.
-  const next = { ...current, linkedin: mapped.audience };
-  const { error } = await sb
-    .from("social_insights")
-    .update({ report_audience: next, updated_at: new Date().toISOString() })
-    .eq("tenant_id", tenantId);
-  if (error) { console.log("\nWrite failed: " + error.message); process.exit(1); }
   console.log("\nWritten. The LinkedIn section of the monthly report is now filled from the API.");
   console.log("Instagram's hand-entered figures were left untouched.");
 }
