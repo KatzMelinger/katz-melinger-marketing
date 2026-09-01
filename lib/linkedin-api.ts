@@ -81,13 +81,116 @@ export type LinkedInFailure = {
 
 export type LinkedInResult<T> = { ok: true; value: T } | LinkedInFailure;
 
+/**
+ * Can this environment talk to LinkedIn at all?
+ *
+ * Either a pasted access token, or the refresh-token credentials that can mint
+ * one. The second is the better arrangement by a distance — see mintFromRefreshToken.
+ */
 export function linkedInConfigured(): boolean {
-  return Boolean(process.env.LINKEDIN_ACCESS_TOKEN?.trim());
+  return Boolean(process.env.LINKEDIN_ACCESS_TOKEN?.trim()) || refreshConfigured();
 }
 
-function headers(version?: string): Record<string, string> {
+export function refreshConfigured(): boolean {
+  return Boolean(
+    process.env.LINKEDIN_REFRESH_TOKEN?.trim() &&
+      process.env.LINKEDIN_CLIENT_ID?.trim() &&
+      process.env.LINKEDIN_CLIENT_SECRET?.trim(),
+  );
+}
+
+/** A minted token and when it stops being usable. */
+let minted: { token: string; expiresAt: number } | null = null;
+
+/**
+ * Exchange the refresh token for a fresh access token.
+ *
+ * LinkedIn access tokens last 60 days; refresh tokens last 365. With a refresh
+ * token the 60-day renewal stops being a calendar reminder and becomes
+ * something the process does for itself — which matters because the failure it
+ * replaces is silent: an expired token does not announce itself, the monthly
+ * report simply keeps showing the audience it last managed to fetch.
+ *
+ * The minted token is kept in memory only. Vercel's filesystem is read-only at
+ * runtime and an env var cannot be written back, so persisting it would mean a
+ * database row holding a credential for no gain: minting costs one POST and the
+ * token outlives any single job by weeks.
+ */
+async function mintFromRefreshToken(): Promise<string | null> {
+  if (!refreshConfigured()) return null;
+  // 5 minutes of headroom, so a token cannot expire between the check and the
+  // call that uses it.
+  if (minted && minted.expiresAt > Date.now() + 300_000) return minted.token;
+
+  try {
+    const res = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: process.env.LINKEDIN_REFRESH_TOKEN!.trim(),
+        client_id: process.env.LINKEDIN_CLIENT_ID!.trim(),
+        client_secret: process.env.LINKEDIN_CLIENT_SECRET!.trim(),
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const body = await res.text();
+    if (!res.ok) {
+      console.warn(`[linkedin] refresh-token exchange failed (${res.status}): ${body.slice(0, 200)}`);
+      return null;
+    }
+    const j = JSON.parse(body) as {
+      access_token?: string;
+      expires_in?: number;
+      refresh_token?: string;
+      refresh_token_expires_in?: number;
+    };
+    if (!j.access_token) return null;
+
+    // LinkedIn may hand back a NEW refresh token. Nothing here can persist it,
+    // so it is announced rather than swallowed — a rotated refresh token that
+    // nobody records is a 365-day clock quietly running out.
+    const current = process.env.LINKEDIN_REFRESH_TOKEN?.trim();
+    if (j.refresh_token && j.refresh_token !== current) {
+      console.warn(
+        "[linkedin] LinkedIn issued a NEW refresh token. Update LINKEDIN_REFRESH_TOKEN " +
+          "in .env.local and Vercel, or it will expire on the original schedule.",
+      );
+    }
+    if (j.refresh_token_expires_in !== undefined) {
+      const days = Math.floor(j.refresh_token_expires_in / 86_400);
+      if (days <= 30) {
+        console.warn(`[linkedin] the refresh token itself expires in ${days} days.`);
+      }
+    }
+
+    minted = {
+      token: j.access_token,
+      expiresAt: Date.now() + (j.expires_in ?? 5_184_000) * 1000,
+    };
+    return minted.token;
+  } catch (e) {
+    console.warn(`[linkedin] refresh-token exchange threw: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * The bearer token to use.
+ *
+ * Refresh token first when it is configured, because it is the arrangement that
+ * does not rot. A pasted LINKEDIN_ACCESS_TOKEN remains a valid fallback, and is
+ * what runs today.
+ */
+export async function currentAccessToken(): Promise<string | null> {
+  const fromRefresh = await mintFromRefreshToken();
+  if (fromRefresh) return fromRefresh;
+  return process.env.LINKEDIN_ACCESS_TOKEN?.trim() || null;
+}
+
+function headers(version?: string, token?: string): Record<string, string> {
   return {
-    Authorization: `Bearer ${process.env.LINKEDIN_ACCESS_TOKEN?.trim() ?? ""}`,
+    Authorization: `Bearer ${token ?? process.env.LINKEDIN_ACCESS_TOKEN?.trim() ?? ""}`,
     "LinkedIn-Version":
       version ?? process.env.LINKEDIN_API_VERSION?.trim() ?? negotiated ?? DEFAULT_VERSION,
     "X-Restli-Protocol-Version": "2.0.0",
@@ -144,9 +247,21 @@ async function get<T>(path: string, step: string): Promise<LinkedInResult<T>> {
       fix: "Add it to .env.local and to the Vercel project's environment variables.",
     };
   }
+  const token = await currentAccessToken();
+  if (!token) {
+    return {
+      ok: false, step, status: null,
+      message: "no usable LinkedIn access token",
+      fix: "Set LINKEDIN_ACCESS_TOKEN, or LINKEDIN_REFRESH_TOKEN with LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET.",
+    };
+  }
+
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { headers: headers(), signal: AbortSignal.timeout(20_000) });
+    res = await fetch(`${BASE}${path}`, {
+      headers: headers(undefined, token),
+      signal: AbortSignal.timeout(20_000),
+    });
     // A retired version is recoverable, and recovering beats telling someone to
     // go and read a changelog. Only tried when no version was pinned by hand:
     // an explicit LINKEDIN_API_VERSION is a decision, not a default to override.
@@ -154,7 +269,19 @@ async function get<T>(path: string, step: string): Promise<LinkedInResult<T>> {
       const v = await negotiateVersion(path);
       if (v) {
         res = await fetch(`${BASE}${path}`, {
-          headers: headers(v),
+          headers: headers(v, token),
+          signal: AbortSignal.timeout(20_000),
+        });
+      }
+    }
+    // A 401 on a MINTED token means the cached one aged out mid-run. Discard it
+    // and mint once more before reporting an expiry that is not real.
+    if (res.status === 401 && refreshConfigured()) {
+      minted = null;
+      const fresh = await currentAccessToken();
+      if (fresh && fresh !== token) {
+        res = await fetch(`${BASE}${path}`, {
+          headers: headers(undefined, fresh),
           signal: AbortSignal.timeout(20_000),
         });
       }
@@ -298,12 +425,17 @@ export async function fetchFollowerCount(orgUrn: string): Promise<LinkedInResult
   if (!linkedInConfigured()) {
     return { ok: false, step, status: null, message: "LINKEDIN_ACCESS_TOKEN is not set" };
   }
+  const token = await currentAccessToken();
+  if (!token) return { ok: false, step, status: null, message: "no usable LinkedIn access token" };
   const url =
     "https://api.linkedin.com/v2/networkSizes/" +
     encodeURIComponent(orgUrn) +
     "?edgeType=CompanyFollowedByMember";
   try {
-    const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(20_000) });
+    const res = await fetch(url, {
+      headers: headers(undefined, token),
+      signal: AbortSignal.timeout(20_000),
+    });
     const body = await res.text();
     if (!res.ok) return { ok: false, step, status: res.status, message: body.slice(0, 200) };
     const n = (JSON.parse(body) as { firstDegreeSize?: number }).firstDegreeSize;

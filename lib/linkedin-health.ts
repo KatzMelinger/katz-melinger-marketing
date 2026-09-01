@@ -22,7 +22,13 @@
  * environment that does not need it otherwise.
  */
 
-import { fetchFollowerStatistics, linkedInConfigured, resolveOrganizationUrn } from "./linkedin-api";
+import {
+  fetchFollowerStatistics,
+  currentAccessToken,
+  linkedInConfigured,
+  refreshConfigured,
+  resolveOrganizationUrn,
+} from "./linkedin-api";
 
 export type LinkedInHealth =
   | { state: "ok"; daysRemaining: number | null; expiresAt: string | null; detail: string }
@@ -76,7 +82,23 @@ export async function checkLinkedInHealth(): Promise<LinkedInHealth> {
   if (!linkedInConfigured()) {
     return {
       state: "misconfigured",
-      detail: "LINKEDIN_ACCESS_TOKEN is not set in this environment.",
+      detail:
+        "No LinkedIn credentials in this environment. Set LINKEDIN_ACCESS_TOKEN, or " +
+        "LINKEDIN_REFRESH_TOKEN with LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET.",
+    };
+  }
+
+  // Credentials being PRESENT is not the same as a token being obtainable: a
+  // wrong refresh token satisfies linkedInConfigured() and then mints nothing.
+  // Without this, downstream calls fail with no status and the check reports
+  // "unknown — the token works but...", which is both wrong and confusing.
+  if (!(await currentAccessToken())) {
+    return {
+      state: "misconfigured",
+      detail:
+        "LinkedIn credentials are set but no access token could be obtained. " +
+        "If LINKEDIN_REFRESH_TOKEN is configured, it was rejected — check the " +
+        "server log for the exchange error.",
     };
   }
 
@@ -108,7 +130,7 @@ export async function checkLinkedInHealth(): Promise<LinkedInHealth> {
     }
     return {
       state: "unknown",
-      detail: `The token works but follower statistics failed (${stats.status ?? "no response"}): ${stats.message}`,
+      detail: `The organization resolved but follower statistics failed (${stats.status ?? "no response"}): ${stats.message}`,
     };
   }
 
@@ -132,16 +154,32 @@ export async function checkLinkedInHealth(): Promise<LinkedInHealth> {
     };
   }
 
+  // With a refresh token there is nothing to warn about: the 60-day access
+  // token is minted on demand and the thing that actually expires is the
+  // 365-day refresh token, which lib/linkedin-api.ts logs as it approaches.
+  if (refreshConfigured()) {
+    return {
+      state: "ok",
+      daysRemaining: null,
+      expiresAt: null,
+      detail:
+        "Working, and renewing itself. Access tokens are minted from " +
+        "LINKEDIN_REFRESH_TOKEN as needed, so the 60-day expiry no longer needs " +
+        "a person. The refresh token lasts 365 days.",
+    };
+  }
+
   return {
     state: "ok",
     daysRemaining: null,
     expiresAt: null,
     detail:
-      "Working. Expiry is unknown because LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET are not set, " +
-      "so a problem will only be reported once a call has already failed.",
+      "Working, but this token expires in at most 60 days and nothing here can " +
+      "see when. Set LINKEDIN_REFRESH_TOKEN with LINKEDIN_CLIENT_ID and " +
+      "LINKEDIN_CLIENT_SECRET to renew automatically, or set just the client " +
+      "credentials for a 14-day warning.",
   };
 }
-
 /** The steps to get a new token, kept with the alert that asks for one. */
 export const RENEWAL_STEPS = [
   "Open linkedin.com/developers/apps and select KM Marketing Dashboard.",
