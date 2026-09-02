@@ -14,6 +14,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import {
   reconcileFindings,
+  type FindingResolution,
   type FindingStatus,
   type NormalizedFinding,
   type StoredFinding,
@@ -202,6 +203,16 @@ export async function setFindingStatus(args: {
   userId: string;
   userEmail: string;
   note?: string;
+  /**
+   * What the reviewer actually did — fixed, approved_as_is, or removed.
+   *
+   * The column has existed since the legal-findings migration and nothing ever
+   * wrote it, which made "how often is a flag approved as-is" a question with
+   * no answer. That number is the one that says whether the checker is too
+   * noisy, so a schema that records it and code that does not is worse than
+   * useless: it looks like the data is there.
+   */
+  resolution?: FindingResolution;
 }): Promise<StoredFinding | null> {
   const sb = getSupabaseAdmin();
   const now = new Date().toISOString();
@@ -217,6 +228,9 @@ export async function setFindingStatus(args: {
       resolved_by_email: closing ? args.userEmail : null,
       resolved_at: closing ? now : null,
       resolution_note: args.note ?? null,
+      // Cleared on re-open for the same reason as the attribution: a finding
+      // that is open again was not "fixed".
+      resolution: closing ? (args.resolution ?? null) : null,
       updated_at: now,
     })
     .eq("id", args.findingId)
