@@ -147,22 +147,23 @@ async function mintFromRefreshToken(): Promise<string | null> {
     };
     if (!j.access_token) return null;
 
-    // LinkedIn may hand back a NEW refresh token. Nothing here can persist it,
-    // so it is announced rather than swallowed — a rotated refresh token that
-    // nobody records is a 365-day clock quietly running out.
-    const current = process.env.LINKEDIN_REFRESH_TOKEN?.trim();
-    if (j.refresh_token && j.refresh_token !== current) {
-      console.warn(
-        "[linkedin] LinkedIn issued a NEW refresh token. Update LINKEDIN_REFRESH_TOKEN " +
-          "in .env.local and Vercel, or it will expire on the original schedule.",
-      );
-    }
-    if (j.refresh_token_expires_in !== undefined) {
-      const days = Math.floor(j.refresh_token_expires_in / 86_400);
-      if (days <= 30) {
-        console.warn(`[linkedin] the refresh token itself expires in ${days} days.`);
-      }
-    }
+    // LinkedIn returns a DIFFERENT refresh token on every exchange, and the
+    // stored one keeps working regardless. Measured on 2026-09-01: two
+    // consecutive exchanges of the same stored token both succeeded and each
+    // handed back a distinct new refresh token, with refresh_token_expires_in
+    // pinned at 365 days both times.
+    //
+    // So a rotation is not an event, and the warning that used to fire here was
+    // a false alarm on every single run — telling someone to go and update a
+    // credential that did not need updating. That is how a log line earns the
+    // right to be ignored, and this file has a real warning to spend that
+    // credibility on.
+    //
+    // Nor can refresh_token_expires_in be used for advance warning: it
+    // describes the token just issued, not the one in the environment, so it
+    // reads 365 days forever. The stored refresh token's own year is invisible
+    // from here. When it does lapse the exchange fails, and
+    // lib/linkedin-health.ts reports that as misconfigured with the reason.
 
     minted = {
       token: j.access_token,
