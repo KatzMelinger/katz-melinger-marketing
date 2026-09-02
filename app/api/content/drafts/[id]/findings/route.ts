@@ -58,6 +58,7 @@ export async function PATCH(
     findingId?: unknown;
     status?: unknown;
     note?: unknown;
+    resolution?: unknown;
   };
   const findingId = typeof body.findingId === "string" ? body.findingId : "";
   if (!findingId) return NextResponse.json({ error: "findingId is required" }, { status: 400 });
@@ -68,6 +69,23 @@ export async function PATCH(
     );
   }
   const note = typeof body.note === "string" && body.note.trim() ? body.note.trim() : undefined;
+
+  // What the reviewer DID, as one of three typed outcomes. The column has
+  // existed since the legal-findings migration and nothing wrote it, which
+  // left "how often is a flag approved as-is" unanswerable — and that is the
+  // number that says whether the checker is too noisy.
+  const RESOLUTIONS = ["fixed", "approved_as_is", "removed"] as const;
+  const resolution =
+    typeof body.resolution === "string" &&
+    (RESOLUTIONS as readonly string[]).includes(body.resolution)
+      ? (body.resolution as (typeof RESOLUTIONS)[number])
+      : undefined;
+  if (body.resolution !== undefined && !resolution) {
+    return NextResponse.json(
+      { error: `resolution must be one of: ${RESOLUTIONS.join(", ")}` },
+      { status: 400 },
+    );
+  }
 
   const { supabase, tenantId } = await getTenantClient();
   const { data: draft } = await supabase
@@ -94,6 +112,7 @@ export async function PATCH(
     userId: user.id,
     userEmail: user.email,
     note,
+    resolution,
   });
   if (!updated) return NextResponse.json({ error: "Finding not found" }, { status: 404 });
 
@@ -110,6 +129,7 @@ export async function PATCH(
       severity: updated.severity,
       title: updated.title,
       note: note ?? null,
+      resolution: resolution ?? null,
     },
   });
 

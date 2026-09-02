@@ -14,6 +14,9 @@ const STAGES: { href: string; label: string }[] = [
   { href: "/seo/opportunities", label: "Opportunity" },
   { href: "/content-production", label: "Draft" },
   { href: "/content-production", label: "Approve" },
+  // Between Approve and QA, because that is where a held draft actually sits:
+  // the gate stopped it on the way to approved.
+  { href: "/content/legal-review", label: "Legal" },
   { href: "/content/publishing-qa", label: "QA" },
   { href: "/content-production", label: "Published" },
 ];
