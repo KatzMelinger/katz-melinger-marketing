@@ -31,7 +31,57 @@ import { AD_TERMS_RULE, marketingCopyViolations, type AdTermHit } from "./ad-ter
 export type MetadataOutcome =
   | { status: "generated"; metaTitle: string; metaDescription: string }
   | { status: "already_present" }
+  /** This format has no web page, so there is nothing to write metadata for. */
+  | { status: "not_applicable"; reason: string }
   | { status: "skipped"; reason: string };
+
+/**
+ * Formats that become a URL, and therefore have a meta title, a description and
+ * an H1.
+ *
+ * An allowlist rather than a social denylist, because the question is not "is
+ * this social" but "does this have a page". lib/social-format-rules.ts already
+ * has isSocialFormat and it is the wrong test here: it misses `email`,
+ * `social` and `video_long`, none of which have a URL either.
+ *
+ * This distinction was missing, and the cost was a specific false alarm: 96
+ * drafts were reported as lacking a keyword and an H1, which read as most of
+ * the library being structurally broken. 93 of them were Instagram captions,
+ * carousels, emails and video scripts. An Instagram caption has no "# heading"
+ * by design and no target keyword because it has no search result to rank in.
+ * The real number was three.
+ *
+ * A format that is not listed here is treated as having no page, and logged —
+ * so a NEW page format added later shows up as a warning rather than silently
+ * never receiving metadata.
+ */
+export const PAGE_FORMATS = new Set([
+  "blog",
+  "km_blog_post",
+  "km_page_update",
+  "km_practice_page",
+  "webpage",
+  "service_page",
+]);
+
+/** Formats known to have no page, so their absence from PAGE_FORMATS is expected. */
+const KNOWN_NON_PAGE = new Set([
+  "carousel", "linkedin", "facebook", "instagram", "twitter",
+  "video_short", "video_long", "social", "email",
+]);
+
+export function hasWebPage(format: string | null | undefined): boolean {
+  const f = (format ?? "").trim();
+  if (!f) return false;
+  if (PAGE_FORMATS.has(f)) return true;
+  if (!KNOWN_NON_PAGE.has(f)) {
+    console.warn(
+      `[draft-metadata] unrecognised format "${f}" — treated as having no web page, so it ` +
+        "will never get metadata. Add it to PAGE_FORMATS if it does.",
+    );
+  }
+  return false;
+}
 
 type DraftRow = {
   id: string;
@@ -185,6 +235,17 @@ export async function ensureDraftMetadata(
 
   const current = existingMeta(draft);
   if (current.title && current.description) return { status: "already_present" };
+
+  // A caption has no meta description because it has no page. Checked before
+  // the prerequisites, so a social draft is reported as "not applicable" rather
+  // than "no H1" — those are different facts, and reporting the second for 93
+  // social drafts is what made half the library look structurally broken.
+  if (!hasWebPage(draft.format)) {
+    return {
+      status: "not_applicable",
+      reason: `${draft.format ?? "This format"} has no web page, so it needs no meta title, description or slug.`,
+    };
+  }
 
   const keyword = primaryKeyword(draft);
   const h1 = bodyH1(draft.body ?? "");
