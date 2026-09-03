@@ -68,6 +68,74 @@ export function getAyrshareApiKey(): string | null {
   return process.env.AYRSHARE_API_KEY?.trim() || null;
 }
 
+/** An Ayrshare account key: four 8-character alphanumeric groups. Advisory. */
+const AYRSHARE_KEY_SHAPE = /^[A-Za-z0-9]{8}(-[A-Za-z0-9]{8}){3}$/;
+
+/**
+ * Characters an HTTP header value may legally carry — printable ASCII, no
+ * spaces or control characters. A pasted code snippet (braces, quotes,
+ * newlines) fails this, which is the incident this guards against: AYRSHARE_API_KEY
+ * once held an entire Ayrshare docs example, so fetch() threw while building the
+ * header, and the thrown message — which quotes the offending value back — carried
+ * the live token into the API response and on into social_posts.last_error.
+ */
+const HEADER_SAFE = /^[\x21-\x7E]+$/;
+
+/**
+ * Why this key can't be sent, or null when it's usable. Deliberately two-tier:
+ * header-safety is a hard reject because the request provably cannot succeed,
+ * while a shape mismatch alone is not, so a future change to Ayrshare's key
+ * format can't take publishing down on our side.
+ */
+export function ayrshareKeyProblem(key: string | null | undefined): string | null {
+  const k = (key ?? "").trim();
+  if (!k) return "Ayrshare API key is not set.";
+  if (!HEADER_SAFE.test(k)) {
+    return (
+      "Ayrshare API key is not a valid token — it contains spaces, line breaks, or " +
+      "other characters an HTTP header cannot carry. Store only the key itself: " +
+      'four 8-character groups, with no "Bearer" prefix and no surrounding code.'
+    );
+  }
+  if (k.length > 200) {
+    return "Ayrshare API key is implausibly long — store only the key itself, not a code sample.";
+  }
+  return null;
+}
+
+/** Whether the key matches Ayrshare's documented shape. Advisory, not a gate. */
+export function looksLikeAyrshareKey(key: string): boolean {
+  return AYRSHARE_KEY_SHAPE.test(key.trim());
+}
+
+/**
+ * Strip anything credential-shaped from a vendor message before it can reach a
+ * client, a database column, or a log line. Three overlapping nets — the live
+ * key by exact value, any Bearer run, and any token-shaped substring — so a
+ * stale key still sitting in a queued message gets scrubbed too.
+ */
+export function redactCredentials(text: string, apiKey?: string | null): string {
+  const key = (apiKey ?? "").trim();
+  let out = text;
+  if (key.length >= 8) out = out.split(key).join("[redacted]");
+  out = out.replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
+  out = out.replace(/[A-Za-z0-9]{8}(-[A-Za-z0-9]{8}){3}/g, "[redacted]");
+  return out.length > 300 ? `${out.slice(0, 300)}…` : out;
+}
+
+/**
+ * Turn a thrown error into a message that is safe to hand back. The raw text is
+ * redacted before it is logged rather than logged verbatim: nothing about a bad
+ * key is easier to debug with the key echoed back, so a "raw error, server-side
+ * only" log line would just be a slower leak.
+ */
+function safeVendorError(e: unknown, apiKey: string | null | undefined, fallback: string): string {
+  if (!(e instanceof Error)) return fallback;
+  const message = redactCredentials(e.message, apiKey);
+  console.error("[ayrshare] request failed:", message);
+  return message || fallback;
+}
+
 /**
  * Extra fields a format needs beyond the post text. Google Business event and
  * offer posts carry their own title and run dates; everything else ignores this.
@@ -175,6 +243,11 @@ export async function postToAyrshare(input: {
   /** Title/dates a Google Business event or offer needs (4A). */
   formatExtras?: FormatExtras;
 }): Promise<AyrshareResult> {
+  // Refuse a key that can't be a header value rather than letting fetch() throw
+  // with the bad value quoted back at us.
+  const keyProblem = ayrshareKeyProblem(input.apiKey);
+  if (keyProblem) return { ok: false, status: "error", errors: [{ message: keyProblem }] };
+
   const headers: Record<string, string> = {
     Authorization: `Bearer ${input.apiKey}`,
     "Content-Type": "application/json",
@@ -215,7 +288,7 @@ export async function postToAyrshare(input: {
     return {
       ok: false,
       status: "error",
-      errors: [{ message: e instanceof Error ? e.message : "Ayrshare request failed" }],
+      errors: [{ message: safeVendorError(e, input.apiKey, "Ayrshare request failed") }],
     };
   }
 
@@ -254,6 +327,9 @@ export async function deleteAyrsharePost(input: {
   profileKey?: string | null;
   id: string;
 }): Promise<{ ok: boolean; error?: string }> {
+  const keyProblem = ayrshareKeyProblem(input.apiKey);
+  if (keyProblem) return { ok: false, error: keyProblem };
+
   const headers: Record<string, string> = {
     Authorization: `Bearer ${input.apiKey}`,
     "Content-Type": "application/json",
@@ -272,12 +348,14 @@ export async function deleteAyrsharePost(input: {
       ? { ok: true }
       : {
           ok: false,
-          error:
+          error: redactCredentials(
             (Array.isArray(data.errors) && (data.errors[0] as { message?: string })?.message) ||
-            `Ayrshare delete failed (${res.status})`,
+              `Ayrshare delete failed (${res.status})`,
+            input.apiKey,
+          ),
         };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Ayrshare delete request failed" };
+    return { ok: false, error: safeVendorError(e, input.apiKey, "Ayrshare delete request failed") };
   }
 }
 
@@ -337,6 +415,9 @@ export async function getAyrsharePostAnalytics(input: {
   id: string;
   platforms: string[];
 }): Promise<AyrsharePostAnalytics> {
+  const keyProblem = ayrshareKeyProblem(input.apiKey);
+  if (keyProblem) return { ok: false, perPlatform: {}, error: keyProblem };
+
   const headers: Record<string, string> = {
     Authorization: `Bearer ${input.apiKey}`,
     "Content-Type": "application/json",
@@ -354,9 +435,11 @@ export async function getAyrsharePostAnalytics(input: {
       return {
         ok: false,
         perPlatform: {},
-        error:
+        error: redactCredentials(
           (Array.isArray(data.errors) && (data.errors[0] as { message?: string })?.message) ||
-          `Ayrshare analytics failed (${res.status})`,
+            `Ayrshare analytics failed (${res.status})`,
+          input.apiKey,
+        ),
       };
     }
     const perPlatform: Record<string, PostMetrics> = {};
@@ -377,7 +460,7 @@ export async function getAyrsharePostAnalytics(input: {
     return {
       ok: false,
       perPlatform: {},
-      error: e instanceof Error ? e.message : "Ayrshare analytics request failed",
+      error: safeVendorError(e, input.apiKey, "Ayrshare analytics request failed"),
     };
   }
 }
@@ -509,6 +592,9 @@ export async function getAyrshareSocialAnalytics(input: {
   profileKey?: string | null;
   platforms: string[];
 }): Promise<AyrshareAccountAnalytics> {
+  const keyProblem = ayrshareKeyProblem(input.apiKey);
+  if (keyProblem) return { ok: false, perPlatform: {}, lastUpdated: {}, error: keyProblem };
+
   const headers: Record<string, string> = {
     Authorization: `Bearer ${input.apiKey}`,
     "Content-Type": "application/json",
@@ -528,9 +614,11 @@ export async function getAyrshareSocialAnalytics(input: {
         ok: false,
         perPlatform: {},
         lastUpdated: {},
-        error:
+        error: redactCredentials(
           (Array.isArray(data.errors) && (data.errors[0] as { message?: string })?.message) ||
-          `Ayrshare account analytics failed (${res.status})`,
+            `Ayrshare account analytics failed (${res.status})`,
+          input.apiKey,
+        ),
       };
     }
 
@@ -559,7 +647,7 @@ export async function getAyrshareSocialAnalytics(input: {
       ok: false,
       perPlatform: {},
       lastUpdated: {},
-      error: e instanceof Error ? e.message : "Ayrshare account analytics request failed",
+      error: safeVendorError(e, input.apiKey, "Ayrshare account analytics request failed"),
     };
   }
 }

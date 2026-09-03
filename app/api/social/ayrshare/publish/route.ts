@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   AYRSHARE_PLATFORMS,
+  ayrshareKeyProblem,
   getAyrshareApiKey,
   postToAyrshare,
   type AyrsharePlatform,
@@ -41,6 +42,12 @@ export async function POST(request: NextRequest) {
       { error: "Ayrshare is not configured. Set AYRSHARE_API_KEY." },
       { status: 400 },
     );
+  }
+  // A key that can't be sent is a deployment fault, not a bad request — say so
+  // plainly here rather than letting every publish fail as a vendor 502.
+  const keyProblem = ayrshareKeyProblem(apiKey);
+  if (keyProblem) {
+    return NextResponse.json({ error: keyProblem }, { status: 500 });
   }
 
   let raw: unknown;
