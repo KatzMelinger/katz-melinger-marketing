@@ -12,22 +12,17 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { PIPELINE_STATUSES, isPipelineStatus } from "@/lib/content-status";
 import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
-// Mirrors PIPELINE_STATUSES. `needs_legal` and `approved` were missing, which
-// meant a draft held by a gate could not be filtered for or counted — the board
-// simply had no view of its own blocked items.
-const VALID_STATUSES = [
-  "idea",
-  "brief",
-  "draft",
-  "review",
-  "needs_legal",
-  "approved",
-  "published",
-] as const;
+// This was a hand-copied list that "mirrored" PIPELINE_STATUSES, and the mirror
+// had already cracked once: `needs_legal` and `approved` were missing, so a
+// draft held by a gate could not be filtered for or counted and the board had
+// no view of its own blocked items. A copy that has drifted before will drift
+// again, so it's imported now — lib/content-status.ts is the single source of
+// truth, kept in step with the DB's CHECK constraint.
 const VALID_BUCKETS = ["money_page", "bofu_education", "mofu_trust", "local_authority"] as const;
 const VALID_CONTENT_TYPES = ["website", "social", "email"] as const;
 
@@ -74,7 +69,7 @@ export async function GET(req: NextRequest) {
   const bucket = searchParams.get("bucket");
   const contentType = searchParams.get("content_type");
 
-  if (status && !VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])) {
+  if (status && !isPipelineStatus(status)) {
     return NextResponse.json({ error: "Invalid status filter" }, { status: 400 });
   }
   if (bucket && !VALID_BUCKETS.includes(bucket as (typeof VALID_BUCKETS)[number])) {
@@ -108,7 +103,7 @@ export async function GET(req: NextRequest) {
   const stats = {
     total: all.length,
     byStatus: Object.fromEntries(
-      VALID_STATUSES.map((s) => [s, all.filter((i) => i.status === s).length]),
+      PIPELINE_STATUSES.map((s) => [s, all.filter((i) => i.status === s).length]),
     ) as Record<string, number>,
     byBucket: Object.fromEntries(
       VALID_BUCKETS.map((b) => [b, all.filter((i) => i.bucket === b).length]),
@@ -152,9 +147,7 @@ export async function POST(req: NextRequest) {
   const title = (body?.title as string | undefined)?.trim();
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
 
-  const status = VALID_STATUSES.includes(body?.status as (typeof VALID_STATUSES)[number])
-    ? body.status
-    : "idea";
+  const status = isPipelineStatus(body?.status) ? body.status : "idea";
   const bucket = VALID_BUCKETS.includes(body?.bucket as (typeof VALID_BUCKETS)[number])
     ? body.bucket
     : "bofu_education";

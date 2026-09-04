@@ -14,7 +14,11 @@
 import { NextResponse } from "next/server";
 
 import { getPosts } from "@/lib/metricool";
-import { BEST_TIME_BENCHMARKS, BEST_TIME_TZ } from "@/lib/social-best-time";
+import {
+  BEST_TIME_BENCHMARKS,
+  BEST_TIME_TZ,
+  zonedWallClockToUtc,
+} from "@/lib/social-best-time";
 import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
@@ -44,12 +48,11 @@ function nyParts(dateTime?: string, srcTz?: string): { day: number; hour: number
   if (!dateTime) return null;
   const naiveUtc = new Date(dateTime.endsWith("Z") ? dateTime : `${dateTime}Z`);
   if (Number.isNaN(naiveUtc.getTime())) return null;
-  const tz = srcTz || "UTC";
-  // Offset of srcTz at this instant: compare the same instant rendered in tz vs UTC.
-  const inTz = new Date(naiveUtc.toLocaleString("en-US", { timeZone: tz }));
-  const inUtc = new Date(naiveUtc.toLocaleString("en-US", { timeZone: "UTC" }));
-  const offset = inTz.getTime() - inUtc.getTime();
-  const instant = new Date(naiveUtc.getTime() - offset);
+  // The post's timestamp is wall-clock in its own timezone, so resolve it to a
+  // real instant first. Shared with the composer's "Apply best time" path —
+  // this offset arithmetic used to be copied here verbatim.
+  const instant = zonedWallClockToUtc(naiveUtc, srcTz || "UTC");
+  if (Number.isNaN(instant.getTime())) return null;
   // Now read weekday + hour in NY.
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ,
