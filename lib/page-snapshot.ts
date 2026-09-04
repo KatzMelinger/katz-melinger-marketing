@@ -10,6 +10,8 @@
  * still useful signal ("canonical missing" is a fixable finding).
  */
 
+import { safeFetch } from "@/lib/url-safety";
+
 export type PageSnapshot = {
   url: string;
   status: number;
@@ -47,8 +49,16 @@ function allMatches(html: string, re: RegExp): string[] {
   return out;
 }
 
+/**
+ * `url` here is user-supplied (the schema generator's "suggest Q&A from this
+ * page" box), so this goes through safeFetch, not bare fetch: it re-checks
+ * every redirect hop against assertPublicUrl. With redirect:"follow" an open
+ * redirect — or an attacker's own 302 — reached loopback, RFC1918 or
+ * 169.254.169.254, and the body came back to the caller through the model's
+ * answer. safeFetch also carries a timeout, which the bare fetch did not.
+ */
 export async function snapshotPage(url: string): Promise<PageSnapshot> {
-  const res = await fetch(url, { headers: HEADERS, redirect: "follow" });
+  const res = await safeFetch(url, { headers: HEADERS });
   const html = await res.text();
 
   const title = firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);

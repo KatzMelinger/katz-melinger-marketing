@@ -26,10 +26,18 @@ export async function GET() {
     );
   }
 
+  // Scope to the caller's own firm. requireAdmin() proves the caller is an
+  // admin, but "admin" is a PER-TENANT role — it says nothing about which firm
+  // a row belongs to, and getSupabaseAdmin() is the service-role client, which
+  // bypasses RLS. Unscoped, this returned every app_users row in the database:
+  // one firm's admin could read every other firm's user emails and, worse, the
+  // user_ids that /api/admin/users/[id] acts on.
+  const tenantId = await resolveTenantId();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("app_users")
     .select("user_id, email, role, status, invited_by, created_at, updated_at")
+    .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ users: data ?? [] });
