@@ -61,19 +61,39 @@ export function bestSlot(network: string): { day: number; hour: number } | null 
 }
 
 /**
+ * Resolve a wall-clock reading into the real UTC instant it denotes in a zone.
+ *
+ * `naiveUtc` is a Date whose UTC fields carry the wall-clock digits a human
+ * read off a calendar ("2026-07-20 09:00"), NOT a real instant — the trailing
+ * "Z" is a lie we tell Date so it stops applying the browser's zone. This works
+ * out the target zone's offset at that moment and subtracts it, yielding the
+ * instant that actually shows those digits in `timeZone`.
+ *
+ * The technique: render the same instant into both the target zone and UTC via
+ * toLocaleString, re-parse both, and diff them. Both halves are parsed the same
+ * (locale-dependent) way, so the machine's own zone cancels out. It resolves to
+ * whole seconds, which is irrelevant for scheduling and hour bucketing.
+ *
+ * This lived twice — here, and in app/api/social/best-time/route.ts, whose own
+ * comment said it "mirrors" this one. Two copies of date arithmetic is how a
+ * DST fix lands in one scheduler and not the other, so the shared half is here
+ * and the two callers keep only what actually differs between them.
+ */
+export function zonedWallClockToUtc(naiveUtc: Date, timeZone: string): Date {
+  if (Number.isNaN(naiveUtc.getTime())) return new Date(NaN);
+  const inTz = new Date(naiveUtc.toLocaleString("en-US", { timeZone }));
+  const inUtc = new Date(naiveUtc.toLocaleString("en-US", { timeZone: "UTC" }));
+  const offset = inTz.getTime() - inUtc.getTime();
+  return new Date(naiveUtc.getTime() - offset);
+}
+
+/**
  * Interpret a `yyyy-mm-dd` date + `HH:mm` time as America/New_York wall-clock
  * and return the correct UTC instant. JS's `new Date("2026-07-20T09:00")` parses
  * offset-less strings as BROWSER-local, which is wrong for any non-ET machine;
  * this pins the intended zone to NY regardless of where the browser runs.
- * Mirrors the offset technique in app/api/social/best-time/route.ts.
  */
 export function nyWallClockToUtc(date: string, time: string): Date {
   const naiveUtc = new Date(`${date}T${(time || "00:00").slice(0, 5)}:00Z`);
-  if (Number.isNaN(naiveUtc.getTime())) return new Date(NaN);
-  // NY's offset from UTC at this instant (negative — NY is behind UTC).
-  const inTz = new Date(naiveUtc.toLocaleString("en-US", { timeZone: BEST_TIME_TZ }));
-  const inUtc = new Date(naiveUtc.toLocaleString("en-US", { timeZone: "UTC" }));
-  const offset = inTz.getTime() - inUtc.getTime();
-  // The NY wall-clock corresponds to (naiveUtc - offset) in real UTC.
-  return new Date(naiveUtc.getTime() - offset);
+  return zonedWallClockToUtc(naiveUtc, BEST_TIME_TZ);
 }
