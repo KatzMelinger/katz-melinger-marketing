@@ -25,10 +25,20 @@ import {
 } from "@/lib/sales-coach-rubric";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// Kept in step with CONTENT_LONG_FORM_MODEL / KEYWORD_RESEARCH_MODEL in
+// lib/anthropic.ts, which is what the comment above has always claimed this
+// tracked. It had drifted to claude-sonnet-4-20250514 — a generation behind the
+// rest of the app, and the only DEPRECATED model left in the codebase, so the
+// nightly /api/calls/score-pending cron would have started failing whenever
+// Anthropic retired it. Sonnet 4.5 is also in CACHE_MIN_TOKENS, so willCache()
+// can now actually answer for this call site instead of assuming yes.
 const DEFAULT_MODEL =
-  process.env.SALES_COACH_MODEL?.trim() || "claude-sonnet-4-20250514";
+  process.env.SALES_COACH_MODEL?.trim() || "claude-sonnet-4-5-20250929";
 
-export const PROMPT_VERSION = 1;
+// Bumped to 2 alongside the Sonnet 4 → 4.5 move above. Scores are stamped with
+// model_id + prompt_version, so this is what keeps pre- and post-bump scores
+// distinguishable in call_scores rather than silently comparable.
+export const PROMPT_VERSION = 2;
 
 export type CallMetadataForScoring = {
   callId: string;

@@ -318,7 +318,9 @@ function PromptEditor({
     output: string;
     input_tokens: number;
     output_tokens: number;
-    cost_estimate: number;
+    // Null when we have no $/MTok rate for the model that ran (see PRICING in
+    // lib/prompt-runner.ts) — better an honest dash than a wrong number.
+    cost_estimate: number | null;
     latency_ms: number;
   } | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -581,7 +583,11 @@ function PromptEditor({
                 <span>
                   <strong>{result.output_tokens}</strong> out
                 </span>
-                <span>${result.cost_estimate.toFixed(4)}</span>
+                <span>
+                  {result.cost_estimate != null
+                    ? `$${result.cost_estimate.toFixed(4)}`
+                    : "cost n/a"}
+                </span>
                 <span>{result.latency_ms}ms</span>
               </div>
             </div>
