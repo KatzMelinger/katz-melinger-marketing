@@ -17,6 +17,7 @@
  */
 
 import { classifyKeywordCluster, type KeywordCluster } from "@/lib/keyword-cluster";
+import { safeFetch } from "@/lib/url-safety";
 
 export type PageIntent = "commercial" | "informational";
 
@@ -87,10 +88,14 @@ const FETCH_UA =
  * Throws on a non-OK response so callers can surface "couldn't read the page".
  */
 async function fetchTargetHtml(url: string): Promise<string> {
-  const res = await fetch(url, {
+  // safeFetch, not bare fetch: `url` arrives straight off the request body in
+  // /api/content-production/repurpose with no validation at all, so this was a
+  // logged-in user pointing the server at loopback, RFC1918 or the cloud
+  // metadata endpoint and reading the body back. safeFetch re-asserts every
+  // redirect hop, which redirect:"follow" could not.
+  const res = await safeFetch(url, {
     headers: { "User-Agent": FETCH_UA, Accept: "text/html" },
-    signal: AbortSignal.timeout(15_000),
-    redirect: "follow",
+    timeoutMs: 15_000,
   });
   if (!res.ok) throw new Error(`Could not fetch the page (HTTP ${res.status}).`);
   let html = (await res.text()).slice(0, 400_000);

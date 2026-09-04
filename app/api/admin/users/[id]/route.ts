@@ -6,12 +6,26 @@
  *     "invite" — resend the original invitation (for users who never accepted)
  *     "reset"  — send a password-recovery email (for users who are locked out)
  * DELETE /api/admin/users/[id]   — remove user from auth + app_users
+ *
+ * EVERY handler here scopes the target to the caller's own tenant.
+ * requireAdmin() proves the caller is an admin, but "admin" is a PER-TENANT
+ * role — it carries no claim about which firm the [id] in the URL belongs to —
+ * and these handlers use the service-role client, which bypasses RLS. Without
+ * the tenant filter an admin at one firm could promote, disable, mail or
+ * outright delete a user at another firm just by knowing their id, which the
+ * unscoped GET /api/admin/users handed out. A target outside the caller's
+ * tenant gets the same 404 a genuinely missing user gets, so these endpoints
+ * don't confirm that an id exists somewhere else.
+ *
+ * Cross-tenant user administration is the super-admin console's job
+ * (/api/admin/tenants, gated by requireSuperAdmin) — not this one.
  */
 
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/supabase-route";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { resolveTenantId } from "@/lib/tenant-context";
 
 export const runtime = "nodejs";
 
@@ -44,14 +58,17 @@ export async function PATCH(
     );
   }
 
+  const tenantId = await resolveTenantId();
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("app_users")
     .update(patch)
     .eq("user_id", id)
+    .eq("tenant_id", tenantId)
     .select()
-    .single();
+    .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "User not found" }, { status: 404 });
   return NextResponse.json(data);
 }
 
@@ -78,12 +95,16 @@ export async function POST(
     );
   }
 
+  const tenantId = await resolveTenantId();
   const admin = getSupabaseAdmin();
-  // Resolve the user's email from app_users (id is the auth user_id).
+  // Resolve the user's email from app_users (id is the auth user_id), scoped to
+  // the caller's firm — otherwise this mails an invite or a password-reset link
+  // to a user at another firm on demand.
   const { data: row, error: lookupErr } = await admin
     .from("app_users")
     .select("email")
     .eq("user_id", id)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
   if (lookupErr) {
     return NextResponse.json({ error: lookupErr.message }, { status: 500 });
@@ -146,7 +167,26 @@ export async function DELETE(
     return NextResponse.json({ error: "You can't delete yourself." }, { status: 400 });
   }
 
+  const tenantId = await resolveTenantId();
   const admin = getSupabaseAdmin();
+
+  // Confirm the target is a user of the caller's own firm BEFORE deleting.
+  // deleteUser() takes a raw auth.users id and answers to no tenant — without
+  // this lookup the handler destroyed any account in the database, in any
+  // firm, given only its id.
+  const { data: target, error: lookupErr } = await admin
+    .from("app_users")
+    .select("user_id")
+    .eq("user_id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (lookupErr) {
+    return NextResponse.json({ error: lookupErr.message }, { status: 500 });
+  }
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
   // The app_users row is deleted by ON DELETE CASCADE when the auth.users row
   // goes away.
   const { error } = await admin.auth.admin.deleteUser(id);
