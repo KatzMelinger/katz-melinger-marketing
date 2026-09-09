@@ -16,6 +16,13 @@
 import { NextResponse } from "next/server";
 
 import { checkSocialCompliance } from "@/lib/social-compliance";
+import { getOperatingBrief } from "@/lib/social-operating-brief";
+import { runLegalCheck } from "@/lib/legal-verify";
+import { syncFindings, listFindings } from "@/lib/content-findings-store";
+import { checkSourceCurrency } from "@/lib/source-currency";
+import { generateSpanishCompanion } from "@/lib/social-spanish";
+import { isSocialFormat } from "@/lib/social-format-rules";
+import { legalAccuracyEnabled } from "@/lib/feature-flags";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -37,22 +44,78 @@ type PostRow = {
   scheduled_at: string | null;
   ayrshare_id: string | null;
   media_urls: string[] | null;
+  source_draft_id: string | null;
 };
 
 async function loadPost(id: string) {
   const db = await getTenantDb();
-  const full = "id, platform, content, status, scheduled_at, ayrshare_id, media_urls";
+  const full = "id, platform, content, status, scheduled_at, ayrshare_id, media_urls, source_draft_id";
   const res = await db.from("social_posts").select(full).eq("id", id).maybeSingle();
-  // Degrade gracefully if media_urls hasn't been migrated yet.
-  if (res.error && /media_urls/i.test(res.error.message)) {
+  // Degrade gracefully if media_urls/source_draft_id haven't been migrated yet.
+  if (res.error && /media_urls|source_draft_id/i.test(res.error.message)) {
     const base = await db
       .from("social_posts")
       .select("id, platform, content, status, scheduled_at, ayrshare_id")
       .eq("id", id)
       .maybeSingle();
-    return { db, row: base.data ? ({ ...(base.data as object), media_urls: null } as PostRow) : null };
+    return {
+      db,
+      row: base.data
+        ? ({ ...(base.data as object), media_urls: null, source_draft_id: null } as PostRow)
+        : null,
+    };
   }
   return { db, row: (res.data as PostRow | null) ?? null };
+}
+
+/**
+ * Spec: "Spanish companion posts... generated after the English version is
+ * approved and length-matched." Fire-and-forget from the approve handler —
+ * never delays or fails the English approval. Lands as a brand-new DRAFT
+ * (never auto-scheduled), so it goes through the exact same compliance/legal/
+ * S13 gates as any other post rather than skipping them as a "just a
+ * translation" shortcut.
+ */
+async function queueSpanishCompanion(
+  db: Awaited<ReturnType<typeof getTenantDb>>,
+  row: PostRow,
+): Promise<void> {
+  if (!isSocialFormat(row.platform)) return; // carousel/video etc. — no 1:1 caption format to adapt
+  const spanishBody = await generateSpanishCompanion(row.content, row.platform);
+  if (!spanishBody?.trim()) return;
+
+  const { data: draft, error: draftErr } = await db
+    .insert("content_drafts", {
+      format: row.platform,
+      topic: "Spanish companion",
+      title: `Spanish: ${row.content.slice(0, 80)}`,
+      body: spanishBody,
+      metadata: { language: "es", companion_of_post_id: row.id, source_draft_id: row.source_draft_id },
+    })
+    .select("id")
+    .maybeSingle();
+  if (draftErr || !draft) return;
+  const draftId = draft.id as string;
+
+  await db.insert("social_posts", {
+    platform: row.platform,
+    content: spanishBody,
+    status: "draft",
+    scheduled_at: row.scheduled_at,
+    published_at: null,
+    source_draft_id: draftId ?? null,
+  });
+}
+
+/** This post's cta_type + source_blog_id, from its own content_drafts row's metadata (S2/S13b). */
+async function loadDraftMeta(db: Awaited<ReturnType<typeof getTenantDb>>, draftId: string | null) {
+  if (!draftId) return { ctaType: null, sourceBlogId: null };
+  const { data } = await db.from("content_drafts").select("metadata").eq("id", draftId).maybeSingle();
+  const meta = (data?.metadata ?? {}) as Record<string, unknown>;
+  return {
+    ctaType: typeof meta.cta_type === "string" ? meta.cta_type : null,
+    sourceBlogId: typeof meta.source_blog_id === "string" ? meta.source_blog_id : null,
+  };
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -151,7 +214,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // Re-check compliance at approval: a draft's caption may have been edited to
     // non-compliant copy after it was parked. A blocking flag re-flags the post
     // (held for review) instead of publishing it.
-    const approveFlags = checkSocialCompliance(row.content).filter((f) => f.severity === "block");
+    const [{ ctaType, sourceBlogId }, brief] = await Promise.all([
+      loadDraftMeta(db, row.source_draft_id),
+      getOperatingBrief(db.tenantId),
+    ]);
+    const approveFlags = checkSocialCompliance(row.content, {
+      socialPhone: brief.socialPhone,
+      platform: row.platform,
+      ctaType: ctaType ?? undefined,
+      offerPhrase: brief.offerPhrase,
+    }).filter((f) => f.severity === "block");
     if (approveFlags.length > 0) {
       await db
         .from("social_posts")
@@ -163,6 +235,76 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         { status: 400 },
       );
     }
+
+    // Legal-accuracy layer (Part 2), reused unmodified from the blog gate. Only
+    // runs when there's a source draft to check claims against and to attach
+    // findings to. Findings are synced whatever the verdict; only a critical
+    // one holds the post — same contract as app/api/agent/approve.
+    if (legalAccuracyEnabled() && row.source_draft_id) {
+      try {
+        const legal = await runLegalCheck(row.content, { tenantId: db.tenantId });
+        await syncFindings({ draftId: row.source_draft_id, tenantId: db.tenantId, incoming: legal.findings });
+        const critical = legal.findings.filter((f) => f.severity === "critical");
+        if (critical.length > 0) {
+          const reason = `Legal review: ${critical.map((f) => f.title).join("; ")}`;
+          await db
+            .from("social_posts")
+            .update({ status: "flagged", last_error: reason })
+            .eq("id", id)
+            .then(undefined, () => {});
+          return NextResponse.json(
+            { error: `Flagged for legal review: ${critical.map((f) => f.title).join("; ")}.` },
+            { status: 400 },
+          );
+        }
+      } catch (e) {
+        console.warn("[social/posts approve] legal check failed:", e);
+        return NextResponse.json(
+          { error: "The legal-accuracy check could not run, so this was not approved. Try again." },
+          { status: 503 },
+        );
+      }
+    }
+
+    // S13(b) — inherited findings: held if the source blog has an unresolved
+    // finding. Live lookup (not a cached copy), so resolving the blog's finding
+    // clears the hold on the next approve attempt without any other change.
+    if (sourceBlogId) {
+      const inherited = await listFindings(sourceBlogId).catch(() => []);
+      const open = inherited.filter((f) => f.status === "open");
+      if (open.length > 0) {
+        const reason = `Source blog has unresolved findings: ${open.map((f) => f.title).join("; ")}`;
+        await db
+          .from("social_posts")
+          .update({ status: "flagged", last_error: reason })
+          .eq("id", id)
+          .then(undefined, () => {});
+        return NextResponse.json(
+          { error: `Flagged — ${reason}. Resolve the finding on the source blog, or clear the flag to override.` },
+          { status: 400 },
+        );
+      }
+    }
+
+    // S13(d) — source-currency flag: advisory only, never holds the post.
+    // Best-effort; never lets a currency-check failure block approval.
+    if (sourceBlogId && row.source_draft_id) {
+      const currency = await checkSourceCurrency(sourceBlogId, db.tenantId).catch(() => null);
+      if (currency) {
+        const { data: draftRow } = await db
+          .from("content_drafts")
+          .select("metadata")
+          .eq("id", row.source_draft_id)
+          .maybeSingle();
+        const meta = (draftRow?.metadata ?? {}) as Record<string, unknown>;
+        await db
+          .from("content_drafts")
+          .update({ metadata: { ...meta, source_currency_flag: currency } })
+          .eq("id", row.source_draft_id)
+          .then(undefined, () => {});
+      }
+    }
+
     const platform = row.platform as AyrsharePlatform;
     const media = Array.isArray(row.media_urls) ? row.media_urls : [];
     const apiKey = getAyrshareApiKey();
@@ -171,6 +313,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!apiKey) {
       const { error } = await db.from("social_posts").update({ status: "scheduled" }).eq("id", id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      void queueSpanishCompanion(db, row).catch((e) => console.warn("[social/posts approve] Spanish companion failed:", e));
       return NextResponse.json({
         ok: true,
         message: "Approved. Scheduled as a planned post — connect Ayrshare to auto-publish it.",
@@ -243,6 +386,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         message: `Published on Ayrshare, but the calendar status couldn't be saved (${updErr.message}). Do NOT re-approve — it's already out.`,
       });
     }
+    void queueSpanishCompanion(db, row).catch((e) => console.warn("[social/posts approve] Spanish companion failed:", e));
     return NextResponse.json({
       ok: true,
       message: futureAt ? "Approved and scheduled." : "Approved and published.",

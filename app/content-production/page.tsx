@@ -251,6 +251,7 @@ export default function ContentProductionPage() {
         title: item.title,
         practiceArea: item.practiceArea,
         keywords: item.keywords ? item.keywords.split(",").map((k) => k.trim()).filter(Boolean) : [],
+        sourceDraftId: item.draftId,
       });
       if (r.ok && r.drafts?.length) {
         setRepurpose({ topic: r.topic ?? item.title, drafts: r.drafts });

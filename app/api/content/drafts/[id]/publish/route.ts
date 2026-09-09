@@ -25,6 +25,7 @@ import {
   surfaceForFormat,
 } from "@/lib/agent/compliance-filter";
 import { isWordPressFormat } from "@/lib/wp-content-publish";
+import { generateBlogFeaturedImage } from "@/lib/blog-featured-image";
 import { queueFaqPageSchema } from "@/lib/faq-schema";
 import {
   AYRSHARE_PLATFORMS,
@@ -209,8 +210,24 @@ export async function POST(
     // A Redraft carries source_url → the plugin updates that page in place.
     const isUpdate =
       typeof prevMeta.source_url === "string" && prevMeta.source_url.trim().length > 0;
+
+    // Auto-generate a featured image for a brand-new post (an in-place update
+    // already has a live featured image — don't second-guess it here). Never
+    // blocks queuing: a generation failure just means no featured image this
+    // round, same "non-fatal" contract as the FAQ schema step below. Idempotent
+    // across retries — skip if a prior queue attempt already generated one.
+    let featuredImageUrl =
+      typeof prevMeta.featured_image_url === "string" ? prevMeta.featured_image_url : null;
+    if (!isUpdate && !featuredImageUrl) {
+      featuredImageUrl = await generateBlogFeaturedImage({
+        title: (draft.title as string | null) || "Untitled",
+        draftId: id,
+      });
+    }
+
     const queuedMetadata = {
       ...prevMeta,
+      ...(featuredImageUrl ? { featured_image_url: featuredImageUrl } : {}),
       wp_publish: { queued: true, queued_at: new Date().toISOString() },
     };
     await supabase

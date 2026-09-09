@@ -41,6 +41,9 @@ export async function POST(req: Request) {
   const url = str(body.url);
   const title = str(body.title);
   const practiceArea = str(body.practiceArea);
+  // S13(b) — the source blog's draft id, when the page being repurposed has
+  // one (i.e. it was authored in this app). Absent for an older/external page.
+  const sourceDraftId = str(body.sourceDraftId) || null;
 
   const topic = title || url;
   if (!topic) {
@@ -78,6 +81,7 @@ export async function POST(req: Request) {
         title: topic,
         text: sourceText,
         url: url || null,
+        id: sourceDraftId,
       },
       formats: REPURPOSE_FORMAT_KEYS as SocialFormatKey[],
       practiceArea: practiceArea || undefined,

@@ -187,6 +187,96 @@ returns render_id immediately (no blocking)
 | **1b — First real vendor** | Implement one adapter (ElevenLabs voiceover or HeyGen avatar) against the interface + drop in the API key. | ~1-2 days/vendor |
 | **2 — Avatar video + UI** | HeyGen/Synthesia adapter, render panel on the draft page (provider/voice/avatar/aspect picker + player), webhook handler, cost ledger + cap. | ~4-6 days |
 | **3 — Polish** | Stuck-job reconciler, captions/branding overlay, publish-to-channel hooks, per-client provider config (for MarketOS productization). | ~1 week+ |
+| **4 — No-account rendered video** (see §9) | Local `rendered` ffmpeg provider on a render worker: branded motion cards + slideshow/music clips built from the image-template system. Zero vendor account, zero per-clip cost. | ~2-4 days |
+| **5 — Narrated explainer** (see §9.3) | Script shot-list → TTS voiceover → per-scene visuals → captions → ffmpeg assembly + disclaimer overlay. The highest-value format. | ~1.5-2.5 weeks |
+| **6 — Usage-API render tier** (see §9.2) | `fal` (Veo/Kling/Sora aggregator) + `heygen` adapters billed per-use through the existing per-tenant usage meter — the DataForSEO/Ayrshare resale model. | ~1-2 days/adapter |
+
+---
+
+## 9. Future direction — no-account rendering, narrated explainer, usage-API resale
+
+Added 2026-06-17. Context: the app is a white-label SaaS resold to law firms
+(see `white-label-saas-roadmap.md`). The goal here is video creation that does
+**not** force every tenant to sign up for a third-party design/video SaaS. There
+are three economic tiers; build them in this order.
+
+### 9.1 Tier A — no-account, code-rendered (recommended first)
+
+Render video **from code with ffmpeg**, reusing the branded **image-template
+system** (see the image-templates scope — `next/og` `ImageResponse` → branded
+PNG frames) as the source frames. ffmpeg ships via an npm package
+(`ffmpeg-static` / `@ffmpeg-installer/ffmpeg`) — **no account, just a bundled
+binary.** Plugs in as a new local `VideoProvider` (`id: "rendered"`) so it
+inherits the whole job table / storage / endpoints / UI unchanged; only the
+adapter is new.
+
+Outputs achievable with **zero third-party account**:
+- **Animated branded cards** (silent / captioned) — a single option-2 template
+  animated to 9:16 / 1:1 mp4 (text reveals, logo bumper).
+- **Slideshow clips with a music bed** — several branded frames sequenced with
+  Ken Burns pan/zoom, crossfades, and a **self-hosted royalty-free** track.
+
+Not achievable without bringing in a vendor: talking-head avatars, AI voice
+narration, photorealistic generated footage.
+
+**Hosting:** ffmpeg needs a long-running Node runtime (CPU + temp disk +
+minutes). Run renders in a **separate always-on render worker** (VM / container
+— Render/Railway/Fly), pulling `queued` `video_renders` rows, rendering, writing
+back. Keep the Next web tier where it is; do **not** put ffmpeg on serverless.
+
+### 9.2 Tier B — usage-API render (the DataForSEO/Ayrshare resale model)
+
+For real AI footage / avatars without per-tenant subscriptions, use **usage-
+priced APIs** you hold one account for and meter per tenant through the existing
+`recordVendorUsage` meter (same mechanism as DataForSEO Ads Transparency):
+
+- **fal.ai** — the aggregator (one key → Veo 3.1 ~$0.10-0.20/s, Kling 3.0 Pro
+  ~$0.11/s, Kling 2.5 Turbo ~$0.07/s, Sora 2). Pay-per-second, no subscription,
+  SOC 2, JS SDK. **Wire this first** — one adapter unlocks several models.
+- **Replicate** — same shape, ~$0.07-0.25/s, better docs, slightly pricier.
+- **HeyGen** — pay-as-you-go avatar API, ~$1/min 720p/1080p, $5 min, no
+  subscription (free API credits ended Feb 2026). For talking-head explainers.
+
+Each is one `VideoProvider` adapter (`createJob` / `pollJob` / `isConfigured`).
+A ~15s clip ≈ $1-3 raw cost → mark up per tenant like DataForSEO calls.
+
+### 9.3 Tier C — narrated explainer (the flagship format)
+
+Script → AI voiceover → assembled video. The existing scripts already do the
+hard part: `video_short` is generated as a **two-column shot list** (Voiceover |
+On-screen/B-roll — see `lib/content-multiformat.ts`), so narration and visuals
+are already separated. Pipeline:
+
+1. **Parse the shot list** into scenes `[{ voiceover, onScreenText, brollCue }]`. (~½ day, pure code.)
+2. **TTS voiceover** — the one stage that forces a vendor. Per-scene audio +
+   durations (durations drive the timeline). Options: **OpenAI TTS** (reuses the
+   existing image OPENAI_API_KEY — recommended first, no new account),
+   **ElevenLabs** (best quality, usage-priced), or self-hosted Piper/Coqui (no
+   account, weaker).
+3. **Per-scene visuals**, three sub-tiers: (a) branded text cards from the
+   option-2 templates — near-zero-account, the default; (b) royalty-free stock
+   B-roll (Pexels/Pixabay free API); (c) AI footage via the §9.2 usage APIs.
+4. **Captions** — burn the voiceover words on-screen; no transcription needed
+   (we have the exact words; TTS durations give timing).
+5. **ffmpeg assembly** (render worker) — visuals + audio track + captions +
+   music bed + intro/outro brand bumper + **on-screen legal disclaimer**, per
+   aspect ratio.
+6. **Compliance** — highest-risk item (§6). Disclaimer baked into the script
+   prompt *and* rendered as an overlay, gated by the firm-wide compliance gate
+   before render.
+
+**Recommended first build:** OpenAI TTS + tier-(a) branded cards + captions +
+disclaimer → a real narrated explainer with **zero new vendor relationships**.
+Add ElevenLabs quality or AI footage later as paid upgrades behind the meter.
+
+### 9.4 What's reused vs. new
+
+Reused unchanged: `video_renders` table, storage + `persistToStorage`, the
+render/status/providers endpoints, the `VideoProvider` interface, the
+`cost_cents` ledger, and the per-tenant `recordVendorUsage` meter. Genuinely new
+work: the render worker, the `rendered` ffmpeg provider, the image-template
+frame system (shared with the no-account image feature), the script parser, a
+TTS adapter, caption burn-in, and the disclaimer overlay/gate.
 
 ---
 

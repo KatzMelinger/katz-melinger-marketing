@@ -93,3 +93,21 @@ export const EMPTY_CHANNEL_NOTES: ChannelNotes = {
   website: "",
   newsletter: "",
 };
+
+// ============================================================================
+// Per-channel output size map (pure data — see lib/image-size-map.ts for the
+// server-only crop step that uses it). Only the channels Diana's spec pins a
+// size to; every other channel keeps a manual size picker.
+// ============================================================================
+
+export type TargetSize = { w: number; h: number };
+
+export const CHANNEL_TARGET_SIZE: Partial<Record<StyleScope, TargetSize>> = {
+  social_carousel: { w: 1080, h: 1350 },
+  social_post: { w: 1080, h: 1350 },
+  blog: { w: 1200, h: 630 },
+};
+
+export function formatSize(t: TargetSize): string {
+  return `${t.w}x${t.h}`;
+}

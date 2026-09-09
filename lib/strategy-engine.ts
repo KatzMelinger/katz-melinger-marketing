@@ -602,11 +602,15 @@ export async function autoSeoMetadata(args: {
   contentType?: KMContentType;
   tenantId?: string;
   pillars?: KMPillar[];
+  /** A user-selected practice area, when known — wins over inferring one from
+   *  the topic text alone (see inferPracticeArea's practiceAreaHint handling). */
+  practiceAreaHint?: KMPracticeArea | null;
 }): Promise<AutoSeoMetadata> {
   const input: ClusterInput = {
     clusterName: args.topic,
     primaryKeyword: args.topic,
     secondaryKeywords: args.secondaryKeywords ?? [],
+    practiceAreaHint: args.practiceAreaHint,
   };
   const practiceArea = inferPracticeArea(input);
   const intent = inferIntent(input);

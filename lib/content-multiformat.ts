@@ -330,12 +330,18 @@ export async function generateMultiFormat(args: {
   // metadata. Fails soft — the draft still saves without it.
   let seoMeta: Awaited<ReturnType<typeof autoSeoMetadata>> | null = null;
   if (args.formats.includes("blog")) {
+    // Respect an explicit practice-area selection over inferring one from the
+    // topic text alone — a user-picked "Employment"/"Collections" shouldn't be
+    // silently overridden by an ambiguous topic string.
+    const paHint = args.practiceArea?.toLowerCase().trim();
+    const practiceAreaHint = paHint === "employment" || paHint === "collections" ? paHint : undefined;
     try {
       seoMeta = await autoSeoMetadata({
         topic: args.topic,
         secondaryKeywords: args.targetKeywords,
         tenantId: tid,
         pillars: await getPillars(tid),
+        practiceAreaHint,
       });
     } catch {
       /* non-fatal */

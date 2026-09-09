@@ -21,8 +21,12 @@ import { NextResponse } from "next/server";
 
 import { checkSocialCompliance } from "@/lib/social-compliance";
 import { checkCalendarDuplicates, type AngleConflict } from "@/lib/social-duplicate";
+import { getOperatingBrief } from "@/lib/social-operating-brief";
+import { runLegalCheck } from "@/lib/legal-verify";
+import { syncFindings, listFindings } from "@/lib/content-findings-store";
+import { checkSourceCurrency } from "@/lib/source-currency";
 import { guardUser } from "@/lib/supabase-route";
-import { socialMultiformatEnabled } from "@/lib/feature-flags";
+import { socialMultiformatEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
 import {
@@ -90,6 +94,25 @@ export async function POST(req: Request) {
   const db = await getTenantDb();
   const apiKey = getAyrshareApiKey();
   const ayrshareProfileKey = apiKey ? (await getTenantConfig(db.tenantId)).ayrshareProfileKey : null;
+  const operatingBrief = await getOperatingBrief(db.tenantId);
+
+  // S2/S3/S13(b) — each post's cta_type + source_blog_id, from its own draft's
+  // metadata, fetched in one batch so the compliance gate below can enforce the
+  // offer-present-when-consultation check and the inherited-findings hold.
+  // Missing for manual/legacy posts with no draftId.
+  const ctaByDraftId = new Map<string, string>();
+  const sourceBlogByDraftId = new Map<string, string>();
+  {
+    const draftIds = [...new Set(valid.map((p) => p.draftId).filter((id): id is string => !!id))];
+    if (draftIds.length) {
+      const { data: drafts } = await db.from("content_drafts").select("id, metadata").in("id", draftIds);
+      for (const d of (drafts ?? []) as Array<{ id: string; metadata: unknown }>) {
+        const meta = (d.metadata ?? {}) as Record<string, unknown>;
+        if (typeof meta.cta_type === "string") ctaByDraftId.set(d.id, meta.cta_type);
+        if (typeof meta.source_blog_id === "string") sourceBlogByDraftId.set(d.id, meta.source_blog_id);
+      }
+    }
+  }
 
   // Feature 8 — duplicate/angle gate: compare every candidate against the whole
   // Content Calendar (semantically, not exact-text) up front. A near-duplicate
@@ -148,9 +171,58 @@ export async function POST(req: Request) {
     // a plain draft (re-checked at approve). dupConflicts is empty for asDraft.
     const blockingFlags = asDraft
       ? []
-      : checkSocialCompliance(content).filter((f) => f.severity === "block");
+      : checkSocialCompliance(content, {
+          socialPhone: operatingBrief.socialPhone,
+          platform,
+          ctaType: p.draftId ? ctaByDraftId.get(p.draftId) : undefined,
+          offerPhrase: operatingBrief.offerPhrase,
+        }).filter((f) => f.severity === "block");
     const dupConflict = dupConflicts[i]?.[0] ?? null;
-    const flagged = !asDraft && (blockingFlags.length > 0 || !!dupConflict);
+
+    // Legal-accuracy layer (Part 2), reused unmodified from the blog gate.
+    // Sequential per post (runLegalCheck isn't parallelized internally) — fine
+    // for typical short social batches; a very large batch would add latency,
+    // not solved here. Findings are synced whatever the verdict; only a
+    // critical one holds the post.
+    let legalReasons: string[] = [];
+    if (!asDraft && legalAccuracyEnabled() && p.draftId) {
+      try {
+        const legal = await runLegalCheck(content, { tenantId: db.tenantId });
+        await syncFindings({ draftId: p.draftId, tenantId: db.tenantId, incoming: legal.findings });
+        legalReasons = legal.findings.filter((f) => f.severity === "critical").map((f) => f.title);
+      } catch (e) {
+        console.warn(`[repurpose/schedule] legal check failed (draft ${p.draftId}):`, e);
+        legalReasons = ["Legal-accuracy check could not run"];
+      }
+    }
+
+    // S13(b) — inherited findings: held if the source blog has an unresolved
+    // finding. Live lookup, so resolving it on the blog clears the hold here
+    // with no other change needed.
+    let inheritedReasons: string[] = [];
+    const sourceBlogId = p.draftId ? sourceBlogByDraftId.get(p.draftId) : undefined;
+    if (!asDraft && sourceBlogId) {
+      const inherited = await listFindings(sourceBlogId).catch(() => []);
+      inheritedReasons = inherited.filter((f) => f.status === "open").map((f) => f.title);
+    }
+
+    // S13(d) — source-currency flag: advisory only, attached to the social
+    // draft's metadata, never a reason to flag/hold the post.
+    if (!asDraft && sourceBlogId && p.draftId) {
+      const currency = await checkSourceCurrency(sourceBlogId, db.tenantId).catch(() => null);
+      if (currency) {
+        const { data: draftRow } = await db.from("content_drafts").select("metadata").eq("id", p.draftId).maybeSingle();
+        const meta = (draftRow?.metadata ?? {}) as Record<string, unknown>;
+        await db
+          .from("content_drafts")
+          .update({ metadata: { ...meta, source_currency_flag: currency } })
+          .eq("id", p.draftId)
+          .then(undefined, () => {});
+      }
+    }
+
+    const flagged =
+      !asDraft && (blockingFlags.length > 0 || !!dupConflict || legalReasons.length > 0 || inheritedReasons.length > 0);
 
     // Guaranteed-fail guard: media-required platforms (Instagram, TikTok, etc.)
     // can't post text-only. Fail fast with a clear reason instead of spending an
@@ -216,7 +288,11 @@ export async function POST(req: Request) {
           : "scheduled";
     // A flagged post carries the reason in last_error so the calendar can show
     // why it's held; a real publish error carries the Ayrshare reason.
-    const flagReasons = [...blockingFlags.map((f) => f.label)];
+    const flagReasons = [
+      ...blockingFlags.map((f) => f.label),
+      ...legalReasons.map((t) => `Legal review: ${t}`),
+      ...inheritedReasons.map((t) => `Source blog unresolved: ${t}`),
+    ];
     if (dupConflict) {
       const when = new Date(dupConflict.date);
       const whenStr = Number.isNaN(when.getTime()) ? "" : ` on ${when.toISOString().slice(0, 10)}`;

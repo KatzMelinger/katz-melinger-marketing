@@ -13,6 +13,11 @@
  * Enforcement: generate all formats in one call, then for any format that breaks
  * its caps, regenerate that one format once with a tighter instruction; if it
  * still overflows, hard-trim as a floor so nothing oversized ever persists.
+ *
+ * S13(g) — cannibalization checks (lib/cannibalization.ts) are intentionally
+ * never run on social output: they answer "does this compete with an existing
+ * page for the same keyword", which is a blog/SEO question. A social caption
+ * has no ranking page of its own to cannibalize.
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
@@ -33,6 +38,9 @@ import { isSensitiveTopic, sensitiveToneBlock } from "./sensitive-topic";
 import { checkMonthlyDuplicates, type AngleConflict } from "./social-duplicate";
 import { AD_TERMS_RULE } from "./ad-terms";
 import { renderFirmFactsBlock } from "./firm-facts";
+import { getOperatingBrief, type OperatingBrief } from "./social-operating-brief";
+import { chooseCta, ctaInstruction, loadRecentCtas, type CtaChoice } from "./social-cta";
+import { inferIntent } from "./strategy-engine";
 import {
   SOCIAL_CAPS,
   validateSocial,
@@ -83,12 +91,18 @@ type SocialClaudeOutput = {
   formats: Record<string, { body?: string }>;
 };
 
-function buildSocialSystemPrompt(firm: string, skillsContext: string): string {
+function buildSocialSystemPrompt(firm: string, skillsContext: string, brief: OperatingBrief): string {
   return `You are a social media copywriter for a law firm. This is SHORT-FORM SOCIAL copy — it is
 NOT a blog post and must never read like one. One idea per post, scannable, hook-driven.
 
 The firm's details are below — use them verbatim and never fabricate firm information.
 ${firm}
+
+OPERATING BRIEF FOR SOCIAL (overrides the firm phone above for this content — social always uses
+the dedicated social line, never the main office number):
+- Social phone: ${brief.socialPhone} — use this exact number when a CTA needs a phone number.
+- Offer: ${brief.offerPhrase} — weave this in naturally whenever the CTA invites a consultation.
+- Hashtags: ${brief.hashtagRule}, only for formats that use them (never carousel slides or LinkedIn beyond 1-2).
 
 ${ANTI_AI_VOICE_RULES}
 ${skillsContext ? `\n${skillsContext}\n` : ""}
@@ -101,7 +115,7 @@ NON-NEGOTIABLE SOCIAL RULES:
 - Every post extracts ONE angle from the source and covers only that. A post that tries to cover
   the definition, the test, the exceptions, and the deadline at once has failed.
 - Every post follows: HOOK (one line) → VALUE (the single angle, plain language, short sentences)
-  → SOFT CTA (an invitation, never a hard sell or guarantee).
+  → CTA (per that format's CTA instruction below — never a hard sell or guarantee).
 - The first line must use one of these hook formulas, never a topic label or a legal definition:
   question the reader is asking, a specific scenario, a myth-bust, a concrete number/stat, or
   direct address to the reader's situation.`;
@@ -112,9 +126,15 @@ function buildSocialUserPrompt(args: {
   formats: SocialFormatKey[];
   practiceArea?: string;
   sensitiveBlock: string;
+  ctaByFormat: Map<SocialFormatKey, CtaChoice>;
+  socialPhone: string;
 }): string {
   const formatSpec = args.formats
-    .map((f) => `- ${f} (${SOCIAL_CAPS[f].label}):\n    ${SOCIAL_CAPS[f].promptRules.join("\n    ")}`)
+    .map((f) => {
+      const cta = args.ctaByFormat.get(f);
+      const ctaLine = cta ? `\n    ${ctaInstruction(cta, args.socialPhone)}` : "";
+      return `- ${f} (${SOCIAL_CAPS[f].label}):\n    ${SOCIAL_CAPS[f].promptRules.join("\n    ")}${ctaLine}`;
+    })
     .join("\n");
 
   return `${args.sensitiveBlock}Generate social posts from this ONE approved source. Draw a single, distinct angle
@@ -166,10 +186,13 @@ async function regenerateOne(
   source: SocialSource,
   format: SocialFormatKey,
   violations: string[],
+  cta?: CtaChoice,
+  socialPhone?: string,
 ): Promise<string> {
+  const ctaLine = cta && socialPhone ? `\n    ${ctaInstruction(cta, socialPhone)}` : "";
   const user = `Your previous ${format} draft broke its hard caps: ${violations.join("; ")}.
 Rewrite it to obey EVERY cap for ${format} (${SOCIAL_CAPS[format].label}):
-    ${SOCIAL_CAPS[format].promptRules.join("\n    ")}
+    ${SOCIAL_CAPS[format].promptRules.join("\n    ")}${ctaLine}
 Narrow the angle rather than trimming after the fact.
 
 SOURCE: ${source.title}
@@ -218,12 +241,14 @@ export async function generateSocialPosts(args: {
 
   const supabase = getSupabaseAdmin();
   const tid = args.tenantId ?? (await resolveTenantId());
-  const [firm, skillsContext] = await Promise.all([
+  const [firm, skillsContext, operatingBrief, recentCtas] = await Promise.all([
     getFirmContext(tid),
     buildSkillsContext({ platforms: args.formats, practiceArea: args.practiceArea }, tid),
+    getOperatingBrief(tid),
+    loadRecentCtas(tid),
   ]);
 
-  const system = `${buildSocialSystemPrompt(firm, skillsContext)}
+  const system = `${buildSocialSystemPrompt(firm, skillsContext, operatingBrief)}
 
 ${renderFirmFactsBlock()}
 
@@ -231,9 +256,27 @@ ${AD_TERMS_RULE}`;
   const sensitive = isSensitiveTopic(args.source.title, args.source.text.slice(0, 2000));
   const sensitiveBlock = sensitiveToneBlock(args.source.title, args.source.text.slice(0, 2000));
 
+  // S2 — CTA Decision Engine: one choice per format, from intent + sensitivity +
+  // platform, avoiding a repeat of the last CTA used on that platform.
+  const intent = inferIntent({
+    clusterName: args.source.title,
+    primaryKeyword: args.source.title,
+    secondaryKeywords: [],
+  });
+  const ctaByFormat = new Map<SocialFormatKey, CtaChoice>(
+    args.formats.map((f) => [f, chooseCta({ intent, sensitive, platform: f, recentByPlatform: recentCtas })]),
+  );
+
   const first = await callSocial(
     system,
-    buildSocialUserPrompt({ source: args.source, formats: args.formats, practiceArea: args.practiceArea, sensitiveBlock }),
+    buildSocialUserPrompt({
+      source: args.source,
+      formats: args.formats,
+      practiceArea: args.practiceArea,
+      sensitiveBlock,
+      ctaByFormat,
+      socialPhone: operatingBrief.socialPhone,
+    }),
   );
 
   // Enforce caps per format: validate → regen once → hard-trim floor.
@@ -243,7 +286,9 @@ ${AD_TERMS_RULE}`;
     if (!body.trim()) continue;
     let violations = validateSocial(format, body);
     if (violations.length) {
-      const retry = stripEmDashes(await regenerateOne(system, args.source, format, violations));
+      const retry = stripEmDashes(
+        await regenerateOne(system, args.source, format, violations, ctaByFormat.get(format), operatingBrief.socialPhone),
+      );
       if (retry.trim() && validateSocial(format, retry).length <= violations.length) {
         body = retry;
         violations = validateSocial(format, body);
@@ -289,6 +334,7 @@ ${AD_TERMS_RULE}`;
     const dupInfo = dupByFormat.get(format) ?? { noDup: null, conflicts: [] };
     const checklist = computeChecklist(body, format, sensitive, dupInfo.noDup);
     const title = `${SOCIAL_CAPS[format].label}: ${args.source.title}`.slice(0, 120);
+    const cta = ctaByFormat.get(format);
     const metadata: Record<string, unknown> = {
       generation_model: CONTENT_SHORT_FORM_MODEL,
       social_generator: "content-social",
@@ -299,6 +345,13 @@ ${AD_TERMS_RULE}`;
         id: args.source.id ?? null,
       },
       social_checklist: checklist,
+      // S2 — read by the S3 gate (missing-offer/CTA checks) and by the next
+      // generation's anti-repetition lookup (loadRecentCtas).
+      cta_type: cta?.ctaType ?? null,
+      cta_mechanism: cta?.ctaMechanism ?? null,
+      // S13(b) — first-class (not just nested in social_source) so the gate
+      // routes can query it directly for inherited findings / source currency.
+      source_blog_id: args.source.id ?? null,
     };
     if (dupInfo.conflicts.length) metadata.social_duplicate_conflicts = dupInfo.conflicts;
     if (args.originSource) metadata.origin_source = args.originSource;

@@ -869,16 +869,26 @@ function PostDetailDrawer({
             </p>
           )}
 
-          {item.postUrl && (
-            <a
-              href={item.postUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block text-sm font-medium text-brand hover:underline"
-            >
-              View the live post →
-            </a>
-          )}
+          <div className="flex flex-wrap items-center gap-4">
+            {item.postUrl && (
+              <a
+                href={item.postUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-sm font-medium text-brand hover:underline"
+              >
+                View the live post →
+              </a>
+            )}
+            {item.sourceDraftId && (
+              <Link
+                href={`/content/drafts?id=${item.sourceDraftId}`}
+                className="inline-block text-sm font-medium text-brand hover:underline"
+              >
+                View source draft →
+              </Link>
+            )}
+          </div>
 
           {msg && (
             <p

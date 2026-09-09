@@ -48,6 +48,9 @@ export async function requestRepurpose(input: {
   title?: string | null;
   practiceArea?: string | null;
   keywords?: string[];
+  /** The source blog's content_drafts.id, when the page being repurposed was
+   *  authored in this app (S13(b)) — omitted for a page with no draft history. */
+  sourceDraftId?: string | null;
 }): Promise<{ ok: boolean; topic?: string; drafts?: RepurposeDraft[]; error?: string }> {
   try {
     const res = await fetch("/api/content-production/repurpose", {
@@ -225,8 +228,10 @@ export function RepurposeReviewDrawer({
     );
 
   // Carousel: turn the slide script into post-ready slide images. On success the
-  // post text becomes the caption and the slides ride along as media.
-  const generateSlides = async (i: number) => {
+  // post text becomes the caption and the slides ride along as media. Returns
+  // the fresh { mediaUrls, body } so a caller (e.g. schedule()) can use them
+  // immediately rather than reading rows state that may not have re-rendered yet.
+  const generateSlides = async (i: number): Promise<{ mediaUrls: string[]; body: string } | null> => {
     const row = rows[i];
     patch(i, { genBusy: true, genMsg: null });
     try {
@@ -242,17 +247,21 @@ export function RepurposeReviewDrawer({
       const j = await res.json();
       if (!res.ok) {
         patch(i, { genBusy: false, genMsg: j?.error || "Slide generation failed." });
-        return;
+        return null;
       }
+      const mediaUrls = j.urls as string[];
+      const body = (j.caption as string)?.trim() || row.body;
       patch(i, {
         genBusy: false,
         slides: j.slides as Slide[],
-        mediaUrls: j.urls as string[],
-        body: (j.caption as string)?.trim() || row.body,
+        mediaUrls,
+        body,
         genMsg: j.message || null,
       });
+      return { mediaUrls, body };
     } catch {
       patch(i, { genBusy: false, genMsg: "Slide generation failed." });
+      return null;
     }
   };
 
@@ -278,15 +287,35 @@ export function RepurposeReviewDrawer({
     setResult(null);
     setPostErrors(new Map());
     try {
-      const posts = kept.map((r) => ({
-        draftId: r.draftId,
-        format: r.format,
-        platform: r.platform,
-        body: r.body,
-        mediaUrls: r.mediaUrls ?? [],
-        // Local date+time → UTC ISO for Ayrshare / scheduled_at.
-        scheduleDate: new Date(`${r.date}T${r.time}`).toISOString(),
-      }));
+      // Auto-trigger: a kept carousel with no slide images yet gets them
+      // generated right here, rather than requiring the separate "Generate
+      // slides" button first — Diana's "generate on approval/schedule" ask.
+      // Keyed by draftId so the fresh result lands on the right post below
+      // even though `rows` state may not have re-rendered yet.
+      const freshByDraftId = new Map<string, { mediaUrls: string[]; body: string }>();
+      const needsSlides = rows
+        .map((r, i) => ({ r, i }))
+        .filter(({ r }) => kept.includes(r) && r.format === "carousel" && !r.mediaUrls?.length);
+      if (needsSlides.length) {
+        const generated = await Promise.all(needsSlides.map(({ i }) => generateSlides(i)));
+        needsSlides.forEach(({ r }, idx) => {
+          const fresh = generated[idx];
+          if (fresh) freshByDraftId.set(r.draftId, fresh);
+        });
+      }
+
+      const posts = kept.map((r) => {
+        const fresh = freshByDraftId.get(r.draftId);
+        return {
+          draftId: r.draftId,
+          format: r.format,
+          platform: r.platform,
+          body: fresh?.body ?? r.body,
+          mediaUrls: fresh?.mediaUrls ?? r.mediaUrls ?? [],
+          // Local date+time → UTC ISO for Ayrshare / scheduled_at.
+          scheduleDate: new Date(`${r.date}T${r.time}`).toISOString(),
+        };
+      });
       const res = await fetch("/api/content-production/repurpose/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

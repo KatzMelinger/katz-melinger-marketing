@@ -44,6 +44,9 @@ export type WpContentItem = {
    * and updates that post in place (same URL/slug/status) instead of creating.
    */
   update_url: string | null;
+  /** Public URL of an auto-generated featured image, when one was generated at
+   *  queue time (new posts only — see app/api/content/drafts/[id]/publish). */
+  featured_image_url: string | null;
 };
 
 /** KM wizard long-form formats — pages/articles that publish to WordPress. */
@@ -158,6 +161,8 @@ export async function listApprovedWpContent(args: {
         ? { login: author.wpLogin, name: author.name, slug: author.id }
         : null,
       update_url: updateUrl,
+      featured_image_url:
+        typeof metadata?.featured_image_url === "string" ? metadata.featured_image_url : null,
     });
   }
   return out;

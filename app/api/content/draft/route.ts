@@ -306,7 +306,7 @@ export async function POST(req: Request) {
         ? "About 2000 words for blog."
         : "About 1000 words for blog.";
 
-  const system = `You are a marketing copywriter for a law firm. Use the firm's details, practice areas, and audience from the firm context below — never fabricate firm information. Voice: professional but approachable, focused on helping clients understand their rights—never corporate or cold.
+  const system = `You are a marketing copywriter for a law firm. Use the firm's details, practice areas, and audience from the firm context below — never fabricate firm information. Voice: professional but approachable, focused on helping clients understand their rights, never corporate or cold.
 
 ${firmContext}
 

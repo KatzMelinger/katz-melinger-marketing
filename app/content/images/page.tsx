@@ -17,7 +17,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-import { CHANNEL_LABELS, type StyleScope } from "@/lib/image-style";
+import { CHANNEL_LABELS, CHANNEL_TARGET_SIZE, formatSize, type StyleScope } from "@/lib/image-style";
 
 type ImageSize = "1024x1024" | "1536x1024" | "1024x1536" | "auto";
 type ImageQuality = "low" | "medium" | "high" | "auto";
@@ -69,6 +69,18 @@ function ImageGenerator() {
   const [channel, setChannel] = useState<StyleScope>("general");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The channel picks the output size for social_carousel/social_post/blog —
+  // the manual size picker is replaced by a read-only note for those (see
+  // lib/image-style.ts's CHANNEL_TARGET_SIZE, mirrored server-side in
+  // lib/image-size-map.ts, which actually generates + crops to this size).
+  const mappedSize = CHANNEL_TARGET_SIZE[channel];
+  // Headline text-as-a-layer (the carousel pattern, applied to one post) is
+  // only offered for social_post — carousels have their own flow, and blog
+  // wants less overlaid text per Diana's per-channel note.
+  const supportsHeadline = channel === "social_post";
+  const [headline, setHeadline] = useState("");
+  const [sub, setSub] = useState("");
+  const [includeCta, setIncludeCta] = useState(false);
 
   // Library
   const [library, setLibrary] = useState<SavedImage[]>([]);
@@ -114,7 +126,16 @@ function ImageGenerator() {
       const res = await fetch("/api/images/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, size, quality, useBrandStyle, channel }),
+        body: JSON.stringify({
+          prompt,
+          size,
+          quality,
+          useBrandStyle,
+          channel,
+          ...(supportsHeadline && headline.trim()
+            ? { headline: headline.trim(), sub: sub.trim(), includeCta }
+            : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
@@ -216,18 +237,25 @@ function ImageGenerator() {
             >
               Size
             </label>
-            <select
-              id="size"
-              value={size}
-              onChange={(e) => setSize(e.target.value as ImageSize)}
-              className="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-            >
-              {SIZES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            {mappedSize ? (
+              <div className="mt-2 flex h-[38px] items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+                {formatSize(mappedSize).replace("x", " × ")} — auto, from the{" "}
+                {CHANNEL_LABELS[channel]} channel
+              </div>
+            ) : (
+              <select
+                id="size"
+                value={size}
+                onChange={(e) => setSize(e.target.value as ImageSize)}
+                className="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              >
+                {SIZES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label
@@ -294,6 +322,56 @@ function ImageGenerator() {
                 Applies the general guide plus this channel&apos;s notes, and
                 feeds the channel&apos;s uploaded design references to the model.
               </p>
+            </div>
+          )}
+
+          {useBrandStyle && supportsHeadline && (
+            <div className="mt-3 rounded-md border border-violet-200 bg-violet-50 p-3">
+              <label
+                htmlFor="headline"
+                className="block text-xs font-medium text-slate-700"
+              >
+                Headline (optional — composited on top, never left to the AI to render)
+              </label>
+              <input
+                id="headline"
+                type="text"
+                value={headline}
+                onChange={(e) => setHeadline(e.target.value)}
+                placeholder="You may be owed unpaid overtime"
+                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              />
+              {headline.trim() && (
+                <>
+                  <label
+                    htmlFor="sub"
+                    className="mt-2 block text-xs font-medium text-slate-700"
+                  >
+                    Sub-line (optional)
+                  </label>
+                  <input
+                    id="sub"
+                    type="text"
+                    value={sub}
+                    onChange={(e) => setSub(e.target.value)}
+                    placeholder="New York requires overtime pay after 40 hours"
+                    className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                  />
+                  <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={includeCta}
+                      onChange={(e) => setIncludeCta(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-violet-700 focus:ring-violet-500"
+                    />
+                    Include phone number footer (from your Operating Brief)
+                  </label>
+                  <p className="mt-1 text-xs text-slate-500">
+                    The image prompt describes the scene only — no text is sent to the model.
+                    The headline, sub-line, and firm name are composited on top afterward.
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>

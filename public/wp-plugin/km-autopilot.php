@@ -3,7 +3,7 @@
  * Plugin Name:       KM AutoPilot
  * Plugin URI:        https://katzmelinger.com
  * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates new posts OR updates an existing page in place (Redraft) from approved, compliance-cleared drafts.
- * Version:           0.5.0
+ * Version:           0.6.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Katz Melinger
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('KM_AUTOPILOT_VERSION', '0.5.0');
+define('KM_AUTOPILOT_VERSION', '0.6.0');
 define('KM_AUTOPILOT_OPTION', 'km_autopilot_settings');
 define('KM_AUTOPILOT_LOG_OPTION', 'km_autopilot_log');
 define('KM_AUTOPILOT_CRON_HOOK', 'km_autopilot_sync_cron');
@@ -167,6 +167,30 @@ function km_autopilot_apply_meta_field($post_id, $value, $yoast_key, $rankmath_k
     $fallback_key = '_km_autopilot_' . trim($yoast_key, '_');
     update_post_meta($post_id, $fallback_key, $value);
     return [$value, ['handler' => 'fallback', 'key' => $fallback_key]];
+}
+
+/**
+ * Sideload an auto-generated featured image and attach it to $post_id, if the
+ * post doesn't already have one. Never fatal — a failure just means no
+ * featured image this round; logged and swallowed by the caller.
+ */
+function km_autopilot_set_featured_image($post_id, $image_url) {
+    if (empty($image_url) || has_post_thumbnail($post_id)) {
+        return;
+    }
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+
+    $attachment_id = media_sideload_image($image_url, $post_id, null, 'id');
+    if (is_wp_error($attachment_id)) {
+        km_autopilot_log_event(
+            'Featured image download failed for post ' . $post_id . ': ' . $attachment_id->get_error_message(),
+            ['wp_post_id' => $post_id, 'image_url' => $image_url]
+        );
+        return;
+    }
+    set_post_thumbnail($post_id, $attachment_id);
 }
 
 function km_autopilot_apply_one($rec) {
@@ -488,6 +512,9 @@ function km_autopilot_publish_content() {
             }
             if (!empty($item['meta_description'])) {
                 km_autopilot_apply_meta_field($post_id, $item['meta_description'], '_yoast_wpseo_metadesc', 'rank_math_description');
+            }
+            if (!empty($item['featured_image_url'])) {
+                km_autopilot_set_featured_image($post_id, $item['featured_image_url']);
             }
         }
 

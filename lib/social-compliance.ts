@@ -22,7 +22,25 @@ export type ComplianceFlag = {
   excerpt: string;
 };
 
+type ComplianceContext = {
+  /** The correct social phone number (e.g. from the operating brief). Any other phone-shaped match is flagged. */
+  socialPhone?: string;
+  /** The channel this post is for — gates the Instagram-link-CTA check. */
+  platform?: string;
+  /** This post's chosen CTA type — gates the missing-offer check. */
+  ctaType?: string;
+  /** The operating brief's offer phrase, required when ctaType is "consultation". */
+  offerPhrase?: string;
+};
+
 type Rule = { code: string; label: string; severity: FlagSeverity; re: RegExp };
+
+/** US phone number in any common written form: (212) 460-0047, 212-460-0047, 212.460.0047, 2124600047. */
+const PHONE_RE = /(?:\(\d{3}\)\s?|\d{3}[-.\s])\d{3}[-.\s]?\d{4}/;
+
+function normalizePhone(s: string): string {
+  return s.replace(/\D/g, "");
+}
 
 // Order matters only for display. Each `re` has a capture/target used as the
 // excerpt. All case-insensitive unless the pattern is inherently cased.
@@ -68,8 +86,10 @@ const RULES: Rule[] = [
   },
 ];
 
-/** Run every rule over a body and return the flags that fired. */
-export function checkSocialCompliance(text: string): ComplianceFlag[] {
+const INSTAGRAM_LINK_CTA_RE = /\b(click the link|link below|swipe up)\b|https?:\/\/\S+/i;
+
+/** Run every rule (plus the context-dependent S3 checks) and return the flags that fired. */
+export function checkSocialCompliance(text: string, ctx: ComplianceContext = {}): ComplianceFlag[] {
   const body = text ?? "";
   const flags: ComplianceFlag[] = [];
   for (const r of RULES) {
@@ -83,10 +103,51 @@ export function checkSocialCompliance(text: string): ComplianceFlag[] {
       });
     }
   }
+
+  // Known trap: the main office line (or any other number) leaking onto social,
+  // which must only ever carry the dedicated social number.
+  if (ctx.socialPhone) {
+    const wrongPhone = body.match(PHONE_RE);
+    if (wrongPhone && normalizePhone(wrongPhone[0]) !== normalizePhone(ctx.socialPhone)) {
+      flags.push({
+        code: "wrong_phone",
+        label: `Wrong phone number on social — must be ${ctx.socialPhone}`,
+        severity: "block",
+        excerpt: wrongPhone[0].trim().slice(0, 40),
+      });
+    }
+  }
+
+  // Instagram captions can't render a clickable link — "click the link" / a
+  // bare URL sends the reader nowhere. Steer to "link in bio" instead.
+  if (ctx.platform === "instagram") {
+    const m = body.match(INSTAGRAM_LINK_CTA_RE);
+    if (m) {
+      flags.push({
+        code: "instagram_link_cta",
+        label: 'Instagram caption links don\'t work — use "link in bio", not a URL or "click the link"',
+        severity: "block",
+        excerpt: m[0].trim().slice(0, 40),
+      });
+    }
+  }
+
+  // A consultation CTA without the offer phrase is a CTA with nothing to invite into.
+  if (ctx.ctaType === "consultation" && ctx.offerPhrase) {
+    if (!body.toLowerCase().includes(ctx.offerPhrase.toLowerCase())) {
+      flags.push({
+        code: "missing_offer",
+        label: `Consultation CTA is missing the offer ("${ctx.offerPhrase}")`,
+        severity: "block",
+        excerpt: "",
+      });
+    }
+  }
+
   return flags;
 }
 
 /** True if any blocking flag is present — the post cannot be scheduled. */
-export function hasBlockingFlag(text: string): boolean {
-  return checkSocialCompliance(text).some((f) => f.severity === "block");
+export function hasBlockingFlag(text: string, ctx: ComplianceContext = {}): boolean {
+  return checkSocialCompliance(text, ctx).some((f) => f.severity === "block");
 }

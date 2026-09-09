@@ -178,6 +178,24 @@ const SETTING_FIELDS: {
       "How should the AI sound when writing for this firm? Confident, plain-spoken, direct, etc.",
     multiline: true,
   },
+  {
+    key: "socialPhone",
+    label: "Social media phone number",
+    placeholder: "646-466-6267",
+    help: "Used only in generated social posts — always the dedicated social line, never the main office number above.",
+  },
+  {
+    key: "socialOfferPhrase",
+    label: "Social media offer phrase",
+    placeholder: "a free, confidential case review",
+    help: "Woven into a post's CTA whenever it invites a consultation.",
+  },
+  {
+    key: "socialHashtagRule",
+    label: "Social media hashtag rule",
+    placeholder: "3 to 5 relevant hashtags",
+    help: "The hashtag guidance given to the generator for formats that use them.",
+  },
 ];
 
 const PLATFORMS: { id: string; label: string }[] = [
