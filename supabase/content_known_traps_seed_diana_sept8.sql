@@ -27,7 +27,18 @@
 -- cannot do. Left as a follow-up, not guessed at here.
 --
 -- Idempotent. Safe to re-run; seeded rows are matched on (tenant_id, label).
+--
+-- FIX (post-initial-run): the original version of this file seeded one
+-- combined 'regex' row, 'New York minimum wage stated as an old figure', with
+-- an 'unless' exclusion — but matchTrap()'s regex branch never reads 'unless',
+-- so that row would flag the correct current figure forever. Replaced below
+-- with three 'all_of_unless' rows (one per stale figure), where 'unless'
+-- actually works. This delete removes the broken row from anyone who already
+-- ran the original version; a no-op if it was never seeded.
 -- ============================================================================
+
+delete from public.content_known_traps
+  where lower(label) = lower('New York minimum wage stated as an old figure');
 
 insert into public.content_known_traps (label, match_type, pattern, unless, severity, note)
 values
@@ -71,13 +82,35 @@ values
     'critical',
     'The federal $43,888 overtime salary threshold was vacated in November 2024. Do not state it as a current figure.'
   ),
+  -- Three rows, not one 'regex' row with an OR pattern: matchTrap()'s 'unless'
+  -- exclusion is only consulted for 'all_of'/'all_of_unless', not 'regex' — a
+  -- single regex row with unless:'{"2026"}' would silently never clear (the
+  -- exclusion is dead on that match type), flagging the correct current figure
+  -- forever. all_of/all_of_unless has no OR-of-terms form, so one row per
+  -- stale figure is the correct shape here, not a single combined pattern.
   (
-    'New York minimum wage stated as an old figure',
-    'regex',
-    '\$15\.00\b|\$14\.00\b|\$16\.50\b',
+    'New York minimum wage stated as $15.00',
+    'all_of_unless',
+    '["$15.00"]',
     '{"2026"}',
     'important',
-    'New York minimum wage figures change; $15.00 / $14.00 / $16.50 read as stale. Confirm the draft uses the current 2026 figure and is not stating an old one as current.'
+    'New York minimum wage figures change; $15.00 reads as stale. Confirm the draft uses the current 2026 figure and is not stating an old one as current.'
+  ),
+  (
+    'New York minimum wage stated as $14.00',
+    'all_of_unless',
+    '["$14.00"]',
+    '{"2026"}',
+    'important',
+    'New York minimum wage figures change; $14.00 reads as stale. Confirm the draft uses the current 2026 figure and is not stating an old one as current.'
+  ),
+  (
+    'New York minimum wage stated as $16.50',
+    'all_of_unless',
+    '["$16.50"]',
+    '{"2026"}',
+    'important',
+    'New York minimum wage figures change; $16.50 reads as stale unless confirmed current. Confirm the draft uses the current 2026 figure.'
   ),
   (
     'Farmworker overtime threshold stated as 60 hours current',

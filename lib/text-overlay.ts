@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { createCanvas, GlobalFonts, type Image } from "@napi-rs/canvas";
 
-import { wrap, roundRect } from "./image-canvas";
+import { wrap, roundRect, drawCover } from "./image-canvas";
 
 // Register the bundled fonts once per process. Distinct family names keep
 // weight selection deterministic across platforms (no reliance on system fonts).
@@ -41,14 +41,6 @@ export type OverlayOptions = {
   /** Right side of the footer, e.g. "Swipe →" or a phone number CTA. */
   footerRight?: string | null;
 };
-
-/** Cover-fit `img` onto the WxH canvas, centered. */
-function drawCover(ctx: ReturnType<ReturnType<typeof createCanvas>["getContext"]>, img: Image, W: number, H: number) {
-  const scale = Math.max(W / img.width, H / img.height);
-  const w = img.width * scale;
-  const h = img.height * scale;
-  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
-}
 
 /** Composite a background + templated text block. Shared by carousel slides and single-post images. */
 export function compositeOverlay(opts: OverlayOptions): Buffer {

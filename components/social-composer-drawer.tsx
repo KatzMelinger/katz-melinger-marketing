@@ -299,6 +299,34 @@ export function SocialComposerDrawer({
   const [dupByNet, setDupByNet] = useState<Map<NetworkKey, AngleConflict>>(new Map());
   const [dupAck, setDupAck] = useState(false);
 
+  // S1 operating brief (social phone/offer) — fetched once so the LIVE compliance
+  // preview below actually catches the same wrong_phone/missing_offer flags the
+  // server-side gate does at approve/schedule time, instead of silently never
+  // firing them because it never received the context. No ctaType is available
+  // here (the composer doesn't compute one per variation the way generateSocialPosts
+  // does), so missing_offer still can't fire from this component — only wrong_phone
+  // and the Instagram link-CTA check (which only needs `platform`) are covered.
+  // Matches lib/social-operating-brief.ts's DEFAULTS.socialPhone (server-only
+  // module, can't be imported into this client component).
+  const DEFAULT_SOCIAL_PHONE = "646-466-6267";
+  const [socialPhone, setSocialPhone] = useState<string>(DEFAULT_SOCIAL_PHONE);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/brand-voice/settings")
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const settings = (j?.settings ?? {}) as Record<string, string>;
+        if (settings.socialPhone) setSocialPhone(settings.socialPhone);
+      })
+      .catch(() => {
+        /* keep the default */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const selectedList = useMemo(
     () => [...KM_NETWORKS, ...EXTRA_NETWORKS].filter((n) => selected.has(n.key)),
     [selected],
@@ -368,10 +396,10 @@ export function SocialComposerDrawer({
     const m = new Map<NetworkKey, ComplianceFlag[]>();
     for (const n of selectedList) {
       const copy = variations.get(n.key)?.copy ?? "";
-      if (copy.trim()) m.set(n.key, checkSocialCompliance(copy));
+      if (copy.trim()) m.set(n.key, checkSocialCompliance(copy, { socialPhone, platform: n.key }));
     }
     return m;
-  }, [selectedList, variations]);
+  }, [selectedList, variations, socialPhone]);
 
   const blockedNets = useMemo(
     () => selectedList.filter((n) => (flagsByNet.get(n.key) ?? []).some((f) => f.severity === "block")),
@@ -608,11 +636,17 @@ export function SocialComposerDrawer({
       }
       const errs = new Map<NetworkKey, string>();
       for (const r of (j.results ?? []) as Array<{ platform?: string; status?: string; error?: string }>) {
-        if (r.status === "failed" && r.platform) errs.set(r.platform as NetworkKey, r.error || "Rejected by Ayrshare.");
+        // "flagged" (held by the compliance/legal gate) is just as much a
+        // not-actually-scheduled outcome as "failed" (Ayrshare rejection) —
+        // both need to show up as a per-network error, not read as success.
+        if ((r.status === "failed" || r.status === "flagged") && r.platform) {
+          errs.set(r.platform as NetworkKey, r.error || "Held for review.");
+        }
       }
       setPostErrors(errs);
       const failed = (j.failed ?? 0) as number;
-      setResult({ tone: failed > 0 ? "warn" : "ok", text: j.message || "Scheduled.", recorded: !!j.ok });
+      const flagged = (j.flagged ?? 0) as number;
+      setResult({ tone: failed > 0 || flagged > 0 ? "warn" : "ok", text: j.message || "Scheduled.", recorded: !!j.ok });
       onScheduled?.();
     } catch {
       setResult({ tone: "warn", text: "Scheduling failed.", recorded: false });
@@ -629,7 +663,11 @@ export function SocialComposerDrawer({
         const v = variations.get(n.key);
         const copy = v?.copy?.trim();
         if (!copy) return null;
-        if (compliant && checkSocialCompliance(copy).some((f) => f.severity === "block")) return null;
+        if (
+          compliant &&
+          checkSocialCompliance(copy, { socialPhone, platform: n.key }).some((f) => f.severity === "block")
+        )
+          return null;
         // The date/time inputs are America/New_York wall-clock. Convert to the
         // correct UTC instant explicitly (offset-less strings would otherwise be
         // parsed as browser-local, wrong on any non-ET machine). Ayrshare +

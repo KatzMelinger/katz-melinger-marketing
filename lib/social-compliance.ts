@@ -12,6 +12,8 @@
  * always a real problem.
  */
 
+import { normalizePhone } from "./lead-response";
+
 export type FlagSeverity = "block" | "warn";
 
 export type ComplianceFlag = {
@@ -36,11 +38,7 @@ type ComplianceContext = {
 type Rule = { code: string; label: string; severity: FlagSeverity; re: RegExp };
 
 /** US phone number in any common written form: (212) 460-0047, 212-460-0047, 212.460.0047, 2124600047. */
-const PHONE_RE = /(?:\(\d{3}\)\s?|\d{3}[-.\s])\d{3}[-.\s]?\d{4}/;
-
-function normalizePhone(s: string): string {
-  return s.replace(/\D/g, "");
-}
+const PHONE_RE = /(?:\(\d{3}\)\s?|\d{3}[-.\s])\d{3}[-.\s]?\d{4}/g;
 
 // Order matters only for display. Each `re` has a capture/target used as the
 // excerpt. All case-insensitive unless the pattern is inherently cased.
@@ -105,10 +103,13 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
   }
 
   // Known trap: the main office line (or any other number) leaking onto social,
-  // which must only ever carry the dedicated social number.
+  // which must only ever carry the dedicated social number. Checks EVERY
+  // phone-shaped match, not just the first — a caption can legitimately open
+  // with the correct number and still leak the wrong one later in the text.
   if (ctx.socialPhone) {
-    const wrongPhone = body.match(PHONE_RE);
-    if (wrongPhone && normalizePhone(wrongPhone[0]) !== normalizePhone(ctx.socialPhone)) {
+    const correct = normalizePhone(ctx.socialPhone);
+    const wrongPhone = [...body.matchAll(PHONE_RE)].find((m) => normalizePhone(m[0]) !== correct);
+    if (wrongPhone) {
       flags.push({
         code: "wrong_phone",
         label: `Wrong phone number on social — must be ${ctx.socialPhone}`,

@@ -15,14 +15,10 @@
 
 import { NextResponse } from "next/server";
 
-import { checkSocialCompliance } from "@/lib/social-compliance";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
-import { runLegalCheck } from "@/lib/legal-verify";
-import { syncFindings, listFindings } from "@/lib/content-findings-store";
-import { checkSourceCurrency } from "@/lib/source-currency";
+import { gateSocialPost } from "@/lib/social-post-gate";
 import { generateSpanishCompanion } from "@/lib/social-spanish";
 import { isSocialFormat } from "@/lib/social-format-rules";
-import { legalAccuracyEnabled } from "@/lib/feature-flags";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -105,17 +101,6 @@ async function queueSpanishCompanion(
     published_at: null,
     source_draft_id: draftId ?? null,
   });
-}
-
-/** This post's cta_type + source_blog_id, from its own content_drafts row's metadata (S2/S13b). */
-async function loadDraftMeta(db: Awaited<ReturnType<typeof getTenantDb>>, draftId: string | null) {
-  if (!draftId) return { ctaType: null, sourceBlogId: null };
-  const { data } = await db.from("content_drafts").select("metadata").eq("id", draftId).maybeSingle();
-  const meta = (data?.metadata ?? {}) as Record<string, unknown>;
-  return {
-    ctaType: typeof meta.cta_type === "string" ? meta.cta_type : null,
-    sourceBlogId: typeof meta.source_blog_id === "string" ? meta.source_blog_id : null,
-  };
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -211,98 +196,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         message: "Already scheduled on Ayrshare — status reconciled (not re-posted).",
       });
     }
-    // Re-check compliance at approval: a draft's caption may have been edited to
-    // non-compliant copy after it was parked. A blocking flag re-flags the post
-    // (held for review) instead of publishing it.
-    const [{ ctaType, sourceBlogId }, brief] = await Promise.all([
-      loadDraftMeta(db, row.source_draft_id),
-      getOperatingBrief(db.tenantId),
-    ]);
-    const approveFlags = checkSocialCompliance(row.content, {
-      socialPhone: brief.socialPhone,
+    // Re-check the full gate at approval: a draft's caption may have been
+    // edited to non-compliant copy after it was parked. Any hold re-flags the
+    // post for review instead of publishing it. See lib/social-post-gate.ts.
+    const brief = await getOperatingBrief(db.tenantId);
+    const gate = await gateSocialPost({
+      content: row.content,
       platform: row.platform,
-      ctaType: ctaType ?? undefined,
-      offerPhrase: brief.offerPhrase,
-    }).filter((f) => f.severity === "block");
-    if (approveFlags.length > 0) {
+      draftId: row.source_draft_id,
+      tenantId: db.tenantId,
+      db,
+      operatingBrief: brief,
+    });
+    if (gate.flagged) {
       await db
         .from("social_posts")
-        .update({ status: "flagged", last_error: `Needs review: ${approveFlags.map((f) => f.label).join("; ")}` })
+        .update({ status: "flagged", last_error: `Needs review: ${gate.reasons.join("; ")}` })
         .eq("id", id)
         .then(undefined, () => {});
       return NextResponse.json(
-        { error: `Flagged for review: ${approveFlags.map((f) => f.label).join("; ")}. Clear the flag after reviewing.` },
+        { error: `Flagged for review: ${gate.reasons.join("; ")}. Clear the flag after reviewing.` },
         { status: 400 },
       );
-    }
-
-    // Legal-accuracy layer (Part 2), reused unmodified from the blog gate. Only
-    // runs when there's a source draft to check claims against and to attach
-    // findings to. Findings are synced whatever the verdict; only a critical
-    // one holds the post — same contract as app/api/agent/approve.
-    if (legalAccuracyEnabled() && row.source_draft_id) {
-      try {
-        const legal = await runLegalCheck(row.content, { tenantId: db.tenantId });
-        await syncFindings({ draftId: row.source_draft_id, tenantId: db.tenantId, incoming: legal.findings });
-        const critical = legal.findings.filter((f) => f.severity === "critical");
-        if (critical.length > 0) {
-          const reason = `Legal review: ${critical.map((f) => f.title).join("; ")}`;
-          await db
-            .from("social_posts")
-            .update({ status: "flagged", last_error: reason })
-            .eq("id", id)
-            .then(undefined, () => {});
-          return NextResponse.json(
-            { error: `Flagged for legal review: ${critical.map((f) => f.title).join("; ")}.` },
-            { status: 400 },
-          );
-        }
-      } catch (e) {
-        console.warn("[social/posts approve] legal check failed:", e);
-        return NextResponse.json(
-          { error: "The legal-accuracy check could not run, so this was not approved. Try again." },
-          { status: 503 },
-        );
-      }
-    }
-
-    // S13(b) — inherited findings: held if the source blog has an unresolved
-    // finding. Live lookup (not a cached copy), so resolving the blog's finding
-    // clears the hold on the next approve attempt without any other change.
-    if (sourceBlogId) {
-      const inherited = await listFindings(sourceBlogId).catch(() => []);
-      const open = inherited.filter((f) => f.status === "open");
-      if (open.length > 0) {
-        const reason = `Source blog has unresolved findings: ${open.map((f) => f.title).join("; ")}`;
-        await db
-          .from("social_posts")
-          .update({ status: "flagged", last_error: reason })
-          .eq("id", id)
-          .then(undefined, () => {});
-        return NextResponse.json(
-          { error: `Flagged — ${reason}. Resolve the finding on the source blog, or clear the flag to override.` },
-          { status: 400 },
-        );
-      }
-    }
-
-    // S13(d) — source-currency flag: advisory only, never holds the post.
-    // Best-effort; never lets a currency-check failure block approval.
-    if (sourceBlogId && row.source_draft_id) {
-      const currency = await checkSourceCurrency(sourceBlogId, db.tenantId).catch(() => null);
-      if (currency) {
-        const { data: draftRow } = await db
-          .from("content_drafts")
-          .select("metadata")
-          .eq("id", row.source_draft_id)
-          .maybeSingle();
-        const meta = (draftRow?.metadata ?? {}) as Record<string, unknown>;
-        await db
-          .from("content_drafts")
-          .update({ metadata: { ...meta, source_currency_flag: currency } })
-          .eq("id", row.source_draft_id)
-          .then(undefined, () => {});
-      }
     }
 
     const platform = row.platform as AyrsharePlatform;

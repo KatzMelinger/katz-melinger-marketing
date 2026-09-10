@@ -32,11 +32,8 @@ import { getTenantConfig } from "@/lib/tenant-config";
 import { getAyrshareApiKey, postToAyrshare, type AyrsharePlatform } from "@/lib/ayrshare";
 import { generateSocialPosts } from "@/lib/content-social";
 import type { SocialFormatKey } from "@/lib/social-format-rules";
-import { checkSocialCompliance } from "@/lib/social-compliance";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
-import { runLegalCheck } from "@/lib/legal-verify";
-import { syncFindings } from "@/lib/content-findings-store";
-import { legalAccuracyEnabled } from "@/lib/feature-flags";
+import { gateSocialPost } from "@/lib/social-post-gate";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -120,33 +117,31 @@ export async function POST(req: Request) {
   for (const p of plan) {
     if (!p.draft) continue;
 
-    // Same S3 compliance gate + legal-accuracy layer as the maintained
-    // repurpose/schedule path (app/api/content-production/repurpose/schedule/
-    // route.ts) — this route must never post to Ayrshare ungated just because
-    // it takes a different code path to get there.
-    const ctaType = (p.draft.metadata as Record<string, unknown> | undefined)?.cta_type;
-    const blockingFlags = checkSocialCompliance(p.draft.body, {
-      socialPhone: operatingBrief.socialPhone,
-      platform: p.platforms.includes("instagram") ? "instagram" : p.platforms[0],
-      ctaType: typeof ctaType === "string" ? ctaType : undefined,
-      offerPhrase: operatingBrief.offerPhrase,
-    }).filter((f) => f.severity === "block");
+    // Same gate (lib/social-post-gate.ts) as the maintained repurpose/schedule
+    // path — this route must never post to Ayrshare ungated just because it
+    // takes a different code path to get there.
+    // This plan entry posts ONE shared body to every platform in p.platforms
+    // (one postToAyrshare call below) — there's no way to hold just the
+    // Instagram leg while still sending Facebook/LinkedIn. So the
+    // Instagram-specific link-CTA rule only applies when Instagram is the
+    // ONLY target; forcing it onto a multi-platform entry would hold
+    // Facebook/LinkedIn copy that has nothing wrong with it just because
+    // Instagram also happens to be one of the recipients.
+    const meta = (p.draft.metadata as Record<string, unknown> | undefined) ?? {};
+    const singlePlatform = p.platforms.length === 1 ? p.platforms[0] : undefined;
+    const gate = await gateSocialPost({
+      content: p.draft.body,
+      platform: singlePlatform,
+      draftId: p.draft.id,
+      tenantId: db.tenantId,
+      db,
+      operatingBrief,
+      ctaType: typeof meta.cta_type === "string" ? meta.cta_type : null,
+      sourceBlogId: typeof meta.source_blog_id === "string" ? meta.source_blog_id : null,
+    });
 
-    let legalReasons: string[] = [];
-    if (legalAccuracyEnabled()) {
-      try {
-        const legal = await runLegalCheck(p.draft.body, { tenantId: db.tenantId });
-        await syncFindings({ draftId: p.draft.id, tenantId: db.tenantId, incoming: legal.findings });
-        legalReasons = legal.findings.filter((f) => f.severity === "critical").map((f) => f.title);
-      } catch (e) {
-        console.warn(`[content-production/social] legal check failed (draft ${p.draft.id}):`, e);
-        legalReasons = ["Legal-accuracy check could not run"];
-      }
-    }
-
-    if (blockingFlags.length > 0 || legalReasons.length > 0) {
-      const reasons = [...blockingFlags.map((f) => f.label), ...legalReasons.map((t) => `Legal review: ${t}`)];
-      results.push({ angle: p.angle, platforms: p.platforms, when: p.when, ok: false, error: `Flagged for review: ${reasons.join("; ")}` });
+    if (gate.flagged) {
+      results.push({ angle: p.angle, platforms: p.platforms, when: p.when, ok: false, error: `Flagged for review: ${gate.reasons.join("; ")}` });
       for (const platform of p.platforms) {
         rows.push({
           platform,
@@ -155,7 +150,7 @@ export async function POST(req: Request) {
           scheduled_at: p.when,
           published_at: null,
           source_draft_id: p.draft.id,
-          last_error: `Needs review: ${reasons.join("; ")}`,
+          last_error: `Needs review: ${gate.reasons.join("; ")}`,
         });
       }
       continue;

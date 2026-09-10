@@ -5,7 +5,7 @@
  * cover-fit math instead of a second copy.
  */
 
-import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 
 /** Word-wrap `text` to fit `maxWidth` at the current ctx font. */
 export function wrap(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
@@ -42,6 +42,19 @@ export function roundRect(
   ctx.closePath();
 }
 
+/**
+ * Cover-fit `img` onto an already-open `W`x`H` context, centered and cropped
+ * to fill exactly. The one cover-fit implementation — every caller that needs
+ * this math (carousel slides, single-post overlays, the size-map crop below)
+ * draws through here instead of keeping its own copy.
+ */
+export function drawCover(ctx: SKRSContext2D, img: Image, W: number, H: number): void {
+  const scale = Math.max(W / img.width, H / img.height);
+  const w = img.width * scale;
+  const h = img.height * scale;
+  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+}
+
 /** Cover-fit `img` (any size) onto a `targetW`x`targetH` canvas, centered and cropped to fill exactly. */
 export async function coverCropToBuffer(
   src: Buffer,
@@ -51,9 +64,6 @@ export async function coverCropToBuffer(
   const img = await loadImage(src);
   const canvas = createCanvas(targetW, targetH);
   const ctx = canvas.getContext("2d");
-  const scale = Math.max(targetW / img.width, targetH / img.height);
-  const w = img.width * scale;
-  const h = img.height * scale;
-  ctx.drawImage(img, (targetW - w) / 2, (targetH - h) / 2, w, h);
+  drawCover(ctx, img, targetW, targetH);
   return canvas.toBuffer("image/png");
 }

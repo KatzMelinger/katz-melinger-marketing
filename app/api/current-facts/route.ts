@@ -116,6 +116,13 @@ export async function PUT(req: NextRequest) {
   try {
     const sb = getSupabaseAdmin();
     const tid = await resolveTenantId();
+
+    // Whole-list replace is a delete-then-insert (no cross-request transaction
+    // available via the REST client). Keep the pre-delete rows so a failed
+    // insert (e.g. a column this deployment hasn't migrated yet) can be rolled
+    // back instead of leaving the tenant with zero current facts.
+    const { data: previousRows } = await sb.from("current_facts").select("*").eq("tenant_id", tid);
+
     const { error: delErr } = await sb.from("current_facts").delete().eq("tenant_id", tid);
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
     if (facts.length > 0) {
@@ -142,7 +149,17 @@ export async function PUT(req: NextRequest) {
         tenant_id: tid,
       }));
       const { error: insErr } = await sb.from("current_facts").insert(rows);
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      if (insErr) {
+        // Best-effort rollback so the delete above didn't just erase every
+        // current fact — restore what was there before this request.
+        if (previousRows?.length) {
+          await sb.from("current_facts").insert(previousRows).then(undefined, () => {});
+        }
+        return NextResponse.json(
+          { error: `${insErr.message} — restored the previous facts, nothing was saved.` },
+          { status: 500 },
+        );
+      }
     }
     return NextResponse.json({ facts });
   } catch (err) {

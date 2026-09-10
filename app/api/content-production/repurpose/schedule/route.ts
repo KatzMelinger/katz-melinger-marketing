@@ -19,14 +19,11 @@
 
 import { NextResponse } from "next/server";
 
-import { checkSocialCompliance } from "@/lib/social-compliance";
 import { checkCalendarDuplicates, type AngleConflict } from "@/lib/social-duplicate";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
-import { runLegalCheck } from "@/lib/legal-verify";
-import { syncFindings, listFindings } from "@/lib/content-findings-store";
-import { checkSourceCurrency } from "@/lib/source-currency";
+import { gateSocialPost } from "@/lib/social-post-gate";
 import { guardUser } from "@/lib/supabase-route";
-import { socialMultiformatEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
+import { socialMultiformatEnabled } from "@/lib/feature-flags";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
 import {
@@ -162,67 +159,27 @@ export async function POST(req: Request) {
     let viaAyrshare = false;
     let error: string | undefined;
 
-    // Brand/compliance gate (server-side enforcement of the composer's flag): a
-    // blocking flag can neither publish nor schedule. It lands on the calendar as
-    // "flagged" with the reason, and a human must clear it (review + override)
-    // before it can be approved. This backstops the client gate so a flagged
-    // draft can't be quietly approved from the calendar later.
-    // Only scheduling flags; a "save as draft" parks even a rule-tripping post as
-    // a plain draft (re-checked at approve). dupConflicts is empty for asDraft.
-    const blockingFlags = asDraft
-      ? []
-      : checkSocialCompliance(content, {
-          socialPhone: operatingBrief.socialPhone,
+    // Full compliance/legal/S13 gate (lib/social-post-gate.ts) — same gate used
+    // at approve time in app/api/social/posts/[id]/route.ts, so the two can't
+    // drift. A blocking result lands on the calendar as "flagged" with the
+    // reason, and a human must clear it (review + override) before it can be
+    // approved. Only scheduling flags; a "save as draft" parks even a
+    // rule-tripping post as a plain draft (re-checked at approve).
+    const gate = asDraft
+      ? { flagged: false, reasons: [] as string[] }
+      : await gateSocialPost({
+          content,
           platform,
-          ctaType: p.draftId ? ctaByDraftId.get(p.draftId) : undefined,
-          offerPhrase: operatingBrief.offerPhrase,
-        }).filter((f) => f.severity === "block");
+          draftId: p.draftId ?? null,
+          tenantId: db.tenantId,
+          db,
+          operatingBrief,
+          ctaType: p.draftId ? (ctaByDraftId.get(p.draftId) ?? null) : null,
+          sourceBlogId: p.draftId ? (sourceBlogByDraftId.get(p.draftId) ?? null) : null,
+        });
     const dupConflict = dupConflicts[i]?.[0] ?? null;
 
-    // Legal-accuracy layer (Part 2), reused unmodified from the blog gate.
-    // Sequential per post (runLegalCheck isn't parallelized internally) — fine
-    // for typical short social batches; a very large batch would add latency,
-    // not solved here. Findings are synced whatever the verdict; only a
-    // critical one holds the post.
-    let legalReasons: string[] = [];
-    if (!asDraft && legalAccuracyEnabled() && p.draftId) {
-      try {
-        const legal = await runLegalCheck(content, { tenantId: db.tenantId });
-        await syncFindings({ draftId: p.draftId, tenantId: db.tenantId, incoming: legal.findings });
-        legalReasons = legal.findings.filter((f) => f.severity === "critical").map((f) => f.title);
-      } catch (e) {
-        console.warn(`[repurpose/schedule] legal check failed (draft ${p.draftId}):`, e);
-        legalReasons = ["Legal-accuracy check could not run"];
-      }
-    }
-
-    // S13(b) — inherited findings: held if the source blog has an unresolved
-    // finding. Live lookup, so resolving it on the blog clears the hold here
-    // with no other change needed.
-    let inheritedReasons: string[] = [];
-    const sourceBlogId = p.draftId ? sourceBlogByDraftId.get(p.draftId) : undefined;
-    if (!asDraft && sourceBlogId) {
-      const inherited = await listFindings(sourceBlogId).catch(() => []);
-      inheritedReasons = inherited.filter((f) => f.status === "open").map((f) => f.title);
-    }
-
-    // S13(d) — source-currency flag: advisory only, attached to the social
-    // draft's metadata, never a reason to flag/hold the post.
-    if (!asDraft && sourceBlogId && p.draftId) {
-      const currency = await checkSourceCurrency(sourceBlogId, db.tenantId).catch(() => null);
-      if (currency) {
-        const { data: draftRow } = await db.from("content_drafts").select("metadata").eq("id", p.draftId).maybeSingle();
-        const meta = (draftRow?.metadata ?? {}) as Record<string, unknown>;
-        await db
-          .from("content_drafts")
-          .update({ metadata: { ...meta, source_currency_flag: currency } })
-          .eq("id", p.draftId)
-          .then(undefined, () => {});
-      }
-    }
-
-    const flagged =
-      !asDraft && (blockingFlags.length > 0 || !!dupConflict || legalReasons.length > 0 || inheritedReasons.length > 0);
+    const flagged = !asDraft && (gate.flagged || !!dupConflict);
 
     // Guaranteed-fail guard: media-required platforms (Instagram, TikTok, etc.)
     // can't post text-only. Fail fast with a clear reason instead of spending an
@@ -288,11 +245,7 @@ export async function POST(req: Request) {
           : "scheduled";
     // A flagged post carries the reason in last_error so the calendar can show
     // why it's held; a real publish error carries the Ayrshare reason.
-    const flagReasons = [
-      ...blockingFlags.map((f) => f.label),
-      ...legalReasons.map((t) => `Legal review: ${t}`),
-      ...inheritedReasons.map((t) => `Source blog unresolved: ${t}`),
-    ];
+    const flagReasons = [...gate.reasons];
     if (dupConflict) {
       const when = new Date(dupConflict.date);
       const whenStr = Number.isNaN(when.getTime()) ? "" : ` on ${when.toISOString().slice(0, 10)}`;
