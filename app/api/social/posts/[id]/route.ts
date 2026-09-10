@@ -16,7 +16,7 @@
 import { NextResponse } from "next/server";
 
 import { getOperatingBrief } from "@/lib/social-operating-brief";
-import { gateSocialPost } from "@/lib/social-post-gate";
+import { gateSocialPost, loadDraftCtaAndSourceBlog } from "@/lib/social-post-gate";
 import { generateSpanishCompanion } from "@/lib/social-spanish";
 import { isSocialFormat } from "@/lib/social-format-rules";
 import { guardUser } from "@/lib/supabase-route";
@@ -199,7 +199,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // Re-check the full gate at approval: a draft's caption may have been
     // edited to non-compliant copy after it was parked. Any hold re-flags the
     // post for review instead of publishing it. See lib/social-post-gate.ts.
-    const brief = await getOperatingBrief(db.tenantId);
+    const [brief, draftMeta] = await Promise.all([
+      getOperatingBrief(db.tenantId),
+      loadDraftCtaAndSourceBlog(db, row.source_draft_id),
+    ]);
     const gate = await gateSocialPost({
       content: row.content,
       platform: row.platform,
@@ -207,17 +210,32 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       tenantId: db.tenantId,
       db,
       operatingBrief: brief,
+      ctaType: draftMeta.ctaType,
+      sourceBlogId: draftMeta.sourceBlogId,
     });
+    // A legal-check infra failure (service down/timeout) is not a compliance
+    // finding — don't hold the post over it. Leave status as-is and let the
+    // reviewer retry, matching how the blog gate (app/api/agent/approve)
+    // treats the same failure. But if something ELSE also flagged (a real
+    // compliance issue or an inherited finding), that must still win — a
+    // coincidental legal-check outage should never mask a genuine hold.
+    const onlyLegalCheckFailed = gate.legalCheckFailed && gate.reasons.every((r) => r.startsWith("Legal review:"));
+    if (onlyLegalCheckFailed) {
+      return NextResponse.json(
+        { error: "The legal-accuracy check could not run, so this was not approved. Try again." },
+        { status: 503 },
+      );
+    }
     if (gate.flagged) {
+      const message = gate.inheritedFindingHold
+        ? `Flagged — ${gate.reasons.join("; ")}. Resolve the finding on the source blog, or clear the flag to override.`
+        : `Flagged for review: ${gate.reasons.join("; ")}. Clear the flag after reviewing.`;
       await db
         .from("social_posts")
         .update({ status: "flagged", last_error: `Needs review: ${gate.reasons.join("; ")}` })
         .eq("id", id)
         .then(undefined, () => {});
-      return NextResponse.json(
-        { error: `Flagged for review: ${gate.reasons.join("; ")}. Clear the flag after reviewing.` },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     const platform = row.platform as AyrsharePlatform;

@@ -306,10 +306,11 @@ export function SocialComposerDrawer({
   // here (the composer doesn't compute one per variation the way generateSocialPosts
   // does), so missing_offer still can't fire from this component — only wrong_phone
   // and the Instagram link-CTA check (which only needs `platform`) are covered.
-  // Matches lib/social-operating-brief.ts's DEFAULTS.socialPhone (server-only
-  // module, can't be imported into this client component).
-  const DEFAULT_SOCIAL_PHONE = "646-466-6267";
-  const [socialPhone, setSocialPhone] = useState<string>(DEFAULT_SOCIAL_PHONE);
+  // No hardcoded default here: checkSocialCompliance's wrong_phone check is a
+  // no-op while ctx.socialPhone is falsy (lib/social-compliance.ts), so the
+  // check simply stays inactive until the real value loads — no local copy of
+  // lib/social-operating-brief.ts's server-only default to keep in sync.
+  const [socialPhone, setSocialPhone] = useState<string | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/brand-voice/settings")
@@ -320,7 +321,7 @@ export function SocialComposerDrawer({
         if (settings.socialPhone) setSocialPhone(settings.socialPhone);
       })
       .catch(() => {
-        /* keep the default */
+        /* stays undefined — the wrong_phone check just doesn't run */
       });
     return () => {
       cancelled = true;

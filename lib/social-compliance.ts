@@ -108,7 +108,18 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
   // with the correct number and still leak the wrong one later in the text.
   if (ctx.socialPhone) {
     const correct = normalizePhone(ctx.socialPhone);
-    const wrongPhone = [...body.matchAll(PHONE_RE)].find((m) => normalizePhone(m[0]) !== correct);
+    // A malformed/too-short configured number (correct === null) must not
+    // make every real phone number in the body look "wrong" — skip the check
+    // entirely rather than false-positive-blocking on a bad setting.
+    const wrongPhone =
+      correct &&
+      [...body.matchAll(PHONE_RE)].find((m) => {
+        // Skip a phone-shaped run that's clearly a reference number, not a
+        // phone number (a case/docket/invoice number formatted the same way).
+        const before = body.slice(Math.max(0, (m.index ?? 0) - 20), m.index ?? 0).toLowerCase();
+        if (/(case|docket|claim|invoice|order|index|file)\s*(no\.?|number|#)?\s*:?\s*$/.test(before)) return false;
+        return normalizePhone(m[0]) !== correct;
+      });
     if (wrongPhone) {
       flags.push({
         code: "wrong_phone",

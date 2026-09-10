@@ -151,12 +151,23 @@ export async function PUT(req: NextRequest) {
       const { error: insErr } = await sb.from("current_facts").insert(rows);
       if (insErr) {
         // Best-effort rollback so the delete above didn't just erase every
-        // current fact — restore what was there before this request.
+        // current fact — restore what was there before this request. Report
+        // honestly if the rollback itself fails, rather than always claiming
+        // the previous facts were restored.
+        let rollbackOk = true;
         if (previousRows?.length) {
-          await sb.from("current_facts").insert(previousRows).then(undefined, () => {});
+          const { error: rollbackErr } = await sb.from("current_facts").insert(previousRows);
+          if (rollbackErr) {
+            rollbackOk = false;
+            console.error("[current-facts PUT] rollback insert also failed:", rollbackErr.message);
+          }
         }
         return NextResponse.json(
-          { error: `${insErr.message} — restored the previous facts, nothing was saved.` },
+          {
+            error: rollbackOk
+              ? `${insErr.message} — restored the previous facts, nothing was saved.`
+              : `${insErr.message} — the previous facts could NOT be restored either; current_facts is now empty for this tenant. Re-save immediately.`,
+          },
           { status: 500 },
         );
       }

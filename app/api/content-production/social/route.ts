@@ -122,16 +122,15 @@ export async function POST(req: Request) {
     // takes a different code path to get there.
     // This plan entry posts ONE shared body to every platform in p.platforms
     // (one postToAyrshare call below) — there's no way to hold just the
-    // Instagram leg while still sending Facebook/LinkedIn. So the
-    // Instagram-specific link-CTA rule only applies when Instagram is the
-    // ONLY target; forcing it onto a multi-platform entry would hold
-    // Facebook/LinkedIn copy that has nothing wrong with it just because
-    // Instagram also happens to be one of the recipients.
+    // Instagram leg while still sending Facebook/LinkedIn. gateSocialPost
+    // checks compliance against EVERY platform in the list and unions the
+    // blocking flags, so Instagram's link-CTA rule still applies whenever
+    // Instagram is one of the targets, without over-applying it to platforms
+    // it doesn't concern.
     const meta = (p.draft.metadata as Record<string, unknown> | undefined) ?? {};
-    const singlePlatform = p.platforms.length === 1 ? p.platforms[0] : undefined;
     const gate = await gateSocialPost({
       content: p.draft.body,
-      platform: singlePlatform,
+      platform: p.platforms,
       draftId: p.draft.id,
       tenantId: db.tenantId,
       db,
