@@ -148,7 +148,7 @@ export default function DisclaimerLibrary() {
               />
             </div>
             <div>
-              <label className={label}>Trigger (when it's required)</label>
+              <label className={label}>Trigger (when it&apos;s required)</label>
               <input
                 className={input}
                 value={editing.trigger ?? ""}

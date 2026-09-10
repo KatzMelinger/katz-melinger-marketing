@@ -76,11 +76,9 @@ Respond in JSON format:
     );
 
     return NextResponse.json({ jobId });
-  } catch (err: any) {
-    console.error("[expand/start] Failed:", err?.message);
-    return NextResponse.json(
-      { error: err?.message || "Failed to start expand job" },
-      { status: 500 },
-    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to start expand job";
+    console.error("[expand/start] Failed:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

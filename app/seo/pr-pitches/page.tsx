@@ -395,7 +395,7 @@ export default function PrPitchesPage() {
               <ul className="space-y-3">
                 {filteredQueries.length === 0 && (
                   <li className="text-sm text-slate-500">
-                    No queries match this filter. Try widening to "All".
+                    No queries match this filter. Try widening to &quot;All&quot;.
                   </li>
                 )}
                 {filteredQueries.map((q) => {

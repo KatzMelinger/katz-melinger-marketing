@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { RecentSearchesStrip } from "@/components/recent-searches-strip";
 import { SeoShell, formatNumber } from "@/components/seo-shell";
@@ -36,7 +37,10 @@ export default function KeywordCompetitivePage() {
   const [trackedDomains, setTrackedDomains] = useState<string[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [loadingDomains, setLoadingDomains] = useState(false);
+  // Starts true (not set synchronously in the mount effect below) — the
+  // mount-only fetch begins immediately, so the loading state is true from
+  // first render until it resolves.
+  const [loadingDomains, setLoadingDomains] = useState(true);
   const [loadingOpps, setLoadingOpps] = useState(false);
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<StateFilter>("ny_nj_and_generic");
@@ -57,7 +61,6 @@ export default function KeywordCompetitivePage() {
   }, [selected]);
 
   useEffect(() => {
-    setLoadingDomains(true);
     fetch("/api/seo/competitors", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
@@ -70,6 +73,9 @@ export default function KeywordCompetitivePage() {
 
   useEffect(() => {
     if (!selected) return;
+    // Must reset to true on every `selected` change (not just mount), so a
+    // useState(true) initializer alone can't cover this one.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingOpps(true);
     fetch(`/api/seo/keywords/competitive?domain=${encodeURIComponent(selected)}`, {
       cache: "no-store",
@@ -114,9 +120,9 @@ export default function KeywordCompetitivePage() {
         {!loadingDomains && trackedDomains.length === 0 && (
           <p className="text-sm text-slate-500 mt-2">
             No tracked competitors. Add one on{" "}
-            <a href="/seo/competitors" className="text-brand hover:underline">
+            <Link href="/seo/competitors" className="text-brand hover:underline">
               /seo/competitors
-            </a>
+            </Link>
             .
           </p>
         )}

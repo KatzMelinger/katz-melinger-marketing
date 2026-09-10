@@ -190,7 +190,7 @@ export default function SeoCompetitorsPage() {
         <article className="rounded-xl border border-[#e2e8f0] bg-white p-5">
           <h2 className="text-lg font-semibold">Top 10 organic competitors</h2>
           <p className="mt-1 text-xs text-slate-500">
-            From DataForSEO's organic-competitors report. One click to start tracking — already-tracked
+            From DataForSEO&apos;s organic-competitors report. One click to start tracking — already-tracked
             domains are marked.
           </p>
 

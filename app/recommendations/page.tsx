@@ -245,7 +245,7 @@ export default function RecommendationsPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">AI recommendations</h1>
             <p className="text-sm text-slate-600 mt-1 max-w-2xl">
-              Claude reads the firm's latest AEO sweep, tracked SEO keywords, and
+              Claude reads the firm&apos;s latest AEO sweep, tracked SEO keywords, and
               cannibalization snapshot, then suggests prioritized actions.
               Mark items Done, Hold, or Disregard to keep the active list tight —
               Done + Disregard items are skipped on the next Generate.

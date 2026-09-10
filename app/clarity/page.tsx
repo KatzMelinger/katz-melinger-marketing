@@ -134,13 +134,13 @@ export default function ClarityPage() {
               </a>
               {" "}— sign in with a Microsoft account, add{" "}
               <span className="font-mono">{domain ?? "your site"}</span> as the site,
-              and copy the tracking script Clarity provides into your website's{" "}
+              and copy the tracking script Clarity provides into your website&apos;s{" "}
               <span className="font-mono">&lt;head&gt;</span>.
             </li>
             <li>
               <span className="font-medium">Find the Project ID</span>: in
               Clarity, go to <span className="font-mono">Settings → Overview → Project ID</span>.
-              It looks like a short alphanumeric string (no secret — it's
+              It looks like a short alphanumeric string (no secret — it&apos;s
               embedded in the public tracking script).
             </li>
             <li>
@@ -154,7 +154,7 @@ export default function ClarityPage() {
 
           <p className="text-xs text-slate-500 mt-6">
             Clarity has no public API for the heatmap or recording data — they
-            live only in Clarity's UI, which this page deep-links into.
+            live only in Clarity&apos;s UI, which this page deep-links into.
           </p>
         </div>
       </div>
@@ -253,7 +253,7 @@ export default function ClarityPage() {
       </div>
 
       <p className="text-xs text-slate-500 text-center mt-6">
-        Microsoft Clarity opens in a new tab. Make sure you're signed in to
+        Microsoft Clarity opens in a new tab. Make sure you&apos;re signed in to
         your Microsoft account to access the project.
       </p>
     </div>

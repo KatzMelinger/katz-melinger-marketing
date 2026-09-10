@@ -191,7 +191,7 @@ function LoginForm() {
 
         {mode === "signin" && (
           <p className="text-xs text-slate-500 mt-6">
-            New firm? <a href="/signup" className="text-brand hover:underline">Create a firm account</a>. Otherwise, don't have an account? Ask an admin to invite you.
+            New firm? <a href="/signup" className="text-brand hover:underline">Create a firm account</a>. Otherwise, don&apos;t have an account? Ask an admin to invite you.
           </p>
         )}
       </div>

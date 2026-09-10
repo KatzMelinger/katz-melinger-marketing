@@ -62,11 +62,9 @@ export async function GET(req: NextRequest) {
         ? Date.now() - new Date(job.started_at).getTime()
         : 0,
     });
-  } catch (err: any) {
-    console.error("[discover/status] Failed:", err?.message);
-    return NextResponse.json(
-      { error: err?.message || "Failed to check job status" },
-      { status: 500 },
-    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to check job status";
+    console.error("[discover/status] Failed:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

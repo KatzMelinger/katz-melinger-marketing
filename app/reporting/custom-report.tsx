@@ -175,7 +175,7 @@ export function CustomReport({ period }: { period: PeriodKey }) {
         <div>
           <h2 className="text-sm font-semibold text-slate-900">Build a custom report</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Describe what you want, or pick focus areas — Claude assembles it from this {w.periodWord}'s data ({prettyDate(w.since)} – {prettyDate(w.until)}).
+            Describe what you want, or pick focus areas — Claude assembles it from this {w.periodWord}&apos;s data ({prettyDate(w.since)} – {prettyDate(w.until)}).
           </p>
         </div>
 

@@ -820,7 +820,7 @@ function PacketView({ packet }: { packet: Packet }) {
             {packet.existing_coverage.map((m, i) => (
               <li key={i} className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs">
                 <span className="font-medium text-amber-900">
-                  "{m.term}" already covered — link, don't redefine:
+                  &quot;{m.term}&quot; already covered — link, don&apos;t redefine:
                 </span>
                 <ul className="mt-1 space-y-0.5">
                   {m.pages.map((p, j) => (

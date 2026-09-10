@@ -140,7 +140,7 @@ export default function AdminUsersPage() {
         <p className="text-sm text-slate-600 mt-1 max-w-2xl">
           Invite teammates and manage their access. Admins can change settings,
           add users, and manage integrations. Users can use every dashboard
-          feature but can't change settings or invite others.
+          feature but can&apos;t change settings or invite others.
         </p>
       </div>
 

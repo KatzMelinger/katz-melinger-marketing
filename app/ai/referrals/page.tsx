@@ -84,7 +84,8 @@ export default function AiReferralsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoading(true);
+    // Mount-only fetch; `loading` already starts true, so no synchronous
+    // set is needed here.
     fetch("/api/google-analytics?action=ai-referrals", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: ReferralsPayload & { error?: string }) => {
@@ -302,7 +303,7 @@ export default function AiReferralsPage() {
               </ul>
               <p className="mt-3 text-xs text-slate-500">
                 <b>Note:</b> AI bot crawls (GPTBot, ClaudeBot, PerplexityBot, etc.) are not in this
-                view — GA4 strips bots by default. To track bot crawls, we'd need to enable Vercel
+                view — GA4 strips bots by default. To track bot crawls, we&apos;d need to enable Vercel
                 Edge Middleware or Cloudflare log forwarding for your site.
               </p>
             </DashCard>

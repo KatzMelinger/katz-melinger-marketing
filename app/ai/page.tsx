@@ -21,6 +21,10 @@ export const metadata: Metadata = {
     "Answer Engine Optimization, AI search visibility, llms.txt, and prompt operations.",
 };
 
+function daysSince(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+}
+
 async function fetchJsonSafe<T>(url: string): Promise<T | null> {
   try {
     const res = await serverFetch(url);
@@ -67,9 +71,7 @@ export default async function AiHubPage() {
       : [];
   const promptCount = promptList.length;
   const llmsLatest = llms?.latest?.created_at ?? llms?.versions?.[0]?.created_at ?? null;
-  const llmsAgeDays = llmsLatest
-    ? Math.max(0, Math.floor((Date.now() - new Date(llmsLatest).getTime()) / 86400000))
-    : null;
+  const llmsAgeDays = llmsLatest ? daysSince(llmsLatest) : null;
 
   const kpis: HubKpi[] = [
     {

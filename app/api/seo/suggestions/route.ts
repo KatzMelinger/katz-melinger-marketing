@@ -45,8 +45,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Failed to load suggestions" }, { status: 500 });
     }
     return NextResponse.json(data ?? []);
-  } catch (err: any) {
-    console.error("[suggestions GET] Failed:", err?.message);
+  } catch (err) {
+    console.error("[suggestions GET] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to load suggestions" }, { status: 500 });
   }
 }
@@ -151,8 +151,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(data, { status: 201 });
-  } catch (err: any) {
-    console.error("[suggestions POST] Failed:", err?.message);
-    return NextResponse.json({ error: err?.message ?? "Failed" }, { status: 500 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed";
+    console.error("[suggestions POST] Failed:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

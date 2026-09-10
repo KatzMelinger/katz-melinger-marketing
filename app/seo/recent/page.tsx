@@ -33,24 +33,23 @@ const SCOPES: RecentSearchScope[] = [
   "backlinks",
 ];
 
-export default function SeoRecentPage() {
-  const [grouped, setGrouped] = useState<Record<RecentSearchScope, RecentSearch[]>>(
-    () =>
-      Object.fromEntries(SCOPES.map((s) => [s, [] as RecentSearch[]])) as unknown as Record<
-        RecentSearchScope,
-        RecentSearch[]
-      >,
-  );
+function readGrouped(): Record<RecentSearchScope, RecentSearch[]> {
+  return Object.fromEntries(SCOPES.map((s) => [s, listRecent(s, 10)])) as unknown as Record<
+    RecentSearchScope,
+    RecentSearch[]
+  >;
+}
 
-  const refresh = useCallback(() => {
-    const next = Object.fromEntries(
-      SCOPES.map((s) => [s, listRecent(s, 10)]),
-    ) as unknown as Record<RecentSearchScope, RecentSearch[]>;
-    setGrouped(next);
-  }, []);
+export default function SeoRecentPage() {
+  // Read localStorage directly for the initial value (a lazy useState
+  // initializer) instead of an empty placeholder + an effect-triggered
+  // setState on mount — the effect below then only needs to exist for its
+  // other real job, subscribing to change events.
+  const [grouped, setGrouped] = useState<Record<RecentSearchScope, RecentSearch[]>>(readGrouped);
+
+  const refresh = useCallback(() => setGrouped(readGrouped()), []);
 
   useEffect(() => {
-    refresh();
     const onChange = () => refresh();
     window.addEventListener("storage", onChange);
     window.addEventListener("km:recent-searches", onChange);

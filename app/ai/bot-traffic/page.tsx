@@ -68,7 +68,8 @@ export default function AiBotTrafficPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
+    // Mount-only fetch; `loading` already starts true, so no synchronous
+    // set is needed here.
     fetch("/api/ai-bots/recent?days=30", { cache: "no-store" })
       .then((r) => r.json())
       .then(setData)
@@ -97,7 +98,7 @@ export default function AiBotTrafficPage() {
           <p className="mt-1 text-sm text-slate-500 max-w-2xl">
             GPTBot, ClaudeBot, PerplexityBot, Google-Extended, and other AI
             crawler hits to your site. GA4 strips bots, so this view
-            needs its own ingest path — see "How to enable" below if no data
+            needs its own ingest path — see &quot;How to enable&quot; below if no data
             is showing.
           </p>
         </header>

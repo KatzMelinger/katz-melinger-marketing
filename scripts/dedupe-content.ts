@@ -48,19 +48,21 @@ const supabase = createClient(url, key, { auth: { persistSession: false } });
 
 const norm = (s: unknown): string => String(s ?? "").trim().toLowerCase();
 
-async function fetchAll(table: string, columns: string): Promise<any[]> {
-  const rows: any[] = [];
+type Row = Record<string, unknown>;
+
+async function fetchAll(table: string, columns: string): Promise<Row[]> {
+  const rows: Row[] = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase.from(table).select(columns).range(from, from + 999);
     if (error) throw new Error(`load ${table}: ${error.message}`);
-    rows.push(...(data ?? []));
+    rows.push(...((data ?? []) as unknown as Row[]));
     if (!data || data.length < 1000) break;
   }
   return rows;
 }
 
-function groupsOf(rows: any[], keyOf: (r: any) => string): any[][] {
-  const map = new Map<string, any[]>();
+function groupsOf(rows: Row[], keyOf: (r: Row) => string): Row[][] {
+  const map = new Map<string, Row[]>();
   for (const r of rows) {
     const k = keyOf(r);
     if (!k.trim()) continue;
@@ -72,10 +74,10 @@ function groupsOf(rows: any[], keyOf: (r: any) => string): any[][] {
 async function dedupe(
   table: string,
   columns: string,
-  keyOf: (r: any) => string,
-  scoreOf: (r: any) => number[],
-  labelOf: (r: any) => string,
-  describe: (r: any) => string,
+  keyOf: (r: Row) => string,
+  scoreOf: (r: Row) => number[],
+  labelOf: (r: Row) => string,
+  describe: (r: Row) => string,
 ): Promise<number> {
   const rows = await fetchAll(table, columns);
   const groups = groupsOf(rows, keyOf);
@@ -101,7 +103,7 @@ async function dedupe(
     for (const r of drop) {
       console.log(`    delete ${describe(r)}`);
       if (APPLY) {
-        const { error } = await supabase.from(table).delete().eq("id", r.id);
+        const { error } = await supabase.from(table).delete().eq("id", r.id as string);
         if (error) console.error(`      ! delete failed: ${error.message}`);
         else deleted++;
       } else {
@@ -115,8 +117,10 @@ async function dedupe(
 
 // Linkage: which suggestions/drafts are referenced by a Production Board row.
 const pipeline = await fetchAll("content_pipeline", "id, draft_id, suggestion_id");
-const linkedDraftIds = new Set(pipeline.map((p) => p.draft_id).filter(Boolean));
-const linkedSuggestionIds = new Set(pipeline.map((p) => p.suggestion_id).filter(Boolean));
+const linkedDraftIds = new Set(pipeline.map((p) => p.draft_id as string | null).filter(Boolean));
+const linkedSuggestionIds = new Set(
+  pipeline.map((p) => p.suggestion_id as string | null).filter(Boolean),
+);
 
 const SUG_STATUS: Record<string, number> = { approved: 3, held: 2, pending: 1, rejected: 0 };
 const DRAFT_STATUS: Record<string, number> = {
@@ -132,14 +136,14 @@ total += await dedupe(
   "id, tenant_id, primary_keyword, status, approved_draft_id, created_at",
   (r) => `${r.tenant_id}::${norm(r.primary_keyword)}`,
   (r) => [
-    linkedSuggestionIds.has(r.id) ? 1 : 0,
-    SUG_STATUS[r.status] ?? -1,
+    linkedSuggestionIds.has(r.id as string) ? 1 : 0,
+    SUG_STATUS[r.status as string] ?? -1,
     r.approved_draft_id ? 1 : 0,
-    Date.parse(r.created_at) || 0,
+    Date.parse(r.created_at as string) || 0,
   ],
-  (r) => r.primary_keyword,
+  (r) => String(r.primary_keyword),
   (r) =>
-    `#${String(r.id).slice(0, 8)}  status=${r.status}  draft=${r.approved_draft_id ? "yes" : "no"}  board=${linkedSuggestionIds.has(r.id) ? "yes" : "no"}  ${String(r.created_at).slice(0, 10)}`,
+    `#${String(r.id).slice(0, 8)}  status=${r.status}  draft=${r.approved_draft_id ? "yes" : "no"}  board=${linkedSuggestionIds.has(r.id as string) ? "yes" : "no"}  ${String(r.created_at).slice(0, 10)}`,
 );
 
 total += await dedupe(
@@ -147,13 +151,13 @@ total += await dedupe(
   "id, tenant_id, title, topic, format, status, created_at",
   (r) => `${r.tenant_id}::${norm(r.title || r.topic)}::${norm(r.format)}`,
   (r) => [
-    linkedDraftIds.has(r.id) ? 1 : 0,
-    DRAFT_STATUS[r.status] ?? -1,
-    Date.parse(r.created_at) || 0,
+    linkedDraftIds.has(r.id as string) ? 1 : 0,
+    DRAFT_STATUS[r.status as string] ?? -1,
+    Date.parse(r.created_at as string) || 0,
   ],
-  (r) => r.title || r.topic,
+  (r) => String(r.title || r.topic),
   (r) =>
-    `#${String(r.id).slice(0, 8)}  format=${r.format}  status=${r.status}  board=${linkedDraftIds.has(r.id) ? "yes" : "no"}  ${String(r.created_at).slice(0, 10)}`,
+    `#${String(r.id).slice(0, 8)}  format=${r.format}  status=${r.status}  board=${linkedDraftIds.has(r.id as string) ? "yes" : "no"}  ${String(r.created_at).slice(0, 10)}`,
 );
 
 console.log(`\nTotal: ${total} row(s) ${APPLY ? "deleted" : "would be deleted"}.`);

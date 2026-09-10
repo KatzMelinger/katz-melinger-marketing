@@ -56,12 +56,14 @@ function dupeGroups<T>(rows: T[], keyOf: (r: T) => string): Map<string, T[]> {
   return groups;
 }
 
-async function fetchAll(table: string, columns: string): Promise<any[]> {
-  const rows: any[] = [];
+type Row = Record<string, unknown>;
+
+async function fetchAll(table: string, columns: string): Promise<Row[]> {
+  const rows: Row[] = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase.from(table).select(columns).range(from, from + 999);
     if (error) throw new Error(`load ${table}: ${error.message}`);
-    rows.push(...(data ?? []));
+    rows.push(...((data ?? []) as unknown as Row[]));
     if (!data || data.length < 1000) break;
   }
   return rows;
@@ -72,9 +74,9 @@ let grandTotalExtra = 0;
 async function scan(
   table: string,
   columns: string,
-  keyOf: (r: any) => string,
+  keyOf: (r: Row) => string,
   display: string,
-  describe: (r: any) => string,
+  describe: (r: Row) => string,
 ): Promise<void> {
   const rows = await fetchAll(table, columns);
   const groups = dupeGroups(rows, keyOf);

@@ -104,7 +104,7 @@ export function isDataForSeoOk(json: unknown): boolean {
 export async function cachedDataForSeoPost(
   path: string,
   payload: unknown,
-): Promise<any> {
+): Promise<unknown> {
   const body = JSON.stringify(Array.isArray(payload) ? payload : [payload]);
   const reportType = reportTypeFromPath(path);
   const ttlHours = TTL_HOURS[reportType] ?? TTL_HOURS.default;
@@ -113,7 +113,7 @@ export async function cachedDataForSeoPost(
   // Tag the returned JSON with a non-enumerable cache-hit marker so cost-aware
   // callers (lib/usage-meter.ts) can tell whether a billable request fired.
   // Non-enumerable ⇒ JSON.stringify and every existing caller are unaffected.
-  const mark = (json: any, hit: boolean) => {
+  const mark = (json: unknown, hit: boolean) => {
     try {
       Object.defineProperty(json, "__cacheHit", { value: hit, enumerable: false, configurable: true });
     } catch {

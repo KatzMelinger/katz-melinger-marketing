@@ -114,8 +114,8 @@ export default function CommunityPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Community engagement</h1>
         <p className="text-sm text-slate-600 mt-1 max-w-2xl">
           Find employment-law discussions across Reddit, Hacker News, news
-          sites, Quora, and Avvo. Draft Claude-powered replies in the firm's
-          voice. Mark posts as responded/skipped so they don't clutter future scans.
+          sites, Quora, and Avvo. Draft Claude-powered replies in the firm&apos;s
+          voice. Mark posts as responded/skipped so they don&apos;t clutter future scans.
         </p>
       </div>
 
@@ -634,7 +634,7 @@ function NewsTab() {
         <p className="text-sm text-slate-600 max-w-md mx-auto">
           Pulls Google News for recent NY/NJ employment-law headlines. Use
           these as news pegs for reactive content (blog posts, social posts).
-          One-click "Use as topic" sends a story into the multi-format generator.
+          One-click &quot;Use as topic&quot; sends a story into the multi-format generator.
         </p>
         <DashButton onClick={runScan}>Pull headlines</DashButton>
         {error && <p className="text-sm text-red-700">{error}</p>}
@@ -772,7 +772,7 @@ function TikTokTab() {
 
         {searches.length > 0 && (
           <div className="mb-4">
-            <div className="text-xs font-medium text-slate-700 mb-2">Search the firm's niche</div>
+            <div className="text-xs font-medium text-slate-700 mb-2">Search the firm&apos;s niche</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {searches.map((link) => (
                 <a
@@ -792,7 +792,7 @@ function TikTokTab() {
 
         {discover.length > 0 && (
           <div>
-            <div className="text-xs font-medium text-slate-700 mb-2">Discover what's hot</div>
+            <div className="text-xs font-medium text-slate-700 mb-2">Discover what&apos;s hot</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {discover.map((link) => (
                 <a
@@ -814,8 +814,8 @@ function TikTokTab() {
       <DashCard>
         <h3 className="text-sm font-semibold mb-2">How to use this</h3>
         <ol className="text-xs text-slate-700 list-decimal pl-5 space-y-1">
-          <li>Click into a hashtag — see what's trending. Note the angles, hooks, and styles.</li>
-          <li>Save anything that sparks an idea (TikTok's bookmark feature works well here).</li>
+          <li>Click into a hashtag — see what&apos;s trending. Note the angles, hooks, and styles.</li>
+          <li>Save anything that sparks an idea (TikTok&apos;s bookmark feature works well here).</li>
           <li>Open <a href="/content/intelligence?tab=social" className="text-brand underline">Social media IQ</a>, paste the angle as a topic, pick TikTok, and Claude generates hashtag pack + 3 video hooks + 5 caption variants + visual treatment ideas.</li>
           <li>Shoot the video, post it, link to your firm bio.</li>
         </ol>
@@ -878,7 +878,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
       <DashCard>
         <h3 className="text-sm font-semibold mb-2">Browse {platformName} topics</h3>
         <p className="text-xs text-slate-600 mb-3">
-          {platformName} blocks automated scanning, so we can't scan it for you.
+          {platformName} blocks automated scanning, so we can&apos;t scan it for you.
           Browse the topic pages below, find a worth-answering question, then
           paste it into the panel below for an AI-suggested response.
         </p>
@@ -902,7 +902,7 @@ function PasteTab({ platform }: { platform: "quora" | "avvo" }) {
         <h3 className="text-sm font-semibold mb-2">Draft a response</h3>
         <p className="text-xs text-slate-600 mb-3">
           Paste a {platformName} question and Claude will draft a reply in the
-          firm's voice with proper {platformName} etiquette.
+          firm&apos;s voice with proper {platformName} etiquette.
         </p>
         <textarea
           value={text}

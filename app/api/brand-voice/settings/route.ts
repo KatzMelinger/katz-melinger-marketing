@@ -71,8 +71,8 @@ export async function GET() {
     }
 
     return NextResponse.json({ settings });
-  } catch (err: any) {
-    console.error("[brand-voice/settings GET] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/settings GET] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to load settings" }, { status: 500 });
   }
 }
@@ -152,8 +152,8 @@ export async function PUT(req: NextRequest) {
     const out: Record<string, string> = {};
     for (const r of updated ?? []) out[r.key] = r.value ?? "";
     return NextResponse.json({ settings: out });
-  } catch (err: any) {
-    console.error("[brand-voice/settings PUT] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/settings PUT] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to save settings" }, { status: 500 });
   }
 }

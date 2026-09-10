@@ -87,7 +87,7 @@ export default function LlmsTxtPage() {
         <h1 className="text-2xl font-semibold tracking-tight">llms.txt generator</h1>
         <p className="text-sm opacity-70 mt-1 max-w-2xl">
           Build a curated <code className="text-xs px-1 py-0.5 rounded bg-black/5 dark:bg-white/10">llms.txt</code> manifest
-          for the firm's site. LLMs that respect the spec use it to find your
+          for the firm&apos;s site. LLMs that respect the spec use it to find your
           most important pages. Paste the output at <code className="text-xs">/llms.txt</code> on your site.
         </p>
       </div>

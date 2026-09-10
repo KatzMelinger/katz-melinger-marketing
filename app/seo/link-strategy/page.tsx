@@ -156,7 +156,7 @@ export default function LinkStrategyPage() {
           </div>
           <h3 className="text-lg font-semibold">No strategy generated yet</h3>
           <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Click "Generate strategy" — Claude reads your outbound link
+            Click &quot;Generate strategy&quot; — Claude reads your outbound link
             profile and produces a 3-month plan with specific outreach
             targets.
           </p>
@@ -349,7 +349,7 @@ export default function LinkStrategyPage() {
         <DashCard>
           <h3 className="text-sm font-semibold mb-2">Verify a backlink</h3>
           <p className="text-xs text-slate-600 mb-3">
-            Paste any URL — we'll fetch the page and check whether it links to
+            Paste any URL — we&apos;ll fetch the page and check whether it links to
             your site (and what anchor text + rel attribute, if any).
             SSRF-protected: only public URLs allowed.
           </p>
@@ -378,14 +378,14 @@ export default function LinkStrategyPage() {
                   ✓ Found link to your site
                   {verifyResult.anchorText && (
                     <div className="text-xs mt-1">
-                      Anchor: "<span className="font-mono">{verifyResult.anchorText}</span>"
+                      Anchor: &quot;<span className="font-mono">{verifyResult.anchorText}</span>&quot;
                     </div>
                   )}
                   {verifyResult.rel && (
                     <div className="text-xs">
                       rel: <span className="font-mono">{verifyResult.rel}</span>
                       {verifyResult.rel.includes("nofollow") && (
-                        <span className="ml-2 text-amber-700">⚠ nofollow — won't pass SEO authority</span>
+                        <span className="ml-2 text-amber-700">⚠ nofollow — won&apos;t pass SEO authority</span>
                       )}
                     </div>
                   )}

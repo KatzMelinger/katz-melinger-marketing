@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const type = req.nextUrl.searchParams.get("type");
     const limitParam = req.nextUrl.searchParams.get("limit");
 
-    if (!type || !VALID_TYPES.includes(type as any)) {
+    if (!type || !VALID_TYPES.includes(type as (typeof VALID_TYPES)[number])) {
       return NextResponse.json(
         { error: `type must be one of: ${VALID_TYPES.join(", ")}` },
         { status: 400 },
@@ -51,11 +51,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ jobs: data || [] });
-  } catch (err: any) {
-    console.error("[keyword-research/history] Failed:", err?.message);
-    return NextResponse.json(
-      { error: err?.message || "Failed to fetch history" },
-      { status: 500 },
-    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch history";
+    console.error("[keyword-research/history] Failed:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

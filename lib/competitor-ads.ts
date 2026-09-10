@@ -125,9 +125,10 @@ function asString(v: unknown): string | null {
 }
 
 /** Pull the items array out of a DataForSEO live/advanced response. */
-function extractItems(json: any): any[] {
-  const items = json?.tasks?.[0]?.result?.[0]?.items;
-  return Array.isArray(items) ? items : [];
+function extractItems(json: unknown): Record<string, unknown>[] {
+  const j = json as { tasks?: Array<{ result?: Array<{ items?: unknown }> }> } | undefined;
+  const items = j?.tasks?.[0]?.result?.[0]?.items;
+  return Array.isArray(items) ? (items as Record<string, unknown>[]) : [];
 }
 
 /**
@@ -192,15 +193,17 @@ export async function fetchLiveCompetitorAds(input: {
 
   const items = extractItems(json);
   const ads: CompetitorAd[] = items.slice(0, MAX_ADS_PER_COMPETITOR).map((c) => ({
-    format: asString(c?.format),
+    format: asString(c.format),
     // ads_search lists creatives; text fields vary by ad type — fall back to null.
-    text: asString(c?.text) ?? asString(c?.content) ?? asString(c?.description) ?? null,
+    text: asString(c.text) ?? asString(c.content) ?? asString(c.description) ?? null,
     // `title` is the advertiser/payer name disclosed by the Transparency Center.
-    advertiser: asString(c?.title) ?? asString(c?.advertiser),
-    firstShown: toDateISO(c?.first_shown),
-    lastShown: toDateISO(c?.last_shown),
-    imageUrl: asString(c?.preview_image?.url) ?? asString(c?.image),
-    detailsUrl: asString(c?.url) ?? asString(c?.details_link),
+    advertiser: asString(c.title) ?? asString(c.advertiser),
+    firstShown: toDateISO(c.first_shown),
+    lastShown: toDateISO(c.last_shown),
+    imageUrl:
+      asString((c.preview_image as Record<string, unknown> | undefined)?.url) ??
+      asString(c.image),
+    detailsUrl: asString(c.url) ?? asString(c.details_link),
   }));
 
   const advertiserId = asString(items[0]?.advertiser_id);

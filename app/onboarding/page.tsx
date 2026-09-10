@@ -10,6 +10,7 @@
  * system-prompt (generate + save). Standalone (no sidebar — see NO_CHROME_PATHS).
  */
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 const STEPS = ["Firm identity", "Search & domains", "Practice & voice", "Content prompt"];
@@ -417,9 +418,9 @@ export default function OnboardingPage() {
               )}
             </div>
             <div className="flex items-center gap-3">
-              <a href="/" className="text-xs text-slate-400 hover:text-slate-600">
+              <Link href="/" className="text-xs text-slate-400 hover:text-slate-600">
                 Skip for now
-              </a>
+              </Link>
               {step === 0 && (
                 <button
                   type="button"

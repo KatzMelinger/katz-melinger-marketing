@@ -216,6 +216,9 @@ export default function TopicalMapsPage() {
   const [selected, setSelected] = useState<ClusterKeyword | null>(null);
 
   useEffect(() => {
+    // Must reset on every `pillar` change, not just mount, so a useState
+    // initializer alone can't cover this.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
     fetch(`/api/seo/topical-map?pillar=${encodeURIComponent(pillar)}`, {

@@ -258,7 +258,7 @@ export default function EmailPage() {
                       .
                     </li>
                     <li>Redeploy.</li>
-                    <li>Click "Reconnect Constant Contact" above to authorize the firm's account.</li>
+                    <li>Click &quot;Reconnect Constant Contact&quot; above to authorize the firm&apos;s account.</li>
                   </ol>
                 </details>
               </div>

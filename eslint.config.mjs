@@ -13,6 +13,15 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    // Standalone CommonJS Node scripts, run directly with `node` outside the
+    // Next.js build — require() is the correct import form here, not a
+    // leftover to migrate.
+    files: ["scripts/**/*.js", "scripts/**/*.mjs", "sales-collateral/**/*.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

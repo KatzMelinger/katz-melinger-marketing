@@ -45,10 +45,11 @@ type Dashboard = {
 
 export default function CorrelationPage() {
   const [data, setData] = useState<Dashboard | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Starts true — the mount-only fetch below begins immediately, so loading
+  // is true from first render until it resolves.
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
     fetch("/api/correlation/dashboard")
       .then((r) => r.json())
       .then(setData)

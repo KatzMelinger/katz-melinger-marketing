@@ -30,9 +30,15 @@ export function RecentSearchesStrip({
    */
   onPick?: (query: string) => void;
 }) {
-  const [items, setItems] = useState<RecentSearch[]>([]);
+  // Read localStorage directly for the initial value instead of an empty
+  // placeholder + an effect-triggered setState — the effect below then only
+  // needs to exist for its other real job, subscribing to change events.
+  const [items, setItems] = useState<RecentSearch[]>(() => listRecent(scope, limit));
 
   useEffect(() => {
+    // Must re-read on every `scope`/`limit` change (not just mount), so the
+    // lazy initializer above alone can't cover this.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setItems(listRecent(scope, limit));
     const onStorage = () => setItems(listRecent(scope, limit));
     window.addEventListener("storage", onStorage);

@@ -311,7 +311,7 @@ export default function SiteMapPage() {
       ) : pages.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500">
           No pages indexed yet. Click <strong>Re-crawl sitemap</strong> to build
-          the cluster map from your site's /sitemap.xml.
+          the cluster map from your site&apos;s /sitemap.xml.
         </div>
       ) : view === "optimize" ? (
         scoredCount === 0 ? (

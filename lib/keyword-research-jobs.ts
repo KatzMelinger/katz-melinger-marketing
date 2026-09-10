@@ -31,8 +31,8 @@ export type JobRow = {
   id: string;
   job_type: JobType;
   status: JobStatus;
-  request_params: any;
-  result: any | null;
+  request_params: unknown;
+  result: unknown | null;
   error: string | null;
   created_at: string;
   started_at: string | null;
@@ -45,7 +45,7 @@ export type JobRow = {
  */
 export async function createJob(
   jobType: JobType,
-  requestParams: any,
+  requestParams: unknown,
 ): Promise<string> {
   const supabase = getSupabaseServer();
   if (!supabase) throw new Error("Supabase not configured");
@@ -98,7 +98,7 @@ async function markRunning(jobId: string): Promise<void> {
 /**
  * Mark a job as done with the parsed result.
  */
-async function markDone(jobId: string, result: any): Promise<void> {
+async function markDone(jobId: string, result: unknown): Promise<void> {
   const supabase = getSupabaseServer();
   if (!supabase) return;
   await supabase
@@ -156,16 +156,18 @@ export async function runAnthropicJob(args: {
     const text =
       response.content[0]?.type === "text" ? response.content[0].text : "";
 
-    let parsed: any;
+    let parsed: unknown;
     try {
       parsed = extractJSON(text);
-    } catch (parseErr: any) {
-      throw new Error(`Failed to parse AI response: ${parseErr.message}`);
+    } catch (parseErr) {
+      const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      throw new Error(`Failed to parse AI response: ${msg}`);
     }
 
     await markDone(jobId, parsed);
-  } catch (err: any) {
-    console.error(`[keyword-research-jobs] Job ${jobId} failed:`, err?.message);
-    await markFailed(jobId, err?.message || "Unknown error");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[keyword-research-jobs] Job ${jobId} failed:`, msg);
+    await markFailed(jobId, msg);
   }
 }

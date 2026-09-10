@@ -38,8 +38,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Keyword not found" }, { status: 404 });
     }
     return new NextResponse(null, { status: 204 });
-  } catch (err: any) {
-    console.error("[seo/keywords DELETE] Failed:", err?.message);
+  } catch (err) {
+    console.error("[seo/keywords DELETE] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to delete keyword" }, { status: 500 });
   }
 }

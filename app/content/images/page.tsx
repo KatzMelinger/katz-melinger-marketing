@@ -426,8 +426,8 @@ function ImageGenerator() {
                 </button>
               </div>
               <p className="mt-1 text-xs text-slate-600">
-                Describe what to change — "make the background darker", "swap
-                the suit for grey", "add a Manhattan skyline behind the desk".
+                Describe what to change — &quot;make the background darker&quot;, &quot;swap
+                the suit for grey&quot;, &quot;add a Manhattan skyline behind the desk&quot;.
                 The output is saved as a new image linked to this one.
               </p>
               <textarea

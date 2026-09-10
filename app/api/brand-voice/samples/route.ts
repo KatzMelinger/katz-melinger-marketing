@@ -37,8 +37,8 @@ export async function GET() {
       return NextResponse.json({ error: "Failed to load samples" }, { status: 500 });
     }
     return NextResponse.json(data ?? []);
-  } catch (err: any) {
-    console.error("[brand-voice/samples GET] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/samples GET] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to load samples" }, { status: 500 });
   }
 }
@@ -93,8 +93,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to add sample" }, { status: 500 });
     }
     return NextResponse.json(data, { status: 201 });
-  } catch (err: any) {
-    console.error("[brand-voice/samples POST] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/samples POST] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to add sample" }, { status: 500 });
   }
 }
@@ -124,8 +124,8 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Sample not found" }, { status: 404 });
     }
     return new NextResponse(null, { status: 204 });
-  } catch (err: any) {
-    console.error("[brand-voice/samples DELETE] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/samples DELETE] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to delete sample" }, { status: 500 });
   }
 }

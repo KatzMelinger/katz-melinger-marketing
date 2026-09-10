@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const denied = await guardUser();
   if (denied) return denied;
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = (await req.json().catch(() => ({}))) as { competitors?: unknown };
     const { competitors } = body || {};
 
     let competitorList: string[] = [];
@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
         );
       }
       competitorList = competitors
-        .filter((c: any) => typeof c === "string" && c.trim().length > 0)
-        .map((c: string) => c.trim().slice(0, MAX_COMPETITOR_LENGTH))
+        .filter((c): c is string => typeof c === "string" && c.trim().length > 0)
+        .map((c) => c.trim().slice(0, MAX_COMPETITOR_LENGTH))
         .slice(0, MAX_COMPETITORS);
     }
 
@@ -89,11 +89,9 @@ Respond in JSON format:
     );
 
     return NextResponse.json({ jobId });
-  } catch (err: any) {
-    console.error("[competitor-gaps/start] Failed:", err?.message);
-    return NextResponse.json(
-      { error: err?.message || "Failed to start competitor-gaps job" },
-      { status: 500 },
-    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to start competitor-gaps job";
+    console.error("[competitor-gaps/start] Failed:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

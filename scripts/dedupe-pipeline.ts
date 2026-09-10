@@ -53,16 +53,18 @@ const STATUS_RANK: Record<string, number> = {
   published: 4,
 };
 
+type Row = Record<string, unknown>;
+
 /** Higher = keep. Sorts so the row to KEEP is first. */
-function score(row: any): [number, number, number] {
+function score(row: Row): [number, number, number] {
   return [
-    STATUS_RANK[row.status] ?? -1,
+    STATUS_RANK[row.status as string] ?? -1,
     row.draft_id ? 1 : 0,
-    Date.parse(row.updated_at ?? row.created_at ?? "") || 0,
+    Date.parse((row.updated_at ?? row.created_at ?? "") as string) || 0,
   ];
 }
 
-function cmp(a: any, b: any): number {
+function cmp(a: Row, b: Row): number {
   const sa = score(a);
   const sb = score(b);
   for (let i = 0; i < sa.length; i++) {
@@ -80,8 +82,8 @@ if (error) {
 }
 
 // Group by tenant + normalized title.
-const groups = new Map<string, any[]>();
-for (const row of data ?? []) {
+const groups = new Map<string, Row[]>();
+for (const row of (data ?? []) as unknown as Row[]) {
   const k = `${row.tenant_id}::${String(row.title).trim().toLowerCase()}`;
   const list = groups.get(k) ?? [];
   list.push(row);
@@ -102,7 +104,7 @@ for (const [, list] of groups) {
   for (const d of drop) {
     console.log(`  delete #${d.id} (status=${d.status}, draft_id=${d.draft_id ?? "none"})`);
     if (APPLY) {
-      const { error: delErr } = await supabase.from("content_pipeline").delete().eq("id", d.id);
+      const { error: delErr } = await supabase.from("content_pipeline").delete().eq("id", d.id as string);
       if (delErr) console.error(`    ! delete failed: ${delErr.message}`);
       else deleted++;
     }

@@ -69,14 +69,16 @@ function splitKept(arr: unknown): { kept: string[]; removed: string[] } {
   return { kept, removed };
 }
 
+type Row = Record<string, unknown>;
+
 /** Page through a table so we don't silently cap at Supabase's 1000-row default. */
-async function fetchAll(table: string, columns: string): Promise<any[]> {
-  const rows: any[] = [];
+async function fetchAll(table: string, columns: string): Promise<Row[]> {
+  const rows: Row[] = [];
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase.from(table).select(columns).range(from, from + PAGE - 1);
     if (error) throw new Error(`load ${table}: ${error.message}`);
-    rows.push(...(data ?? []));
+    rows.push(...((data ?? []) as unknown as Row[]));
     if (!data || data.length < PAGE) break;
   }
   return rows;
@@ -90,9 +92,9 @@ async function cleanBriefSuggestions(): Promise<void> {
   for (const row of rows) {
     const sec = splitKept(row.secondary_keywords);
 
-    const brief =
+    const brief: Row | null =
       row.suggested_brief && typeof row.suggested_brief === "object"
-        ? { ...row.suggested_brief }
+        ? { ...(row.suggested_brief as Row) }
         : null;
     let briefRemoved: string[] = [];
     if (brief && Array.isArray(brief.secondaryKeywords)) {
@@ -110,7 +112,7 @@ async function cleanBriefSuggestions(): Promise<void> {
     if (APPLY) {
       const update: Record<string, unknown> = { secondary_keywords: sec.kept };
       if (brief) update.suggested_brief = brief;
-      const { error } = await supabase.from("brief_suggestions").update(update).eq("id", row.id);
+      const { error } = await supabase.from("brief_suggestions").update(update).eq("id", row.id as string);
       if (error) console.error(`    ! update failed: ${error.message}`);
     }
   }
@@ -137,7 +139,7 @@ async function cleanPipelineKeywords(): Promise<void> {
       const { error } = await supabase
         .from("content_pipeline")
         .update({ keywords: kept || null })
-        .eq("id", row.id);
+        .eq("id", row.id as string);
       if (error) console.error(`    ! update failed: ${error.message}`);
     }
   }

@@ -105,8 +105,8 @@ export async function GET() {
       return NextResponse.json({ error: "Failed to load avatars" }, { status: 500 });
     }
     return NextResponse.json(data ?? []);
-  } catch (err: any) {
-    console.error("[brand-voice/avatars GET] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/avatars GET] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to load avatars" }, { status: 500 });
   }
 }
@@ -134,8 +134,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to add avatar" }, { status: 500 });
     }
     return NextResponse.json(data, { status: 201 });
-  } catch (err: any) {
-    console.error("[brand-voice/avatars POST] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/avatars POST] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to add avatar" }, { status: 500 });
   }
 }
@@ -171,8 +171,8 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Avatar not found" }, { status: 404 });
     }
     return NextResponse.json(data);
-  } catch (err: any) {
-    console.error("[brand-voice/avatars PATCH] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/avatars PATCH] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to update avatar" }, { status: 500 });
   }
 }
@@ -202,8 +202,8 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Avatar not found" }, { status: 404 });
     }
     return new NextResponse(null, { status: 204 });
-  } catch (err: any) {
-    console.error("[brand-voice/avatars DELETE] Failed:", err?.message);
+  } catch (err) {
+    console.error("[brand-voice/avatars DELETE] Failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Failed to delete avatar" }, { status: 500 });
   }
 }

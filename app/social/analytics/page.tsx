@@ -185,7 +185,7 @@ export default function SocialAnalyticsPage() {
             </h2>
             <p className="mt-2 text-sm text-slate-600">
               The social dashboard is showing zeros because Metricool credentials
-              aren't set in the environment.
+              aren&apos;t set in the environment.
             </p>
             <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-700">
               <li>

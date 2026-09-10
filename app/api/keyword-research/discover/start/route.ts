@@ -137,11 +137,9 @@ Respond in JSON format:
     );
 
     return NextResponse.json({ jobId });
-  } catch (err: any) {
-    console.error("[discover/start] Failed:", err?.message);
-    return NextResponse.json(
-      { error: err?.message || "Failed to start discover job" },
-      { status: 500 },
-    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to start discover job";
+    console.error("[discover/start] Failed:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

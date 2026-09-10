@@ -125,18 +125,40 @@ function IntentBadge({ intent }: { intent: string }) {
     </span>
   );
 }
-function HistoryDropdown({
+
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString();
+}
+
+type HistoryJobRow<TResult, TParams> = {
+  id: string;
+  result: TResult;
+  request_params: TParams;
+  completed_at: string | null;
+};
+
+function HistoryDropdown<TResult, TParams>({
   jobType,
   onSelect,
   describeJob,
 }: {
   jobType: "discover" | "expand" | "competitor-gaps";
-  onSelect: (result: any) => void;
-  describeJob: (params: any) => string;
+  onSelect: (result: TResult) => void;
+  describeJob: (params: TParams) => string;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [jobs, setJobs] = useState<any[] | null>(null);
+  const [jobs, setJobs] = useState<HistoryJobRow<TResult, TParams>[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Lazy-load history the first time the dropdown opens, and refresh on each
@@ -145,6 +167,9 @@ function HistoryDropdown({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    // Must reset on every open/jobType change, not just mount, so a useState
+    // initializer alone can't cover this.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
     fetch(`/api/keyword-research/history?type=${encodeURIComponent(jobType)}&limit=10`)
@@ -180,20 +205,6 @@ function HistoryDropdown({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
-
-  const formatTime = (iso: string | null) => {
-    if (!iso) return "—";
-    const date = new Date(iso);
-    const diffMs = Date.now() - date.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return "just now";
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.floor(diffHr / 24);
-    if (diffDay < 7) return `${diffDay}d ago`;
-    return date.toLocaleDateString();
-  };
 
   return (
     <div ref={ref} className="relative">
@@ -236,7 +247,7 @@ function HistoryDropdown({
                       {describeJob(job.request_params)}
                     </div>
                     <div className="text-xs opacity-60 mt-0.5">
-                      {formatTime(job.completed_at)}
+                      {formatRelativeTime(job.completed_at)}
                     </div>
                   </button>
                 </li>
@@ -287,8 +298,11 @@ export default function KeywordResearchPage() {
   // mount — no useSearchParams, so no Suspense boundary needed on this page.
   const [initialSeed, setInitialSeed] = useState("");
   useEffect(() => {
+    // `window` isn't available during SSR, so this can't move into a
+    // useState lazy initializer — it must run post-mount.
     const seed = new URLSearchParams(window.location.search).get("seed");
     if (seed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInitialSeed(seed);
       setActiveTab("discover");
     }
@@ -338,6 +352,53 @@ export default function KeywordResearchPage() {
 
 // ---------- Discover tab ---------------------------------------------------
 
+type DiscoverParams = {
+  seedKeyword?: string;
+  practiceArea?: string;
+  intent?: string;
+  count?: number;
+};
+
+type DiscoverKeyword = {
+  keyword: string;
+  volume?: number | null;
+  difficulty?: number | null;
+  intent?: string;
+  relevance?: number | null;
+  contentSuggestion?: string;
+  practiceArea?: string;
+  opportunity?: string;
+};
+
+type QuickWin = {
+  keyword: string;
+  volume?: number | null;
+  difficulty?: number | null;
+  reason?: string;
+};
+
+type HighValueTarget = {
+  keyword: string;
+  volume?: number | null;
+  difficulty?: number | null;
+  strategy?: string;
+};
+
+type ContentGap = {
+  topic: string;
+  suggestedKeywords?: string[];
+  contentFormat?: string;
+  priority?: string;
+};
+
+type DiscoverResult = {
+  keywords?: DiscoverKeyword[];
+  quickWins?: QuickWin[];
+  highValueTargets?: HighValueTarget[];
+  contentGaps?: ContentGap[];
+  summary?: string;
+};
+
 function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
   const [seedKeyword, setSeedKeyword] = useState(initialSeed);
   // The parent resolves the ?seed= param in a mount effect, after this tab has
@@ -350,7 +411,7 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
   const [practiceArea, setPracticeArea] = useState("All");
   const [intent, setIntent] = useState("all");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<DiscoverResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ elapsed: number; status: string }>({
     elapsed: 0,
@@ -422,15 +483,15 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
       }
 
       throw new Error("Timed out waiting for AI response (5 minutes). Try again or simplify your query.");
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   };
 
-  const sortedKeywords = results?.keywords
-    ? [...results.keywords].sort((a: any, b: any) => {
+  const sortedKeywords: DiscoverKeyword[] = results?.keywords
+    ? [...results.keywords].sort((a, b) => {
         const av = a[sortBy] || 0;
         const bv = b[sortBy] || 0;
         return sortDir === "desc" ? bv - av : av - bv;
@@ -489,7 +550,7 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
               {loading ? <Spinner /> : <span aria-hidden>⌕</span>}
               Discover Keywords
             </Button>
-            <HistoryDropdown
+            <HistoryDropdown<DiscoverResult, DiscoverParams>
               jobType="discover"
               onSelect={(result) => { setResults(result); setError(null); }}
               describeJob={(p) => {
@@ -537,13 +598,13 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {results.quickWins?.length > 0 && (
+            {results.quickWins && results.quickWins.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
                   <span aria-hidden>⚡</span> Quick Wins
                 </h3>
                 <div className="space-y-2">
-                  {results.quickWins.map((qw: any, i: number) => (
+                  {results.quickWins.map((qw, i) => (
                     <div key={i} className="flex items-center justify-between text-sm bg-black/5 dark:bg-white/5 rounded-md p-2.5">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -562,13 +623,13 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
               </Card>
             )}
 
-            {results.highValueTargets?.length > 0 && (
+            {results.highValueTargets && results.highValueTargets.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
                   <span aria-hidden>📈</span> High-Value Targets
                 </h3>
                 <div className="space-y-2">
-                  {results.highValueTargets.map((hv: any, i: number) => (
+                  {results.highValueTargets.map((hv, i) => (
                     <div key={i} className="flex items-center justify-between text-sm bg-black/5 dark:bg-white/5 rounded-md p-2.5">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -614,7 +675,7 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedKeywords.map((kw: any, i: number) => (
+                    {sortedKeywords.map((kw, i) => (
                       <tr key={i} className="border-t border-black/5 dark:border-white/5 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -646,13 +707,13 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
             </Card>
           )}
 
-          {results.contentGaps?.length > 0 && (
+          {results.contentGaps && results.contentGaps.length > 0 && (
             <Card className="p-4">
               <h3 className="font-medium flex items-center gap-2 mb-3">
                 <span aria-hidden>📄</span> Content Gaps
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {results.contentGaps.map((gap: any, i: number) => (
+                {results.contentGaps.map((gap, i) => (
                   <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-medium text-sm">{gap.topic}</span>
@@ -679,10 +740,36 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
 
 // ---------- Expand tab -----------------------------------------------------
 
+type ExpandParams = {
+  keyword?: string;
+};
+
+type ExpandKeywordItem = {
+  keyword: string;
+  volume?: number | null;
+  difficulty?: number | null;
+};
+
+type ExpandSectionKey = "longTail" | "questions" | "local" | "semantic" | "competitor";
+
+type ExpandResult = {
+  seedKeyword?: string;
+  longTail?: ExpandKeywordItem[];
+  questions?: ExpandKeywordItem[];
+  local?: ExpandKeywordItem[];
+  semantic?: ExpandKeywordItem[];
+  competitor?: ExpandKeywordItem[];
+  contentStrategy?: {
+    pillarPage?: string;
+    supportingArticles?: string[];
+    internalLinkingPlan?: string;
+  };
+};
+
 function ExpandTab() {
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<ExpandResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ elapsed: number }>({ elapsed: 0 });
   const [open, setOpen] = useState<Record<string, boolean>>({
@@ -736,14 +823,14 @@ function ExpandTab() {
       }
 
       throw new Error("Timed out waiting for AI response (5 minutes).");
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   };
 
-  const sections = [
+  const sections: { key: ExpandSectionKey; label: string; icon: string }[] = [
     { key: "longTail", label: "Long-Tail Variations", icon: "→" },
     { key: "questions", label: "Question Keywords", icon: "?" },
     { key: "local", label: "Local Variations (NYC/NJ)", icon: "⌖" },
@@ -770,7 +857,7 @@ function ExpandTab() {
               {loading ? <Spinner /> : <span aria-hidden>✦</span>}
               Expand
             </Button>
-            <HistoryDropdown
+            <HistoryDropdown<ExpandResult, ExpandParams>
               jobType="expand"
               onSelect={(result) => { setResults(result); setError(null); }}
               describeJob={(p) => p?.keyword ? `"${p.keyword}"` : "Untitled"}
@@ -817,7 +904,7 @@ function ExpandTab() {
                 </button>
                 {isOpen && (
                   <div className="border-t border-black/10 dark:border-white/10">
-                    {items.map((item: any, i: number) => (
+                    {items.map((item, i) => (
                       <div key={i} className="px-4 py-2.5 flex items-center justify-between border-t border-black/5 dark:border-white/5 first:border-t-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
                         <div className="flex items-center gap-2">
                           <span className="text-sm">{item.keyword}</span>
@@ -849,11 +936,11 @@ function ExpandTab() {
                     <span className="font-medium">{results.contentStrategy.pillarPage}</span>
                   </div>
                 )}
-                {results.contentStrategy.supportingArticles?.length > 0 && (
+                {results.contentStrategy.supportingArticles && results.contentStrategy.supportingArticles.length > 0 && (
                   <div>
                     <span className="opacity-70 block mb-1">Supporting Articles:</span>
                     <ul className="space-y-1 ml-4 list-disc">
-                      {results.contentStrategy.supportingArticles.map((a: string, i: number) => (
+                      {results.contentStrategy.supportingArticles.map((a, i) => (
                         <li key={i}>{a}</li>
                       ))}
                     </ul>
@@ -876,10 +963,54 @@ function ExpandTab() {
 
 // ---------- Competitor Gaps tab --------------------------------------------
 
+type GapsParams = {
+  competitors?: string[];
+};
+
+type CompetitorKeywordGap = {
+  keyword: string;
+  volume?: number | null;
+  difficulty?: number | null;
+  competitorAdvantage?: string;
+  ourOpportunity?: string;
+  competitor?: string;
+  domain?: string;
+};
+
+type UnderservedTopic = {
+  topic: string;
+  keywords?: string[];
+  estimatedTotalVolume?: number | null;
+  contentApproach?: string;
+};
+
+type EmergingTrend = {
+  trend: string;
+  relatedKeywords?: string[];
+  growthPotential?: string;
+  timing?: string;
+};
+
+type LocalOpportunity = {
+  keyword: string;
+  volume?: number | null;
+  difficulty?: number | null;
+  location?: string;
+  tactic?: string;
+};
+
+type GapsResult = {
+  competitorKeywords?: CompetitorKeywordGap[];
+  underservedTopics?: UnderservedTopic[];
+  emergingTrends?: EmergingTrend[];
+  localOpportunities?: LocalOpportunity[];
+  actionPlan?: string;
+};
+
 function GapsTab() {
   const [competitors, setCompetitors] = useState("");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<GapsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ elapsed: number }>({ elapsed: 0 });
 
@@ -931,8 +1062,8 @@ function GapsTab() {
       }
 
       throw new Error("Timed out waiting for AI response (5 minutes).");
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -962,7 +1093,7 @@ function GapsTab() {
               {loading ? <Spinner /> : <span aria-hidden>◎</span>}
               Analyze Gaps
             </Button>
-            <HistoryDropdown
+            <HistoryDropdown<GapsResult, GapsParams>
               jobType="competitor-gaps"
               onSelect={(result) => { setResults(result); setError(null); }}
               describeJob={(p) => {
@@ -1005,13 +1136,13 @@ function GapsTab() {
             </Card>
           )}
 
-          {results.competitorKeywords?.length > 0 && (
+          {results.competitorKeywords && results.competitorKeywords.length > 0 && (
             <Card className="p-4">
               <h3 className="font-medium flex items-center gap-2 mb-3">
                 <span aria-hidden>◎</span> Competitor Keywords to Target
               </h3>
               <div className="space-y-2">
-                {results.competitorKeywords.map((ck: any, i: number) => (
+                {results.competitorKeywords.map((ck, i) => (
                   <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
@@ -1032,13 +1163,13 @@ function GapsTab() {
             </Card>
           )}
 
-          {results.emergingTrends?.length > 0 && (
+          {results.emergingTrends && results.emergingTrends.length > 0 && (
             <Card className="p-4">
               <h3 className="font-medium flex items-center gap-2 mb-3">
                 <span aria-hidden>📈</span> Emerging Trends
               </h3>
               <div className="space-y-2">
-                {results.emergingTrends.map((t: any, i: number) => (
+                {results.emergingTrends.map((t, i) => (
                   <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-medium text-sm">{t.trend}</span>
@@ -1069,13 +1200,13 @@ function GapsTab() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {results.underservedTopics?.length > 0 && (
+            {results.underservedTopics && results.underservedTopics.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
                   <span aria-hidden>💡</span> Underserved Topics
                 </h3>
                 <div className="space-y-2">
-                  {results.underservedTopics.map((t: any, i: number) => (
+                  {results.underservedTopics.map((t, i) => (
                     <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3 text-sm">
                       <div className="font-medium mb-1">{t.topic}</div>
                       <p className="text-xs opacity-70 mb-1">{t.contentApproach}</p>
@@ -1086,13 +1217,13 @@ function GapsTab() {
               </Card>
             )}
 
-            {results.localOpportunities?.length > 0 && (
+            {results.localOpportunities && results.localOpportunities.length > 0 && (
               <Card className="p-4">
                 <h3 className="font-medium flex items-center gap-2 mb-3">
                   <span aria-hidden>⌖</span> Local Opportunities
                 </h3>
                 <div className="space-y-2">
-                  {results.localOpportunities.map((l: any, i: number) => (
+                  {results.localOpportunities.map((l, i) => (
                     <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3 text-sm">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
@@ -1148,8 +1279,8 @@ function TrackedTab() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load");
       setItems(data);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -1174,8 +1305,8 @@ function TrackedTab() {
       if (!res.ok) throw new Error(data.error || "Failed to add");
       setItems((prev) => [...prev, data]);
       setNewKeyword("");
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setAdding(false);
     }
@@ -1189,8 +1320,8 @@ function TrackedTab() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to refresh");
       setItems(data.keywords);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRefreshing(false);
     }
@@ -1205,8 +1336,8 @@ function TrackedTab() {
         throw new Error(data.error || "Failed to delete");
       }
       setItems((prev) => prev.filter((i) => i.id !== id));
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   };
 

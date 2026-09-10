@@ -1429,7 +1429,7 @@ function ComplianceTab() {
                     </div>
                     <p className="text-sm mt-2">
                       <span className="opacity-60">Excerpt:</span>{" "}
-                      <span className="font-medium">"{v.excerpt}"</span>
+                      <span className="font-medium">&quot;{v.excerpt}&quot;</span>
                     </p>
                     <p className="text-xs opacity-80 mt-1">{v.reason}</p>
                     <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">
@@ -1830,7 +1830,7 @@ function KeywordsTab() {
     <div className="space-y-4">
       <p className="text-sm opacity-70">
         Shared list across every campaign. When you launch Google Ads, paste
-        these into the campaign-level negatives so you don't waste budget on
+        these into the campaign-level negatives so you don&apos;t waste budget on
         wrong-intent searches.
       </p>
 

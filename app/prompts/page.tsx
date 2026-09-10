@@ -90,12 +90,20 @@ export default function PromptsPage() {
   };
 
   useEffect(() => {
+    // Load-on-mount: refreshProjects's setState happens after its own
+    // await, not a synchronous render-triggering update — the newer
+    // set-state-in-effect rule's cascading-render concern doesn't apply,
+    // but the rule still flags the call site itself.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshProjects();
     refreshPrompts();
   }, []);
 
   useEffect(() => {
     if (!selectedId) {
+      // Resetting the selection when it's cleared is the effect's whole job
+      // here — there's no non-effect way to react to selectedId going null.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelected(null);
       return;
     }
