@@ -29,8 +29,16 @@ export type CurrentFact = {
   keywords: string[];
   /** Value denominator: "hour" | "week" | "year" | "". */
   unit?: string;
-  /** Authority the value came from (statute/agency URL). */
+  /** Authority the value came from (statute/agency URL) — an EXTERNAL source. */
   sourceUrl?: string;
+  /**
+   * Which of OUR OWN pages currently states this fact (e.g. the About page's
+   * years-of-experience line, or a practice-area page's counties-served list).
+   * Distinct from sourceUrl. Feeds the S13(c) source-consistency check: when a
+   * draft contradicts this fact, the flag can cite the page that has it right,
+   * not just the correct value.
+   */
+  siteUrl?: string;
   /** Who last verified it, and when (ISO), for the audit trail. */
   verifiedBy?: string;
   verifiedAt?: string;

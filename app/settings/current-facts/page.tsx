@@ -113,6 +113,18 @@ export default function CurrentFactsSettingsPage() {
                     placeholder="minimum wage, min wage, hourly wage"
                   />
                 </div>
+                <div className="mt-2">
+                  <Field
+                    label="Stated on this page (optional)"
+                    value={f.siteUrl ?? ""}
+                    onChange={(v) => update(i, { siteUrl: v })}
+                    placeholder="https://katzmelinger.com/about"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    The firm&apos;s own page that currently states this fact. If a draft contradicts it, the
+                    reviewer sees a link to this page alongside the correct value.
+                  </p>
+                </div>
                 <div className="mt-2 flex justify-end">
                   <button
                     onClick={() => remove(i)}

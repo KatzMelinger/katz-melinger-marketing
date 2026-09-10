@@ -36,6 +36,8 @@ export type ClassifiedFreshnessFlag = {
   reason?: string;
   /** current_facts id/fact_key this figure mapped to. */
   fact_key?: string;
+  /** S13(c) — the firm's own page that states the correct value, when tracked. */
+  site_url?: string;
   /**
    * What resolving this figure actually does:
    *   replace     — a sourced value; write the newly verified number.
@@ -90,6 +92,7 @@ function classifyFlag(
     current_label: fact.label,
     effective_date: fact.effectiveDate,
     fact_key: fact.id,
+    ...(fact.siteUrl ? { site_url: fact.siteUrl } : {}),
     ...(fact.derived
       ? { update_action: "recalculate" as const, derived_from: fact.derived.fromFactId }
       : { update_action: "replace" as const }),

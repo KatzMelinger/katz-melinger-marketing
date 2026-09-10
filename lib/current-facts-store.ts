@@ -20,6 +20,7 @@ type Row = {
   keywords: string[] | null;
   unit: string | null;
   source_url: string | null;
+  site_url: string | null;
   verified_by: string | null;
   verified_at: string | null;
   re_verify_by: string | null;
@@ -42,7 +43,7 @@ export async function getCurrentFacts(tenantId?: string): Promise<CurrentFact[]>
     const { data, error } = await sb
       .from("current_facts")
       .select(
-        "fact_key, label, value, jurisdiction, effective_date, keywords, unit, source_url, verified_by, verified_at, re_verify_by, verify_only, derived_from, derived_multiplier, supersedes",
+        "fact_key, label, value, jurisdiction, effective_date, keywords, unit, source_url, site_url, verified_by, verified_at, re_verify_by, verify_only, derived_from, derived_multiplier, supersedes",
       )
       .eq("tenant_id", tid)
       .order("sort_order", { ascending: true });
@@ -64,6 +65,7 @@ export async function getCurrentFacts(tenantId?: string): Promise<CurrentFact[]>
             : [],
           unit: (r.unit ?? "").trim(),
           sourceUrl: (r.source_url ?? "").trim(),
+          siteUrl: (r.site_url ?? "").trim(),
           verifiedBy: (r.verified_by ?? "").trim(),
           verifiedAt: (r.verified_at ?? "").trim(),
           reVerifyBy: (r.re_verify_by ?? "").trim(),

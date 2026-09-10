@@ -245,6 +245,8 @@ type FreshnessFlagMeta = {
   /** replace = write a newly verified number; recalculate = derived from another fact. */
   update_action?: "replace" | "recalculate";
   derived_from?: string;
+  /** S13(c) — the firm's own page that states the correct value, when tracked. */
+  site_url?: string;
 };
 
 /** Phrases that name a figure's denominator. Mirrors UNIT_CUES in lib/current-facts.ts. */
@@ -1650,6 +1652,16 @@ export function DraftDrawer({
                                   now {f.suggested_value}
                                   {f.effective_date ? ` (eff. ${f.effective_date})` : ""}
                                 </div>
+                              )}
+                              {st === "outdated" && f.site_url && (
+                                <a
+                                  href={f.site_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-0.5 block truncate text-blue-600 hover:underline"
+                                >
+                                  See the correct value on our site →
+                                </a>
                               )}
                               {st === "verify" && !resolved && (
                                 <div className="mt-0.5 text-amber-700">

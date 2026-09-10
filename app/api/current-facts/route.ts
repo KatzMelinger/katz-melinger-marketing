@@ -92,6 +92,7 @@ export async function PUT(req: NextRequest) {
       keywords,
       unit: UNITS.has(unitRaw) ? unitRaw : "",
       sourceUrl: str(o.sourceUrl, 500),
+      siteUrl: str(o.siteUrl, 500),
       verifiedBy: str(o.verifiedBy),
       verifiedAt: str(o.verifiedAt, 40),
       reVerifyBy: str(o.reVerifyBy, 40),
@@ -128,6 +129,7 @@ export async function PUT(req: NextRequest) {
         // These columns are NOT NULL DEFAULT '' — write "" rather than null.
         unit: f.unit ?? "",
         source_url: f.sourceUrl ?? "",
+        site_url: f.siteUrl ?? "",
         verified_by: f.verifiedBy ?? "",
         verify_only: f.verifyOnly === true,
         // Date / timestamptz columns are nullable — "" is not a valid value.

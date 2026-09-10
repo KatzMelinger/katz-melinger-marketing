@@ -18,6 +18,8 @@ const STALE_MONTHS = 18;
 export type SourceCurrencyFlag = {
   reason: "stale_age" | "time_sensitive_figure";
   detail: string;
+  /** S13(c) — the firm's own page stating the correct value, when tracked. */
+  siteUrl?: string;
 };
 
 /**
@@ -51,11 +53,15 @@ export async function checkSourceCurrency(
     const facts = await getCurrentFacts(tenantId);
     const outstanding = unresolvedFreshness(classifyFreshness(findTimeSensitiveFacts(body), facts));
     if (outstanding.length > 0) {
+      const citedUrl = outstanding.find((f) => f.site_url)?.site_url;
       return {
         reason: "time_sensitive_figure",
         detail: `Source blog carries ${outstanding.length} unresolved time-sensitive figure${
           outstanding.length === 1 ? "" : "s"
-        } (e.g. "${outstanding[0].match}") — confirm it's still accurate before repurposing.`,
+        } (e.g. "${outstanding[0].match}") — confirm it's still accurate before repurposing.${
+          citedUrl ? ` See the correct value: ${citedUrl}` : ""
+        }`,
+        ...(citedUrl ? { siteUrl: citedUrl } : {}),
       };
     }
     return null;
