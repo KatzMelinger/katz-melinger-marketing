@@ -295,6 +295,23 @@ export async function GET() {
     feature_pages: ["/social", "/content"],
   });
 
+  // Listed here because a MISSING key is otherwise silent. lib/legal-citation.ts
+  // returns null for every New York citation without it, which routes each one
+  // to an attorney — safe, and completely invisible: no error, no warning, just
+  // a review queue filling with claims nothing tried to check. The only way to
+  // notice was to read the source, so it belongs on this page like every other
+  // credential.
+  items.push({
+    id: "ny-legislation",
+    label: "NY Senate OpenLegislation",
+    category: "Content",
+    ...envCheck(["NY_LEGISLATION_API_KEY"]),
+    status: present("NY_LEGISLATION_API_KEY") ? "connected" : "missing_env",
+    hint:
+      "Lets the legal-accuracy check read New York statutes and verify a citation says what a draft claims. Free key from legislation.nysenate.gov → API. WITHOUT IT every New York claim routes to an attorney instead of being checked — the queue fills and nothing is auto-verified.",
+    feature_pages: ["/content/legal-review"],
+  });
+
   // ---- Google Business Profile (OAuth user-consent) ----
   items.push({
     id: "gbp-oauth",

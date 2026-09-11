@@ -15,6 +15,7 @@ import { getSupabaseAdmin } from "./supabase-server";
 import {
   reconcileFindings,
   type FindingResolution,
+  type FindingSource,
   type FindingStatus,
   type NormalizedFinding,
   type StoredFinding,
@@ -84,6 +85,13 @@ export async function syncFindings(args: {
   draftId: string;
   tenantId: string;
   incoming: NormalizedFinding[];
+  /**
+   * Which engines this run recomputed. Auto-resolution is limited to these,
+   * so a partial run (the approval gate, which produces only legal findings)
+   * cannot close findings no engine in this run looked for. Omit only from a
+   * full analysis pass. See reconcileFindings.
+   */
+  sources?: readonly FindingSource[];
 }): Promise<{
   inserted: number;
   reopened: number;
@@ -94,7 +102,7 @@ export async function syncFindings(args: {
   /** Re-opened findings: previously marked fixed, still reported. Also news. */
   reopenedFindings: NormalizedFinding[];
 }> {
-  const { draftId, tenantId, incoming } = args;
+  const { draftId, tenantId, incoming, sources } = args;
   const empty = {
     inserted: 0, reopened: 0, autoResolved: 0, touched: 0,
     insertedFindings: [] as NormalizedFinding[], reopenedFindings: [] as NormalizedFinding[],
@@ -102,7 +110,7 @@ export async function syncFindings(args: {
   const sb = getSupabaseAdmin();
 
   const existing = await listFindings(draftId);
-  const plan = reconcileFindings(existing, incoming);
+  const plan = reconcileFindings(existing, incoming, sources ? { sources } : undefined);
   const now = new Date().toISOString();
 
   try {

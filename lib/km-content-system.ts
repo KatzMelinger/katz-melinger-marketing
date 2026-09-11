@@ -489,6 +489,20 @@ Output: full content in Markdown unless the request specifies another format.`;
  * IMPORTANT: This text is the contract. Do not paraphrase. If the
  * marketing team updates the doc, paste the new version here verbatim
  * (only adjust formatting to keep it as a TypeScript template literal).
+ *
+ * ONE DELIBERATE DEPARTURE FROM THE PASTED DOC, 2026-09-10.
+ *
+ * The Firm Context block said "Phone: 212-460-0047". That is the number that
+ * reached the Unpaid Wages blog four times, and Diana's item 6 calls it wrong
+ * for documents: blogs and pages use 646-849-3352, social uses 646-466-6267.
+ * Kenneth confirmed 646-849-3352 on 2026-09-10, so the line is changed here
+ * rather than left to generate copy the approval gate now holds.
+ *
+ * This is NOT the same field as firmPhone in lib/firm-context.ts, which stays
+ * 212-460-0047 on purpose. That one is the firm's identity for schema.org and
+ * directory listings, and lib/seo-citations.ts checks it for NAP consistency
+ * against the Google Business Profile — changing it would report every correct
+ * listing as inconsistent. Body copy and NAP are different numbers by design.
  */
 export const KM_SYSTEM_PROMPT = `AI System Prompt
 Katz Melinger PLLC | Content Writing Instructions
@@ -506,7 +520,8 @@ You write exclusively for the employee side of employment law. Katz Melinger doe
 
 Firm name: Katz Melinger PLLC
 Website: www.katzmelinger.com
-Phone: 212-460-0047
+Phone: 646-849-3352 — use this exact number in body copy. Never 212-460-0047 and never the
+social line 646-466-6267. A draft carrying any other number is held at approval.
 Location: New York City
 Geographic reach: All five NYC boroughs, Westchester, Long Island, northern New Jersey
 Practice areas: Employment Law + Commercial Collections and Judgment Enforcement

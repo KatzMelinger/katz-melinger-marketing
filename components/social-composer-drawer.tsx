@@ -311,6 +311,10 @@ export function SocialComposerDrawer({
   // check simply stays inactive until the real value loads — no local copy of
   // lib/social-operating-brief.ts's server-only default to keep in sync.
   const [socialPhone, setSocialPhone] = useState<string | undefined>(undefined);
+  // Same reasoning for the disclaimer URL: while it is undefined the
+  // missing_disclaimer_link check is a no-op, so the composer never demands a
+  // link it does not yet know the address of.
+  const [disclaimerUrl, setDisclaimerUrl] = useState<string | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/brand-voice/settings")
@@ -319,6 +323,7 @@ export function SocialComposerDrawer({
         if (cancelled) return;
         const settings = (j?.settings ?? {}) as Record<string, string>;
         if (settings.socialPhone) setSocialPhone(settings.socialPhone);
+        if (settings.socialDisclaimerUrl) setDisclaimerUrl(settings.socialDisclaimerUrl);
       })
       .catch(() => {
         /* stays undefined — the wrong_phone check just doesn't run */
@@ -397,10 +402,20 @@ export function SocialComposerDrawer({
     const m = new Map<NetworkKey, ComplianceFlag[]>();
     for (const n of selectedList) {
       const copy = variations.get(n.key)?.copy ?? "";
-      if (copy.trim()) m.set(n.key, checkSocialCompliance(copy, { socialPhone, platform: n.key }));
+      if (copy.trim()) {
+        m.set(
+          n.key,
+          checkSocialCompliance(copy, {
+            socialPhone,
+            platform: n.key,
+            format: variations.get(n.key)?.format,
+            disclaimerUrl,
+          }),
+        );
+      }
     }
     return m;
-  }, [selectedList, variations, socialPhone]);
+  }, [selectedList, variations, socialPhone, disclaimerUrl]);
 
   const blockedNets = useMemo(
     () => selectedList.filter((n) => (flagsByNet.get(n.key) ?? []).some((f) => f.severity === "block")),
@@ -666,7 +681,12 @@ export function SocialComposerDrawer({
         if (!copy) return null;
         if (
           compliant &&
-          checkSocialCompliance(copy, { socialPhone, platform: n.key }).some((f) => f.severity === "block")
+          checkSocialCompliance(copy, {
+            socialPhone,
+            platform: n.key,
+            format: variations.get(n.key)?.format,
+            disclaimerUrl,
+          }).some((f) => f.severity === "block")
         )
           return null;
         // The date/time inputs are America/New_York wall-clock. Convert to the

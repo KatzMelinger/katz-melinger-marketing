@@ -185,16 +185,28 @@ const SETTING_FIELDS: {
     help: "Used only in generated social posts — always the dedicated social line, never the main office number above.",
   },
   {
+    key: "documentPhone",
+    label: "Blog and document phone number",
+    placeholder: "646-849-3352",
+    help: "Used in blogs, practice pages and documents. A blog carrying any other number is held at approval.",
+  },
+  {
     key: "socialOfferPhrase",
     label: "Social media offer phrase",
-    placeholder: "a free, confidential case review",
-    help: "Woven into a post's CTA whenever it invites a consultation.",
+    placeholder: "Free Confidential Case Review",
+    help: "Reproduced exactly, capitals included, in any CTA that invites a consultation. A reworded or lowercased version is flagged.",
   },
   {
     key: "socialHashtagRule",
     label: "Social media hashtag rule",
-    placeholder: "3 to 5 relevant hashtags",
-    help: "The hashtag guidance given to the generator for formats that use them.",
+    placeholder: "4 to 5 relevant hashtags, the last of them #KatzMelinger",
+    help: "Guidance given to the generator. The rule is also enforced: four to five tags on Instagram, Facebook, Threads and TikTok, and #KatzMelinger wherever hashtags appear.",
+  },
+  {
+    key: "socialDisclaimerUrl",
+    label: "Disclaimer page link",
+    placeholder: "/disclaimer/",
+    help: "Every social post must carry the Attorney Advertising label and link here. Instagram is exempt from the link only — captions can't render one.",
   },
 ];
 

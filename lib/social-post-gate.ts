@@ -11,9 +11,11 @@
 
 import { checkSocialCompliance } from "./social-compliance";
 import { runLegalCheck } from "./legal-verify";
+import { runTrapCheck } from "./trap-gate";
 import { syncFindings, listFindings } from "./content-findings-store";
 import { checkSourceCurrency } from "./source-currency";
 import { legalAccuracyEnabled } from "./feature-flags";
+import type { NormalizedFinding } from "./content-findings";
 import type { OperatingBrief } from "./social-operating-brief";
 import type { getTenantDb } from "./tenant-db";
 
@@ -37,17 +39,18 @@ export type SocialGateResult = {
   legalCheckFailed: boolean;
 };
 
-/** A draft's cta_type + source_blog_id (S2/S13b), from its own metadata. */
+/** A draft's cta_type + source_blog_id (S2/S13b) + language, from its metadata. */
 export async function loadDraftCtaAndSourceBlog(
   db: TenantDb,
   draftId: string | null,
-): Promise<{ ctaType: string | null; sourceBlogId: string | null }> {
-  if (!draftId) return { ctaType: null, sourceBlogId: null };
+): Promise<{ ctaType: string | null; sourceBlogId: string | null; language: string | null }> {
+  if (!draftId) return { ctaType: null, sourceBlogId: null, language: null };
   const { data } = await db.from("content_drafts").select("metadata").eq("id", draftId).maybeSingle();
   const meta = (data?.metadata ?? {}) as Record<string, unknown>;
   return {
     ctaType: typeof meta.cta_type === "string" ? meta.cta_type : null,
     sourceBlogId: typeof meta.source_blog_id === "string" ? meta.source_blog_id : null,
+    language: typeof meta.language === "string" ? meta.language : null,
   };
 }
 
@@ -97,10 +100,15 @@ export async function gateSocialPost(args: {
   operatingBrief: OperatingBrief;
   ctaType?: string | null;
   sourceBlogId?: string | null;
+  /** BCP-47-ish language tag from the draft's metadata ("es" for a Spanish
+   *  companion). Pass it alongside a pre-resolved ctaType/sourceBlogId. */
+  language?: string | null;
+  /** The social format — carousels and scripts carry no hashtag block. */
+  format?: string | null;
 }): Promise<SocialGateResult> {
   const resolved =
     args.ctaType !== undefined && args.sourceBlogId !== undefined
-      ? { ctaType: args.ctaType, sourceBlogId: args.sourceBlogId }
+      ? { ctaType: args.ctaType, sourceBlogId: args.sourceBlogId, language: args.language ?? null }
       : await loadDraftCtaAndSourceBlog(args.db, args.draftId);
 
   // Compliance is the one platform-specific check (Instagram's link-CTA rule).
@@ -111,32 +119,71 @@ export async function gateSocialPost(args: {
   const complianceFlagsByCode = new Map<string, string>();
   for (const platform of platforms) {
     for (const f of checkSocialCompliance(args.content, {
+      assetType: "social",
       socialPhone: args.operatingBrief.socialPhone,
       platform,
+      format: args.format ?? undefined,
       ctaType: resolved.ctaType ?? undefined,
       offerPhrase: args.operatingBrief.offerPhrase,
+      disclaimerUrl: args.operatingBrief.disclaimerUrl,
     })) {
       if (f.severity === "block") complianceFlagsByCode.set(f.code, f.label);
     }
   }
   const blockingFlags = [...complianceFlagsByCode.values()];
 
-  // Legal-accuracy check, S13(b) inherited findings, and S13(d) source-currency
-  // are independent of each other (none consumes another's result) — run them
-  // concurrently rather than paying three sequential round trips (one of them
-  // an LLM call) per post. Each is individually guarded so a failure in one
-  // (including its own best-effort DB writes) can never fail the other two or
-  // the gate as a whole.
-  const legalCheck = async (): Promise<{ reasons: string[]; failed: boolean }> => {
-    if (!legalAccuracyEnabled() || !args.draftId) return { reasons: [], failed: false };
+  // The two legal producers, and why only one of them is behind a flag.
+  //
+  // Traps are a text search over patterns that have already been wrong once
+  // (lib/trap-gate.ts). No model call, no retrieval, so there is nothing to
+  // meter and no reason to gate it — it runs on every post, including the ones
+  // the authority loop is deliberately not spent on. It is what actually
+  // catches the seeded errors, like the NYSHRL employer-size threshold.
+  //
+  // The authority loop (runLegalCheck) reasons about cited claims and costs a
+  // classification call plus up to two verification calls per claim, each
+  // carrying statute text. It stays behind LEGAL_ACCURACY, and it is skipped on
+  // Spanish companions: a companion is a translation of English copy that
+  // already cleared this same gate, so re-running the expensive half would pay
+  // twice to verify one set of claims. The companion still gets the traps, the
+  // compliance rules, and its source blog's inherited findings — everything
+  // that could catch a problem the English original did not have.
+  const isCompanionTranslation = resolved.language != null && resolved.language !== "en";
+
+  const legalCheck = async (): Promise<{
+    reasons: string[];
+    findings: NormalizedFinding[];
+    failed: boolean;
+  }> => {
+    if (!legalAccuracyEnabled() || !args.draftId || isCompanionTranslation) {
+      return { reasons: [], findings: [], failed: false };
+    }
     try {
       const legal = await runLegalCheck(args.content, { tenantId: args.tenantId });
-      await syncFindings({ draftId: args.draftId, tenantId: args.tenantId, incoming: legal.findings });
       const critical = legal.findings.filter((f) => f.severity === "critical").map((f) => f.title);
-      return { reasons: critical, failed: false };
+      return { reasons: critical, findings: legal.findings, failed: false };
     } catch (e) {
       console.warn(`[social-post-gate] legal check failed (draft ${args.draftId}):`, e);
-      return { reasons: ["Legal-accuracy check could not run"], failed: true };
+      return { reasons: ["Legal-accuracy check could not run"], findings: [], failed: true };
+    }
+  };
+
+  const trapCheck = async (): Promise<{
+    reasons: string[];
+    findings: NormalizedFinding[];
+    failed: boolean;
+  }> => {
+    if (!args.draftId) return { reasons: [], findings: [], failed: false };
+    try {
+      const traps = await runTrapCheck(args.content, { tenantId: args.tenantId });
+      return {
+        reasons: traps.blockingReasons,
+        findings: traps.findings,
+        failed: traps.failed,
+      };
+    } catch (e) {
+      console.warn(`[social-post-gate] trap check failed (draft ${args.draftId}):`, e);
+      return { reasons: [], findings: [], failed: true };
     }
   };
 
@@ -158,19 +205,47 @@ export async function gateSocialPost(args: {
     if (currency) await patchDraftMetadata(args.db, args.draftId, { source_currency_flag: currency });
   };
 
-  // Run all three concurrently, but await legal/inherited by name (not by
-  // Promise.all array position) so a future fourth check — or currencyCheck
-  // someday returning a value — can't silently shift what this destructure
-  // reads. currencyPromise is still started here (not after) to keep it
-  // running alongside the other two, not sequentially behind them.
+  // Run all four concurrently, but await each by name (not by Promise.all array
+  // position) so a future fifth check — or currencyCheck someday returning a
+  // value — can't silently shift what this destructure reads. currencyPromise
+  // is still started here (not after) to keep it running alongside the others,
+  // not sequentially behind them.
   const legalPromise = legalCheck();
+  const trapPromise = trapCheck();
   const inheritedPromise = inheritedCheck();
   const currencyPromise = currencyCheck();
-  const [legal, inheritedReasons] = await Promise.all([legalPromise, inheritedPromise]);
+  const [legal, traps, inheritedReasons] = await Promise.all([
+    legalPromise,
+    trapPromise,
+    inheritedPromise,
+  ]);
   await currencyPromise;
+
+  // ONE sync for both legal producers, scoped to `legal`.
+  //
+  // Both of these write under source `legal`, and syncFindings auto-resolves
+  // anything in a recomputed source it was not handed — so two separate calls
+  // would each close the other's findings. They are merged here instead.
+  //
+  // The `sources` scope is what keeps this partial run from closing findings no
+  // engine here looked for: without it, approving a post would silently resolve
+  // its readability, SEO and compliance findings, because this gate does not
+  // produce any. It is also why a failed run writes nothing at all — a check
+  // that could not run has no opinion, and recording that as "no findings"
+  // would auto-resolve the real ones it failed to reproduce.
+  const legalProducersRan = !legal.failed && !traps.failed;
+  if (args.draftId && legalProducersRan) {
+    await syncFindings({
+      draftId: args.draftId,
+      tenantId: args.tenantId,
+      incoming: [...legal.findings, ...traps.findings],
+      sources: ["legal"],
+    });
+  }
 
   const reasons = [
     ...blockingFlags,
+    ...traps.reasons.map((t) => `Known trap: ${t}`),
     ...legal.reasons.map((t) => `Legal review: ${t}`),
     ...inheritedReasons.map((t) => `Source blog unresolved: ${t}`),
   ];

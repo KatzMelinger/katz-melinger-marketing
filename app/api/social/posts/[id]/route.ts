@@ -212,6 +212,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       operatingBrief: brief,
       ctaType: draftMeta.ctaType,
       sourceBlogId: draftMeta.sourceBlogId,
+      // Spanish companions skip the authority-verification half of the legal
+      // layer — their claims are a translation of English copy that already
+      // cleared this gate. See lib/social-post-gate.ts.
+      language: draftMeta.language,
     });
     // A legal-check infra failure (service down/timeout) is not a compliance
     // finding — don't hold the post over it. Leave status as-is and let the

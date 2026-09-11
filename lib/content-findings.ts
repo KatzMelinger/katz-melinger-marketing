@@ -324,9 +324,24 @@ export type Reconciliation = {
 export function reconcileFindings(
   existing: readonly StoredFinding[],
   incoming: readonly NormalizedFinding[],
+  opts?: {
+    /**
+     * Which sources this run actually recomputed. Auto-resolution is limited
+     * to these; findings from any other engine are left alone.
+     *
+     * Omitting it means "this run recomputed everything", which is only true
+     * for a full analysis pass. A partial run that omits it silently resolves
+     * every other engine's open findings — the gate writes legal findings on
+     * approval, and without this it would close the draft's readability, SEO
+     * and compliance findings on the way past. Absence of a finding is only
+     * evidence it is fixed if something looked for it.
+     */
+    sources?: readonly FindingSource[];
+  },
 ): Reconciliation {
   const byFingerprint = new Map(existing.map((f) => [f.fingerprint, f]));
   const incomingPrints = new Set(incoming.map((f) => f.fingerprint));
+  const recomputed = opts?.sources ? new Set(opts.sources) : null;
 
   const result: Reconciliation = { insert: [], touch: [], reopen: [], autoResolve: [] };
 
@@ -343,6 +358,7 @@ export function reconcileFindings(
 
   for (const prior of existing) {
     if (incomingPrints.has(prior.fingerprint)) continue;
+    if (recomputed && !recomputed.has(prior.source)) continue;
     if (prior.status === "open" || prior.status === "in_progress") {
       result.autoResolve.push(prior);
     }

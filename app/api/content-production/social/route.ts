@@ -137,6 +137,7 @@ export async function POST(req: Request) {
       operatingBrief,
       ctaType: typeof meta.cta_type === "string" ? meta.cta_type : null,
       sourceBlogId: typeof meta.source_blog_id === "string" ? meta.source_blog_id : null,
+      language: typeof meta.language === "string" ? meta.language : null,
     });
 
     if (gate.flagged) {

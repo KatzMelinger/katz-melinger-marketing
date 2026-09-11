@@ -176,6 +176,10 @@ export async function POST(req: Request) {
           operatingBrief,
           ctaType: p.draftId ? (ctaByDraftId.get(p.draftId) ?? null) : null,
           sourceBlogId: p.draftId ? (sourceBlogByDraftId.get(p.draftId) ?? null) : null,
+          // Carousels and scripts carry no hashtag block, so the four-to-five
+          // rule must not be applied to them. `format` falls back to postType,
+          // which is where "carousel" actually arrives on this path.
+          format: p.format ?? postType,
         });
     const dupConflict = dupConflicts[i]?.[0] ?? null;
 

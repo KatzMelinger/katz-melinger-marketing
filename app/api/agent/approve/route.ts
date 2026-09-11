@@ -29,6 +29,9 @@ import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fing
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { notifyDraftBlocked, notifyLegalReview } from "@/lib/content-notifications";
 import { runLegalCheck } from "@/lib/legal-verify";
+import { runTrapCheck } from "@/lib/trap-gate";
+import { checkSocialCompliance } from "@/lib/social-compliance";
+import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { syncFindings } from "@/lib/content-findings-store";
 import { getCurrentUser } from "@/lib/supabase-route";
 
@@ -223,6 +226,54 @@ async function approveContent(
     });
   }
 
+  // The DETERMINISTIC floor, ahead of the LLM verdict below.
+  //
+  // These are the same rules the social gate has always run — brand and RPC
+  // patterns plus the phone-number check — now run on blog and page bodies too
+  // (Diana's item 6). It is what would have caught the wrong office number
+  // appearing four times in the Unpaid Wages blog: the rule existed, it just
+  // only ever saw captions.
+  //
+  // Rules declare their own scope, so the social-only ones do not cross over.
+  // `state_abbrev` in particular must not: it forbids "NYC", which is right for
+  // a caption and wrong for a blog targeting "unpaid wages lawyer NYC".
+  //
+  // Runs first because it is free and certain. A body carrying the wrong phone
+  // number does not need a model's opinion, and a definite answer should not
+  // wait behind an expensive uncertain one.
+  const copyBrief = await getOperatingBrief(tenantId);
+  const copyFlags = checkSocialCompliance(
+    typeof draft.body === "string" ? draft.body : "",
+    { assetType: "document", documentPhone: copyBrief.documentPhone },
+  ).filter((f) => f.severity === "block");
+
+  if (copyFlags.length > 0) {
+    await setDraftStatus(supabase, tenantId, id, "needs_legal");
+    await recordAuditEvent({
+      tenantId,
+      draftId: id,
+      event: "draft_held_compliance",
+      detail: { deterministic: copyFlags.map((f) => f.code) },
+    });
+    return NextResponse.json(
+      {
+        error: `Held by the copy rules — ${copyFlags.map((f) => f.label).join("; ")}`,
+        status: "needs_legal",
+        compliance: {
+          pass: false,
+          status: "non_compliant",
+          violations: copyFlags.map((f) => ({
+            rule: f.code,
+            severity: "high",
+            reason: f.label,
+            excerpt: f.excerpt,
+          })),
+        },
+      },
+      { status: 422 },
+    );
+  }
+
   // Re-run the compliance HARD gate on the CURRENT body. Manual approvals are
   // gated exactly like the agent's auto-path, fail-closed to needs_legal — so a
   // reviewer can't sign off on content the gate would have held (and edits made
@@ -300,82 +351,124 @@ async function approveContent(
     );
   }
 
-  // LEGAL ACCURACY (Diana's A1), feature-flagged and last because it is the
-  // most expensive gate: a classification call plus a retrieval and up to two
-  // verification calls per checkable claim. Running it here rather than on save
-  // is her Q3 answer — the blocking point is approval, not editing.
+  // THE LEGAL LAYER (Diana's A1). Two producers, one gate, run last because the
+  // second of them is the most expensive check in the pipeline.
+  //
+  // Known traps are a text search over patterns that have already been wrong
+  // once (lib/trap-gate.ts). No model call, no retrieval, so they are NOT
+  // feature-flagged — they run on every approval and cost nothing to leave on.
+  // This is the half that catches the seeded errors, including the ones that
+  // cite no authority and so were invisible to the loop below.
+  //
+  // The authority loop (runLegalCheck) is a classification call plus a
+  // retrieval and up to two verification calls per checkable claim, each
+  // carrying statute text. It stays behind LEGAL_ACCURACY. Running it at
+  // approval rather than on save is Diana's Q3 answer — the blocking point is
+  // approval, not editing, and a draft nobody kept is not worth verifying.
   //
   // Findings are synced whatever the verdict, so the reviewer sees the whole
   // picture: what was verified, what was contradicted, and what no lookup could
   // settle. Only a CRITICAL finding holds the draft.
-  if (legalAccuracyEnabled()) {
-    try {
-      const legal = await runLegalCheck(
-        typeof draft.body === "string" ? draft.body : "",
-        { tenantId },
-      );
-      await syncFindings({ draftId: id, tenantId, incoming: legal.findings });
+  {
+    const body = typeof draft.body === "string" ? draft.body : "";
 
-      const critical = legal.findings.filter((f) => f.severity === "critical");
-      logEvent("legal_check", { draftId: id, ...legal.stats, critical: critical.length });
-
-      if (critical.length > 0) {
-        const summary = critical
-          .slice(0, 5)
-          .map((f) => `- ${f.title}: "${(f.excerpt ?? "").slice(0, 120)}"`)
-          .join("\n");
-        await supabase
-          .from("content_drafts")
-          .update({ status: "needs_legal" })
-          .eq("id", id)
-          .eq("tenant_id", tenantId);
-        await supabase
-          .from("content_pipeline")
-          .update({ status: "needs_legal" })
-          .eq("draft_id", id)
-          .eq("tenant_id", tenantId);
-        await recordAuditEvent({
-          tenantId,
-          draftId: id,
-          event: "draft_held_legal",
-          detail: { critical: critical.length, ...legal.stats },
-        });
-        await notifyLegalReview({
-          draftId: id,
-          tenantId,
-          practiceArea: (draft.practice_area as string | null) ?? null,
-          topic: (draft.topic as string | null) ?? null,
-          title: (draft.title as string | null) ?? null,
-          criticalCount: critical.length,
-          summary,
-        });
-        return NextResponse.json(
-          {
-            error: `Held for legal review — ${critical.length} claim(s) conflict with the authority they cite.`,
-            status: "needs_legal",
-            legal: {
-              stats: legal.stats,
-              critical: critical.map((f) => ({
-                title: f.title,
-                excerpt: f.excerpt,
-                source: f.sourceChecked,
-              })),
-            },
-          },
-          { status: 422 },
-        );
-      }
-    } catch (e) {
-      // The legal check failing must not silently approve. Hold the draft and
-      // say why — an unavailable checker is not a clean bill of health.
-      console.warn("[approve] legal check failed:", e);
+    const traps = await runTrapCheck(body, { tenantId });
+    if (traps.failed) {
+      // Same rule as a failed authority check: a checker that could not run is
+      // not a clean bill of health.
       return NextResponse.json(
         {
           error:
-            "The legal-accuracy check could not run, so this was not approved. Try again, or have an attorney clear it manually.",
+            "The known-traps check could not run, so this was not approved. Try again, or have an attorney clear it manually.",
           status: draft.status,
         },
         { status: 503 },
+      );
+    }
+
+    let findings = traps.findings;
+    let legalStats: Record<string, number> | null = null;
+
+    if (legalAccuracyEnabled()) {
+      try {
+        const legal = await runLegalCheck(body, { tenantId });
+        // Merged, not synced separately: both write under source `legal`, and
+        // a scoped sync auto-resolves anything in that source it was not
+        // handed — so two calls would each close the other's findings.
+        findings = [...legal.findings, ...traps.findings];
+        legalStats = legal.stats;
+      } catch (e) {
+        // The legal check failing must not silently approve. Hold the draft and
+        // say why — an unavailable checker is not a clean bill of health.
+        console.warn("[approve] legal check failed:", e);
+        return NextResponse.json(
+          {
+            error:
+              "The legal-accuracy check could not run, so this was not approved. Try again, or have an attorney clear it manually.",
+            status: draft.status,
+          },
+          { status: 503 },
+        );
+      }
+    }
+
+    // Scoped to `legal` so this partial run cannot auto-resolve the
+    // readability, SEO, freshness and compliance findings it never looked for.
+    await syncFindings({ draftId: id, tenantId, incoming: findings, sources: ["legal"] });
+
+    const critical = findings.filter((f) => f.severity === "critical");
+    logEvent("legal_check", {
+      draftId: id,
+      ...(legalStats ?? {}),
+      traps: traps.findings.length,
+      authorityLoop: legalAccuracyEnabled() ? "on" : "off",
+      critical: critical.length,
+    });
+
+    if (critical.length > 0) {
+      const summary = critical
+        .slice(0, 5)
+        .map((f) => `- ${f.title}: "${(f.excerpt ?? "").slice(0, 120)}"`)
+        .join("\n");
+      await supabase
+        .from("content_drafts")
+        .update({ status: "needs_legal" })
+        .eq("id", id)
+        .eq("tenant_id", tenantId);
+      await supabase
+        .from("content_pipeline")
+        .update({ status: "needs_legal" })
+        .eq("draft_id", id)
+        .eq("tenant_id", tenantId);
+      await recordAuditEvent({
+        tenantId,
+        draftId: id,
+        event: "draft_held_legal",
+        detail: { critical: critical.length, traps: traps.findings.length, ...(legalStats ?? {}) },
+      });
+      await notifyLegalReview({
+        draftId: id,
+        tenantId,
+        practiceArea: (draft.practice_area as string | null) ?? null,
+        topic: (draft.topic as string | null) ?? null,
+        title: (draft.title as string | null) ?? null,
+        criticalCount: critical.length,
+        summary,
+      });
+      return NextResponse.json(
+        {
+          error: `Held for legal review — ${critical.length} claim(s) need an attorney before this can publish.`,
+          status: "needs_legal",
+          legal: {
+            stats: legalStats,
+            critical: critical.map((f) => ({
+              title: f.title,
+              excerpt: f.excerpt,
+              source: f.sourceChecked,
+            })),
+          },
+        },
+        { status: 422 },
       );
     }
   }

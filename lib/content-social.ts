@@ -101,8 +101,16 @@ ${firm}
 OPERATING BRIEF FOR SOCIAL (overrides the firm phone above for this content — social always uses
 the dedicated social line, never the main office number):
 - Social phone: ${brief.socialPhone} — use this exact number when a CTA needs a phone number.
-- Offer: ${brief.offerPhrase} — weave this in naturally whenever the CTA invites a consultation.
+- Offer: "${brief.offerPhrase}" — this is a LOCKED phrase. When the CTA invites a consultation,
+  reproduce it exactly, capitals included. Do not paraphrase it, lowercase it, or swap a synonym
+  ("free confidential conversation" is wrong). It is checked character for character.
 - Hashtags: ${brief.hashtagRule}, only for formats that use them (never carousel slides or LinkedIn beyond 1-2).
+- Attorney Advertising: every post must carry the label, either as the words "Attorney Advertising"
+  or as #AttorneyAdvertising, and must link to ${brief.disclaimerUrl} for the general-information
+  disclaimer. Instagram is the one exception to the LINK (captions can't render one) — it still
+  needs the label.
+- No hyphens anywhere except inside the phone number. Write "attorney client privilege", not the
+  hyphenated form. Links, email addresses and hashtags are exempt.
 
 ${ANTI_AI_VOICE_RULES}
 ${skillsContext ? `\n${skillsContext}\n` : ""}
