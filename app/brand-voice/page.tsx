@@ -199,8 +199,8 @@ const SETTING_FIELDS: {
   {
     key: "socialOfferPhraseEs",
     label: "Social media offer phrase (Spanish)",
-    placeholder: "Free Confidential Case Review",
-    help: "Used on Spanish companion posts. Leave blank to carry the English phrase through untranslated, which is the default.",
+    placeholder: "Revisión Gratuita y Confidencial de su Caso",
+    help: "Reproduced exactly on Spanish companion posts, the same way the English phrase is. Avoid “Consulta Gratuita” — consultation-price wording is blocked in both languages.",
   },
   {
     key: "socialHashtagRule",

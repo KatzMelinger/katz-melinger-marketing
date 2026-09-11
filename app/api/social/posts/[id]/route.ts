@@ -92,7 +92,10 @@ async function queueSpanishCompanion(
   // adapted under caption rules.
   const format = formatForPlatform(row.platform, row.post_type);
   if (!format) return;
-  const spanishBody = await generateSpanishCompanion(row.content, format);
+  // The Spanish offer phrase is locked and gate-checked, so it is handed to the
+  // adapter rather than left to it — see lib/social-operating-brief.ts.
+  const brief = await getOperatingBrief(db.tenantId);
+  const spanishBody = await generateSpanishCompanion(row.content, format, brief.offerPhraseEs);
   if (!spanishBody?.trim()) return;
 
   const { data: draft, error: draftErr } = await db
