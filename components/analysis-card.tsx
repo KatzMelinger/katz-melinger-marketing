@@ -72,6 +72,9 @@ export type Analysis = {
   }[];
   compliance_required_disclaimers?: string[];
   compliance_summary?: string;
+  // Present only right after a live run where the check itself failed (the
+  // score above is null). Not persisted, so it's gone again after a reload.
+  compliance_error?: string | null;
   suggested_titles?: string[];
   // Live-only fields (stripped before persistence). Optional so older
   // analyses loaded from DB don't fail the type check.
@@ -252,6 +255,9 @@ export function AnalysisCard({
           label="Compliance"
           value={analysis.compliance_score ?? null}
           hint="NY/NJ attorney-advertising review (advisory)"
+          error={analysis.compliance_error ?? null}
+          onRetry={onRerun}
+          retrying={rerunning}
         />
       </div>
       <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
@@ -964,6 +970,17 @@ export function ApplySuggestionModal({
             body: JSON.stringify({ findings }),
           },
         );
+        // The route always returns JSON, but a platform-level failure (a
+        // gateway timeout, a proxy error page) can return plain text instead.
+        // Check content-type before parsing so that shows up as a readable
+        // message, not a raw "Unexpected token" JSON parse error.
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          const text = await res.text();
+          throw new Error(
+            text.trim() ? text.slice(0, 300) : `Apply failed (${res.status})`,
+          );
+        }
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? "Apply failed");
         if (cancelled) return;
@@ -1189,10 +1206,23 @@ function ScoreTile({
   label,
   value,
   hint,
+  error,
+  onRetry,
+  retrying,
 }: {
   label: string;
   value: number | null;
   hint?: string;
+  /** The caught error, when the score is null because the check itself
+   *  failed (vs. simply never having been run). Shown in place of the
+   *  generic "re-run analysis" hint so the reviewer knows this isn't just
+   *  an unscored tile. */
+  error?: string | null;
+  /** Retries the check. Currently re-runs the whole analysis (there's no
+   *  single-engine re-run endpoint yet) but is scoped to this tile so the
+   *  reviewer doesn't have to go hunting for the top-level button. */
+  onRetry?: () => void;
+  retrying?: boolean;
 }) {
   // null means "couldn't compute" (Claude failure). Render an obvious "n/a"
   // rather than a red 0 that misrepresents the content.
@@ -1200,13 +1230,27 @@ function ScoreTile({
     return (
       <div
         className="rounded-lg border border-dashed border-slate-300 p-3 bg-slate-50/60"
-        title={hint ? `${hint} — couldn't compute, re-run analysis` : "Couldn't compute — re-run analysis"}
+        title={error ?? (hint ? `${hint} — couldn't compute, re-run analysis` : "Couldn't compute — re-run analysis")}
       >
         <div className="text-2xl font-bold text-slate-400">n/a</div>
         <div className="text-xs text-slate-500 mt-1">{label}</div>
-        <div className="text-[10px] text-slate-400 mt-2 italic">
-          re-run analysis
-        </div>
+        {error ? (
+          <div className="text-[10px] text-red-600 mt-2 line-clamp-2">{error}</div>
+        ) : (
+          <div className="text-[10px] text-slate-400 mt-2 italic">
+            re-run analysis
+          </div>
+        )}
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="text-[10px] mt-1.5 underline text-brand hover:text-brand/80 disabled:opacity-60"
+          >
+            {retrying ? "Retrying…" : "Retry"}
+          </button>
+        )}
       </div>
     );
   }

@@ -178,10 +178,13 @@ export const config = {
     /*
      * Match every route (INCLUDING /api/*, which the proxy now gates with
      * default-deny) except static assets:
-     * - _next/static, _next/image, favicon, images
+     * - _next/static, _next/image, favicon, images, robots.txt
+     * robots.txt must stay reachable without a session — a crawler that gets
+     * redirected to /login instead of the actual file never sees the
+     * Disallow: / directive, defeating the point of having one.
      * Server Components must forward the session cookie on internal /api calls
      * (use serverFetch from lib/request-origin.ts) so their fetches aren't 401'd.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

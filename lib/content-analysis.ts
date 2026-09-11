@@ -117,6 +117,10 @@ export type ContentAnalysis = {
   compliance_violations: ComplianceViolation[];
   compliance_required_disclaimers: string[];
   compliance_summary: string;
+  /** Live-only: the caught error when the compliance check itself failed
+   *  (score above is null in that case). Not persisted — see the strip
+   *  before insert below — so it only shows right after a run, not on reload. */
+  compliance_error?: string | null;
   suggested_titles: string[];
   /** Per-title conflict detail (only present in the live response — not
    *  persisted). Lets the UI render a warning badge on titles that overlap
@@ -905,6 +909,9 @@ export async function analyzeDraft(args: {
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
+  // Set inside the compliance catch below so the UI can show the reviewer WHY
+  // the tile reads "n/a" instead of a silent, unexplained gap.
+  let complianceError: string | null = null;
   // Run brand voice + CASH + linkability + contentEnhancements + compliance in
   // parallel — all are Claude calls and independent of each other.
   const [brand, cash, linkability, enhancements, compliance, aiReadability] = await Promise.all([
@@ -920,13 +927,15 @@ export async function analyzeDraft(args: {
       targetKeywords,
     }),
     // Advisory attorney-advertising compliance. Never let it fail the whole
-    // analysis — degrade to a null score the UI renders as "re-run".
+    // analysis — degrade to a null score the UI renders as "re-run", but keep
+    // the real reason so the reviewer isn't staring at a blank n/a.
     checkContentCompliance({
       content: body,
       surface: formatToComplianceSurface(format),
       practiceArea: args.practiceArea ?? undefined,
     }).catch((err) => {
       console.warn("[content-analysis] Compliance check failed:", err);
+      complianceError = err instanceof Error ? err.message : String(err);
       return null;
     }),
     // The 5 AI-assisted readability rules (08/11/12/13/14). Only when the engine
@@ -995,6 +1004,7 @@ export async function analyzeDraft(args: {
       ? compliance.requiredDisclaimers
       : [],
     compliance_summary: compliance ? compliance.summary : "",
+    compliance_error: compliance ? null : complianceError,
     suggested_titles: keptTitles,
     suggested_titles_dropped: filtered.dropped,
     suggested_titles_conflicts_avoided: filtered.dropped.length,
@@ -1005,11 +1015,13 @@ export async function analyzeDraft(args: {
     scored_against: buildFingerprint(body),
   };
 
-  // Strip live-only fields (cannibalization detail) before persisting —
-  // they're metadata for the current response, not stored columns.
+  // Strip live-only fields (cannibalization detail, compliance failure reason)
+  // before persisting — they're metadata for the current response, not stored
+  // columns.
   const persistable = { ...analysis };
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_dropped;
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_conflicts_avoided;
+  delete (persistable as Partial<ContentAnalysis>).compliance_error;
 
   // Graceful column-degradation. If new columns aren't migrated yet, drop
   // the offending fields and retry. Newest columns (compliance_*) drop first,
