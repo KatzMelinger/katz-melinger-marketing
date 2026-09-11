@@ -111,6 +111,11 @@ export async function gateSocialPost(args: {
       ? { ctaType: args.ctaType, sourceBlogId: args.sourceBlogId, language: args.language ?? null }
       : await loadDraftCtaAndSourceBlog(args.db, args.draftId);
 
+  // A Spanish (or any non-English) companion. Declared up here because both
+  // halves of the gate need it: the compliance check picks the language's offer
+  // phrase, and the legal half skips the authority loop.
+  const isCompanionTranslation = resolved.language != null && resolved.language !== "en";
+
   // Compliance is the one platform-specific check (Instagram's link-CTA rule).
   // Check against EVERY target platform and union the blocking flags (deduped
   // by code) rather than picking a single platform — a shared body going to
@@ -124,7 +129,12 @@ export async function gateSocialPost(args: {
       platform,
       format: args.format ?? undefined,
       ctaType: resolved.ctaType ?? undefined,
-      offerPhrase: args.operatingBrief.offerPhrase,
+      // A Spanish companion is checked against the Spanish offer phrase. With
+      // one phrase for both, every Spanish consultation post would be held for
+      // a missing offer it could not have carried.
+      offerPhrase: isCompanionTranslation
+        ? args.operatingBrief.offerPhraseEs
+        : args.operatingBrief.offerPhrase,
       disclaimerUrl: args.operatingBrief.disclaimerUrl,
     })) {
       if (f.severity === "block") complianceFlagsByCode.set(f.code, f.label);
@@ -148,8 +158,6 @@ export async function gateSocialPost(args: {
   // twice to verify one set of claims. The companion still gets the traps, the
   // compliance rules, and its source blog's inherited findings — everything
   // that could catch a problem the English original did not have.
-  const isCompanionTranslation = resolved.language != null && resolved.language !== "en";
-
   const legalCheck = async (): Promise<{
     reasons: string[];
     findings: NormalizedFinding[];

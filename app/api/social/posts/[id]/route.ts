@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { gateSocialPost, loadDraftCtaAndSourceBlog } from "@/lib/social-post-gate";
 import { generateSpanishCompanion } from "@/lib/social-spanish";
-import { isSocialFormat } from "@/lib/social-format-rules";
+import { formatForPlatform } from "@/lib/social-format-rules";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -41,14 +41,17 @@ type PostRow = {
   ayrshare_id: string | null;
   media_urls: string[] | null;
   source_draft_id: string | null;
+  /** Per-platform post type (carousel / reel / video), when multiformat is on. */
+  post_type: string | null;
 };
 
 async function loadPost(id: string) {
   const db = await getTenantDb();
-  const full = "id, platform, content, status, scheduled_at, ayrshare_id, media_urls, source_draft_id";
+  const full =
+    "id, platform, content, status, scheduled_at, ayrshare_id, media_urls, source_draft_id, post_type";
   const res = await db.from("social_posts").select(full).eq("id", id).maybeSingle();
-  // Degrade gracefully if media_urls/source_draft_id haven't been migrated yet.
-  if (res.error && /media_urls|source_draft_id/i.test(res.error.message)) {
+  // Degrade gracefully if media_urls/source_draft_id/post_type aren't migrated.
+  if (res.error && /media_urls|source_draft_id|post_type/i.test(res.error.message)) {
     const base = await db
       .from("social_posts")
       .select("id, platform, content, status, scheduled_at, ayrshare_id")
@@ -57,7 +60,12 @@ async function loadPost(id: string) {
     return {
       db,
       row: base.data
-        ? ({ ...(base.data as object), media_urls: null, source_draft_id: null } as PostRow)
+        ? ({
+            ...(base.data as object),
+            media_urls: null,
+            source_draft_id: null,
+            post_type: null,
+          } as PostRow)
         : null,
     };
   }
@@ -76,13 +84,20 @@ async function queueSpanishCompanion(
   db: Awaited<ReturnType<typeof getTenantDb>>,
   row: PostRow,
 ): Promise<void> {
-  if (!isSocialFormat(row.platform)) return; // carousel/video etc. — no 1:1 caption format to adapt
-  const spanishBody = await generateSpanishCompanion(row.content, row.platform);
+  // Resolve the PLATFORM to the generation FORMAT whose caps apply. This used
+  // to be `isSocialFormat(row.platform)`, which compares an Ayrshare platform
+  // against a SocialFormatKey — two namespaces that overlap on four values by
+  // accident. It answered false for tiktok, so the pregnancy script never got a
+  // companion, and true for a carousel on Instagram, which would then have been
+  // adapted under caption rules.
+  const format = formatForPlatform(row.platform, row.post_type);
+  if (!format) return;
+  const spanishBody = await generateSpanishCompanion(row.content, format);
   if (!spanishBody?.trim()) return;
 
   const { data: draft, error: draftErr } = await db
     .insert("content_drafts", {
-      format: row.platform,
+      format,
       topic: "Spanish companion",
       title: `Spanish: ${row.content.slice(0, 80)}`,
       body: spanishBody,

@@ -30,6 +30,19 @@ export type OperatingBrief = {
    */
   documentPhone: string;
   offerPhrase: string;
+  /**
+   * The offer phrase for Spanish companions.
+   *
+   * Defaults to the English phrase, deliberately. It is a locked brand term,
+   * and carrying it through untranslated is a real convention — but the reason
+   * it needs its OWN field is that without one the check is unsatisfiable: a
+   * Spanish caption cannot contain an English string the adapter is translating,
+   * so every Spanish consultation post would be blocked for a missing offer.
+   *
+   * Set socialOfferPhraseEs on /brand-voice to use a Spanish wording instead.
+   * Needs Kenneth: whether the offer is translated is a brand call.
+   */
+  offerPhraseEs: string;
   hashtagRule: string;
   /** Where the general-information disclaimer lives (S3, item 4). */
   disclaimerUrl: string;
@@ -45,6 +58,7 @@ const DEFAULTS: OperatingBrief = {
   socialPhone: "646-466-6267",
   documentPhone: "646-849-3352",
   offerPhrase: "Free Confidential Case Review",
+  offerPhraseEs: "Free Confidential Case Review",
   // Four to five, and the firm tag, because the S3 rule now CHECKS this.
   // It said "3 to 5" while the rule Diana specified requires four — generation
   // would have produced three and the gate would have held it every time.
@@ -64,6 +78,7 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
         "socialPhone",
         "documentPhone",
         "socialOfferPhrase",
+        "socialOfferPhraseEs",
         "socialHashtagRule",
         "socialDisclaimerUrl",
       ]);
@@ -77,6 +92,12 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
       socialPhone: settings.socialPhone || DEFAULTS.socialPhone,
       documentPhone: settings.documentPhone || DEFAULTS.documentPhone,
       offerPhrase: settings.socialOfferPhrase || DEFAULTS.offerPhrase,
+      // Falls back to the English phrase, not to the DEFAULT English phrase —
+      // a firm that changed its offer wording and never set a Spanish one
+      // should have Spanish follow the change rather than sit on the shipped
+      // default nobody uses any more.
+      offerPhraseEs:
+        settings.socialOfferPhraseEs || settings.socialOfferPhrase || DEFAULTS.offerPhraseEs,
       hashtagRule: settings.socialHashtagRule || DEFAULTS.hashtagRule,
       disclaimerUrl: settings.socialDisclaimerUrl || DEFAULTS.disclaimerUrl,
     };

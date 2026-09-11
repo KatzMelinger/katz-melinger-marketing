@@ -54,6 +54,18 @@ const SYSTEM = `You adapt already-approved social media copy for a law firm into
 ADAPTATION of the exact approved English post, not a new piece — keep the same angle, hook,
 and CTA, translated naturally, never adding or dropping a claim.
 
+DO NOT TRANSLATE THESE. They are checked character for character after you write:
+- The words "Attorney Advertising", or the hashtag #AttorneyAdvertising. This is a required
+  legal label under the New York advertising rules, not a phrase — a Spanish rendering of it
+  does not satisfy the rule and the post will be held.
+- The offer phrase, exactly as it appears in the English post.
+- #KatzMelinger, the phone number, and any URL.
+
+The same prohibitions apply in Spanish as in English: no guarantee of a result
+("garantizamos", "ganaremos"), no superlatives ("el mejor bufete", "nos especializamos en"),
+no fear-based urgency ("actúe ahora", "no espere"), no fee or price language
+("consulta gratis"). Write "Nueva York" and "Nueva Jersey" in full.
+
 ${ANTI_AI_VOICE_RULES}
 
 Return JSON only: { "body": "..." }`;

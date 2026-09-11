@@ -87,12 +87,23 @@ const RULES: Rule[] = [
     severity: "block",
     re: /[‒–—―]|\s--\s/,
   },
+  // The four RPC/brand rules below match ENGLISH AND SPANISH.
+  //
+  // They were English-only, and the firm publishes Spanish companions: a
+  // caption reading "Garantizamos que ganaremos su caso" passed every one of
+  // them silently. That is worse than not checking, because the panel then
+  // reports the post clear — which is exactly what a reviewer relies on when
+  // they do not read Spanish themselves.
+  //
+  // Accents are optional in the patterns ([úu], [íi]) because people type
+  // without them, and a rule that only catches the correctly-accented spelling
+  // catches the careful writer and misses the hurried one.
   {
     code: "guarantee",
     scope: "all",
     label: "Result guarantee — prohibited (RPC 7.1)",
     severity: "block",
-    re: /\b(guarantee(d|s)?|we('| wi)ll win|no win,?\s*no fee|100%\s*(win|success|recovery))\b/i,
+    re: /\b(guarantee(d|s)?|we('| wi)ll win|no win,?\s*no fee|100%\s*(win|success|recovery))\b|\b(garantiza(mos|do|da|n)?|garant[íi]a)\b|\bganaremos\b|\bsin\s+honorarios\b|\bsi\s+no\s+gana(mos)?,?\s*no\s+paga\b/i,
   },
   {
     code: "superlative",
@@ -102,21 +113,23 @@ const RULES: Rule[] = [
     // `#1` is pulled out of the \b group (a leading \b can't match before '#').
     // "expert"/"specialist" are only flagged as a self-claim ("we are experts",
     // "specializing in …"), not in legitimate terms like "expert witness".
-    re: /#\s?1\b|\bnumber one\b|\btop[-\s]rated\b|\bbest (lawyer|attorney|law firm|firm)\b|\bleading (law )?firm\b|\bpremier (law )?firm\b|\bwinningest\b|\bmost experienced (lawyer|attorney|firm)\b|\b(we are|we're|our)( the)? (experts?|specialists?)\b|\bspecializ(e|es|ing) in\b/i,
+    // The Spanish half mirrors that: "el mejor abogado" is a claim, and
+    // "nos especializamos en" is the direct analogue of "specializing in".
+    re: /#\s?1\b|\bnumber one\b|\btop[-\s]rated\b|\bbest (lawyer|attorney|law firm|firm)\b|\bleading (law )?firm\b|\bpremier (law )?firm\b|\bwinningest\b|\bmost experienced (lawyer|attorney|firm)\b|\b(we are|we're|our)( the)? (experts?|specialists?)\b|\bspecializ(e|es|ing) in\b|\bn[úu]mero\s+uno\b|\b(el|la|los|las)\s+mejor(es)?\s+(abogad[oa]s?|bufete|firma|despacho)\b|\bbufete\s+l[íi]der\b|\b(somos|nuestros?)\s+(expert[oa]s|especialistas)\b|\bnos\s+especializamos\s+en\b/i,
   },
   {
     code: "fear",
     scope: "all",
     label: "Fear-based urgency — off-brand",
     severity: "block",
-    re: /\b(act now|limited time|don'?t wait|before it'?s too late|time is running out|hurry|urgent(ly)?)\b/i,
+    re: /\b(act now|limited time|don'?t wait|before it'?s too late|time is running out|hurry|urgent(ly)?)\b|\bact[úu]e?\s+ahora\b|\bno\s+espere\b|\btiempo\s+limitado\b|\bantes\s+de\s+que\s+sea\s+demasiado\s+tarde\b|\b(se\s+acaba|se\s+est[áa]\s+acabando)\s+el\s+tiempo\b|\burgente(mente)?\b|\bap[úu]rese\b/i,
   },
   {
     code: "fee",
     scope: "all",
     label: "Fee or price language — off-brand",
     severity: "block",
-    re: /\bfree consultation\b|\bno fee\b|\bcontingency\b|\$\s?\d/i,
+    re: /\bfree consultation\b|\bno fee\b|\bcontingency\b|\$\s?\d|\bconsulta\s+(gratis|gratuita)\b|\bsin\s+costo\b|\bhonorarios\s+de\s+contingencia\b/i,
   },
   {
     code: "state_abbrev",
@@ -127,7 +140,8 @@ const RULES: Rule[] = [
   },
 ];
 
-const INSTAGRAM_LINK_CTA_RE = /\b(click the link|link below|swipe up)\b|https?:\/\/\S+/i;
+const INSTAGRAM_LINK_CTA_RE =
+  /\b(click the link|link below|swipe up)\b|\b(haz|haga)\s+clic\s+en\s+el\s+enlace\b|\benlace\s+(abajo|debajo)\b|\bdesliza\s+hacia\s+arriba\b|https?:\/\/\S+/i;
 
 /* -------------------------------------------------------------------------- */
 /* Item 4 — the Attorney Advertising label and the disclaimer link             */

@@ -197,6 +197,12 @@ const SETTING_FIELDS: {
     help: "Reproduced exactly, capitals included, in any CTA that invites a consultation. A reworded or lowercased version is flagged.",
   },
   {
+    key: "socialOfferPhraseEs",
+    label: "Social media offer phrase (Spanish)",
+    placeholder: "Free Confidential Case Review",
+    help: "Used on Spanish companion posts. Leave blank to carry the English phrase through untranslated, which is the default.",
+  },
+  {
     key: "socialHashtagRule",
     label: "Social media hashtag rule",
     placeholder: "4 to 5 relevant hashtags, the last of them #KatzMelinger",
