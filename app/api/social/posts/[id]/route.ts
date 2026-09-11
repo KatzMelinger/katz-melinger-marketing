@@ -354,12 +354,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const apiKey = getAyrshareApiKey();
 
-  // Planned post (never reached Ayrshare) → just update our row.
+  // Planned post (never reached Ayrshare) → just update our row. A reschedule
+  // (not just a caption edit) also clears a "failed" post back to draft — the
+  // user just changed the timing, so let them retry Approve instead of the
+  // post sitting failed forever with a stale error (mirrors clearFlag above
+  // for "flagged" posts). A caption-only edit leaves the failed state alone.
   if (!row.ayrshare_id || !apiKey) {
-    const { error } = await db
-      .from("social_posts")
-      .update({ content, scheduled_at: scheduledAt })
-      .eq("id", id);
+    const update: Record<string, unknown> = { content, scheduled_at: scheduledAt };
+    if (newDate !== undefined && row.status === "failed") {
+      update.status = "draft";
+      update.last_error = null;
+    }
+    let { error } = await db.from("social_posts").update(update).eq("id", id);
+    if (error && /last_error/i.test(error.message)) {
+      delete update.last_error;
+      ({ error } = await db.from("social_posts").update(update).eq("id", id));
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, message: "Updated." });
   }

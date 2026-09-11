@@ -12,7 +12,7 @@
  * only here — scheduling itself happens in the publish flow / scheduler.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import Link from "next/link";
 
 import { MarketingNav } from "@/components/marketing-nav";
@@ -110,7 +110,14 @@ export default function ContentCalendarPage() {
   const [selected, setSelected] = useState<CalendarItem | null>(null);
   // Blank-composer "Create post" flow — opens the tabbed composer with no seed
   // drafts so a post can be created, composed, and scheduled without leaving.
-  const [composing, setComposing] = useState(false);
+  // composerDate is the YYYY-MM-DD preset from clicking a day/hour cell; null
+  // when opened from the toolbar button (no preset — the composer's own
+  // staggered defaults apply).
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerDate, setComposerDate] = useState<string | null>(null);
+  // Transient feedback for a drag-to-reschedule that failed (e.g. rejected
+  // by Ayrshare). Separate from `error`, which is the whole-calendar load banner.
+  const [dragMsg, setDragMsg] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<CalendarItem[]> => {
     try {
@@ -167,6 +174,54 @@ export default function ContentCalendarPage() {
     });
   }
 
+  // Clicking an empty day cell (month) or day/hour cell (week) opens the same
+  // composer as "+ Create post", preset to that day.
+  const openComposerAt = useCallback((date: Date) => {
+    setComposerDate(ymd(date));
+    setComposerOpen(true);
+  }, []);
+
+  // Drag-and-drop reschedule: drop a post chip onto a day (month) or a day+hour
+  // slot (week). Keeps the original time of day unless a specific hour was
+  // dropped onto. Optimistic update with rollback on failure, through the same
+  // PATCH endpoint the detail drawer's "Save changes" uses.
+  const reschedule = useCallback(
+    async (id: string, day: Date, hour?: number) => {
+      const current = items ?? [];
+      const item = current.find((it) => it.id === id);
+      if (!item) return;
+      const orig = new Date(item.date);
+      const next = new Date(day);
+      if (typeof hour === "number") next.setHours(hour, 0, 0, 0);
+      else next.setHours(orig.getHours(), orig.getMinutes(), 0, 0);
+      const iso = next.toISOString();
+      if (iso === item.date) return;
+
+      setDragMsg(null);
+      setItems(current.map((it) => (it.id === id ? { ...it, date: iso } : it)));
+      try {
+        const res = await fetch(`/api/social/posts/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scheduleDate: iso }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setItems(current); // roll back
+          setDragMsg(j?.error || "Couldn't reschedule that post.");
+          return;
+        }
+        // Reload so a status change the server made (e.g. a failed post
+        // clearing back to draft once rescheduled) reflects immediately.
+        await load();
+      } catch {
+        setItems(current); // roll back
+        setDragMsg("Couldn't reschedule that post.");
+      }
+    },
+    [items, load],
+  );
+
   return (
     <div
       className="min-h-full text-slate-900"
@@ -204,7 +259,10 @@ export default function ContentCalendarPage() {
             </div>
             <button
               type="button"
-              onClick={() => setComposing(true)}
+              onClick={() => {
+                setComposerDate(null);
+                setComposerOpen(true);
+              }}
               className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white shadow-sm"
               style={{ backgroundColor: ACCENT }}
             >
@@ -287,6 +345,19 @@ export default function ContentCalendarPage() {
             </div>
           </div>
 
+          {dragMsg && (
+            <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {dragMsg}{" "}
+              <button
+                type="button"
+                onClick={() => setDragMsg(null)}
+                className="ml-1 font-medium underline"
+              >
+                Dismiss
+              </button>
+            </p>
+          )}
+
           <div className="mt-4">
             {error ? (
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
@@ -299,9 +370,23 @@ export default function ContentCalendarPage() {
             ) : items.length === 0 ? (
               <EmptyState />
             ) : view === "month" ? (
-              <MonthGrid cursor={cursor} byDay={byDay} today={today} onSelect={setSelected} />
+              <MonthGrid
+                cursor={cursor}
+                byDay={byDay}
+                today={today}
+                onSelect={setSelected}
+                onCreateAt={openComposerAt}
+                onDropAt={(id, date) => void reschedule(id, date)}
+              />
             ) : (
-              <WeekGrid cursor={cursor} byDay={byDay} today={today} onSelect={setSelected} />
+              <WeekGrid
+                cursor={cursor}
+                byDay={byDay}
+                today={today}
+                onSelect={setSelected}
+                onCreateAt={openComposerAt}
+                onDropAt={(id, date, hour) => void reschedule(id, date, hour)}
+              />
             )}
           </div>
         </DashCard>
@@ -324,11 +409,12 @@ export default function ContentCalendarPage() {
         />
       )}
 
-      {composing && (
+      {composerOpen && (
         <SocialComposerDrawer
           topic="New post"
           drafts={[]}
-          onClose={() => setComposing(false)}
+          initialDate={composerDate}
+          onClose={() => setComposerOpen(false)}
           onScheduled={() => {
             void load();
           }}
@@ -357,7 +443,21 @@ function EmptyState() {
   );
 }
 
-function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: CalendarItem) => void }) {
+function PostChip({
+  item,
+  onSelect,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragEnd,
+}: {
+  item: CalendarItem;
+  onSelect: (i: CalendarItem) => void;
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: (e: DragEvent, item: CalendarItem) => void;
+  onDragEnd?: () => void;
+}) {
   const ch = channelOf(item.platform);
   const scheduled = item.status === "scheduled";
   const failed = item.status === "failed";
@@ -366,9 +466,15 @@ function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
   return (
     <button
       type="button"
-      onClick={() => onSelect(item)}
-      className="block w-full text-left"
-      title={`${ch.label} · ${item.status} — click to view / edit\n${item.body}`}
+      draggable={draggable}
+      onDragStart={draggable ? (e) => onDragStart?.(e, item) : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(item);
+      }}
+      className={`block w-full text-left ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${dragging ? "opacity-40" : ""}`}
+      title={`${ch.label} · ${item.status} — click to view / edit, drag to reschedule\n${item.body}`}
     >
       <span
         className={`flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${
@@ -395,21 +501,38 @@ function PostChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
   );
 }
 
+/** A day cell in the past can't be created into or dropped onto — Ayrshare
+ *  won't schedule a post for a moment that's already gone. */
+function isPastDay(d: Date, today: Date): boolean {
+  return ymd(d) < ymd(today);
+}
+
+/** Reads the dragged post's id off a drop event, set by a chip's onDragStart. */
+function draggedId(e: DragEvent): string {
+  return e.dataTransfer.getData("text/plain");
+}
+
 function MonthGrid({
   cursor,
   byDay,
   today,
   onSelect,
+  onCreateAt,
+  onDropAt,
 }: {
   cursor: Date;
   byDay: Map<string, CalendarItem[]>;
   today: Date;
   onSelect: (item: CalendarItem) => void;
+  onCreateAt: (date: Date) => void;
+  onDropAt: (id: string, date: Date) => void;
 }) {
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = startOfWeek(first);
   // Always render 6 weeks (42 cells) for a stable height.
   const cells = Array.from({ length: 42 }, (_, i) => new Date(gridStart.getTime() + i * DAY_MS));
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   return (
     <div className="overflow-hidden rounded-lg border border-[#e2e8f0]">
@@ -424,12 +547,37 @@ function MonthGrid({
         {cells.map((d, i) => {
           const inMonth = d.getMonth() === cursor.getMonth();
           const isToday = sameDay(d, today);
+          const past = isPastDay(d, today);
           const posts = byDay.get(ymd(d)) ?? [];
+          const key = ymd(d);
+          const isDragOver = dragOver === key && !past;
           return (
             <div
               key={i}
-              className="min-h-[104px] border-b border-r border-[#e2e8f0] p-1.5 last:border-r-0"
-              style={{ backgroundColor: inMonth ? "#fff" : "#f8fafc" }}
+              onClick={() => !past && onCreateAt(d)}
+              onDragOver={(e) => {
+                if (past) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDragOver(key);
+              }}
+              onDragLeave={() => setDragOver((k) => (k === key ? null : k))}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(null);
+                if (past) return;
+                const id = draggedId(e);
+                if (id) onDropAt(id, d);
+              }}
+              className={`min-h-[104px] border-b border-r border-[#e2e8f0] p-1.5 last:border-r-0 ${
+                past ? "cursor-not-allowed" : "cursor-pointer"
+              }`}
+              style={{
+                backgroundColor: isDragOver ? "#eff6ff" : inMonth ? "#fff" : "#f8fafc",
+                outline: isDragOver ? `2px dashed ${ACCENT}` : undefined,
+                outlineOffset: isDragOver ? "-2px" : undefined,
+              }}
+              title={past ? undefined : "Click to create a post on this day"}
             >
               <div className="mb-1 flex items-center justify-between">
                 <span
@@ -445,7 +593,19 @@ function MonthGrid({
               </div>
               <div className="space-y-1">
                 {posts.slice(0, 4).map((p) => (
-                  <PostChip key={p.id} item={p} onSelect={onSelect} />
+                  <PostChip
+                    key={p.id}
+                    item={p}
+                    onSelect={onSelect}
+                    draggable={p.status !== "published"}
+                    dragging={p.id === draggingId}
+                    onDragStart={(e, item) => {
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", item.id);
+                      setDraggingId(item.id);
+                    }}
+                    onDragEnd={() => setDraggingId(null)}
+                  />
                 ))}
                 {posts.length > 4 ? (
                   <span className="block px-1 text-[11px] text-slate-400">
@@ -466,14 +626,30 @@ function WeekGrid({
   byDay,
   today,
   onSelect,
+  onCreateAt,
+  onDropAt,
 }: {
   cursor: Date;
   byDay: Map<string, CalendarItem[]>;
   today: Date;
   onSelect: (item: CalendarItem) => void;
+  onCreateAt: (date: Date, hour?: number) => void;
+  onDropAt: (id: string, date: Date, hour?: number) => void;
 }) {
   const weekStart = startOfWeek(cursor);
   const days = Array.from({ length: 7 }, (_, i) => new Date(weekStart.getTime() + i * DAY_MS));
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const chipDragProps = (item: CalendarItem) => ({
+    draggable: item.status !== "published",
+    dragging: item.id === draggingId,
+    onDragStart: (e: DragEvent, it: CalendarItem) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", it.id);
+      setDraggingId(it.id);
+    },
+    onDragEnd: () => setDraggingId(null),
+  });
 
   // Bucket each day's posts by hour; anything outside the visible range → "other".
   const layout = days.map((d) => {
@@ -501,11 +677,16 @@ function WeekGrid({
           <div className="border-b border-[#e2e8f0]" />
           {days.map((d, i) => {
             const isToday = sameDay(d, today);
+            const past = isPastDay(d, today);
             return (
               <div
                 key={i}
-                className="border-b border-l border-[#e2e8f0] px-2 py-2 text-center text-xs"
+                onClick={() => !past && onCreateAt(d)}
+                className={`border-b border-l border-[#e2e8f0] px-2 py-2 text-center text-xs ${
+                  past ? "cursor-not-allowed" : "cursor-pointer"
+                }`}
                 style={isToday ? { backgroundColor: "#eff6ff" } : undefined}
+                title={past ? undefined : "Click to create a post on this day"}
               >
                 <div className="font-semibold text-slate-600">{WEEKDAYS[d.getDay()]}</div>
                 <div
@@ -525,13 +706,43 @@ function WeekGrid({
             <div className="border-b border-[#e2e8f0] px-2 py-2 text-right text-[11px] text-slate-400">
               Other
             </div>
-            {layout.map((c, i) => (
-              <div key={i} className="min-h-[40px] space-y-1 border-b border-l border-[#e2e8f0] p-1">
-                {c.other.map((p) => (
-                  <WeekChip key={p.id} item={p} onSelect={onSelect} />
-                ))}
-              </div>
-            ))}
+            {layout.map((c, i) => {
+              const past = isPastDay(c.date, today);
+              const key = `other-${ymd(c.date)}`;
+              const isDragOver = dragOver === key && !past;
+              return (
+                <div
+                  key={i}
+                  onClick={() => !past && onCreateAt(c.date)}
+                  onDragOver={(e) => {
+                    if (past) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOver(key);
+                  }}
+                  onDragLeave={() => setDragOver((k) => (k === key ? null : k))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(null);
+                    if (past) return;
+                    const id = draggedId(e);
+                    if (id) onDropAt(id, c.date);
+                  }}
+                  className={`min-h-[40px] space-y-1 border-b border-l border-[#e2e8f0] p-1 ${
+                    past ? "cursor-not-allowed" : "cursor-pointer"
+                  }`}
+                  style={{
+                    backgroundColor: isDragOver ? "#eff6ff" : undefined,
+                    outline: isDragOver ? `2px dashed ${ACCENT}` : undefined,
+                    outlineOffset: isDragOver ? "-2px" : undefined,
+                  }}
+                >
+                  {c.other.map((p) => (
+                    <WeekChip key={p.id} item={p} onSelect={onSelect} {...chipDragProps(p)} />
+                  ))}
+                </div>
+              );
+            })}
           </div>
         ) : null}
 
@@ -543,13 +754,38 @@ function WeekGrid({
             </div>
             {layout.map((c, i) => {
               const posts = c.byHour.get(h) ?? [];
+              const past = isPastDay(c.date, today);
+              const key = `${h}-${ymd(c.date)}`;
+              const isDragOver = dragOver === key && !past;
               return (
                 <div
                   key={i}
-                  className="min-h-[44px] space-y-1 border-b border-l border-[#e2e8f0] p-1"
+                  onClick={() => !past && onCreateAt(c.date, h)}
+                  onDragOver={(e) => {
+                    if (past) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOver(key);
+                  }}
+                  onDragLeave={() => setDragOver((k) => (k === key ? null : k))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(null);
+                    if (past) return;
+                    const id = draggedId(e);
+                    if (id) onDropAt(id, c.date, h);
+                  }}
+                  style={{
+                    backgroundColor: isDragOver ? "#eff6ff" : undefined,
+                    outline: isDragOver ? `2px dashed ${ACCENT}` : undefined,
+                    outlineOffset: isDragOver ? "-2px" : undefined,
+                  }}
+                  className={`min-h-[44px] space-y-1 border-b border-l border-[#e2e8f0] p-1 ${
+                    past ? "cursor-not-allowed" : "cursor-pointer"
+                  }`}
                 >
                   {posts.map((p) => (
-                    <WeekChip key={p.id} item={p} onSelect={onSelect} />
+                    <WeekChip key={p.id} item={p} onSelect={onSelect} {...chipDragProps(p)} />
                   ))}
                 </div>
               );
@@ -941,7 +1177,21 @@ function PostDetailDrawer({
   );
 }
 
-function WeekChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: CalendarItem) => void }) {
+function WeekChip({
+  item,
+  onSelect,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragEnd,
+}: {
+  item: CalendarItem;
+  onSelect: (i: CalendarItem) => void;
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: (e: DragEvent, item: CalendarItem) => void;
+  onDragEnd?: () => void;
+}) {
   const ch = channelOf(item.platform);
   const d = new Date(item.date);
   const failed = item.status === "failed";
@@ -950,9 +1200,15 @@ function WeekChip({ item, onSelect }: { item: CalendarItem; onSelect: (i: Calend
   return (
     <button
       type="button"
-      onClick={() => onSelect(item)}
-      className="block w-full text-left"
-      title={`${ch.label} · ${fmtTime(d)} · ${item.status} — click to view / edit\n${item.body}`}
+      draggable={draggable}
+      onDragStart={draggable ? (e) => onDragStart?.(e, item) : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(item);
+      }}
+      className={`block w-full text-left ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${dragging ? "opacity-40" : ""}`}
+      title={`${ch.label} · ${fmtTime(d)} · ${item.status} — click to view / edit, drag to reschedule\n${item.body}`}
     >
       <span
         className={`block truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${

@@ -223,8 +223,15 @@ function staggeredSlots(count: number): { date: string; time: string }[] {
   return slots;
 }
 
-/** Map the generated drafts onto per-network variations. */
-function buildVariations(drafts: RepurposeDraft[]): Map<NetworkKey, Variation> {
+/** Map the generated drafts onto per-network variations.
+ *  presetDate (YYYY-MM-DD), when given, pins every network to that day —
+ *  e.g. when opened by clicking a specific day on the Content Calendar —
+ *  instead of the default staggered-across-business-days slots. Each
+ *  network keeps its own default time so they don't literally collide. */
+function buildVariations(
+  drafts: RepurposeDraft[],
+  presetDate?: string | null,
+): Map<NetworkKey, Variation> {
   const byFormat = new Map(drafts.map((d) => [d.format, d]));
   const linkedin = byFormat.get("linkedin");
   const facebook = byFormat.get("facebook");
@@ -235,7 +242,10 @@ function buildVariations(drafts: RepurposeDraft[]): Map<NetworkKey, Variation> {
 
   // Staggered slots, one per network (KM + extra) in checklist order.
   const slots = staggeredSlots(KM_NETWORKS.length + EXTRA_NETWORKS.length);
-  const slot = (i: number) => slots[i] ?? { date: ymd(new Date()), time: "09:00" };
+  const slot = (i: number) => {
+    const s = slots[i] ?? { date: ymd(new Date()), time: "09:00" };
+    return presetDate ? { date: presetDate, time: s.time } : s;
+  };
 
   const v = new Map<NetworkKey, Variation>();
   v.set("linkedin", { key: "linkedin", copy: linkedin?.body ?? base, draftId: linkedin?.id ?? null, ...slot(0) });
@@ -267,16 +277,21 @@ function templateSeed(drafts: RepurposeDraft[]): string {
 export function SocialComposerDrawer({
   topic,
   drafts,
+  initialDate,
   onClose,
   onScheduled,
 }: {
   topic: string;
   drafts: RepurposeDraft[];
+  /** YYYY-MM-DD to preset every network's schedule date to — set when the
+   *  composer was opened by clicking a day (or day+hour) on the Content
+   *  Calendar rather than the toolbar's "+ Create post" button. */
+  initialDate?: string | null;
   onClose: () => void;
   onScheduled?: () => void;
 }) {
   const [variations, setVariations] = useState<Map<NetworkKey, Variation>>(() =>
-    buildVariations(drafts),
+    buildVariations(drafts, initialDate),
   );
   const [template, setTemplate] = useState<string>(() => templateSeed(drafts));
   const [selected, setSelected] = useState<Set<NetworkKey>>(
