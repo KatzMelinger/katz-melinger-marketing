@@ -171,18 +171,22 @@ values (
   array['salary threshold', 'exempt threshold', 'exemption threshold', 'exempt salary',
         'salary basis', 'salary level'],
   '12 NYCRR 142-2.14',
-  'The executive and administrative exemptions require a salary of at least 75 times the applicable minimum hourly wage.',
-  -- Left NULL on purpose. lib/current-facts.ts holds $1,199.10 and Diana's
-  -- review says the formula gives $1,200.00 — the two disagree, and which is
-  -- right is an attorney's call, not a migration's. The derivation below is
-  -- what makes R3 REPORT the disagreement instead of either figure silently
-  -- winning. Fill this in once it is settled.
-  null,
+  'The executive and administrative exemptions require a salary at the threshold New York publishes for the region, which the Department of Labor sets by regulation rather than by arithmetic.',
+  -- $1,199.10, confirmed by Kenneth 2026-09-10, and the reason there is no
+  -- derivation on this row.
+  --
+  -- Diana's review read the rule as "75 x the minimum wage", which would give
+  -- $1,200.00 against the $16.00 upstate rate. It does not: New York publishes
+  -- the figure, and the published figure is $1,199.10. The shorthand is close
+  -- enough to look like a formula and is not one.
+  --
+  -- So the derivation is deliberately absent. Recording it would make R3 raise
+  -- "the knowledge base disagrees with itself" on every draft that mentions the
+  -- threshold — a standing false alarm against a figure that is correct. The
+  -- derivation mechanism stays available for values that really are calculated.
+  '$1,199.10',
   'week',
-  '{"formula": "75 x the applicable minimum hourly wage",
-    "fromFactId": "ny-min-wage-upstate-2026",
-    "multiplier": 75,
-    "basis": "hour"}'::jsonb,
+  null,
   array['rest of the state', 'outside New York City', 'upstate'],
   'https://dol.ny.gov/minimum-wage-0'
 )
@@ -191,6 +195,10 @@ on conflict (tenant_id, topic, version) do update
       match_keywords = excluded.match_keywords,
       canonical_citation = excluded.canonical_citation,
       citation_says = excluded.citation_says,
+      -- current_value and derivation ARE updated here, so re-running this file
+      -- applies the 2026-09-10 correction to a database that already has the
+      -- earlier row.
+      current_value = excluded.current_value,
       value_unit = excluded.value_unit,
       derivation = excluded.derivation,
       required_qualifiers = excluded.required_qualifiers,
