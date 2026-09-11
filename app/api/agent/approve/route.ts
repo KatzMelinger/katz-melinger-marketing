@@ -30,6 +30,7 @@ import { recordAuditEvent } from "@/lib/content-findings-store";
 import { notifyDraftBlocked, notifyLegalReview } from "@/lib/content-notifications";
 import { runLegalCheck } from "@/lib/legal-verify";
 import { runTrapCheck } from "@/lib/trap-gate";
+import { runKbChecks } from "@/lib/legal-kb";
 import { checkBlogCannibalization } from "@/lib/blog-cannibalization";
 import { checkSocialCompliance } from "@/lib/social-compliance";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
@@ -452,7 +453,24 @@ async function approveContent(
       );
     }
 
-    let findings = traps.findings;
+    // Stage 2 of item 11 — the knowledge base. Deterministic like the traps,
+    // so it runs unflagged: every check is a lookup against a row an attorney
+    // can read, not a model call. Traps catch what has been wrong BEFORE; the
+    // base catches what is wrong against what is right, which is how the
+    // Article 6 citation gets caught the first time anyone writes it.
+    const kb = await runKbChecks(body, { tenantId });
+    if (kb.failed) {
+      return NextResponse.json(
+        {
+          error:
+            "The legal knowledge base could not be read, so this was not approved. Try again, or have an attorney clear it manually.",
+          status: draft.status,
+        },
+        { status: 503 },
+      );
+    }
+
+    let findings = [...traps.findings, ...kb.findings];
     let legalStats: Record<string, number> | null = null;
 
     if (legalAccuracyEnabled()) {
@@ -461,7 +479,7 @@ async function approveContent(
         // Merged, not synced separately: both write under source `legal`, and
         // a scoped sync auto-resolves anything in that source it was not
         // handed — so two calls would each close the other's findings.
-        findings = [...legal.findings, ...traps.findings];
+        findings = [...legal.findings, ...traps.findings, ...kb.findings];
         legalStats = legal.stats;
       } catch (e) {
         // The legal check failing must not silently approve. Hold the draft and
@@ -487,6 +505,9 @@ async function approveContent(
       draftId: id,
       ...(legalStats ?? {}),
       traps: traps.findings.length,
+      kb: kb.findings.length,
+      kbEntries: kb.stats.entries,
+      kbApplied: kb.stats.applied,
       authorityLoop: legalAccuracyEnabled() ? "on" : "off",
       critical: critical.length,
     });

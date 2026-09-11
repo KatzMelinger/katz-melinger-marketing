@@ -35,7 +35,8 @@ import {
   normalizeStringFindings,
   type NormalizedFinding,
 } from "./content-findings";
-import { syncFindings } from "./content-findings-store";
+import { listFindings, syncFindings } from "./content-findings-store";
+import { capSourceExpertise, coordinateFindings } from "./finding-coordination";
 import { notifyNewFindings } from "./content-notifications";
 import { ensureDraftMetadata } from "./draft-metadata";
 import { evaluateAiReadabilityRules } from "./readability-ai";
@@ -967,6 +968,40 @@ export async function analyzeDraft(args: {
   );
   const keptTitles = filtered.kept.map((k) => k.title);
 
+  // Item 11 / item 19 — CASH must not credit a citation the legal layer
+  // disputes.
+  //
+  // Source Expertise is scored by asking a model whether claims are grounded.
+  // A model can see that a citation is THERE; it cannot see that Article 6 is
+  // the wrong article for the overtime rule. So on the Unpaid Wages blog it
+  // credited the very citation the legal layer flagged, and the scorecard read
+  // better because of an error.
+  //
+  // Capped rather than zeroed: a draft with ten good sources and one disputed
+  // one has not become unsourced. What it must not do is read as well-sourced
+  // while a source it leans on is contested.
+  const priorFindings = await listFindings(draftId).catch(() => []);
+  const cashAdjusted = (() => {
+    const capped = capSourceExpertise(cash.breakdown.sourceExpertise, priorFindings);
+    if (!capped.capped || capped.score === null) return cash;
+    const b = { ...cash.breakdown, sourceExpertise: capped.score };
+    return {
+      ...cash,
+      breakdown: b,
+      // Re-weight with the capped figure so the headline score moves with it.
+      score: Math.round(
+        b.conversationalAuthority * 0.22 +
+          b.answerCompleteness * 0.3 +
+          b.sourceExpertise * 0.3 +
+          b.humanAttribution * 0.18,
+      ),
+      findings: [
+        ...cash.findings,
+        "[S] Source score capped: the legal layer has an open finding on a citation this draft relies on. A citation being present is not the same as being right.",
+      ],
+    };
+  })();
+
   const analysis: ContentAnalysis = {
     readability_score: readabilityScore,
     reading_grade_level: Math.round(grade * 10) / 10,
@@ -979,9 +1014,9 @@ export async function analyzeDraft(args: {
     aeo_findings: aeo.findings,
     brand_voice_score: brand.score,
     brand_voice_findings: brand.findings,
-    cash_score: cash.score,
-    cash_breakdown: cash.breakdown,
-    cash_findings: cash.findings,
+    cash_score: cashAdjusted.score,
+    cash_breakdown: cashAdjusted.breakdown,
+    cash_findings: cashAdjusted.findings,
     seo_score: seo.score,
     seo_breakdown: seo.breakdown,
     seo_findings: seo.findings,
@@ -1112,7 +1147,7 @@ export async function analyzeDraft(args: {
   // survive the next run. Best-effort: a findings failure must not fail the
   // analysis the caller actually asked for.
   try {
-    const tracked: NormalizedFinding[] = [
+    const raw: NormalizedFinding[] = [
       ...normalizeStringFindings("readability", analysis.readability_findings),
       ...normalizeStringFindings("seo", analysis.seo_findings),
       ...normalizeStringFindings("aeo", analysis.aeo_findings),
@@ -1121,6 +1156,27 @@ export async function analyzeDraft(args: {
       ...normalizeStringFindings("linkability", analysis.linkability_findings),
       ...normalizeComplianceFindings(analysis.compliance_violations),
     ];
+
+    // Item 19 — one concern, one engine. The style engines overlap heavily, so
+    // the same note arrives under three names and a reviewer fixes it once
+    // while two rows stay open describing the thing they just fixed.
+    //
+    // `existing` carries the legal and freshness findings the approval gate
+    // wrote on an earlier pass. They matter here: a citation concern defers to
+    // the legal layer whether or not legal raised anything in THIS run, and
+    // Readability stays quiet on a span that is about to change for a
+    // correctness reason.
+    // priorFindings was already read for the CASH cap above, and nothing has
+    // written findings since — one round trip, one consistent view.
+    const coordinated = coordinateFindings(raw, { existing: priorFindings });
+    if (coordinated.suppressed.length) {
+      logEvent("findings_coordinated", {
+        draftId,
+        suppressed: coordinated.suppressed.length,
+        concerns: [...new Set(coordinated.suppressed.map((s) => s.concern))],
+      });
+    }
+    const tracked = coordinated.findings;
     const summary = await syncFindings({ draftId, tenantId: tid, incoming: tracked });
     if (summary.inserted || summary.reopened || summary.autoResolved) {
       logEvent("findings_synced", {
