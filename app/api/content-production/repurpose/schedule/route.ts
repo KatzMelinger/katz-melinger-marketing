@@ -63,12 +63,23 @@ export async function POST(req: Request) {
     /** The composer already showed the duplicate alert and the user acknowledged
      *  it, so don't re-flag near-duplicates as needing review. */
     ackDuplicates?: boolean;
+    /**
+     * S11 Publish now: send to Ayrshare with no scheduleDate, so it goes out
+     * immediately instead of joining the queue. Every gate still applies — this
+     * changes WHEN, never WHETHER.
+     */
+    publishNow?: boolean;
   };
   // Draft-first: when asDraft, persist the posts as drafts on the Content
   // Calendar without touching Ayrshare. Approving a draft (from the calendar)
   // is what sends it to Ayrshare and flips it to scheduled. Default (false)
   // keeps the existing schedule-now behavior unchanged.
   const asDraft = body.asDraft === true;
+  // Publish now and save-as-draft are contradictory instructions. asDraft wins
+  // because it is the safer of the two: the cost of parking something that was
+  // meant to go out now is a click, and the cost of publishing something that
+  // was meant to be parked cannot be taken back.
+  const publishNow = body.publishNow === true && !asDraft;
   const incoming = Array.isArray(body.posts) ? body.posts : [];
   if (!incoming.length) {
     return NextResponse.json({ error: "no posts to schedule" }, { status: 400 });
@@ -136,7 +147,7 @@ export async function POST(req: Request) {
     platform: string;
     scheduleDate: string;
     ok: boolean;
-    status: "draft" | "scheduled" | "failed" | "flagged";
+    status: "draft" | "scheduled" | "published" | "failed" | "flagged";
     viaAyrshare: boolean;
     error?: string;
   }[] = [];
@@ -203,8 +214,14 @@ export async function POST(req: Request) {
         // If the chosen slot has already elapsed (e.g. a best-time slot picked
         // earlier the same day), publish now rather than sending Ayrshare a past
         // date it would reject and strand as "failed".
+        // Publish now (S11) omits the date outright; otherwise an already-elapsed
+        // slot (a best-time slot picked earlier the same day) also publishes
+        // immediately rather than being sent to Ayrshare as a past date it
+        // would reject and strand as "failed".
         const futureAt =
-          new Date(p.scheduleDate).getTime() > Date.now() ? p.scheduleDate : undefined;
+          !publishNow && new Date(p.scheduleDate).getTime() > Date.now()
+            ? p.scheduleDate
+            : undefined;
         const res = await postToAyrshare({
           apiKey,
           profileKey: ayrshareProfileKey,
@@ -240,13 +257,18 @@ export async function POST(req: Request) {
     //     instead of dropping it on the floor.
     // Failed when Ayrshare rejected it, or we blocked it as a guaranteed fail.
     // A planned post (no Ayrshare) with no block stays "scheduled".
-    const status: "draft" | "scheduled" | "failed" | "flagged" = flagged
+    // "published" only when Ayrshare actually took it — a Publish now with no
+    // Ayrshare connection is a planned post like any other, and recording it as
+    // published would put a post on the calendar that never went anywhere.
+    const status: "draft" | "scheduled" | "published" | "failed" | "flagged" = flagged
       ? "flagged"
       : asDraft
         ? "draft"
         : error
           ? "failed"
-          : "scheduled";
+          : publishNow && viaAyrshare
+            ? "published"
+            : "scheduled";
     // A flagged post carries the reason in last_error so the calendar can show
     // why it's held; a real publish error carries the Ayrshare reason.
     const flagReasons = [...gate.reasons];
@@ -272,7 +294,7 @@ export async function POST(req: Request) {
       post_url: postUrl,
       status,
       scheduled_at: p.scheduleDate,
-      published_at: null,
+      published_at: status === "published" ? new Date().toISOString() : null,
       source_draft_id: p.draftId ?? null,
       last_error: lastError,
       media_urls: mediaUrls.length ? mediaUrls : null,

@@ -34,6 +34,7 @@ import {
   logCacheUsage,
 } from "./anthropic";
 import { stripEmDashes, hasEmDash } from "./sanitize-content";
+import type { RewriteReason } from "./social-rewrite-reasons";
 import { isSensitiveTopic, sensitiveToneBlock } from "./sensitive-topic";
 import { checkMonthlyDuplicates, type AngleConflict } from "./social-duplicate";
 import { AD_TERMS_RULE } from "./ad-terms";
@@ -408,4 +409,138 @@ ${AD_TERMS_RULE}`;
   }
 
   return { batch_id: batchRow.id as string, drafts };
+}
+
+/* -------------------------------------------------------------------------- */
+/* S12 — Rewrite / More engaging / Change CTA                                 */
+/* -------------------------------------------------------------------------- */
+
+// The reason vocabulary lives in lib/social-rewrite-reasons.ts so the composer
+// (a client component) can import the labels without pulling this module's
+// Anthropic SDK and service-role Supabase client into the browser bundle.
+export type { RewriteReason } from "./social-rewrite-reasons";
+
+const REWRITE_INSTRUCTION: Record<RewriteReason, string> = {
+  new_angle:
+    "Take a DIFFERENT angle on the same source. Not a reworded version of the draft below — a " +
+    "different single idea drawn from the source, with its own hook. If the current draft explains " +
+    "a deadline, try the test, or the exception, or what the reader should do first.",
+  stronger_hook:
+    "Keep the same angle. Make the HOOK land harder: the first line must stop someone scrolling. " +
+    "Use a sharper hook formula than the current one — a concrete number, a specific scenario, a " +
+    "myth the reader believes, or a question they are already asking. Tighten the body to match; " +
+    "do not just swap the first sentence onto the same paragraph.",
+  change_cta:
+    "Keep the angle and the body. Replace the closing CTA with the one specified below, and adjust " +
+    "only the sentences needed to make it read naturally.",
+};
+
+/**
+ * Generate one more version of a single variation (Diana's item 16).
+ *
+ * The composer produced one variation per platform and the reviewer could
+ * accept, edit, or schedule it — nothing else. Three buttons change that, and
+ * the third argument is what makes them worth pressing.
+ *
+ * REJECTED VERSIONS ARE NEGATIVE CONTEXT, NOT HISTORY
+ *
+ * Every version the reviewer has already turned down goes into the prompt as
+ * text to avoid. Without that, "Rewrite" converges: the same source and the same
+ * instruction produce the same handful of angles, the reviewer presses it three
+ * times, gets the first draft back, and stops using the feature. This is the
+ * difference between a regenerate button and a useful one.
+ *
+ * The caps are enforced the same way generation enforces them — validate, then
+ * hard-trim as a floor — so a rewrite can never return copy that would be
+ * rejected for length after the reviewer accepted it.
+ */
+export async function rewriteSocialVariation(args: {
+  source: SocialSource;
+  format: SocialFormatKey;
+  currentText: string;
+  /** Versions already rejected, including the current one. Negative context. */
+  rejectedTexts?: string[];
+  reason: RewriteReason;
+  practiceArea?: string;
+  tenantId?: string;
+}): Promise<{ body: string; cta: CtaChoice | null }> {
+  if (!args.source?.text?.trim()) {
+    throw new Error("Rewriting needs the approved source this post came from.");
+  }
+
+  const tid = args.tenantId ?? (await resolveTenantId());
+  const [firm, skillsContext, operatingBrief, recentCtas] = await Promise.all([
+    getFirmContext(tid),
+    buildSkillsContext({ platforms: [args.format], practiceArea: args.practiceArea }, tid),
+    getOperatingBrief(tid),
+    loadRecentCtas(tid),
+  ]);
+
+  const system = `${buildSocialSystemPrompt(firm, skillsContext, operatingBrief)}
+
+${renderFirmFactsBlock()}
+
+${AD_TERMS_RULE}`;
+
+  const sensitive = isSensitiveTopic(args.source.title, args.source.text.slice(0, 2000));
+  const sensitiveBlock = sensitiveToneBlock(args.source.title, args.source.text.slice(0, 2000));
+
+  // Only "Change CTA" asks the decision engine for a new one; the other two
+  // keep whatever CTA the copy already carries, because changing it silently
+  // is not what either button says it does.
+  let cta: CtaChoice | null = null;
+  if (args.reason === "change_cta") {
+    cta = chooseCta({
+      intent: inferIntent({
+        clusterName: args.source.title,
+        primaryKeyword: args.source.title,
+        secondaryKeywords: [],
+      }),
+      sensitive,
+      platform: args.format,
+      recentByPlatform: recentCtas,
+    });
+  }
+
+  // Cap the negative context. A reviewer who has pressed Rewrite ten times does
+  // not need all ten in the prompt, and the most recent rejections are the ones
+  // that describe what they are steering away from.
+  const rejected = (args.rejectedTexts ?? [])
+    .map((t) => (t ?? "").trim())
+    .filter(Boolean)
+    .slice(-4);
+
+  const ctaLine = cta ? `\n    ${ctaInstruction(cta, operatingBrief.socialPhone)}` : "";
+  const avoidBlock = rejected.length
+    ? `\nThe reviewer has already REJECTED these versions. Do not reproduce them, and do not return
+a lightly reworded variant of any of them — the angle or the hook must genuinely differ:
+${rejected.map((t, i) => `--- rejected ${i + 1} ---\n${t.slice(0, 900)}`).join("\n")}\n`
+    : "";
+
+  const user = `${sensitiveBlock}${REWRITE_INSTRUCTION[args.reason]}
+
+SOURCE (${args.source.kind}): ${args.source.title}
+Practice area: ${args.practiceArea ?? "General"}
+"""
+${args.source.text.slice(0, 6000)}
+"""
+
+CURRENT DRAFT (the reviewer did not want this one):
+"""
+${args.currentText.slice(0, 2000)}
+"""
+${avoidBlock}
+Obey every hard cap for ${args.format} (${SOCIAL_CAPS[args.format].label}):
+    ${SOCIAL_CAPS[args.format].promptRules.join("\n    ")}${ctaLine}
+
+Return JSON only: { "formats": { "${args.format}": { "body": "..." } } }`;
+
+  const out = await callSocial(system, user);
+  let body = stripEmDashes(out.formats?.[args.format]?.body ?? "");
+  if (!body.trim()) throw new Error("The model returned no usable copy.");
+  // Same floor as generation: trim rather than hand back something over cap.
+  if (validateSocial(args.format, body).length) {
+    body = stripEmDashes(trimSocial(args.format, body));
+  }
+  return { body, cta };
 }

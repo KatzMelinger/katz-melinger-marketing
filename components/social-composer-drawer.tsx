@@ -34,6 +34,12 @@ import Link from "next/link";
 
 import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
 import { checkSocialCompliance, type ComplianceFlag } from "@/lib/social-compliance";
+import {
+  REWRITE_REASONS,
+  REWRITE_REASON_HINT,
+  REWRITE_REASON_LABEL,
+  type RewriteReason,
+} from "@/lib/social-rewrite-reasons";
 import { bestSlot, nyWallClockToUtc } from "@/lib/social-best-time";
 import type { AngleConflict } from "@/lib/social-duplicate";
 
@@ -115,6 +121,24 @@ type Slide = { n: number; headline: string; url: string };
  *  pushed into the variation's mediaUrls so it flows to Ayrshare. */
 type UploadedAsset = { url: string; kind: "image" | "video"; filename: string };
 
+/**
+ * One generated version of a variation's copy (S12, item 16).
+ *
+ * Versions live in memory only, until the reviewer schedules one. That is what
+ * makes reverting free — a version they turned down never became a row anyone
+ * has to clean up later — and it is why `rejectedIds` is the interesting field:
+ * the rejected TEXT goes back into the next prompt as negative context, so
+ * pressing Rewrite three times gives three different angles instead of the
+ * first one again.
+ */
+type CopyVersion = {
+  id: string;
+  text: string;
+  createdAt: string;
+  /** "original" for the generated copy, otherwise which button made it. */
+  source: "original" | RewriteReason;
+};
+
 type Variation = {
   key: NetworkKey;
   /** Chosen post format for this platform (4A). Unset = the network's default. */
@@ -141,7 +165,27 @@ type Variation = {
   reelScript?: { hook: string; body: string; cta: string };
   scriptBusy?: boolean;
   scriptMsg?: string | null;
+  /** S12 — every version generated for this platform, oldest first. */
+  versions?: CopyVersion[];
+  activeVersionId?: string | null;
+  /** Versions the reviewer moved away from. Fed to the next prompt to avoid. */
+  rejectedIds?: string[];
+  rewriteBusy?: RewriteReason | null;
+  rewriteMsg?: string | null;
 };
+
+let versionSeq = 0;
+const newVersionId = () => `v${++versionSeq}`;
+
+/** Seed a variation's version list with the copy it was generated with. */
+function seedVersions(copy: string): Pick<Variation, "versions" | "activeVersionId" | "rejectedIds"> {
+  const id = newVersionId();
+  return {
+    versions: [{ id, text: copy, createdAt: new Date().toISOString(), source: "original" }],
+    activeVersionId: id,
+    rejectedIds: [],
+  };
+}
 
 /** Human label for a duplicate/angle conflict, naming the matching post. */
 function conflictLabel(c: AngleConflict): string {
@@ -238,22 +282,23 @@ function buildVariations(drafts: RepurposeDraft[]): Map<NetworkKey, Variation> {
   const slot = (i: number) => slots[i] ?? { date: ymd(new Date()), time: "09:00" };
 
   const v = new Map<NetworkKey, Variation>();
-  v.set("linkedin", { key: "linkedin", copy: linkedin?.body ?? base, draftId: linkedin?.id ?? null, ...slot(0) });
-  v.set("facebook", { key: "facebook", copy: facebook?.body ?? base, draftId: facebook?.id ?? null, ...slot(1) });
+  v.set("linkedin", { key: "linkedin", copy: linkedin?.body ?? base, draftId: linkedin?.id ?? null, ...slot(0), ...seedVersions(linkedin?.body ?? base) });
+  v.set("facebook", { key: "facebook", copy: facebook?.body ?? base, draftId: facebook?.id ?? null, ...slot(1), ...seedVersions(facebook?.body ?? base) });
   v.set("instagram", {
     key: "instagram",
     copy: instagram?.body ?? base,
     carouselScript: carousel?.body,
     draftId: instagram?.id ?? null,
     ...slot(2),
+    ...seedVersions(instagram?.body ?? base),
   });
-  v.set("gmb", { key: "gmb", copy: seedGmb(base), draftId: null, ...slot(3) });
-  v.set("tiktok", { key: "tiktok", copy: video?.body ?? "", isScript: true, draftId: null, ...slot(4) });
+  v.set("gmb", { key: "gmb", copy: seedGmb(base), draftId: null, ...slot(3), ...seedVersions(seedGmb(base)) });
+  v.set("tiktok", { key: "tiktok", copy: video?.body ?? "", isScript: true, draftId: null, ...slot(4), ...seedVersions(video?.body ?? "") });
   // Extra networks (Threads / Pinterest / YouTube) are seeded too, so choosing
   // one from "+ add network" opens an editable, schedulable tab rather than an
   // inert empty one. They start from the base message and default to unselected.
   EXTRA_NETWORKS.forEach((n, i) => {
-    v.set(n.key, { key: n.key, copy: base, draftId: null, ...slot(KM_NETWORKS.length + i) });
+    v.set(n.key, { key: n.key, copy: base, draftId: null, ...slot(KM_NETWORKS.length + i), ...seedVersions(base) });
   });
   return v;
 }
@@ -498,6 +543,93 @@ export function SocialComposerDrawer({
       return next;
     });
 
+  // ---- S12: Rewrite / More engaging / Change CTA ---------------------------
+
+  /**
+   * Ask for another version of one platform's copy.
+   *
+   * Every version the reviewer has moved away from is sent along as negative
+   * context. Without it the same source and the same instruction converge:
+   * press Rewrite three times, get the first draft back, stop using the button.
+   */
+  const requestRewrite = async (key: NetworkKey, reason: RewriteReason) => {
+    const v = variations.get(key);
+    if (!v?.copy?.trim()) return;
+    if (!v.draftId) {
+      patchVar(key, { rewriteMsg: "This platform has no source draft to rewrite from." });
+      return;
+    }
+    patchVar(key, { rewriteBusy: reason, rewriteMsg: null });
+    try {
+      const versions = v.versions ?? [];
+      const rejectedIds = new Set(v.rejectedIds ?? []);
+      // The copy on screen counts as rejected too — they are asking to move off it.
+      const rejectedTexts = [
+        ...versions.filter((ver) => rejectedIds.has(ver.id)).map((ver) => ver.text),
+        v.copy,
+      ];
+      const res = await fetch("/api/content-production/social/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId: v.draftId,
+          // NetworkKey -> SocialFormatKey. Only the three platforms seeded from
+          // their own generated draft can rewrite; the rest carry no draftId and
+          // are disabled in the UI before reaching here.
+          format: v.key === "tiktok" ? "video_short" : v.key,
+          currentText: v.copy,
+          rejectedTexts,
+          reason,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.body) {
+        patchVar(key, { rewriteBusy: null, rewriteMsg: j?.error || "Couldn't generate another version." });
+        return;
+      }
+      const prev = v.versions?.find((ver) => ver.id === v.activeVersionId);
+      const version: CopyVersion = {
+        id: newVersionId(),
+        text: j.body as string,
+        createdAt: new Date().toISOString(),
+        source: reason,
+      };
+      patchVar(key, {
+        copy: version.text,
+        versions: [...(v.versions ?? []), version],
+        activeVersionId: version.id,
+        // The version they moved off is now rejected, so the next request steers
+        // away from it as well.
+        rejectedIds: prev ? [...new Set([...(v.rejectedIds ?? []), prev.id])] : v.rejectedIds,
+        rewriteBusy: null,
+        rewriteMsg: null,
+      });
+    } catch {
+      patchVar(key, { rewriteBusy: null, rewriteMsg: "Couldn't generate another version." });
+    }
+  };
+
+  /**
+   * Go back to a version. Reverting UN-rejects it — the reviewer has changed
+   * their mind, and continuing to tell the model to avoid the copy they just
+   * chose would be actively wrong.
+   */
+  const revertVersion = (key: NetworkKey, versionId: string) => {
+    const v = variations.get(key);
+    const target = v?.versions?.find((ver) => ver.id === versionId);
+    if (!v || !target) return;
+    const prev = v.versions?.find((ver) => ver.id === v.activeVersionId);
+    const rejected = new Set(v.rejectedIds ?? []);
+    if (prev && prev.id !== versionId) rejected.add(prev.id);
+    rejected.delete(versionId);
+    patchVar(key, {
+      copy: target.text,
+      activeVersionId: versionId,
+      rejectedIds: [...rejected],
+      rewriteMsg: null,
+    });
+  };
+
   // Fill this network's slot with its recommended best time (Phase-1 static
   // benchmark per platform). No-op for a network without a suggestion.
   const applyBestTime = (key: NetworkKey) => {
@@ -627,13 +759,26 @@ export function SocialComposerDrawer({
   // Approve & schedule — gated on legal review + zero blocking flags. Reuses the
   // existing schedule route (unchanged Ayrshare path). Nothing publishes here on
   // its own; posts land on the Content Calendar at their scheduled time.
-  const schedule = async () => {
+  const schedule = async (publishNow = false) => {
     if (!legalOk || blockedNets.length > 0 || mediaMissingNets.length > 0) return;
     if (duplicateNets.length > 0 && !dupAck) return;
     const posts = buildPosts(true);
     if (!posts.length) {
       setResult({ tone: "warn", text: "Nothing ready to schedule — add copy (and a valid time) to a platform.", recorded: false });
       return;
+    }
+
+    // S11 — Publish now goes out immediately and cannot be recalled, so it is
+    // the one action here that asks first. Every gate above still applies: this
+    // confirm is about timing, not about bypassing a check.
+    if (publishNow) {
+      const names = selectedList.map((n) => n.label).join(", ");
+      const ok = window.confirm(
+        `Publish to ${names} right now?
+
+This posts immediately instead of waiting for the scheduled time. It cannot be undone from here.`,
+      );
+      if (!ok) return;
     }
 
     setBusy(true);
@@ -643,7 +788,7 @@ export function SocialComposerDrawer({
       const res = await fetch("/api/content-production/repurpose/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posts, ackDuplicates: dupAck }),
+        body: JSON.stringify({ posts, ackDuplicates: dupAck, publishNow }),
       });
       const j = await res.json();
       if (!res.ok) {
@@ -662,7 +807,11 @@ export function SocialComposerDrawer({
       setPostErrors(errs);
       const failed = (j.failed ?? 0) as number;
       const flagged = (j.flagged ?? 0) as number;
-      setResult({ tone: failed > 0 || flagged > 0 ? "warn" : "ok", text: j.message || "Scheduled.", recorded: !!j.ok });
+      setResult({
+        tone: failed > 0 || flagged > 0 ? "warn" : "ok",
+        text: j.message || (publishNow ? "Published." : "Scheduled."),
+        recorded: !!j.ok,
+      });
       onScheduled?.();
     } catch {
       setResult({ tone: "warn", text: "Scheduling failed.", recorded: false });
@@ -879,6 +1028,69 @@ export function SocialComposerDrawer({
                 </span>
                 <span>{activeTags.length} / 30 hashtags</span>
               </div>
+
+              {/* S12 — another version of this platform's copy. Not on the
+                  Template tab: there is no single platform to rewrite for, and
+                  no source draft behind it. */}
+              {active !== "template" && activeVar && (
+                <div className="mt-2 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {REWRITE_REASONS.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        title={
+                          activeVar.draftId
+                            ? REWRITE_REASON_HINT[r]
+                            : "Rewriting needs the approved source this post came from, and this platform was seeded from the shared message rather than its own draft."
+                        }
+                        disabled={
+                          !!activeVar.rewriteBusy || !activeVar.copy?.trim() || !activeVar.draftId
+                        }
+                        onClick={() => void requestRewrite(activeVar.key, r)}
+                        className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {activeVar.rewriteBusy === r ? "Writing…" : REWRITE_REASON_LABEL[r]}
+                      </button>
+                    ))}
+                    {(activeVar.versions?.length ?? 0) > 1 && (
+                      <span className="ml-1 text-xs text-slate-400">
+                        {activeVar.versions?.length} versions
+                      </span>
+                    )}
+                  </div>
+
+                  {activeVar.rewriteMsg && (
+                    <p className="text-xs text-amber-700">{activeVar.rewriteMsg}</p>
+                  )}
+
+                  {/* Version history. Every version stays revertable — the point
+                      of generating alternatives is being able to go back to the
+                      one that was better. */}
+                  {(activeVar.versions?.length ?? 0) > 1 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {activeVar.versions?.map((ver, i) => {
+                        const isActive = ver.id === activeVar.activeVersionId;
+                        return (
+                          <button
+                            key={ver.id}
+                            type="button"
+                            onClick={() => revertVersion(activeVar.key, ver.id)}
+                            title={ver.text.slice(0, 140)}
+                            className={`rounded px-1.5 py-0.5 text-[10px] ${
+                              isActive
+                                ? "bg-brand text-white"
+                                : "border border-slate-300 text-slate-600 hover:border-brand hover:text-brand"
+                            }`}
+                          >
+                            {i === 0 ? "Original" : `v${i + 1} · ${REWRITE_REASON_LABEL[ver.source as RewriteReason]}`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Compliance flags for the active variation — blocks scheduling. */}
               {activeFlags.length > 0 && (
@@ -1201,7 +1413,19 @@ export function SocialComposerDrawer({
                     {draftBusy ? "Saving…" : "Save as draft"}
                   </button>
                   <button
-                    onClick={schedule}
+                    onClick={() => void schedule(true)}
+                    disabled={!canApprove || busy}
+                    title={
+                      canApprove
+                        ? "Publish immediately instead of waiting for the scheduled time."
+                        : "Clear the gate first — Publish now does not skip any check."
+                    }
+                    className="rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand hover:bg-brand/5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Publish now
+                  </button>
+                  <button
+                    onClick={() => void schedule(false)}
                     disabled={!canApprove}
                     title={
                       blockedNets.length > 0
@@ -1221,7 +1445,8 @@ export function SocialComposerDrawer({
                 </div>
               </div>
               <p className="mt-2 text-xs text-slate-400">
-                Nothing publishes automatically. Posts stay a draft on the Content Calendar until their scheduled time.
+                Nothing publishes automatically. Posts stay a draft on the Content Calendar until their
+                scheduled time — except “Publish now”, which asks first and then posts immediately.
               </p>
             </section>
           </div>
