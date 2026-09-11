@@ -42,17 +42,55 @@ export type FindingSource =
  */
 export type FindingSeverity = "critical" | "important" | "advisory";
 
-export type FindingStatus = "open" | "in_progress" | "resolved" | "dismissed";
+/**
+ * `resolved` and `resolved_by_edit` are both closed, and they are not the same
+ * event (Diana item 12).
+ *
+ *   resolved          a person clicked Resolve. The text may be identical.
+ *   resolved_by_edit  the check stopped reporting it — only a content change
+ *                     does that, so the problem is genuinely gone.
+ *   dismissed         a person chose to stop seeing it. Never raised again.
+ *
+ * One `resolved` was carrying the first two, which made "is this actually
+ * fixed" unanswerable — and that is the number that says whether the checker is
+ * worth trusting.
+ */
+export type FindingStatus =
+  | "open"
+  | "in_progress"
+  | "resolved"
+  | "resolved_by_edit"
+  | "dismissed";
 
 export const FINDING_STATUSES: readonly FindingStatus[] = [
+  "open",
+  "in_progress",
+  "resolved",
+  "resolved_by_edit",
+  "dismissed",
+] as const;
+
+export function isFindingStatus(v: unknown): v is FindingStatus {
+  return typeof v === "string" && (FINDING_STATUSES as readonly string[]).includes(v);
+}
+
+/**
+ * Statuses a PERSON may set from the panel.
+ *
+ * resolved_by_edit is deliberately absent: it is a fact the reconciler observes
+ * (the check fell silent), never a claim someone makes about their own edit.
+ * Letting it be set by hand would put back exactly the ambiguity it exists to
+ * remove.
+ */
+export const MANUAL_FINDING_STATUSES: readonly FindingStatus[] = [
   "open",
   "in_progress",
   "resolved",
   "dismissed",
 ] as const;
 
-export function isFindingStatus(v: unknown): v is FindingStatus {
-  return typeof v === "string" && (FINDING_STATUSES as readonly string[]).includes(v);
+export function isManualFindingStatus(v: unknown): v is FindingStatus {
+  return typeof v === "string" && (MANUAL_FINDING_STATUSES as readonly string[]).includes(v);
 }
 
 /**
@@ -349,7 +387,10 @@ export function reconcileFindings(
     const prior = byFingerprint.get(finding.fingerprint);
     if (!prior) {
       result.insert.push(finding);
-    } else if (prior.status === "resolved") {
+    } else if (prior.status === "resolved" || prior.status === "resolved_by_edit") {
+      // Both closed-as-fixed states re-open: the check is reporting it again,
+      // so whatever closed it did not hold. `dismissed` deliberately does not —
+      // that is a standing decision to stop seeing this.
       result.reopen.push({ id: prior.id, finding });
     } else {
       result.touch.push({ id: prior.id, finding });

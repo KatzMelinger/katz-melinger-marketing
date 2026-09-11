@@ -11,13 +11,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { isFindingStatus } from "@/lib/content-findings";
+import { isManualFindingStatus } from "@/lib/content-findings";
 import {
   listAuditEvents,
   listFindings,
   recordAuditEvent,
   setFindingStatus,
 } from "@/lib/content-findings-store";
+import { getSeverityOverrides } from "@/lib/finding-severity-store";
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
@@ -34,7 +35,7 @@ export async function GET(
 
   // Ownership check through the RLS-scoped client: a draft from another tenant
   // reads as missing, so findings cannot be enumerated across tenants.
-  const { supabase } = await getTenantClient();
+  const { supabase, tenantId } = await getTenantClient();
   const { data: draft } = await supabase
     .from("content_drafts")
     .select("id")
@@ -42,8 +43,15 @@ export async function GET(
     .maybeSingle();
   if (!draft) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [findings, audit] = await Promise.all([listFindings(id), listAuditEvents(id)]);
-  return NextResponse.json({ findings, audit });
+  // The severity overrides ride along with the findings so the panel can
+  // classify without a second round trip — it cannot render a scorecard or a
+  // readiness count until it knows which rules are blockers (item 12).
+  const [findings, audit, severityOverrides] = await Promise.all([
+    listFindings(id),
+    listAuditEvents(id),
+    getSeverityOverrides(tenantId),
+  ]);
+  return NextResponse.json({ findings, audit, severityOverrides });
 }
 
 export async function PATCH(
@@ -62,7 +70,10 @@ export async function PATCH(
   };
   const findingId = typeof body.findingId === "string" ? body.findingId : "";
   if (!findingId) return NextResponse.json({ error: "findingId is required" }, { status: 400 });
-  if (!isFindingStatus(body.status)) {
+  // Manual statuses only. `resolved_by_edit` is a fact the reconciler observes
+  // when a check falls silent — never something a person may assert about their
+  // own edit, which would put back the ambiguity it exists to remove.
+  if (!isManualFindingStatus(body.status)) {
     return NextResponse.json(
       { error: "status must be one of: open, in_progress, resolved, dismissed" },
       { status: 400 },

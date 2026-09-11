@@ -1804,7 +1804,17 @@ export function DraftDrawer({
                 suggested titles/images/links, compliance, and overlap. */}
             {draft && (
               <div className="mt-4">
-                <FindingsPanel draftId={draft.id} nonce={findingsNonce} />
+                <FindingsPanel
+                  draftId={draft.id}
+                  nonce={findingsNonce}
+                  // Same Apply flow the analysis card uses, so a group fixed
+                  // from here goes through the identical review-and-accept
+                  // step rather than a second path that could diverge.
+                  onFixAll={(texts) => {
+                    if (unsavedEditGuard()) return;
+                    setApplyingFindings(texts);
+                  }}
+                />
               </div>
             )}
 

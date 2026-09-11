@@ -177,13 +177,17 @@ export async function syncFindings(args: {
         .eq("id", id);
     }
 
+    // resolved_by_edit, not resolved: a check only falls silent when the text
+    // it was pointing at changed, so this is the one closure that is evidence
+    // of an actual fix rather than a decision someone made (item 12).
     for (const stale of plan.autoResolve) {
       await sb
         .from("content_findings")
         .update({
-          status: "resolved",
+          status: "resolved_by_edit",
           resolved_at: now,
-          resolution_note: "Resolved automatically — the check no longer reports this.",
+          resolution: "fixed",
+          resolution_note: "The content changed and the check no longer reports this.",
           updated_at: now,
         })
         .eq("id", stale.id);
@@ -224,7 +228,10 @@ export async function setFindingStatus(args: {
 }): Promise<StoredFinding | null> {
   const sb = getSupabaseAdmin();
   const now = new Date().toISOString();
-  const closing = args.status === "resolved" || args.status === "dismissed";
+  const closing =
+    args.status === "resolved" ||
+    args.status === "resolved_by_edit" ||
+    args.status === "dismissed";
 
   const { data, error } = await sb
     .from("content_findings")
