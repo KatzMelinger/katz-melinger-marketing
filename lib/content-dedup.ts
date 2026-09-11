@@ -472,7 +472,47 @@ export type DuplicateGroup = {
   /** Semantic key the members collapse to — the conflict heading. */
   key: string;
   members: DuplicateMember[];
+  /**
+   * Which member to keep, if the user accepts the suggestion (item 20).
+   * Always one of `members`. See pickKeeper for how it is chosen.
+   */
+  suggestedKeeperId: string | null;
 };
+
+/**
+ * How far through the pipeline a status is. Higher wins.
+ *
+ * Furthest-along beats newest, which is the whole point: of two copies of the
+ * same post, the one someone has already reviewed and approved carries work
+ * that the fresher duplicate does not. Keeping the newer one because it is
+ * newer would throw that away — and it is exactly what would happen with a
+ * naive sort by created_at.
+ */
+const STATUS_PROGRESS: Record<string, number> = {
+  published: 6,
+  approved: 5,
+  review: 4,
+  needs_legal: 4,
+  draft: 3,
+  initial_review: 2,
+  brief: 1,
+  idea: 0,
+};
+
+/**
+ * The member to keep: furthest along the pipeline, then most recent.
+ *
+ * An unrecognised status sorts as if it were a plain draft rather than last —
+ * a status this table has not heard of is not evidence that the row is worth
+ * less, and treating it as such would quietly suggest deleting the wrong one.
+ */
+export function pickKeeper(members: readonly DuplicateMember[]): string | null {
+  if (!members.length) return null;
+  const progress = (m: DuplicateMember) =>
+    STATUS_PROGRESS[(m.status ?? "").toLowerCase()] ?? STATUS_PROGRESS.draft;
+  const time = (m: DuplicateMember) => (m.createdAt ? Date.parse(m.createdAt) || 0 : 0);
+  return [...members].sort((a, b) => progress(b) - progress(a) || time(b) - time(a))[0].id;
+}
 
 const SOURCE_LABEL: Record<DuplicateGroup["table"], string> = {
   draft: "Drafts",
@@ -557,6 +597,7 @@ export async function listContentDuplicates(tenantId: string): Promise<Duplicate
         href: `/content/drafts?id=${r.id}`,
         createdAt: r.created_at,
       })),
+      suggestedKeeperId: null,
     });
   }
   for (const [k, g] of groupsOf(briefs, (r) => semanticKey(r.primary_keyword || ""))) {
@@ -571,6 +612,7 @@ export async function listContentDuplicates(tenantId: string): Promise<Duplicate
         href: "/content/decisions",
         createdAt: r.created_at,
       })),
+      suggestedKeeperId: null,
     });
   }
   for (const [k, g] of groupsOf(pipeline, (r) => semanticKey(r.title || r.keywords || ""))) {
@@ -585,8 +627,13 @@ export async function listContentDuplicates(tenantId: string): Promise<Duplicate
         href: r.url || "/content-production",
         createdAt: r.created_at,
       })),
+      suggestedKeeperId: null,
     });
   }
+
+  // Fill in the keeper once, here, rather than in each branch — one rule for
+  // every table, and the three push sites cannot drift apart.
+  for (const g of out) g.suggestedKeeperId = pickKeeper(g.members);
 
   return out;
 }

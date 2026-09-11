@@ -237,6 +237,13 @@ export async function generateSocialPosts(args: {
   tenantId?: string;
   originSource?: string | null;
   originContext?: Record<string, unknown> | null;
+  /**
+   * Collision key for generation that must not run twice (item 7). A unique
+   * index on (tenant_id, idempotency_key) makes a concurrent second attempt
+   * fail at the database rather than producing a duplicate batch, so the
+   * caller must handle a unique violation — see lib/repurpose-idempotency.ts.
+   */
+  idempotencyKey?: string | null;
 }): Promise<SocialResult> {
   // Rule 1 — source required. A source-less post is a manual Content Studio
   // entry, not an AI generation. Fail loudly so the caller surfaces it.
@@ -330,10 +337,18 @@ ${AD_TERMS_RULE}`;
       formats: args.formats,
       source_id: args.source.id ?? null,
       tenant_id: tid,
+      ...(args.idempotencyKey ? { idempotency_key: args.idempotencyKey } : {}),
     })
     .select("id")
     .single();
-  if (batchErr) throw new Error(`Failed to create batch: ${batchErr.message}`);
+  // A unique violation here is the OTHER request winning the race, not a
+  // failure — rethrown with its code intact so the caller can recognise it and
+  // return the batch that already exists. See lib/repurpose-idempotency.ts.
+  if (batchErr) {
+    const err = new Error(`Failed to create batch: ${batchErr.message}`) as Error & { code?: string };
+    err.code = batchErr.code;
+    throw err;
+  }
 
   const drafts: SocialDraft[] = [];
   for (const format of args.formats) {
