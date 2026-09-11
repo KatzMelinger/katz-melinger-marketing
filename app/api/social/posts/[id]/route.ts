@@ -358,14 +358,41 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const apiKey = getAyrshareApiKey();
 
+  // Item 2 — rescheduling a FAILED post requeues it.
+  //
+  // A failed post keeps its slot on the calendar so the intent stays visible,
+  // but the failure is about the attempt, not the post: the number was wrong,
+  // the media was missing, Ayrshare was down. Moving it to a new day is the
+  // reviewer saying "try this again", and leaving it marked failed would mean
+  // the retry never happens — it would sit on the new date still failed.
+  //
+  // Back to `draft`, not straight to `scheduled`: a requeued post goes through
+  // the approval gate again like any other draft, so whatever held it the first
+  // time still gets a say.
+  const requeueFailed = row.status === "failed" && newDate !== undefined;
+
   // Planned post (never reached Ayrshare) → just update our row.
   if (!row.ayrshare_id || !apiKey) {
-    const { error } = await db
-      .from("social_posts")
-      .update({ content, scheduled_at: scheduledAt })
-      .eq("id", id);
+    const patch: Record<string, unknown> = { content, scheduled_at: scheduledAt };
+    if (requeueFailed) {
+      patch.status = "draft";
+      patch.last_error = null;
+    }
+    let { error } = await db.from("social_posts").update(patch).eq("id", id);
+    // Degrade if last_error isn't migrated, matching the clearFlag path above.
+    if (error && /last_error/i.test(error.message)) {
+      const rest = { ...patch };
+      delete rest.last_error;
+      ({ error } = await db.from("social_posts").update(rest).eq("id", id));
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, message: "Updated." });
+    return NextResponse.json({
+      ok: true,
+      message: requeueFailed
+        ? "Moved, and the failed post is a draft again — approve it to retry."
+        : "Updated.",
+      status: requeueFailed ? "draft" : row.status,
+    });
   }
 
   // Real scheduled post → reschedule = delete + recreate on Ayrshare.

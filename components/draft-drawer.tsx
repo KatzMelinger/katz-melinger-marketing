@@ -764,6 +764,92 @@ export function DraftDrawer({
     }
   };
 
+  // ---- Item 10: keep Word's structure ---------------------------------------
+
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  /**
+   * Paste from Word without flattening it.
+   *
+   * A paste carries BOTH text/html and text/plain. The browser's default uses
+   * the plain flavour, which is where the structure goes: Word's own headings
+   * arrive as ordinary lines, and the draft ends up with no H1 and its section
+   * titles inside paragraphs — exactly the Unpaid Wages draft.
+   *
+   * So when the clipboard has HTML, convert that instead. A plain-text paste is
+   * left entirely alone: someone pasting a URL or a sentence does not want it
+   * routed through a document importer.
+   */
+  const handleEditorPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const html = e.clipboardData?.getData("text/html");
+    if (!html?.trim() || importing) return;
+    e.preventDefault();
+
+    const target = e.currentTarget;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+
+    setImporting(true);
+    setImportMsg("Converting…");
+    try {
+      const fd = new FormData();
+      fd.append("html", html);
+      if (draft?.title) fd.append("fallbackTitle", draft.title);
+      const res = await fetch("/api/content/import-word", { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.markdown) {
+        // Fall back to the plain text rather than dropping the paste on the
+        // floor — a failed conversion must never lose what they copied.
+        const plain = e.clipboardData?.getData("text/plain") ?? "";
+        setEditBody((b) => b.slice(0, start) + plain + b.slice(end));
+        setImportMsg(j?.error ?? "Pasted as plain text — the conversion failed.");
+        return;
+      }
+      setEditBody((b) => b.slice(0, start) + (j.markdown as string) + b.slice(end));
+      const warnings = Array.isArray(j.warnings) ? (j.warnings as string[]) : [];
+      setImportMsg(
+        warnings.length
+          ? `Pasted with headings and lists kept. ${warnings.join(" ")}`
+          : "Pasted with headings, bold and lists kept.",
+      );
+    } catch {
+      const plain = e.clipboardData?.getData("text/plain") ?? "";
+      setEditBody((b) => b.slice(0, start) + plain + b.slice(end));
+      setImportMsg("Pasted as plain text — the conversion failed.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  /** Import a .docx outright — more reliable than the clipboard for a whole blog. */
+  const importWordFile = async (file: File) => {
+    setImporting(true);
+    setImportMsg("Reading the document…");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (draft?.title) fd.append("fallbackTitle", draft.title);
+      const res = await fetch("/api/content/import-word", { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.markdown) {
+        setImportMsg(j?.error ?? "Couldn't read that document.");
+        return;
+      }
+      setEditBody(j.markdown as string);
+      const warnings = Array.isArray(j.warnings) ? (j.warnings as string[]) : [];
+      setImportMsg(
+        warnings.length
+          ? `Imported. ${warnings.join(" ")} Nothing is saved until you save the draft.`
+          : "Imported with its headings, bold and lists. Nothing is saved until you save the draft.",
+      );
+    } catch {
+      setImportMsg("Couldn't read that document.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // Apply an internal link from the overlap check: turn the first plain-text
   // mention of `term` in the body into a markdown link to the existing page, so
   // the writer can "link, don't redefine" with one click. No AI step.
@@ -1306,7 +1392,32 @@ export function DraftDrawer({
                     {draft &&
                       (editing ? (
                         <div className="flex items-center gap-2">
-                          <button onClick={() => { setEditing(false); setEditBody(draft.body); }} className="text-xs text-slate-500 hover:text-slate-700">
+                          {/* Item 10 — the file route. More reliable than the
+                              clipboard for a whole blog: a .docx carries its
+                              real styles, while a paste carries whatever the
+                              browser chose to put on the clipboard. */}
+                          <label
+                            className={`cursor-pointer text-xs font-medium ${
+                              importing ? "text-slate-400" : "text-brand hover:underline"
+                            }`}
+                            title="Import a .docx, keeping its headings, bold and lists"
+                          >
+                            {importing ? "Importing…" : "Import Word"}
+                            <input
+                              type="file"
+                              accept=".docx"
+                              className="hidden"
+                              disabled={importing}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                // Reset first: choosing the same file twice in a
+                                // row fires no change event otherwise.
+                                e.target.value = "";
+                                if (f) void importWordFile(f);
+                              }}
+                            />
+                          </label>
+                          <button onClick={() => { setEditing(false); setEditBody(draft.body); setImportMsg(null); }} className="text-xs text-slate-500 hover:text-slate-700">
                             Cancel
                           </button>
                           <button onClick={saveBody} disabled={saving} className="text-xs font-medium text-brand hover:underline disabled:opacity-50">
@@ -1340,11 +1451,19 @@ export function DraftDrawer({
                       </button>
                     </div>
                   ) : editing ? (
-                    <textarea
-                      value={editBody}
-                      onChange={(e) => setEditBody(e.target.value)}
-                      className="h-[60vh] w-full resize-none px-4 py-3 font-mono text-sm leading-relaxed text-slate-800 focus:outline-none"
-                    />
+                    <div className="relative">
+                      <textarea
+                        value={editBody}
+                        onChange={(e) => setEditBody(e.target.value)}
+                        onPaste={handleEditorPaste}
+                        className="h-[60vh] w-full resize-none px-4 py-3 font-mono text-sm leading-relaxed text-slate-800 focus:outline-none"
+                      />
+                      {importMsg && (
+                        <p className="absolute bottom-2 left-4 right-4 rounded-md border border-slate-300 bg-white/95 px-2 py-1 text-[11px] text-slate-600 shadow-sm">
+                          {importMsg}
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <div
                       className={`max-h-[60vh] overflow-y-auto px-4 py-3 text-sm text-slate-800 ${PROSE_CLASS}`}

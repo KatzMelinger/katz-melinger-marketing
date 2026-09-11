@@ -30,6 +30,7 @@ import { recordAuditEvent } from "@/lib/content-findings-store";
 import { notifyDraftBlocked, notifyLegalReview } from "@/lib/content-notifications";
 import { runLegalCheck } from "@/lib/legal-verify";
 import { runTrapCheck } from "@/lib/trap-gate";
+import { checkBlogCannibalization } from "@/lib/blog-cannibalization";
 import { checkSocialCompliance } from "@/lib/social-compliance";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { syncFindings } from "@/lib/content-findings-store";
@@ -81,7 +82,7 @@ async function approveContent(
   // RLS scopes this read to the caller's tenant — a cross-tenant id returns null.
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("id, status, body, title, topic, format, practice_area, metadata")
+    .select("id, status, body, title, topic, format, practice_area, metadata, seo_brief")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -349,6 +350,71 @@ async function approveContent(
       },
       { status: 422 },
     );
+  }
+
+  // ITEM 17 — cannibalization, as a GATE rather than a note.
+  //
+  // The panel said "Cannibalization: Not checked" on every blog, and the code
+  // agreed: it was a checkbox a reviewer ticked, and `unchecked` is advisory by
+  // definition. So a blog could be written against the same Google query as a
+  // live service page and nothing would say so.
+  //
+  // Only blogs are gated. A service page is ALLOWED to own its commercial term
+  // — that is the arrangement being protected, not a violation of it.
+  {
+    const format = ((draft.format as string | null) ?? "blog").toLowerCase();
+    const isBlog = format === "blog" || format === "blog_post";
+    if (isBlog) {
+      const brief = (draft.seo_brief as { targetKeywords?: unknown } | null) ?? null;
+      const targetKeywords = Array.isArray(brief?.targetKeywords)
+        ? (brief.targetKeywords as unknown[]).filter((k): k is string => typeof k === "string")
+        : [];
+
+      const cannibal = await checkBlogCannibalization({
+        targetKeywords,
+        title: (draft.title as string | null) ?? (draft.topic as string | null) ?? null,
+      });
+
+      // Scoped to `seo` so this does not disturb the other engines' findings.
+      if (cannibal.status !== "unchecked") {
+        await syncFindings({
+          draftId: id,
+          tenantId,
+          incoming: cannibal.findings,
+          sources: ["seo"],
+        });
+      }
+
+      logEvent("cannibalization_check", {
+        draftId: id,
+        status: cannibal.status,
+        conflicts: cannibal.conflicts.length,
+        pagesScanned: cannibal.pagesScanned,
+      });
+
+      if (cannibal.status === "conflict") {
+        await setDraftStatus(supabase, tenantId, id, "review");
+        await recordAuditEvent({
+          tenantId,
+          draftId: id,
+          event: "draft_held_cannibalization",
+          detail: { conflicts: cannibal.conflicts.map((c) => ({ url: c.url, keyword: c.keyword })) },
+        });
+        return NextResponse.json(
+          {
+            error: `Held — ${cannibal.conflicts.length} keyword${
+              cannibal.conflicts.length === 1 ? "" : "s"
+            } already targeted by a live page. Reposition this draft to informational intent and link the owning page.`,
+            status: "review",
+            cannibalization: {
+              status: cannibal.status,
+              conflicts: cannibal.conflicts,
+            },
+          },
+          { status: 422 },
+        );
+      }
+    }
   }
 
   // THE LEGAL LAYER (Diana's A1). Two producers, one gate, run last because the
