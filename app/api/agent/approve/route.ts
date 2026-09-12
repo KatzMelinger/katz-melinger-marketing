@@ -180,6 +180,10 @@ async function approveContent(
       };
       const mergedMetadata = {
         ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+        // Overwritten on every hold attempt so the drawer always shows the
+        // CURRENT reason, not a stale one left over from an earlier gate that
+        // has since been fixed (metadata otherwise only ever grows).
+        held_reason: "freshness",
         freshness_gate: freshness,
       };
       await supabase
@@ -271,6 +275,7 @@ async function approveContent(
 
     const mergedMetadata = {
       ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+      held_reason: "compliance",
       compliance,
     };
     await supabase
@@ -339,9 +344,22 @@ async function approveContent(
           .slice(0, 5)
           .map((f) => `- ${f.title}: "${(f.excerpt ?? "").slice(0, 120)}"`)
           .join("\n");
+        const legalHold = {
+          stats: legal.stats,
+          critical: critical.map((f) => ({
+            title: f.title,
+            excerpt: f.excerpt,
+            source: f.sourceChecked,
+          })),
+        };
+        const mergedMetadata = {
+          ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+          held_reason: "legal",
+          legal_hold: legalHold,
+        };
         await supabase
           .from("content_drafts")
-          .update({ status: "needs_legal" })
+          .update({ status: "needs_legal", metadata: mergedMetadata })
           .eq("id", id)
           .eq("tenant_id", tenantId);
         await supabase
@@ -368,14 +386,7 @@ async function approveContent(
           {
             error: `Held for legal review — ${critical.length} claim(s) conflict with the authority they cite.`,
             status: "needs_legal",
-            legal: {
-              stats: legal.stats,
-              critical: critical.map((f) => ({
-                title: f.title,
-                excerpt: f.excerpt,
-                source: f.sourceChecked,
-              })),
-            },
+            legal: legalHold,
           },
           { status: 422 },
         );
@@ -415,6 +426,7 @@ async function approveContent(
       const pageLabel = conflict.page.pageType.replace("_", " ");
       const mergedMetadata = {
         ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+        held_reason: "cannibalization",
         cannibalization_conflict: conflict,
       };
       await supabase

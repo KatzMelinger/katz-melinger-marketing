@@ -1016,19 +1016,36 @@ export function DraftDrawer({
         setMsg("Approved — ready to publish.");
       } else if (res.status === 422) {
         setStatus("needs_legal");
-        if (data?.freshness) {
-          const n = data.freshness.outstanding?.length ?? 0;
-          setMsg(
-            data?.error ??
-              `Held for legal — ${n} time-sensitive figure${n === 1 ? "" : "s"} to resolve.`,
-          );
-        } else {
-          const n = data?.compliance?.violations?.length ?? 0;
-          setMsg(
-            data?.error ??
-              `Held by the compliance gate${n ? ` (${n} issue${n === 1 ? "" : "s"})` : ""}.`,
-          );
-        }
+        // Which gate held it, straight off the response shape — freshness,
+        // legal, and cannibalization each carry their own named field; only
+        // compliance doesn't, so it's the fallback. Stamped onto the local
+        // draft's metadata immediately so the "Held" panel shows the CURRENT
+        // reason and detail without waiting for a re-fetch.
+        const heldReason = data?.freshness
+          ? "freshness"
+          : data?.legal
+            ? "legal"
+            : data?.cannibalization
+              ? "cannibalization"
+              : "compliance";
+        setDraft((prev) =>
+          prev
+            ? {
+                ...prev,
+                metadata: {
+                  ...(prev.metadata ?? {}),
+                  held_reason: heldReason,
+                  ...(data?.freshness ? { freshness_gate: data.freshness } : {}),
+                  ...(data?.legal ? { legal_hold: data.legal } : {}),
+                  ...(data?.cannibalization
+                    ? { cannibalization_conflict: data.cannibalization }
+                    : {}),
+                  ...(data?.compliance ? { compliance: data.compliance } : {}),
+                },
+              }
+            : prev,
+        );
+        setMsg(data?.error ?? "Held — see the reason above.");
       } else {
         setMsg(data?.error ?? "Approve failed.");
       }
@@ -1087,13 +1104,27 @@ export function DraftDrawer({
     }
   };
 
-  // Compliance verdict the gate stored on the draft (shown when held).
-  const compliance = (draft?.metadata as Record<string, unknown> | undefined)
-    ?.compliance as
+  // Which gate held this draft, and that gate's detail — every hold-branch in
+  // /api/agent/approve stamps held_reason fresh on each attempt (never merged
+  // across attempts), so this always reflects the CURRENT reason, not a stale
+  // one left over from an earlier gate that has since been fixed. Falls back
+  // to "compliance" for rows held before held_reason existed.
+  const draftMetadata = (draft?.metadata as Record<string, unknown> | undefined) ?? {};
+  const heldReason = (draftMetadata.held_reason as string | undefined) ?? "compliance";
+  const compliance = draftMetadata.compliance as
     | {
         score?: number;
         violations?: { rule?: string; severity?: string; reason?: string }[];
       }
+    | undefined;
+  const freshnessHold = draftMetadata.freshness_gate as
+    | { outstanding?: { match?: string; status?: string; reason?: string }[] }
+    | undefined;
+  const legalHold = draftMetadata.legal_hold as
+    | { critical?: { title?: string; excerpt?: string; source?: string }[] }
+    | undefined;
+  const cannibalizationHold = draftMetadata.cannibalization_conflict as
+    | { keyword?: string; page?: { url?: string; title?: string; pageType?: string } }
     | undefined;
 
   // A long-form draft handed to the WordPress plugin (queued just now, or still
@@ -1421,13 +1452,52 @@ export function DraftDrawer({
                 {draft ? (
                   status === "needs_legal" ? (
                     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-                      <div className="text-sm font-semibold text-amber-900">Held by compliance</div>
+                      <div className="text-sm font-semibold text-amber-900">
+                        {heldReason === "freshness"
+                          ? "Held — time-sensitive figures"
+                          : heldReason === "legal"
+                            ? "Held — legal accuracy"
+                            : heldReason === "cannibalization"
+                              ? "Held — competes with an existing page"
+                              : "Held by compliance"}
+                      </div>
                       <p className="mt-0.5 text-xs text-amber-700">
-                        The compliance gate held this draft
-                        {typeof compliance?.score === "number" ? ` (score ${compliance.score})` : ""}.
-                        Edit it to compliance, then approve again.
+                        {heldReason === "freshness"
+                          ? "A time-sensitive figure needs resolving before this can approve — apply the current value or mark it verified in Content freshness below."
+                          : heldReason === "legal"
+                            ? "A claim in this draft conflicts with the authority it cites. Fix the claim, then approve again."
+                            : heldReason === "cannibalization"
+                              ? "This targets a keyword an existing page already owns — reposition it to an informational angle and link to that page instead, then approve again."
+                              : `The compliance gate held this draft${
+                                  typeof compliance?.score === "number" ? ` (score ${compliance.score})` : ""
+                                }. Edit it to compliance, then approve again.`}
                       </p>
-                      {compliance?.violations?.length ? (
+                      {heldReason === "freshness" && freshnessHold?.outstanding?.length ? (
+                        <ul className="mt-2 space-y-1">
+                          {freshnessHold.outstanding.slice(0, 5).map((f, i) => (
+                            <li key={i} className="text-[11px] text-amber-800">
+                              <span className="font-medium capitalize">{f.status ?? "issue"}:</span>{" "}
+                              {f.match}
+                              {f.reason ? ` — ${f.reason}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : heldReason === "legal" && legalHold?.critical?.length ? (
+                        <ul className="mt-2 space-y-1">
+                          {legalHold.critical.slice(0, 5).map((f, i) => (
+                            <li key={i} className="text-[11px] text-amber-800">
+                              <span className="font-medium">{f.title}:</span> “{f.excerpt}”
+                              {f.source ? ` (checked against ${f.source})` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : heldReason === "cannibalization" && cannibalizationHold ? (
+                        <p className="mt-2 text-[11px] text-amber-800">
+                          Targets <span className="font-medium">“{cannibalizationHold.keyword}”</span>,
+                          already owned by the {cannibalizationHold.page?.pageType?.replace("_", " ")}{" "}
+                          <span className="font-medium">{cannibalizationHold.page?.title}</span>.
+                        </p>
+                      ) : heldReason === "compliance" && compliance?.violations?.length ? (
                         <ul className="mt-2 space-y-1">
                           {compliance.violations.slice(0, 5).map((v, i) => (
                             <li key={i} className="text-[11px] text-amber-800">
