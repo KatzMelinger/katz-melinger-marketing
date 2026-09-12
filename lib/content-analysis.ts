@@ -910,6 +910,10 @@ export async function analyzeDraft(args: {
     tenantId,
     notify = true,
   } = args;
+  // The cannibalization gate at approval runs for blogs only — a service page
+  // is ALLOWED to own its commercial term. The scorecard tile below applies the
+  // same test, so it can never warn about a draft the gate would wave through.
+  const isBlogDraft = ["", "blog", "blog_post"].includes((format ?? "blog").toLowerCase().trim());
   const supabase = getSupabaseAdmin();
   const tid = tenantId ?? (await resolveTenantId());
 
@@ -981,20 +985,22 @@ export async function analyzeDraft(args: {
     // commercial-intent keyword counts as a conflict — an informational blog
     // covering a service page's subject is the intended arrangement, not a
     // finding. The catch is only for a totally unexpected throw.
-    checkBlogCannibalization({ targetKeywords, title: title ?? topic ?? null })
-      .then((r) =>
-        r.status === "conflict" && r.conflicts.length
-          ? {
-              keyword: r.conflicts[0].keyword,
-              page: {
-                url: r.conflicts[0].url,
-                title: r.conflicts[0].title,
-                pageType: r.conflicts[0].pageType,
-              },
-            }
-          : null,
-      )
-      .catch(() => null),
+    isBlogDraft
+      ? checkBlogCannibalization({ targetKeywords, title: title ?? topic ?? null })
+          .then((r) =>
+            r.status === "conflict" && r.conflicts.length
+              ? {
+                  keyword: r.conflicts[0].keyword,
+                  page: {
+                    url: r.conflicts[0].url,
+                    title: r.conflicts[0].title,
+                    pageType: r.conflicts[0].pageType,
+                  },
+                }
+              : null,
+          )
+          .catch(() => null)
+      : Promise.resolve(null),
     // Freshness engine (spec item 3 / questions 96-97) — only when flagged, so
     // this never shows a "Freshness" tab the approve route isn't actually
     // enforcing yet (see freshnessGateEnabled() in lib/feature-flags.ts). `ran`

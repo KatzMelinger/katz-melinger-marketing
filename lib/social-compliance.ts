@@ -118,9 +118,17 @@ const RULES: Rule[] = [
     // `#1` is pulled out of the \b group (a leading \b can't match before '#').
     // "expert"/"specialist" are only flagged as a self-claim ("we are experts",
     // "specializing in …"), not in legitimate terms like "expert witness".
-    // The Spanish half mirrors that: "el mejor abogado" is a claim, and
-    // "nos especializamos en" is the direct analogue of "specializing in".
-    re: /#\s?1\b|\bnumber one\b|\btop[-\s]rated\b|\bbest (lawyer|attorney|law firm|firm)\b|\bleading (law )?firm\b|\bpremier (law )?firm\b|\bwinningest\b|\bmost experienced (lawyer|attorney|firm)\b|\b(we are|we're|our)( the)? (experts?|specialists?)\b|\bspecializ(e|es|ing) in\b|\bn[úu]mero\s+uno\b|\b(el|la|los|las)\s+mejor(es)?\s+(abogad[oa]s?|bufete|firma|despacho)\b|\bbufete\s+l[íi]der\b|\b(somos|nuestros?)\s+(expert[oa]s|especialistas)\b|\bnos\s+especializamos\s+en\b|\bm[áa]s\s+experimentad[oa]s?\b|\bespecializad[oa]s?\s+en\b/i,
+    // The Spanish half mirrors that, and only that: "el mejor abogado" is a
+    // claim, and so is calling the firm's own lawyers the most experienced —
+    // which is why that one requires the noun, the way the English rule does.
+    // A sentence about experienced WORKERS is not a claim about the firm.
+    //
+    // "Especializarse en" is deliberately absent. Per Kenneth (2026-09-12), no
+    // Spanish phrasing of "specializing in" carries the RPC 7.4 claim the
+    // English phrase does, so neither "nos especializamos en" nor
+    // "especializados en" belongs here. "Somos expertos" stays: that is a
+    // self-claim of expertise, the direct analogue of "we are experts".
+    re: /#\s?1\b|\bnumber one\b|\btop[-\s]rated\b|\bbest (lawyer|attorney|law firm|firm)\b|\bleading (law )?firm\b|\bpremier (law )?firm\b|\bwinningest\b|\bmost experienced (lawyer|attorney|firm)\b|\b(we are|we're|our)( the)? (experts?|specialists?)\b|\bspecializ(e|es|ing) in\b|\bn[úu]mero\s+uno\b|\b(el|la|los|las)\s+mejor(es)?\s+(abogad[oa]s?|bufete|firma|despacho)\b|\bbufete\s+l[íi]der\b|\b(somos|nuestros?)\s+(expert[oa]s|especialistas)\b|\b(abogad[oa]s?|bufete|firma|despacho)\s+m[áa]s\s+experimentad[oa]s?\b/i,
   },
   {
     code: "fear",
