@@ -47,6 +47,7 @@ import {
   type NormalizedFinding,
 } from "./content-findings";
 import { syncFindings } from "./content-findings-store";
+import { coordinateEngineFindings } from "./engine-coordination";
 import { findTimeSensitiveFacts } from "./freshness-check";
 import { classifyFreshness } from "./freshness-classify";
 import { getCurrentFacts } from "./current-facts-store";
@@ -1022,10 +1023,31 @@ export async function analyzeDraft(args: {
         config: readabilityConfig,
       })
     : null;
+  // Cross-engine coordination (spec item 6): only meaningful once there's a
+  // structured, excerpt-bearing readability result to coordinate — the legacy
+  // Flesch findings (flag off) are plain prose strings with no rule id or
+  // excerpt to match against Legal/Freshness/AEO.
+  const coordination = ruleResult
+    ? coordinateEngineFindings({
+        readabilityFindings: ruleResult.findings,
+        aeoFindings: aeo.findings,
+        legalFindings: legalResult.findings,
+        freshnessFindings: freshnessResult.findings,
+        cashBreakdown: cash.breakdown,
+        cashFindings: cash.findings,
+      })
+    : null;
+
+  // The SCORE stays based on the original (pre-coordination) rule set —
+  // coordination is a display/tracking concern (which engine's row a
+  // reviewer sees), not a change to what counts as a readability defect.
   const readabilityScore = ruleResult ? ruleResult.score : normalizeReadability(flesch);
   const readabilityFindingList = ruleResult
-    ? formatReadabilityFindings(ruleResult.findings)
+    ? formatReadabilityFindings(coordination!.readabilityFindings)
     : readabilityFindings(body);
+  const aeoFindingList = coordination ? coordination.aeoFindings : aeo.findings;
+  const cashBreakdown = coordination ? coordination.cashBreakdown : cash.breakdown;
+  const cashFindingList = coordination ? coordination.cashFindings : cash.findings;
   logEvent("readability_scored", {
     engine: useReadabilityRules ? "rules" : "flesch",
     score: readabilityScore,
@@ -1033,6 +1055,7 @@ export async function analyzeDraft(args: {
     findings: readabilityFindingList.length,
     ai_rules: aiReadability.evaluatedRuleIds.length,
     failed: ruleResult?.failedRuleIds ?? [],
+    coordination_suppressed: coordination?.suppressed ?? 0,
   });
 
   // Cross-check proposed titles against the firm's existing content so the
@@ -1053,12 +1076,12 @@ export async function analyzeDraft(args: {
     keyword_density: keywordDensity(words),
     target_keyword_hits: targetHits(body, targetKeywords),
     aeo_score: aeo.score,
-    aeo_findings: aeo.findings,
+    aeo_findings: aeoFindingList,
     brand_voice_score: brand.score,
     brand_voice_findings: brand.findings,
     cash_score: cash.score,
-    cash_breakdown: cash.breakdown,
-    cash_findings: cash.findings,
+    cash_breakdown: cashBreakdown,
+    cash_findings: cashFindingList,
     seo_score: seo.score,
     seo_breakdown: seo.breakdown,
     seo_findings: seo.findings,

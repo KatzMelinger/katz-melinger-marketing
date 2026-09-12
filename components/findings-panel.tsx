@@ -57,12 +57,20 @@ const TAB_ORDER: FindingSource[] = [
 
 const SEVERITY_RANK: Record<FindingSeverity, number> = { critical: 0, important: 1, advisory: 2 };
 
-/** A finding counts as a "blocker" for the readiness line/toggle when it's
- *  more than advisory — matches the codebase convention (lib/content-findings.ts)
- *  that `critical` is reserved for things with their own gate, `important` for
- *  serious-but-ungated issues, and `advisory` for everything else. */
+/** Sources with their own approval gate (app/api/agent/approve/route.ts).
+ *  Readability/SEO/AEO/CASH/brand-voice/linkability have no gate of their
+ *  own — per spec item 6 ("none of the three can be a blocker"), a finding
+ *  from one of those can be styled `important` but must never count toward
+ *  the readiness line, however serious it looks. */
+const GATED_SOURCES = new Set<FindingSource>(["compliance", "legal", "freshness"]);
+
+/** A finding counts as a "blocker" for the readiness line/toggle: `critical`
+ *  always does (lib/content-findings.ts reserves it for things with their own
+ *  gate); `important` only does when it's FROM a gated source — an ungated
+ *  engine's "important" finding is worth flagging visually but can't hold up
+ *  approval on its own. */
 function isBlocker(f: StoredFinding): boolean {
-  return f.severity !== "advisory";
+  return f.severity === "critical" || (f.severity === "important" && GATED_SOURCES.has(f.source));
 }
 
 type Engines = { legal: boolean; freshness: boolean };
