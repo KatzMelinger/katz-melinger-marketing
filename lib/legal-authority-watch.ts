@@ -37,7 +37,18 @@ import { writeAlert } from "./alerts-engine";
  *  re-fetch from (lib/legal-citation.ts). usc/nj_statute/njac can't be
  *  proactively re-checked this way — that's an existing, documented limit,
  *  not something this module works around. */
-const WATCHABLE_CORPORA: CitationCorpus[] = ["ny_consolidated", "cfr"];
+// nj_statute joined this list once lib/nj-statute-bulk.ts gave it a genuine
+// re-fetchable source (the NJ Legislature's own bulk export) — a cached
+// nj_statute row is either from that fallback or from the wage-and-hour
+// page (lib/legal-citation.ts's njPageCovers), and retrieveAuthority
+// deterministically re-derives from whichever one originally produced it, so
+// re-checking it here is exactly as safe as NY/CFR. njac still isn't
+// watchable — its only source is the wage-and-hour page, and the sections it
+// covers are as narrow as that page itself, not worth a periodic re-fetch of
+// the same document repeatedly. Curated legal-corpus/nj/ entries never reach
+// legal_facts_cache at all (retrieveAuthority returns them directly), so
+// re-verifying THOSE against Westlaw is a human task, not this cron's.
+const WATCHABLE_CORPORA: CitationCorpus[] = ["ny_consolidated", "cfr", "nj_statute"];
 
 type CacheRow = {
   corpus: CitationCorpus;
