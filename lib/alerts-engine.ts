@@ -29,7 +29,12 @@ export type AlertType =
   // An integration whose credential is expiring or already dead. Separate from
   // the content types because the fix is a person going to a third-party
   // console, not a draft being edited.
-  | "integration_credential";
+  | "integration_credential"
+  // A cited statute/regulation's text changed since it was last checked
+  // (lib/legal-authority-watch.ts). The fix is an attorney re-confirming the
+  // new text, not editing a draft — closer to integration_credential than to
+  // content_finding, which is why it's its own type rather than reusing one.
+  | "authority_changed";
 
 export type AlertSeverity = "low" | "medium" | "high";
 

@@ -60,6 +60,10 @@
     {
       "path": "/api/social/linkedin/health",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/legal/authority-watch",
+      "schedule": "0 15 * * 1"
     }
   ]
 }
