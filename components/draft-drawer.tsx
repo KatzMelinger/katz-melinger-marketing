@@ -1878,9 +1878,9 @@ export function DraftDrawer({
                 <FindingsPanel
                   draftId={draft.id}
                   nonce={findingsNonce}
-                  onApplyFinding={(text) => {
+                  onApplyFindings={(texts) => {
                     if (unsavedEditGuard()) return;
-                    setApplyingFindings([text]);
+                    setApplyingFindings(texts);
                   }}
                 />
               </div>

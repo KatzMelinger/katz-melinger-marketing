@@ -93,15 +93,17 @@ function findingToFeedback(f: StoredFinding): string {
 export function FindingsPanel({
   draftId,
   nonce,
-  onApplyFinding,
+  onApplyFindings,
 }: {
   draftId: string;
   nonce?: number;
-  /** Sends this finding's text to the same Apply-and-review-diff flow the
-   *  Analysis card uses (via ApplySuggestionModal) — the caller owns opening
-   *  the modal, this component just hands it the feedback text. Omit to hide
-   *  the Apply button entirely (e.g. a read-only context). */
-  onApplyFinding?: (findingText: string) => void;
+  /** Sends one or more findings' text to the same Apply-and-review-diff flow
+   *  the Analysis card uses (via ApplySuggestionModal) — the caller owns
+   *  opening the modal, this component just hands it the feedback text(es).
+   *  Called with a single-element array for one finding's own "Apply fix"
+   *  button, or the full selection for "Apply N selected". Omit to hide both
+   *  (e.g. a read-only context). */
+  onApplyFindings?: (findingTexts: string[]) => void;
 }) {
   const [findings, setFindings] = useState<StoredFinding[]>([]);
   const [engines, setEngines] = useState<Engines>({ legal: false, freshness: false });
@@ -111,6 +113,10 @@ export function FindingsPanel({
   const [activeTab, setActiveTab] = useState<FindingSource | "all">("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // Selected finding ids — spans every tab (like the Analysis card's batch
+  // apply), so the reviewer can mix findings from different engines into one
+  // Claude call rather than applying tab-by-tab.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,6 +126,9 @@ export function FindingsPanel({
       if (res.ok) {
         setFindings(data.findings ?? []);
         setEngines(data.engines ?? { legal: false, freshness: false });
+        // A reload means fresh finding ids (re-analysis, or the Apply flow
+        // just fired) — any prior selection no longer means anything.
+        setSelected(new Set());
       }
     } finally {
       setLoading(false);
@@ -155,10 +164,26 @@ export function FindingsPanel({
         return;
       }
       setFindings(data.findings ?? []);
+      // The finding just moved off "open" — selecting it no longer means
+      // anything, whether that was via this row's own action or a batch one.
+      setSelected((prev) => {
+        if (!prev.has(finding.id)) return prev;
+        const next = new Set(prev);
+        next.delete(finding.id);
+        return next;
+      });
     } finally {
       setBusy(null);
     }
   };
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   // Tabs: any source with at least one finding, plus Legal/Freshness whenever
   // their gate is armed (even at zero findings — that's the "clear" state).
@@ -190,6 +215,16 @@ export function FindingsPanel({
   const tabCount = (source: FindingSource) => {
     const inTab = openAll.filter((f) => f.source === source);
     return { total: inTab.length, blockers: inTab.filter(isBlocker).length };
+  };
+
+  const selectedCount = selected.size;
+  const applySelected = () => {
+    if (!onApplyFindings || selectedCount === 0) return;
+    const texts = findings.filter((f) => selected.has(f.id)).map(findingToFeedback);
+    onApplyFindings(texts);
+    // Not cleared here — the modal might be discarded, in which case the
+    // selection should still be there to retry. A successful apply reloads
+    // (nonce bump from re-analysis) which clears it in load() above.
   };
 
   if (loading) {
@@ -253,6 +288,29 @@ export function FindingsPanel({
         </div>
       </div>
 
+      {onApplyFindings && selectedCount > 0 && (
+        <div className="mb-2 flex items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-2.5 py-1.5">
+          <span className="text-[11px] text-slate-600">
+            {selectedCount} selected{selectedCount > 1 ? " (from any tab)" : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="text-[10px] text-slate-500 underline hover:text-slate-700"
+          >
+            clear
+          </button>
+          <button
+            type="button"
+            onClick={applySelected}
+            className="ml-auto rounded border border-brand/40 bg-white px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/10"
+            title={`Send all ${selectedCount} selected findings to Claude in one shot.`}
+          >
+            Apply {selectedCount} selected
+          </button>
+        </div>
+      )}
+
       {(showAllTab || tabs.length > 0) && (
         <div className="mb-2 flex flex-wrap gap-1.5 border-b border-slate-100 pb-2">
           {showAllTab && (
@@ -300,21 +358,32 @@ export function FindingsPanel({
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="font-medium">{f.title}</span>
-                    <span className="ml-1.5 text-[10px] opacity-70">
-                      {SOURCE_LABEL[f.source]}
-                      {f.ruleId ? ` · ${f.ruleId}` : ""}
-                      {isClosed ? ` · ${STATUS_LABEL[f.status]}` : ""}
-                      {f.status === "in_progress" ? " · In progress" : ""}
-                    </span>
+                  <div className="flex min-w-0 items-start gap-1.5">
+                    {!isClosed && onApplyFindings && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(f.id)}
+                        onChange={() => toggleSelected(f.id)}
+                        className="mt-0.5 h-3 w-3 shrink-0"
+                        title="Select for batch Apply"
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <span className="font-medium">{f.title}</span>
+                      <span className="ml-1.5 text-[10px] opacity-70">
+                        {SOURCE_LABEL[f.source]}
+                        {f.ruleId ? ` · ${f.ruleId}` : ""}
+                        {isClosed ? ` · ${STATUS_LABEL[f.status]}` : ""}
+                        {f.status === "in_progress" ? " · In progress" : ""}
+                      </span>
+                    </div>
                   </div>
                   {!isClosed && (
                     <div className="flex shrink-0 gap-1">
-                      {onApplyFinding && (
+                      {onApplyFindings && (
                         <button
                           type="button"
-                          onClick={() => onApplyFinding(findingToFeedback(f))}
+                          onClick={() => onApplyFindings([findingToFeedback(f)])}
                           className="rounded border border-brand/40 bg-brand/5 px-1.5 py-0.5 text-[10px] font-medium text-brand hover:bg-brand/10"
                           title="Send this finding to Claude for a rewrite — you review the diff before it saves."
                         >
