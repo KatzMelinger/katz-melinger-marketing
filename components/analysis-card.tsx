@@ -75,6 +75,13 @@ export type Analysis = {
   // Present only right after a live run where the check itself failed (the
   // score above is null). Not persisted, so it's gone again after a reload.
   compliance_error?: string | null;
+  // Set when this blog's target keyword/topic/title matches an existing
+  // service/practice-area page — only computed when CANNIBALIZATION_GATE is
+  // on. Live-only (no migrated column yet), so it's gone again after a reload.
+  cannibalization_conflict?: {
+    keyword: string;
+    page: { url: string; title: string; pageType: string };
+  } | null;
   suggested_titles?: string[];
   // Live-only fields (stripped before persistence). Optional so older
   // analyses loaded from DB don't fail the type check.
@@ -297,6 +304,12 @@ export function AnalysisCard({
           summary={analysis.compliance_summary ?? ""}
           violations={analysis.compliance_violations ?? []}
           requiredDisclaimers={analysis.compliance_required_disclaimers ?? []}
+        />
+      )}
+      {analysis.cannibalization_conflict && (
+        <CannibalizationPanel
+          conflict={analysis.cannibalization_conflict}
+          onApplyLink={applyLink}
         />
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
@@ -1373,6 +1386,66 @@ function CompliancePanel({
         <div className="text-xs text-slate-500">
           No specific violations flagged{requiredDisclaimers.length > 0 ? " — add the disclaimers above." : "."}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Commercial-cannibalization conflict (spec item 5). This blog's target
+ * keyword matches an existing service/practice-area page — a real blocker at
+ * approval (see app/api/agent/approve/route.ts), not advisory like compliance
+ * above. "Insert link" reuses the same apply-link flow as the overlap check.
+ */
+function CannibalizationPanel({
+  conflict,
+  onApplyLink,
+}: {
+  conflict: { keyword: string; page: { url: string; title: string; pageType: string } };
+  onApplyLink?: (term: string, url: string) => void | Promise<void>;
+}) {
+  const [applied, setApplied] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const pageLabel = conflict.page.pageType.replace("_", " ");
+  return (
+    <div className="mt-4 rounded-lg border border-red-200 bg-red-50/40 p-4">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span aria-hidden>⚠</span>
+        <div className="text-sm font-medium text-red-800">Commercial cannibalization</div>
+        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-200">
+          Blocks approval
+        </span>
+      </div>
+      <p className="text-xs text-slate-700 mb-2">
+        This targets <strong>&ldquo;{conflict.keyword}&rdquo;</strong>, already owned by the {pageLabel}{" "}
+        <a
+          href={conflict.page.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-brand hover:underline"
+        >
+          {conflict.page.title}
+        </a>
+        . Reposition this draft to an informational angle and link to that page instead of
+        competing with it.
+      </p>
+      {onApplyLink && (
+        <button
+          type="button"
+          disabled={applying || applied}
+          onClick={async () => {
+            setApplying(true);
+            try {
+              await onApplyLink(conflict.keyword, conflict.page.url);
+              setApplied(true);
+            } finally {
+              setApplying(false);
+            }
+          }}
+          className="text-xs px-2.5 py-1 rounded border border-red-300 bg-white text-red-700 hover:bg-red-100 disabled:opacity-60"
+        >
+          {applied ? "Link inserted" : applying ? "Inserting…" : `Insert link to ${pageLabel}`}
+        </button>
       )}
     </div>
   );

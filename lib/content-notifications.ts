@@ -120,7 +120,7 @@ async function draftTitle(draftId: string): Promise<string> {
 export async function notifyDraftBlocked(args: {
   draftId: string;
   tenantId: string;
-  reason: "compliance" | "freshness";
+  reason: "compliance" | "freshness" | "cannibalization";
   detail: string;
 }): Promise<void> {
   try {
@@ -129,7 +129,9 @@ export async function notifyDraftBlocked(args: {
     const heading =
       args.reason === "compliance"
         ? "Held by the compliance gate"
-        : "Held for time-sensitive figures";
+        : args.reason === "cannibalization"
+          ? "Held — competes with an existing page"
+          : "Held for time-sensitive figures";
 
     const wrote = await writeAlert(
       {

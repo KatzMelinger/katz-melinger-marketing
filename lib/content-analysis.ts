@@ -28,7 +28,11 @@ import {
   formatReadabilityFindings,
   readabilityContentType,
 } from "./readability-rules";
-import { readabilityRulesEngineEnabled } from "./feature-flags";
+import { readabilityRulesEngineEnabled, cannibalizationGateEnabled } from "./feature-flags";
+import {
+  checkCannibalizationConflict,
+  type CannibalizationConflict,
+} from "./cannibalization-gate";
 import { buildFingerprint, type AnalysisFingerprint } from "./analysis-fingerprint";
 import {
   normalizeComplianceFindings,
@@ -121,6 +125,12 @@ export type ContentAnalysis = {
    *  (score above is null in that case). Not persisted — see the strip
    *  before insert below — so it only shows right after a run, not on reload. */
   compliance_error?: string | null;
+  /** Live-only (see the strip before insert below — no migrated column yet):
+   *  set when this blog's target keyword/topic/title matches an existing
+   *  service/practice-area page. Only computed when CANNIBALIZATION_GATE is
+   *  on (lib/feature-flags.ts) — the same flag the approve-route hard gate
+   *  checks, so this tile never implies a block that isn't actually armed. */
+  cannibalization_conflict?: CannibalizationConflict | null;
   suggested_titles: string[];
   /** Per-title conflict detail (only present in the live response — not
    *  persisted). Lets the UI render a warning badge on titles that overlap
@@ -914,7 +924,7 @@ export async function analyzeDraft(args: {
   let complianceError: string | null = null;
   // Run brand voice + CASH + linkability + contentEnhancements + compliance in
   // parallel — all are Claude calls and independent of each other.
-  const [brand, cash, linkability, enhancements, compliance, aiReadability] = await Promise.all([
+  const [brand, cash, linkability, enhancements, compliance, aiReadability, cannibalization] = await Promise.all([
     brandVoiceMatch(body, tid),
     cashScore(body),
     linkabilityScore({ body, topic: topic ?? title ?? "", title }),
@@ -943,6 +953,19 @@ export async function analyzeDraft(args: {
     useReadabilityRules
       ? evaluateAiReadabilityRules(body)
       : Promise.resolve({ findings: [], evaluatedRuleIds: [] }),
+    // Commercial-cannibalization check (spec item 5) — only when the gate flag
+    // is on, so this tile never shows a conflict the approve route can't
+    // actually enforce yet. checkCannibalizationConflict already fails open
+    // internally; this catch is only for a totally unexpected throw.
+    cannibalizationGateEnabled()
+      ? checkCannibalizationConflict({
+          tenantId: tid,
+          format,
+          targetKeywords,
+          topic,
+          title,
+        }).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   // Now that the AI rules are in, compute the final rule-based readability result.
@@ -1005,6 +1028,7 @@ export async function analyzeDraft(args: {
       : [],
     compliance_summary: compliance ? compliance.summary : "",
     compliance_error: compliance ? null : complianceError,
+    cannibalization_conflict: cannibalization,
     suggested_titles: keptTitles,
     suggested_titles_dropped: filtered.dropped,
     suggested_titles_conflicts_avoided: filtered.dropped.length,
@@ -1015,13 +1039,16 @@ export async function analyzeDraft(args: {
     scored_against: buildFingerprint(body),
   };
 
-  // Strip live-only fields (cannibalization detail, compliance failure reason)
-  // before persisting — they're metadata for the current response, not stored
-  // columns.
+  // Strip live-only fields (title-suggestion cannibalization detail, compliance
+  // failure reason, the commercial-cannibalization conflict) before persisting
+  // — they're metadata for the current response, not stored columns. The
+  // cannibalization conflict has no migrated column yet; it's recomputed on
+  // every live analysis rather than carried across a reload.
   const persistable = { ...analysis };
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_dropped;
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_conflicts_avoided;
   delete (persistable as Partial<ContentAnalysis>).compliance_error;
+  delete (persistable as Partial<ContentAnalysis>).cannibalization_conflict;
 
   // Graceful column-degradation. If new columns aren't migrated yet, drop
   // the offending fields and retry. Newest columns (compliance_*) drop first,

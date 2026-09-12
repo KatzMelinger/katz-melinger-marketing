@@ -9,6 +9,8 @@
  *   SOCIAL_MULTIFORMAT       — per-platform format → Ayrshare post-type on publish.
  *   NATIVE_SOCIAL_ANALYTICS  — account-level reach/engagement from Ayrshare.
  *   LEGAL_ACCURACY           — verify legal claims against approved authorities.
+ *   CANNIBALIZATION_GATE     — hold a blog whose target keyword is already
+ *                              owned by an existing service/practice-area page.
  */
 
 const TRUE = new Set(["on", "1", "true", "yes"]);
@@ -54,4 +56,16 @@ export function nativeSocialAnalyticsEnabled(): boolean {
  */
 export function legalAccuracyEnabled(): boolean {
   return enabled("LEGAL_ACCURACY");
+}
+
+/**
+ * Commercial-cannibalization hard gate at approval (spec item 5).
+ *
+ * Off by default until the firm has reviewed how it behaves — it depends on
+ * `site_pages` being populated by the sitemap crawler, and a firm that hasn't
+ * run that crawl yet would otherwise get a gate that can never find anything
+ * to check (harmless, but worth turning on deliberately rather than silently).
+ */
+export function cannibalizationGateEnabled(): boolean {
+  return enabled("CANNIBALIZATION_GATE");
 }

@@ -23,7 +23,12 @@ import {
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness, outstandingFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
-import { freshnessGateEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
+import {
+  freshnessGateEnabled,
+  legalAccuracyEnabled,
+  cannibalizationGateEnabled,
+} from "@/lib/feature-flags";
+import { checkCannibalizationConflict } from "@/lib/cannibalization-gate";
 import { logEvent } from "@/lib/telemetry";
 import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 import { recordAuditEvent } from "@/lib/content-findings-store";
@@ -78,7 +83,7 @@ async function approveContent(
   // RLS scopes this read to the caller's tenant — a cross-tenant id returns null.
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("id, status, body, title, topic, format, practice_area, metadata")
+    .select("id, status, body, title, topic, format, practice_area, metadata, seo_brief")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -379,6 +384,62 @@ async function approveContent(
       );
     }
   }
+
+  // Commercial-cannibalization HARD gate (feature-flagged, spec item 5). A blog
+  // targeting the same commercial head term as an existing service/practice-area
+  // page splits authority between two of the firm's own pages — the reviewer
+  // should see and resolve that before approving, not discover it once both
+  // pages are live and competing. checkCannibalizationConflict fails open on any
+  // infra error, so an unreachable site_pages table never itself blocks approval.
+  if (cannibalizationGateEnabled()) {
+    const targetKeywords =
+      (draft.seo_brief as { targetKeywords?: string[] } | null)?.targetKeywords ?? [];
+    const conflict = await checkCannibalizationConflict({
+      tenantId,
+      format: (draft.format as string | null) ?? null,
+      targetKeywords,
+      topic: (draft.topic as string | null) ?? null,
+      title: (draft.title as string | null) ?? null,
+    });
+    if (conflict) {
+      const pageLabel = conflict.page.pageType.replace("_", " ");
+      const mergedMetadata = {
+        ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+        cannibalization_conflict: conflict,
+      };
+      await supabase
+        .from("content_drafts")
+        .update({ status: "needs_legal", metadata: mergedMetadata })
+        .eq("id", id)
+        .eq("tenant_id", tenantId);
+      await supabase
+        .from("content_pipeline")
+        .update({ status: "needs_legal" })
+        .eq("draft_id", id)
+        .eq("tenant_id", tenantId);
+      await recordAuditEvent({
+        tenantId,
+        draftId: id,
+        event: "draft_held_cannibalization",
+        detail: { keyword: conflict.keyword, page: conflict.page.url },
+      });
+      await notifyDraftBlocked({
+        draftId: id,
+        tenantId,
+        reason: "cannibalization",
+        detail: `Targets "${conflict.keyword}", already owned by the ${pageLabel} "${conflict.page.title}" (${conflict.page.url}).`,
+      });
+      return NextResponse.json(
+        {
+          error: `Held — this blog competes with an existing ${pageLabel} for "${conflict.keyword}". Reposition it to an informational angle and link to that page, or resolve the conflict before approving.`,
+          status: "needs_legal",
+          cannibalization: conflict,
+        },
+        { status: 422 },
+      );
+    }
+  }
+
   await setDraftStatus(supabase, tenantId, id, "approved");
   // Who approved this, and what the checks said at the time. Approval was the
   // one action with no durable record of either.
