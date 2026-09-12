@@ -20,6 +20,7 @@ import {
 } from "@/lib/content-findings-store";
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
+import { freshnessGateEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,12 @@ export async function GET(
   if (!draft) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [findings, audit] = await Promise.all([listFindings(id), listAuditEvents(id)]);
-  return NextResponse.json({ findings, audit });
+  // Which gated engines are actually armed right now — lets the panel show a
+  // clear "Legal accuracy ✓" / "Freshness ✓" tab (checked, nothing outstanding)
+  // instead of indistinguishably omitting the tab the way it would for an
+  // engine that isn't enabled at all. See lib/feature-flags.ts.
+  const engines = { legal: legalAccuracyEnabled(), freshness: freshnessGateEnabled() };
+  return NextResponse.json({ findings, audit, engines });
 }
 
 export async function PATCH(

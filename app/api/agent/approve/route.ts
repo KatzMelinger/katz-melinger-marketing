@@ -232,18 +232,28 @@ async function approveContent(
   // gated exactly like the agent's auto-path, fail-closed to needs_legal — so a
   // reviewer can't sign off on content the gate would have held (and edits made
   // since drafting are re-checked). The gate throwing = treat as held.
+  //
+  // Scoped to legal blogs and service pages (spec item 11) — the firm's
+  // Attorney Advertising label/disclaimer requirement is a hard block only for
+  // those two surfaces. Other content types that reach this same endpoint
+  // (e.g. an email newsletter draft) still get the identical check and its
+  // violations are recorded for visibility, but a failing verdict there does
+  // not hold the draft — it stays advisory, same as the scorecard already
+  // shows during editing.
+  const surface = surfaceForFormat((draft.format as string | null) ?? "blog");
+  const complianceGateApplies = surface === "blog" || surface === "webpage";
   let verdict;
   try {
     verdict = await runComplianceGate({
       content: typeof draft.body === "string" ? draft.body : "",
-      surface: surfaceForFormat((draft.format as string | null) ?? "blog"),
+      surface,
       practiceArea: (draft.practice_area as string | null) ?? undefined,
     });
   } catch {
     verdict = null;
   }
 
-  if (!verdict || !verdict.pass) {
+  if (complianceGateApplies && (!verdict || !verdict.pass)) {
     const compliance = verdict
       ? {
           pass: verdict.pass,
@@ -451,8 +461,12 @@ async function approveContent(
     actorUserId: approver?.id ?? null,
     actorEmail: approver?.email ?? null,
     detail: {
-      compliance_score: verdict.score,
-      compliance_status: verdict.status,
+      // verdict can be null here now that the gate is scoped off some
+      // surfaces (spec item 11) — a non-blog/webpage draft whose compliance
+      // check itself failed still reaches approval, with no verdict to report.
+      compliance_score: verdict?.score ?? null,
+      compliance_status: verdict?.status ?? null,
+      compliance_gate_applied: complianceGateApplies,
       freshness_gate: freshnessGateEnabled() ? "enforced" : "off",
       freshness_verified_keys: Array.from(verifiedKeys),
     },

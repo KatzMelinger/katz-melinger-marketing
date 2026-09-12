@@ -108,6 +108,7 @@ export function AnalysisCard({
   onApplyTitle,
   onApplyLink,
   currentTitle,
+  format,
 }: {
   analysis: Analysis;
   /** These scores no longer describe the current draft (edited since scoring,
@@ -129,7 +130,16 @@ export function AnalysisCard({
   onApplyLink?: (term: string, url: string) => void | Promise<void>;
   /** Current draft title — used to mark the active title in the picker. */
   currentTitle?: string | null;
+  /** The draft's content format — used only to reflect accurately whether the
+   *  Attorney Advertising compliance gate actually blocks approval for this
+   *  content (legal blogs and service pages, spec item 11) or stays advisory
+   *  (any other format). Mirrors surfaceForFormat + the scoping in
+   *  app/api/agent/approve/route.ts — kept as a plain string check here (not
+   *  imported from that lib) since this is a client component and that gate
+   *  logic pulls in server-only compliance-check code. */
+  format?: string | null;
 }) {
+  const complianceGateApplies = format === "blog" || format === "webpage";
   // A stale analysis exposes no Apply affordances at all. Disabling them at the
   // top means the grouped readability view, the per-row buttons, the batch bar
   // and the title/link pickers all go read-only together, rather than each
@@ -261,7 +271,11 @@ export function AnalysisCard({
         <ScoreTile
           label="Compliance"
           value={analysis.compliance_score ?? null}
-          hint="NY/NJ attorney-advertising review (advisory)"
+          hint={
+            complianceGateApplies
+              ? "NY/NJ attorney-advertising review — blocks approval for this content type"
+              : "NY/NJ attorney-advertising review (advisory for this content type)"
+          }
           error={analysis.compliance_error ?? null}
           onRetry={onRerun}
           retrying={rerunning}
@@ -304,6 +318,7 @@ export function AnalysisCard({
           summary={analysis.compliance_summary ?? ""}
           violations={analysis.compliance_violations ?? []}
           requiredDisclaimers={analysis.compliance_required_disclaimers ?? []}
+          gateApplies={complianceGateApplies}
         />
       )}
       {analysis.cannibalization_conflict && (
@@ -1296,20 +1311,26 @@ type ComplianceViolationView = {
 };
 
 /**
- * Attorney-advertising compliance detail. Advisory — it never blocks
- * publishing; it surfaces the status, the rule violations, and the disclaimers
- * the firm needs to add before this content goes out.
+ * Attorney-advertising compliance detail: the status, the rule violations, and
+ * the disclaimers the firm needs to add before this content goes out.
+ *
+ * Whether it's actually a hard gate or just advisory depends on content type
+ * (spec item 11) — `gateApplies` reflects app/api/agent/approve/route.ts's own
+ * scoping (legal blogs and service pages only) so this badge never tells the
+ * reviewer the opposite of what approval will actually do.
  */
 function CompliancePanel({
   status,
   summary,
   violations,
   requiredDisclaimers,
+  gateApplies,
 }: {
   status: "compliant" | "needs_changes" | "non_compliant" | null;
   summary: string;
   violations: ComplianceViolationView[];
   requiredDisclaimers: string[];
+  gateApplies: boolean;
 }) {
   const statusMeta: Record<
     "compliant" | "needs_changes" | "non_compliant",
@@ -1336,8 +1357,10 @@ function CompliancePanel({
             {meta.label}
           </span>
         )}
-        <span className="text-[10px] text-slate-400 italic ml-auto">
-          advisory — review before publishing
+        <span
+          className={`text-[10px] italic ml-auto ${gateApplies ? "text-red-600 font-medium" : "text-slate-400"}`}
+        >
+          {gateApplies ? "blocks approval until resolved" : "advisory — review before publishing"}
         </span>
       </div>
       {summary && <p className="text-xs text-slate-600 mb-3">{summary}</p>}

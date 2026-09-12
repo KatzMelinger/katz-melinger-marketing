@@ -19,6 +19,7 @@
 
 import type { ComplianceViolation } from "./compliance-core";
 import type { ClassifiedFreshnessFlag } from "./freshness-classify";
+import { READABILITY_RULES, type RuleId } from "./readability-rules";
 
 /** Which check produced this. `legal` is reserved for the accuracy feature. */
 export type FindingSource =
@@ -223,6 +224,45 @@ export function normalizeStringFindings(
     seen.add(fingerprint);
 
     out.push({ fingerprint, source, ruleId, severity, title, detail: null, excerpt, fix });
+  }
+  return out;
+}
+
+/** Rule id → type, for the readability severity split below. */
+const READABILITY_RULE_TYPE = new Map(READABILITY_RULES.map((r) => [r.id, r.type]));
+
+/**
+ * Readability findings, severity-split by rule TYPE (spec item 4).
+ *
+ * The 5 AI-assisted rules (08/11/12/13/14) check structure and substance — an
+ * H2 that doesn't answer its own question, a legal claim with no cited
+ * authority, no extractable FAQ/list — so they count as `important` and show
+ * up in the readiness line. The 10 deterministic rules are surface style and
+ * grammar (sentence length, passive voice, first person, hedges, weak
+ * qualifiers, "there is" openers, complex words) and stay `advisory`: real to
+ * fix, but never something that should hold up approval. This is why first
+ * person (Rule 10) specifically can never count as a blocker — it is a
+ * deterministic style rule like the rest of that group, not a special case.
+ */
+export function normalizeReadabilityFindings(findings: readonly string[]): NormalizedFinding[] {
+  const out: NormalizedFinding[] = [];
+  const seen = new Set<string>();
+  for (const raw of findings) {
+    const text = (raw ?? "").trim();
+    if (!text) continue;
+
+    const m = text.match(RULE_STRING);
+    const ruleId = m ? (m[1] as RuleId) : null;
+    const title = m ? m[2].trim() : text;
+    const fix = m ? (m[3] || null) : null;
+    const excerpt = m ? (m[4] || null) : null;
+    const fingerprint = fingerprintFinding("readability", ruleId, excerpt ?? title);
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+
+    const severity: FindingSeverity =
+      ruleId && READABILITY_RULE_TYPE.get(ruleId) === "ai" ? "important" : "advisory";
+    out.push({ fingerprint, source: "readability", ruleId, severity, title, detail: null, excerpt, fix });
   }
   return out;
 }

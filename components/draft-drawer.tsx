@@ -131,6 +131,7 @@ type DraftRow = {
   created_at?: string;
   seo_brief?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
+  format?: string | null;
 };
 
 /** A reviewer sign-off, stamped server-side by /api/content/drafts/[id]/certify. */
@@ -1849,6 +1850,7 @@ export function DraftDrawer({
                       return applyOverlapLink(term, url);
                     }}
                     currentTitle={draft.title}
+                    format={draft.format}
                   />
                 </div>
               ) : (

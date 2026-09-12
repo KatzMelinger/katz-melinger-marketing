@@ -28,7 +28,12 @@ import {
   formatReadabilityFindings,
   readabilityContentType,
 } from "./readability-rules";
-import { readabilityRulesEngineEnabled, cannibalizationGateEnabled } from "./feature-flags";
+import {
+  readabilityRulesEngineEnabled,
+  cannibalizationGateEnabled,
+  freshnessGateEnabled,
+  legalAccuracyEnabled,
+} from "./feature-flags";
 import {
   checkCannibalizationConflict,
   type CannibalizationConflict,
@@ -37,9 +42,15 @@ import { buildFingerprint, type AnalysisFingerprint } from "./analysis-fingerpri
 import {
   normalizeComplianceFindings,
   normalizeStringFindings,
+  normalizeReadabilityFindings,
+  normalizeFreshnessFindings,
   type NormalizedFinding,
 } from "./content-findings";
 import { syncFindings } from "./content-findings-store";
+import { findTimeSensitiveFacts } from "./freshness-check";
+import { classifyFreshness } from "./freshness-classify";
+import { getCurrentFacts } from "./current-facts-store";
+import { runLegalCheck } from "./legal-verify";
 import { notifyNewFindings } from "./content-notifications";
 import { ensureDraftMetadata } from "./draft-metadata";
 import { evaluateAiReadabilityRules } from "./readability-ai";
@@ -924,7 +935,17 @@ export async function analyzeDraft(args: {
   let complianceError: string | null = null;
   // Run brand voice + CASH + linkability + contentEnhancements + compliance in
   // parallel — all are Claude calls and independent of each other.
-  const [brand, cash, linkability, enhancements, compliance, aiReadability, cannibalization] = await Promise.all([
+  const [
+    brand,
+    cash,
+    linkability,
+    enhancements,
+    compliance,
+    aiReadability,
+    cannibalization,
+    freshnessResult,
+    legalResult,
+  ] = await Promise.all([
     brandVoiceMatch(body, tid),
     cashScore(body),
     linkabilityScore({ body, topic: topic ?? title ?? "", title }),
@@ -966,6 +987,30 @@ export async function analyzeDraft(args: {
           title,
         }).catch(() => null)
       : Promise.resolve(null),
+    // Freshness engine (spec item 3 / questions 96-97) — only when flagged, so
+    // this never shows a "Freshness" tab the approve route isn't actually
+    // enforcing yet (see freshnessGateEnabled() in lib/feature-flags.ts). `ran`
+    // lets the UI show a clear "Freshness ✓" state distinct from "flag is off".
+    // A check failure degrades to "ran, nothing to report" rather than crashing
+    // the whole analysis — the approve-route gate is the one that must fail
+    // closed, not this informational scorecard read.
+    freshnessGateEnabled()
+      ? getCurrentFacts(tid)
+          .then((facts) => ({
+            ran: true,
+            findings: normalizeFreshnessFindings(classifyFreshness(findTimeSensitiveFacts(body), facts)),
+          }))
+          .catch(() => ({ ran: true, findings: [] as NormalizedFinding[] }))
+      : Promise.resolve({ ran: false, findings: [] as NormalizedFinding[] }),
+    // Legal-accuracy engine (spec item 1 / questions 96-97) — same "ran" signal
+    // and same fail-soft-for-display reasoning as freshness above.
+    // runLegalCheck already returns NormalizedFinding[] (see
+    // app/api/agent/approve/route.ts), so no separate normalizer is needed.
+    legalAccuracyEnabled()
+      ? runLegalCheck(body, { tenantId: tid })
+          .then((r) => ({ ran: true, findings: r.findings }))
+          .catch(() => ({ ran: true, findings: [] as NormalizedFinding[] }))
+      : Promise.resolve({ ran: false, findings: [] as NormalizedFinding[] }),
   ]);
 
   // Now that the AI rules are in, compute the final rule-based readability result.
@@ -1152,13 +1197,15 @@ export async function analyzeDraft(args: {
   // analysis the caller actually asked for.
   try {
     const tracked: NormalizedFinding[] = [
-      ...normalizeStringFindings("readability", analysis.readability_findings),
+      ...normalizeReadabilityFindings(analysis.readability_findings),
       ...normalizeStringFindings("seo", analysis.seo_findings),
       ...normalizeStringFindings("aeo", analysis.aeo_findings),
       ...normalizeStringFindings("cash", analysis.cash_findings),
       ...normalizeStringFindings("brand_voice", analysis.brand_voice_findings),
       ...normalizeStringFindings("linkability", analysis.linkability_findings),
       ...normalizeComplianceFindings(analysis.compliance_violations),
+      ...freshnessResult.findings,
+      ...legalResult.findings,
     ];
     const summary = await syncFindings({ draftId, tenantId: tid, incoming: tracked });
     if (summary.inserted || summary.reopened || summary.autoResolved) {
