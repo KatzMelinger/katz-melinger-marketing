@@ -25,6 +25,7 @@ import {
   type ParsedCitation,
 } from "./legal-citation";
 import { lookupCorpus } from "./nj-statute-corpus";
+import { lookupNjBulkStatute } from "./nj-statute-bulk";
 
 /**
  * Identifying, but in the shape a UA filter accepts.
@@ -427,6 +428,27 @@ export async function retrieveAuthority(
   }
   const url = authorityFetchUrl(citation, opts.asOf ?? today());
   if (!url) {
+    // Last resort for an nj_statute citation the curated corpus and the
+    // wage-and-hour page don't cover: the NJ Legislature's own bulk statute
+    // export (lib/nj-statute-bulk.ts). Lower trust than the corpus above —
+    // an automated extraction from a flat government text file, not a
+    // human-reviewed Westlaw export — so it's tried only here, after both
+    // of those have already come up empty, and the returned sourceUrl says
+    // exactly that rather than presenting it as equivalent provenance.
+    if (citation.corpus === "nj_statute") {
+      const bulk = await lookupNjBulkStatute(citation);
+      if (bulk && looksLikeAuthorityText(bulk.text, citation)) {
+        const value: AuthorityText = {
+          citation,
+          text: bulk.text,
+          sourceUrl: bulk.sourceUrl,
+          retrievedAt: new Date().toISOString(),
+          fromCache: false,
+        };
+        await writeCache(value, tenantId, freshnessFor(citation));
+        return { ok: true, value };
+      }
+    }
     return {
       ok: false,
       failure: {
