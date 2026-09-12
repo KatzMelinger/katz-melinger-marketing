@@ -26,6 +26,8 @@
  * Pure module: no IO, no model.
  */
 
+import { AUTHORS } from "./authors";
+
 export type FirmFactSeverity = "ban" | "flag";
 
 export type FirmFactHit = {
@@ -121,6 +123,86 @@ function sentenceAround(body: string, index: number): string {
   return body.slice(from, to).replace(/\s+/g, " ").trim();
 }
 
+// ---------------------------------------------------------------------------
+// Attorney years-of-experience consistency (Diana's Sept 8 seed).
+//
+// Left out of content_known_traps deliberately — see
+// supabase/content_known_traps_seed_diana_sept8.sql — because a text trap
+// needs one fixed known-wrong shape to search for, and "years of experience"
+// has no single correct figure baked into a pattern. It DOES have a source
+// of truth already, though: lib/authors.ts's `experience` field, which is
+// exactly what renderAuthorBioBox() draws from for every generated bio box.
+// So this checks a draft's stated figure against that record instead of
+// guessing at a number here.
+// ---------------------------------------------------------------------------
+
+/** "15 years of experience", "15+ years of legal experience". Captures the number. */
+const YEARS_EXPERIENCE_RE = /\b(\d{1,2})\+?\s*years?\s+(?:of\s+)?(?:legal\s+)?experience\b/gi;
+/** "Since 2007" — implies (current year − YYYY) years of practice. */
+const SINCE_YEAR_RE = /\bsince\s+((?:19|20)\d{2})\b/gi;
+
+/** How far a stated figure may drift from the attorney's own record (e.g.
+ *  "15+ years") before it's worth a reviewer's confirmation. Tight enough to
+ *  catch real drift (an author record that says "15+" next to a "since 2007"
+ *  bio line is already 4+ years stale as of 2026) without flagging normal
+ *  rounding. */
+const EXPERIENCE_TOLERANCE_YEARS = 3;
+
+function parseExperienceFloor(experience: string): number | null {
+  const m = experience.match(/(\d{1,2})/);
+  return m ? Number(m[1]) : null;
+}
+
+/** "Kenneth J. Katz" and "Kenneth Katz" (no middle initial) — deliberately
+ *  NOT the bare last name: "Katz" alone also matches "Katz Melinger PLLC",
+ *  which appears in nearly every generated piece regardless of which
+ *  attorney (if any) it's about. */
+function authorNameVariants(name: string): string[] {
+  const parts = name.split(" ");
+  return [name, `${parts[0]} ${parts[parts.length - 1]}`];
+}
+
+/**
+ * Flags a stated years-of-experience (or "since YYYY") figure that doesn't
+ * match the record in lib/authors.ts — but only when the draft names
+ * EXACTLY ONE of the three attorneys. A bio box's own second sentence about
+ * the same person almost always uses a pronoun ("Since 2007 SHE has..."),
+ * not the name again, so requiring the name in the same sentence would miss
+ * the very case this exists to catch; with two or more attorneys named,
+ * which figure belongs to whom is genuinely ambiguous, so it skips rather
+ * than risk crediting the wrong one.
+ */
+function findExperienceMismatches(body: string): FirmFactHit[] {
+  const named = AUTHORS.filter((a) => authorNameVariants(a.name).some((v) => body.includes(v)));
+  if (named.length !== 1) return [];
+  const author = named[0];
+  const floor = parseExperienceFloor(author.experience);
+  if (floor == null) return [];
+
+  const hits: FirmFactHit[] = [];
+  const consider = (index: number, matchText: string, stated: number) => {
+    if (Math.abs(stated - floor) <= EXPERIENCE_TOLERANCE_YEARS) return;
+    hits.push({
+      rule: "Attorney years-of-experience mismatch",
+      severity: "flag",
+      match: matchText,
+      sentence: sentenceAround(body, index),
+      index,
+      reason: `${author.name}'s firm record lists ${author.experience} of experience; "${matchText}" states ${stated}. Confirm the correct figure before publishing.`,
+    });
+  };
+
+  YEARS_EXPERIENCE_RE.lastIndex = 0;
+  for (const m of body.matchAll(YEARS_EXPERIENCE_RE)) {
+    consider(m.index ?? 0, m[0], Number(m[1]));
+  }
+  SINCE_YEAR_RE.lastIndex = 0;
+  for (const m of body.matchAll(SINCE_YEAR_RE)) {
+    consider(m.index ?? 0, m[0], new Date().getFullYear() - Number(m[1]));
+  }
+  return hits;
+}
+
 /** Every firm-fact claim in this text worth a reviewer's attention. */
 export function findFirmFactClaims(body: string): FirmFactHit[] {
   if (!body) return [];
@@ -144,6 +226,7 @@ export function findFirmFactClaims(body: string): FirmFactHit[] {
       });
     }
   }
+  hits.push(...findExperienceMismatches(body));
   return hits.sort((a, b) => a.index - b.index);
 }
 
@@ -155,6 +238,7 @@ export const FIRM_FACTS_RULE = [
   "- Practice areas are employment law and commercial collections / judgment enforcement only.",
   '- The firm name is "Katz Melinger PLLC"; the website is katzmelinger.com.',
   "- No outcome guarantees, no superlatives, no claims that cannot be substantiated.",
+  `- Attorney years of experience: ${AUTHORS.map((a) => `${a.name} — ${a.experience}`).join("; ")}. Flag any stated figure for a named attorney that contradicts this.`,
 ].join("\n");
 
 /**
@@ -201,5 +285,9 @@ export function renderFirmFactsBlock(): string {
     "",
     "NO GUARANTEES: No promised outcomes, no 'maximum compensation', no superlatives",
     "  ('best', 'top-rated', '#1'), no claim that cannot be substantiated.",
+    "",
+    "ATTORNEY EXPERIENCE: Use each attorney's own figure exactly as given, never a",
+    "  number you infer from a 'since YYYY' bio line or otherwise round/estimate:",
+    ...AUTHORS.map((a) => `  ${a.name} — ${a.experience}.`),
   ].join("\n");
 }

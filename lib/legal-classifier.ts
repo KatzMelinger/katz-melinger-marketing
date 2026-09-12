@@ -72,6 +72,21 @@ const NEGATIVE_STATEMENT =
 const INTERPRETIVE =
   /\b(?:means|meaning|constitutes|amounts to|qualifies as|counts as|is considered|treated as|generally|typically|usually|likely|may be able|courts have|has been held|interpreted|depends on|in most cases|as a practical matter)\b/i;
 
+/**
+ * Legal DOCTRINES — a conclusion drawn from the law, not a fact an authority
+ * states directly. "The election of remedies doctrine may bar her from
+ * bringing a separate suit" contains no citation, no STATUTE_ACRONYM, and no
+ * word from the general vocabulary list below unless it happens to also say
+ * "claim" or "court" — so a doctrine-only sentence could clear looksLegal by
+ * accident or not at all, and if it doesn't, it never reaches classification,
+ * not even as "unclassified". This is the trap content_known_traps' text
+ * search explicitly can't hold (see supabase/content_known_traps_schema.sql):
+ * a doctrine is a conclusion, not a phrase, so it has to be caught here, in
+ * the layer built to recognize conclusions.
+ */
+const DOCTRINE_TERM =
+  /\b(?:doctrine|preclud\w*|estoppel|waive[sd]?|waiver|election of remedies|res judicata|exhaustion of (?:administrative )?remedies|standing to sue|preempt\w*|supersed\w*)\b/i;
+
 /** A lookup-able fact: a number, a money amount, a period, or a date. */
 const FACTUAL_SIGNAL =
   /\b\d{1,4}\s*(?:days?|months?|years?|weeks?|hours?)\b|\$\s?[\d,]+(?:\.\d{2})?\b|\b\d{1,3}\s*(?:%|percent)\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b|\b\d{4}\s+amendments?\b|\b(?:effective|amended|enacted)\s+(?:on\s+)?\w+\s+\d/i;
@@ -107,6 +122,11 @@ function looksLegal(sentence: string): boolean {
     // is precisely the sentence a lookup could settle.
     findCitations(sentence).length > 0 ||
     STATUTE_ACRONYM.test(sentence) ||
+    // A pure-doctrine sentence ("the election of remedies doctrine may bar
+    // her from bringing a separate suit") often hits none of the words
+    // below either \u2014 see DOCTRINE_TERM's own comment for why this has to be
+    // its own guard rather than relying on the general list to catch it.
+    DOCTRINE_TERM.test(sentence) ||
     /\b(?:law|laws|statute|section|\u00a7|act\b|regulation|rule|court|claim|file|filing|deadline|entitled|require[sd]?|prohibit|protect|liable|damages|penalty|employer|employee|charge|rights?|leave|wages?)\b/i.test(
       sentence,
     ) ||
@@ -179,7 +199,9 @@ export function classifyDeterministic(sentence: string): {
     };
   }
   // Diana's mixed rule: a number inside a conclusion is still a conclusion.
-  if (INTERPRETIVE.test(sentence)) {
+  // A doctrine name (DOCTRINE_TERM) is exactly that kind of conclusion, so it
+  // routes here too rather than falling through to unclassified.
+  if (INTERPRETIVE.test(sentence) || DOCTRINE_TERM.test(sentence)) {
     return {
       claimType: "interpretation",
       reason: FACTUAL_SIGNAL.test(sentence)
