@@ -15,12 +15,17 @@ import { resolveTenantId } from "./tenant-context";
 export type OperatingBrief = {
   socialPhone: string;
   offerPhrase: string;
+  /** The Spanish companion's offer phrase — without this, checkSocialCompliance's
+   *  missing_offer check would look for the ENGLISH phrase in Spanish text and
+   *  false-flag every compliant Spanish consultation CTA as missing its offer. */
+  offerPhraseEs: string;
   hashtagRule: string;
 };
 
 const DEFAULTS: OperatingBrief = {
   socialPhone: "646-466-6267",
   offerPhrase: "a free, confidential case review",
+  offerPhraseEs: "una evaluación de caso gratuita y confidencial",
   hashtagRule: "3 to 5 relevant hashtags",
 };
 
@@ -32,7 +37,7 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
       .from("brand_voice_settings")
       .select("key, value")
       .eq("tenant_id", tid)
-      .in("key", ["socialPhone", "socialOfferPhrase", "socialHashtagRule"]);
+      .in("key", ["socialPhone", "socialOfferPhrase", "socialOfferPhraseEs", "socialHashtagRule"]);
     const settings: Record<string, string> = {};
     for (const row of data ?? []) {
       if (row?.key && typeof row.value === "string" && row.value.trim()) {
@@ -42,6 +47,7 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
     return {
       socialPhone: settings.socialPhone || DEFAULTS.socialPhone,
       offerPhrase: settings.socialOfferPhrase || DEFAULTS.offerPhrase,
+      offerPhraseEs: settings.socialOfferPhraseEs || DEFAULTS.offerPhraseEs,
       hashtagRule: settings.socialHashtagRule || DEFAULTS.hashtagRule,
     };
   } catch {

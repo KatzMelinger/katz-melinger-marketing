@@ -66,13 +66,23 @@ Return JSON only: { "body": "..." }`;
 export async function generateSpanishCompanion(
   englishBody: string,
   format: SocialFormatKey,
+  /** The locked Spanish offer phrase (lib/social-operating-brief.ts). Without
+   *  this, the adaptation translates a consultation offer organically — a
+   *  faithful but not word-for-word translation — while the gate's
+   *  missing_offer check (lib/social-compliance.ts) does an exact substring
+   *  match, so a naturally-translated offer would false-flag as missing. */
+  offerPhraseEs?: string,
 ): Promise<string | null> {
   try {
     const directive = languageDirective("es");
+    const offerLine = offerPhraseEs
+      ? `\nIf this post invites a consultation, use this EXACT Spanish phrase for the offer, verbatim, not a paraphrase: "${offerPhraseEs}"`
+      : "";
     const user = `${directive}
 
 Adapt this approved ${SOCIAL_CAPS[format].label} into Spanish, matching its length and structure exactly:
     ${SOCIAL_CAPS[format].promptRules.join("\n    ")}
+${offerLine}
 
 APPROVED ENGLISH POST:
 """
@@ -88,7 +98,7 @@ Return JSON only: { "body": "..." }`;
     if (violations.length) {
       const retryUser = `Your Spanish adaptation broke its hard caps: ${violations.join("; ")}.
 Rewrite it to obey EVERY cap for ${format}: ${SOCIAL_CAPS[format].promptRules.join("; ")}
-Keep it a faithful Spanish adaptation of the same approved post:
+Keep it a faithful Spanish adaptation of the same approved post:${offerLine}
 """
 ${englishBody}
 """

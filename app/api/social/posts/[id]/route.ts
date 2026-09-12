@@ -77,7 +77,8 @@ async function queueSpanishCompanion(
   row: PostRow,
 ): Promise<void> {
   if (!isSocialFormat(row.platform)) return; // carousel/video etc. — no 1:1 caption format to adapt
-  const spanishBody = await generateSpanishCompanion(row.content, row.platform);
+  const brief = await getOperatingBrief(db.tenantId);
+  const spanishBody = await generateSpanishCompanion(row.content, row.platform, brief.offerPhraseEs);
   if (!spanishBody?.trim()) return;
 
   const { data: draft, error: draftErr } = await db

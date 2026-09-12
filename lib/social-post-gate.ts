@@ -115,6 +115,7 @@ export async function gateSocialPost(args: {
       platform,
       ctaType: resolved.ctaType ?? undefined,
       offerPhrase: args.operatingBrief.offerPhrase,
+      offerPhraseEs: args.operatingBrief.offerPhraseEs,
     })) {
       if (f.severity === "block") complianceFlagsByCode.set(f.code, f.label);
     }
