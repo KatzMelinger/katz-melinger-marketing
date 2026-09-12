@@ -80,10 +80,12 @@ export async function generateSpanishCompanion(
   englishBody: string,
   format: SocialFormatKey,
   /**
-   * The firm's locked Spanish offer phrase. Passed in rather than translated:
-   * the S3 gate checks it character for character, so an adapter inventing its
-   * own rendering produces a post that cannot pass. Omitted leaves the offer
-   * wording to the adaptation, which is only right for a firm without one.
+   * The firm's locked Spanish offer phrase (lib/social-operating-brief.ts).
+   * Passed in rather than translated: the gate's missing_offer check
+   * (lib/social-compliance.ts) is an exact substring match, so an adapter
+   * inventing its own rendering — even a faithful one — produces a post that
+   * cannot pass. Omitted leaves the offer wording to the adaptation, which is
+   * only right for a firm without a locked phrase.
    */
   offerPhraseEs?: string,
 ): Promise<string | null> {

@@ -60,6 +60,11 @@ export type ComplianceContext = {
   ctaType?: string;
   /** The operating brief's offer phrase, required when ctaType is "consultation". */
   offerPhrase?: string;
+  /** The Spanish companion's locked offer phrase. A Spanish post satisfies the
+   *  offer check with EITHER this or the English phrase — a bilingual caption
+   *  can legitimately carry either, and a Spanish-only post will never contain
+   *  the English one. */
+  offerPhraseEs?: string;
   /** Path or URL of the general-information disclaimer page (S3, item 4). */
   disclaimerUrl?: string;
 };
@@ -103,7 +108,7 @@ const RULES: Rule[] = [
     scope: "all",
     label: "Result guarantee — prohibited (RPC 7.1)",
     severity: "block",
-    re: /\b(guarantee(d|s)?|we('| wi)ll win|no win,?\s*no fee|100%\s*(win|success|recovery))\b|\b(garantiza(mos|do|da|n)?|garant[íi]a)\b|\bganaremos\b|\bsin\s+honorarios\b|\bsi\s+no\s+gana(mos)?,?\s*no\s+paga\b/i,
+    re: /\b(guarantee(d|s)?|we('| wi)ll win|no win,?\s*no fee|100%\s*(win|success|recovery))\b|\b(garantiza(mos|do|da|n)?|garant[íi]a)\b|\bganaremos\b|\bsin\s+honorarios\b|\bsi\s+no\s+gana(mos)?,?\s*no\s+paga\b|\b(sin\s+ganar,?\s*sin\s+(pagar|cobrar))\b|\b100%\s*(de\s*)?([ée]xito|recuperaci[óo]n)\b|\bgarantiz\w*\b/i,
   },
   {
     code: "superlative",
@@ -115,21 +120,21 @@ const RULES: Rule[] = [
     // "specializing in …"), not in legitimate terms like "expert witness".
     // The Spanish half mirrors that: "el mejor abogado" is a claim, and
     // "nos especializamos en" is the direct analogue of "specializing in".
-    re: /#\s?1\b|\bnumber one\b|\btop[-\s]rated\b|\bbest (lawyer|attorney|law firm|firm)\b|\bleading (law )?firm\b|\bpremier (law )?firm\b|\bwinningest\b|\bmost experienced (lawyer|attorney|firm)\b|\b(we are|we're|our)( the)? (experts?|specialists?)\b|\bspecializ(e|es|ing) in\b|\bn[úu]mero\s+uno\b|\b(el|la|los|las)\s+mejor(es)?\s+(abogad[oa]s?|bufete|firma|despacho)\b|\bbufete\s+l[íi]der\b|\b(somos|nuestros?)\s+(expert[oa]s|especialistas)\b|\bnos\s+especializamos\s+en\b/i,
+    re: /#\s?1\b|\bnumber one\b|\btop[-\s]rated\b|\bbest (lawyer|attorney|law firm|firm)\b|\bleading (law )?firm\b|\bpremier (law )?firm\b|\bwinningest\b|\bmost experienced (lawyer|attorney|firm)\b|\b(we are|we're|our)( the)? (experts?|specialists?)\b|\bspecializ(e|es|ing) in\b|\bn[úu]mero\s+uno\b|\b(el|la|los|las)\s+mejor(es)?\s+(abogad[oa]s?|bufete|firma|despacho)\b|\bbufete\s+l[íi]der\b|\b(somos|nuestros?)\s+(expert[oa]s|especialistas)\b|\bnos\s+especializamos\s+en\b|\bm[áa]s\s+experimentad[oa]s?\b|\bespecializad[oa]s?\s+en\b/i,
   },
   {
     code: "fear",
     scope: "all",
     label: "Fear-based urgency — off-brand",
     severity: "block",
-    re: /\b(act now|limited time|don'?t wait|before it'?s too late|time is running out|hurry|urgent(ly)?)\b|\bact[úu]e?\s+ahora\b|\bno\s+espere\b|\btiempo\s+limitado\b|\bantes\s+de\s+que\s+sea\s+demasiado\s+tarde\b|\b(se\s+acaba|se\s+est[áa]\s+acabando)\s+el\s+tiempo\b|\burgente(mente)?\b|\bap[úu]rese\b/i,
+    re: /\b(act now|limited time|don'?t wait|before it'?s too late|time is running out|hurry|urgent(ly)?)\b|\bact[úu]e?\s+ahora\b|\bno\s+espere\b|\btiempo\s+limitado\b|\bantes\s+de\s+que\s+sea\s+demasiado\s+tarde\b|\b(se\s+acaba|se\s+est[áa]\s+acabando)\s+el\s+tiempo\b|\burgente(mente)?\b|\bap[úu]rese\b|\bcon\s+urgencia\b|\bno\s+esper\w*\b/i,
   },
   {
     code: "fee",
     scope: "all",
     label: "Fee or price language — off-brand",
     severity: "block",
-    re: /\bfree consultation\b|\bno fee\b|\bcontingency\b|\$\s?\d|\bconsulta\s+(gratis|gratuita)\b|\bsin\s+costo\b|\bhonorarios\s+de\s+contingencia\b/i,
+    re: /\bfree consultation\b|\bno fee\b|\bcontingency\b|\$\s?\d|\bconsulta\s+(gratis|gratuita)\b|\bsin\s+costo\b|\bhonorarios\s+de\s+contingencia\b|\bsin\s+(cargo|honorarios)\b|\bcuota\s+de\s+contingencia\b/i,
   },
   {
     code: "state_abbrev",
@@ -235,7 +240,12 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
         // Skip a phone-shaped run that's clearly a reference number, not a
         // phone number (a case/docket/invoice number formatted the same way).
         const before = body.slice(Math.max(0, (m.index ?? 0) - 20), m.index ?? 0).toLowerCase();
-        if (/(case|docket|claim|invoice|order|index|file)\s*(no\.?|number|#)?\s*:?\s*$/.test(before)) return false;
+        if (
+          /(case|docket|claim|invoice|order|index|file|caso|expediente|reclamo|factura|orden|archivo)\s*(no\.?|number|n(ú|u)mero|num\.?|#)?\s*:?\s*$/.test(
+            before,
+          )
+        )
+          return false;
         return normalizePhone(m[0]) !== correct;
       });
     if (wrongPhone) {
@@ -342,20 +352,31 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
   // "free confidential case review" are both drift, and a case-insensitive
   // match would wave the second one through. Matching case-sensitively first
   // and falling back to case-insensitive tells the reviewer which one it is.
-  if (ctx.ctaType === "consultation" && ctx.offerPhrase) {
-    if (!body.includes(ctx.offerPhrase)) {
-      const loose = body.toLowerCase().indexOf(ctx.offerPhrase.toLowerCase());
+  if (ctx.ctaType === "consultation" && (ctx.offerPhrase || ctx.offerPhraseEs)) {
+    // Either locked phrase satisfies it. Check them in order and stop at the
+    // first exact hit, so a bilingual caption carrying the English phrase is
+    // not then failed for the Spanish one it also has, correctly, in full.
+    const locked = [ctx.offerPhrase, ctx.offerPhraseEs].filter(
+      (s): s is string => !!s && !!s.trim(),
+    );
+    if (!locked.some((phrase) => body.includes(phrase))) {
+      // Report against whichever phrase is closest to being right — the one the
+      // post already has in some casing — so the fix names the drifted string
+      // rather than an unrelated language's phrase.
+      const drifted =
+        locked.find((phrase) => body.toLowerCase().includes(phrase.toLowerCase())) ?? locked[0];
+      const loose = body.toLowerCase().indexOf(drifted.toLowerCase());
       if (loose >= 0) {
         flags.push({
           code: "offer_wording",
-          label: `Offer phrase must read exactly "${ctx.offerPhrase}" — check the capitals`,
+          label: `Offer phrase must read exactly "${drifted}" — check the capitals`,
           severity: "block",
-          excerpt: body.slice(loose, loose + ctx.offerPhrase.length),
+          excerpt: body.slice(loose, loose + drifted.length),
         });
       } else {
         flags.push({
           code: "missing_offer",
-          label: `Consultation CTA is missing the offer ("${ctx.offerPhrase}")`,
+          label: `Consultation CTA is missing the offer ("${drifted}")`,
           severity: "block",
           excerpt: "",
         });

@@ -129,12 +129,12 @@ export async function gateSocialPost(args: {
       platform,
       format: args.format ?? undefined,
       ctaType: resolved.ctaType ?? undefined,
-      // A Spanish companion is checked against the Spanish offer phrase. With
-      // one phrase for both, every Spanish consultation post would be held for
-      // a missing offer it could not have carried.
-      offerPhrase: isCompanionTranslation
-        ? args.operatingBrief.offerPhraseEs
-        : args.operatingBrief.offerPhrase,
+      // A Spanish companion is checked against the Spanish offer phrase, and
+      // only that one. With one phrase for both, every Spanish consultation
+      // post would be held for a missing offer it could not have carried; with
+      // both passed, an untranslated English offer would quietly pass.
+      offerPhrase: isCompanionTranslation ? undefined : args.operatingBrief.offerPhrase,
+      offerPhraseEs: isCompanionTranslation ? args.operatingBrief.offerPhraseEs : undefined,
       disclaimerUrl: args.operatingBrief.disclaimerUrl,
     })) {
       if (f.severity === "block") complianceFlagsByCode.set(f.code, f.label);

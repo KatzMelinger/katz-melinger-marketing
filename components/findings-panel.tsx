@@ -168,9 +168,10 @@ export function FindingsPanel({
     );
   }
 
-  // Nothing tracked yet is a normal state (the migration may not be run, or the
-  // draft has never been analyzed). Say so plainly rather than showing an
-  // empty box that reads like "no problems".
+  // Nothing tracked yet, and no gated engine armed to show a "checked, clear"
+  // chip — a normal state (the migration may not be run, or the draft has
+  // never been analyzed). Say so plainly rather than showing an empty box
+  // that reads like "no problems".
   if (findings.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 p-3 text-xs text-slate-500">
@@ -315,6 +316,20 @@ export function FindingsPanel({
                             </div>
                             {!closedRow ? (
                               <div className="flex shrink-0 gap-1">
+                                {/* One finding on its own. "Fix all" above sends
+                                    the whole group; a reviewer who wants just
+                                    this one had to resolve it by hand. Only
+                                    drawn when there is a suggested fix to send
+                                    and somewhere to send it. */}
+                                {onFixAll && f.fix && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onFixAll([fixText(f)])}
+                                    className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60"
+                                  >
+                                    Apply fix
+                                  </button>
+                                )}
                                 {f.status === "open" && (
                                   <button
                                     type="button"

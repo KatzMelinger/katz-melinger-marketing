@@ -28,15 +28,26 @@ import {
   formatReadabilityFindings,
   readabilityContentType,
 } from "./readability-rules";
-import { readabilityRulesEngineEnabled } from "./feature-flags";
+import {
+  readabilityRulesEngineEnabled,
+  freshnessGateEnabled,
+  legalAccuracyEnabled,
+} from "./feature-flags";
+import { checkBlogCannibalization } from "./blog-cannibalization";
 import { buildFingerprint, type AnalysisFingerprint } from "./analysis-fingerprint";
 import {
   normalizeComplianceFindings,
   normalizeStringFindings,
+  normalizeReadabilityFindings,
+  normalizeFreshnessFindings,
   type NormalizedFinding,
 } from "./content-findings";
 import { listFindings, syncFindings } from "./content-findings-store";
 import { capSourceExpertise, coordinateFindings } from "./finding-coordination";
+import { findTimeSensitiveFacts } from "./freshness-check";
+import { classifyFreshness } from "./freshness-classify";
+import { getCurrentFacts } from "./current-facts-store";
+import { runLegalCheck } from "./legal-verify";
 import { notifyNewFindings } from "./content-notifications";
 import { ensureDraftMetadata } from "./draft-metadata";
 import { evaluateAiReadabilityRules } from "./readability-ai";
@@ -118,6 +129,20 @@ export type ContentAnalysis = {
   compliance_violations: ComplianceViolation[];
   compliance_required_disclaimers: string[];
   compliance_summary: string;
+  /** Live-only: the caught error when the compliance check itself failed
+   *  (score above is null in that case). Not persisted — see the strip
+   *  before insert below — so it only shows right after a run, not on reload. */
+  compliance_error?: string | null;
+  /** Live-only (see the strip before insert below — no migrated column yet):
+   *  set when this blog's target keyword matches a live page that already owns
+   *  it. Same engine the approve-route gate runs (lib/blog-cannibalization.ts),
+   *  so the tile and the gate can never disagree. Null when there is no
+   *  conflict AND when the check could not run — the gate is the authority on
+   *  a hold; this is the scorecard read. */
+  cannibalization_conflict?: {
+    keyword: string;
+    page: { url: string; title: string; pageType: string };
+  } | null;
   suggested_titles: string[];
   /** Per-title conflict detail (only present in the live response — not
    *  persisted). Lets the UI render a warning badge on titles that overlap
@@ -906,9 +931,22 @@ export async function analyzeDraft(args: {
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
+  // Set inside the compliance catch below so the UI can show the reviewer WHY
+  // the tile reads "n/a" instead of a silent, unexplained gap.
+  let complianceError: string | null = null;
   // Run brand voice + CASH + linkability + contentEnhancements + compliance in
   // parallel — all are Claude calls and independent of each other.
-  const [brand, cash, linkability, enhancements, compliance, aiReadability] = await Promise.all([
+  const [
+    brand,
+    cash,
+    linkability,
+    enhancements,
+    compliance,
+    aiReadability,
+    cannibalization,
+    freshnessResult,
+    legalResult,
+  ] = await Promise.all([
     brandVoiceMatch(body, tid),
     cashScore(body),
     linkabilityScore({ body, topic: topic ?? title ?? "", title }),
@@ -921,13 +959,15 @@ export async function analyzeDraft(args: {
       targetKeywords,
     }),
     // Advisory attorney-advertising compliance. Never let it fail the whole
-    // analysis — degrade to a null score the UI renders as "re-run".
+    // analysis — degrade to a null score the UI renders as "re-run", but keep
+    // the real reason so the reviewer isn't staring at a blank n/a.
     checkContentCompliance({
       content: body,
       surface: formatToComplianceSurface(format),
       practiceArea: args.practiceArea ?? undefined,
     }).catch((err) => {
       console.warn("[content-analysis] Compliance check failed:", err);
+      complianceError = err instanceof Error ? err.message : String(err);
       return null;
     }),
     // The 5 AI-assisted readability rules (08/11/12/13/14). Only when the engine
@@ -935,6 +975,50 @@ export async function analyzeDraft(args: {
     useReadabilityRules
       ? evaluateAiReadabilityRules(body)
       : Promise.resolve({ findings: [], evaluatedRuleIds: [] }),
+    // Commercial-cannibalization (item 17): the same check the approve-route
+    // gate runs, so the tile and the hold always agree. It reports `unchecked`
+    // rather than `clear` when the site inventory is unreadable, and only a
+    // commercial-intent keyword counts as a conflict — an informational blog
+    // covering a service page's subject is the intended arrangement, not a
+    // finding. The catch is only for a totally unexpected throw.
+    checkBlogCannibalization({ targetKeywords, title: title ?? topic ?? null })
+      .then((r) =>
+        r.status === "conflict" && r.conflicts.length
+          ? {
+              keyword: r.conflicts[0].keyword,
+              page: {
+                url: r.conflicts[0].url,
+                title: r.conflicts[0].title,
+                pageType: r.conflicts[0].pageType,
+              },
+            }
+          : null,
+      )
+      .catch(() => null),
+    // Freshness engine (spec item 3 / questions 96-97) — only when flagged, so
+    // this never shows a "Freshness" tab the approve route isn't actually
+    // enforcing yet (see freshnessGateEnabled() in lib/feature-flags.ts). `ran`
+    // lets the UI show a clear "Freshness ✓" state distinct from "flag is off".
+    // A check failure degrades to "ran, nothing to report" rather than crashing
+    // the whole analysis — the approve-route gate is the one that must fail
+    // closed, not this informational scorecard read.
+    freshnessGateEnabled()
+      ? getCurrentFacts(tid)
+          .then((facts) => ({
+            ran: true,
+            findings: normalizeFreshnessFindings(classifyFreshness(findTimeSensitiveFacts(body), facts)),
+          }))
+          .catch(() => ({ ran: true, findings: [] as NormalizedFinding[] }))
+      : Promise.resolve({ ran: false, findings: [] as NormalizedFinding[] }),
+    // Legal-accuracy engine (spec item 1 / questions 96-97) — same "ran" signal
+    // and same fail-soft-for-display reasoning as freshness above.
+    // runLegalCheck already returns NormalizedFinding[] (see
+    // app/api/agent/approve/route.ts), so no separate normalizer is needed.
+    legalAccuracyEnabled()
+      ? runLegalCheck(body, { tenantId: tid })
+          .then((r) => ({ ran: true, findings: r.findings }))
+          .catch(() => ({ ran: true, findings: [] as NormalizedFinding[] }))
+      : Promise.resolve({ ran: false, findings: [] as NormalizedFinding[] }),
   ]);
 
   // Now that the AI rules are in, compute the final rule-based readability result.
@@ -946,10 +1030,15 @@ export async function analyzeDraft(args: {
         config: readabilityConfig,
       })
     : null;
+  // Cross-engine coordination happens further down, on the NORMALIZED findings
+  // (see coordinateFindings below) rather than on each engine's raw output: by
+  // then every engine has an excerpt and a rule id to match on, and the same
+  // ownership rules cover Legal and Freshness too.
   const readabilityScore = ruleResult ? ruleResult.score : normalizeReadability(flesch);
   const readabilityFindingList = ruleResult
     ? formatReadabilityFindings(ruleResult.findings)
     : readabilityFindings(body);
+  const aeoFindingList = aeo.findings;
   logEvent("readability_scored", {
     engine: useReadabilityRules ? "rules" : "flesch",
     score: readabilityScore,
@@ -1011,7 +1100,7 @@ export async function analyzeDraft(args: {
     keyword_density: keywordDensity(words),
     target_keyword_hits: targetHits(body, targetKeywords),
     aeo_score: aeo.score,
-    aeo_findings: aeo.findings,
+    aeo_findings: aeoFindingList,
     brand_voice_score: brand.score,
     brand_voice_findings: brand.findings,
     cash_score: cashAdjusted.score,
@@ -1030,6 +1119,8 @@ export async function analyzeDraft(args: {
       ? compliance.requiredDisclaimers
       : [],
     compliance_summary: compliance ? compliance.summary : "",
+    compliance_error: compliance ? null : complianceError,
+    cannibalization_conflict: cannibalization,
     suggested_titles: keptTitles,
     suggested_titles_dropped: filtered.dropped,
     suggested_titles_conflicts_avoided: filtered.dropped.length,
@@ -1040,11 +1131,16 @@ export async function analyzeDraft(args: {
     scored_against: buildFingerprint(body),
   };
 
-  // Strip live-only fields (cannibalization detail) before persisting —
-  // they're metadata for the current response, not stored columns.
+  // Strip live-only fields (title-suggestion cannibalization detail, compliance
+  // failure reason, the commercial-cannibalization conflict) before persisting
+  // — they're metadata for the current response, not stored columns. The
+  // cannibalization conflict has no migrated column yet; it's recomputed on
+  // every live analysis rather than carried across a reload.
   const persistable = { ...analysis };
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_dropped;
   delete (persistable as Partial<ContentAnalysis>).suggested_titles_conflicts_avoided;
+  delete (persistable as Partial<ContentAnalysis>).compliance_error;
+  delete (persistable as Partial<ContentAnalysis>).cannibalization_conflict;
 
   // Graceful column-degradation. If new columns aren't migrated yet, drop
   // the offending fields and retry. Newest columns (compliance_*) drop first,
@@ -1148,13 +1244,15 @@ export async function analyzeDraft(args: {
   // analysis the caller actually asked for.
   try {
     const raw: NormalizedFinding[] = [
-      ...normalizeStringFindings("readability", analysis.readability_findings),
+      ...normalizeReadabilityFindings(analysis.readability_findings),
       ...normalizeStringFindings("seo", analysis.seo_findings),
       ...normalizeStringFindings("aeo", analysis.aeo_findings),
       ...normalizeStringFindings("cash", analysis.cash_findings),
       ...normalizeStringFindings("brand_voice", analysis.brand_voice_findings),
       ...normalizeStringFindings("linkability", analysis.linkability_findings),
       ...normalizeComplianceFindings(analysis.compliance_violations),
+      ...freshnessResult.findings,
+      ...legalResult.findings,
     ];
 
     // Item 19 — one concern, one engine. The style engines overlap heavily, so

@@ -26,6 +26,8 @@ export const metadata: Metadata = {
   title: APP_NAME,
   description:
     "Marketing, SEO, and content command center for law firms.",
+  // Every page requires login, so nothing here should ever be indexed.
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({

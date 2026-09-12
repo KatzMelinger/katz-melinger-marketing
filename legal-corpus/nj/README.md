@@ -56,6 +56,15 @@ All five priority sections are in. `34:11-4.2` (wage payment frequency) is not,
 and probably does not need to be — the Department of Labor page covers Title
 34:11 live.
 
+For an `nj_statute` citation that isn't held here and isn't on the DOL page,
+`lib/legal-retrieval.ts` now has one more fallback before routing to an
+attorney: `lib/nj-statute-bulk.ts` fetches the NJ Legislature's own bulk
+statute export (pub.njleg.state.nj.us/statutes — a route this survey didn't
+test) and extracts the section from it live. That's an automated extraction
+from a flat government text file, not a Westlaw export a human reviewed — a
+real but lower-trust source than the entries above, used only for the long
+tail these five sections don't cover.
+
 Note on 10:5-12: Westlaw carries a KeyCite flag recording that a PRIOR version's
 limitation was recognised in *Affrunti v. Reed Smith LLP* (N.J. Super. A.D., 20
 Nov 2025). The text held here is the current one, effective 20 January 2026.

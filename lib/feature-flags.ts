@@ -55,3 +55,4 @@ export function nativeSocialAnalyticsEnabled(): boolean {
 export function legalAccuracyEnabled(): boolean {
   return enabled("LEGAL_ACCURACY");
 }
+

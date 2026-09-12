@@ -72,6 +72,16 @@ export type Analysis = {
   }[];
   compliance_required_disclaimers?: string[];
   compliance_summary?: string;
+  // Present only right after a live run where the check itself failed (the
+  // score above is null). Not persisted, so it's gone again after a reload.
+  compliance_error?: string | null;
+  // Set when this blog's target keyword/topic/title matches an existing
+  // service/practice-area page — only computed when CANNIBALIZATION_GATE is
+  // on. Live-only (no migrated column yet), so it's gone again after a reload.
+  cannibalization_conflict?: {
+    keyword: string;
+    page: { url: string; title: string; pageType: string };
+  } | null;
   suggested_titles?: string[];
   // Live-only fields (stripped before persistence). Optional so older
   // analyses loaded from DB don't fail the type check.
@@ -98,6 +108,7 @@ export function AnalysisCard({
   onApplyTitle,
   onApplyLink,
   currentTitle,
+  format,
 }: {
   analysis: Analysis;
   /** These scores no longer describe the current draft (edited since scoring,
@@ -119,7 +130,16 @@ export function AnalysisCard({
   onApplyLink?: (term: string, url: string) => void | Promise<void>;
   /** Current draft title — used to mark the active title in the picker. */
   currentTitle?: string | null;
+  /** The draft's content format — used only to reflect accurately whether the
+   *  Attorney Advertising compliance gate actually blocks approval for this
+   *  content (legal blogs and service pages, spec item 11) or stays advisory
+   *  (any other format). Mirrors surfaceForFormat + the scoping in
+   *  app/api/agent/approve/route.ts — kept as a plain string check here (not
+   *  imported from that lib) since this is a client component and that gate
+   *  logic pulls in server-only compliance-check code. */
+  format?: string | null;
 }) {
+  const complianceGateApplies = format === "blog" || format === "webpage";
   // A stale analysis exposes no Apply affordances at all. Disabling them at the
   // top means the grouped readability view, the per-row buttons, the batch bar
   // and the title/link pickers all go read-only together, rather than each
@@ -251,7 +271,14 @@ export function AnalysisCard({
         <ScoreTile
           label="Compliance"
           value={analysis.compliance_score ?? null}
-          hint="NY/NJ attorney-advertising review (advisory)"
+          hint={
+            complianceGateApplies
+              ? "NY/NJ attorney-advertising review — blocks approval for this content type"
+              : "NY/NJ attorney-advertising review (advisory for this content type)"
+          }
+          error={analysis.compliance_error ?? null}
+          onRetry={onRerun}
+          retrying={rerunning}
         />
       </div>
       <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
@@ -291,6 +318,13 @@ export function AnalysisCard({
           summary={analysis.compliance_summary ?? ""}
           violations={analysis.compliance_violations ?? []}
           requiredDisclaimers={analysis.compliance_required_disclaimers ?? []}
+          gateApplies={complianceGateApplies}
+        />
+      )}
+      {analysis.cannibalization_conflict && (
+        <CannibalizationPanel
+          conflict={analysis.cannibalization_conflict}
+          onApplyLink={applyLink}
         />
       )}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
@@ -964,6 +998,17 @@ export function ApplySuggestionModal({
             body: JSON.stringify({ findings }),
           },
         );
+        // The route always returns JSON, but a platform-level failure (a
+        // gateway timeout, a proxy error page) can return plain text instead.
+        // Check content-type before parsing so that shows up as a readable
+        // message, not a raw "Unexpected token" JSON parse error.
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          const text = await res.text();
+          throw new Error(
+            text.trim() ? text.slice(0, 300) : `Apply failed (${res.status})`,
+          );
+        }
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? "Apply failed");
         if (cancelled) return;
@@ -995,7 +1040,7 @@ export function ApplySuggestionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-5xl max-h-[90vh] flex flex-col rounded-xl bg-white border border-slate-200 shadow-xl relative">
+      <div className="w-full max-w-6xl h-[90vh] flex flex-col rounded-xl bg-white border border-slate-200 shadow-xl relative">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl"
@@ -1026,14 +1071,14 @@ export function ApplySuggestionModal({
         </div>
 
         {loading ? (
-          <div className="p-12 flex flex-col items-center gap-3 text-sm text-slate-600">
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-sm text-slate-600">
             <DashSpinner />
             {isMulti
               ? `Asking Claude to resolve all ${findings.length} in one pass…`
               : "Asking Claude for the smallest edit that resolves this…"}
           </div>
         ) : error ? (
-          <div className="p-5 text-sm text-red-700 bg-red-50 border-t border-red-200">
+          <div className="flex-1 p-5 text-sm text-red-700 bg-red-50 border-t border-red-200">
             {error}
             <div className="mt-3">
               <DashButton variant="outline" onClick={onClose}>
@@ -1139,7 +1184,7 @@ function RedlinePanel({
           </span>
         )}
       </div>
-      <pre className="flex-1 overflow-auto p-4 text-xs whitespace-pre-wrap font-mono text-slate-700 leading-relaxed">
+      <pre className="flex-1 overflow-auto p-5 text-sm whitespace-pre-wrap font-mono text-slate-700 leading-loose">
         {changes.map((c, i) => {
           if (c.added) {
             return (
@@ -1189,10 +1234,23 @@ function ScoreTile({
   label,
   value,
   hint,
+  error,
+  onRetry,
+  retrying,
 }: {
   label: string;
   value: number | null;
   hint?: string;
+  /** The caught error, when the score is null because the check itself
+   *  failed (vs. simply never having been run). Shown in place of the
+   *  generic "re-run analysis" hint so the reviewer knows this isn't just
+   *  an unscored tile. */
+  error?: string | null;
+  /** Retries the check. Currently re-runs the whole analysis (there's no
+   *  single-engine re-run endpoint yet) but is scoped to this tile so the
+   *  reviewer doesn't have to go hunting for the top-level button. */
+  onRetry?: () => void;
+  retrying?: boolean;
 }) {
   // null means "couldn't compute" (Claude failure). Render an obvious "n/a"
   // rather than a red 0 that misrepresents the content.
@@ -1200,13 +1258,27 @@ function ScoreTile({
     return (
       <div
         className="rounded-lg border border-dashed border-slate-300 p-3 bg-slate-50/60"
-        title={hint ? `${hint} — couldn't compute, re-run analysis` : "Couldn't compute — re-run analysis"}
+        title={error ?? (hint ? `${hint} — couldn't compute, re-run analysis` : "Couldn't compute — re-run analysis")}
       >
         <div className="text-2xl font-bold text-slate-400">n/a</div>
         <div className="text-xs text-slate-500 mt-1">{label}</div>
-        <div className="text-[10px] text-slate-400 mt-2 italic">
-          re-run analysis
-        </div>
+        {error ? (
+          <div className="text-[10px] text-red-600 mt-2 line-clamp-2">{error}</div>
+        ) : (
+          <div className="text-[10px] text-slate-400 mt-2 italic">
+            re-run analysis
+          </div>
+        )}
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="text-[10px] mt-1.5 underline text-brand hover:text-brand/80 disabled:opacity-60"
+          >
+            {retrying ? "Retrying…" : "Retry"}
+          </button>
+        )}
       </div>
     );
   }
@@ -1239,20 +1311,26 @@ type ComplianceViolationView = {
 };
 
 /**
- * Attorney-advertising compliance detail. Advisory — it never blocks
- * publishing; it surfaces the status, the rule violations, and the disclaimers
- * the firm needs to add before this content goes out.
+ * Attorney-advertising compliance detail: the status, the rule violations, and
+ * the disclaimers the firm needs to add before this content goes out.
+ *
+ * Whether it's actually a hard gate or just advisory depends on content type
+ * (spec item 11) — `gateApplies` reflects app/api/agent/approve/route.ts's own
+ * scoping (legal blogs and service pages only) so this badge never tells the
+ * reviewer the opposite of what approval will actually do.
  */
 function CompliancePanel({
   status,
   summary,
   violations,
   requiredDisclaimers,
+  gateApplies,
 }: {
   status: "compliant" | "needs_changes" | "non_compliant" | null;
   summary: string;
   violations: ComplianceViolationView[];
   requiredDisclaimers: string[];
+  gateApplies: boolean;
 }) {
   const statusMeta: Record<
     "compliant" | "needs_changes" | "non_compliant",
@@ -1279,8 +1357,10 @@ function CompliancePanel({
             {meta.label}
           </span>
         )}
-        <span className="text-[10px] text-slate-400 italic ml-auto">
-          advisory — review before publishing
+        <span
+          className={`text-[10px] italic ml-auto ${gateApplies ? "text-red-600 font-medium" : "text-slate-400"}`}
+        >
+          {gateApplies ? "blocks approval until resolved" : "advisory — review before publishing"}
         </span>
       </div>
       {summary && <p className="text-xs text-slate-600 mb-3">{summary}</p>}
@@ -1329,6 +1409,66 @@ function CompliancePanel({
         <div className="text-xs text-slate-500">
           No specific violations flagged{requiredDisclaimers.length > 0 ? " — add the disclaimers above." : "."}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Commercial-cannibalization conflict (spec item 5). This blog's target
+ * keyword matches an existing service/practice-area page — a real blocker at
+ * approval (see app/api/agent/approve/route.ts), not advisory like compliance
+ * above. "Insert link" reuses the same apply-link flow as the overlap check.
+ */
+function CannibalizationPanel({
+  conflict,
+  onApplyLink,
+}: {
+  conflict: { keyword: string; page: { url: string; title: string; pageType: string } };
+  onApplyLink?: (term: string, url: string) => void | Promise<void>;
+}) {
+  const [applied, setApplied] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const pageLabel = conflict.page.pageType.replace("_", " ");
+  return (
+    <div className="mt-4 rounded-lg border border-red-200 bg-red-50/40 p-4">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span aria-hidden>⚠</span>
+        <div className="text-sm font-medium text-red-800">Commercial cannibalization</div>
+        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-200">
+          Blocks approval
+        </span>
+      </div>
+      <p className="text-xs text-slate-700 mb-2">
+        This targets <strong>&ldquo;{conflict.keyword}&rdquo;</strong>, already owned by the {pageLabel}{" "}
+        <a
+          href={conflict.page.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-brand hover:underline"
+        >
+          {conflict.page.title}
+        </a>
+        . Reposition this draft to an informational angle and link to that page instead of
+        competing with it.
+      </p>
+      {onApplyLink && (
+        <button
+          type="button"
+          disabled={applying || applied}
+          onClick={async () => {
+            setApplying(true);
+            try {
+              await onApplyLink(conflict.keyword, conflict.page.url);
+              setApplied(true);
+            } finally {
+              setApplying(false);
+            }
+          }}
+          className="text-xs px-2.5 py-1 rounded border border-red-300 bg-white text-red-700 hover:bg-red-100 disabled:opacity-60"
+        >
+          {applied ? "Link inserted" : applying ? "Inserting…" : `Insert link to ${pageLabel}`}
+        </button>
       )}
     </div>
   );

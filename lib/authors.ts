@@ -90,7 +90,10 @@ export const NICOLE_GRUNFELD: Author = {
   email: "ndgrunfeld@katzmelinger.com",
   title: "Partner",
   firm: "Katz Melinger PLLC",
-  experience: "15+ years",
+  // Derived from her bio line below ("Since 2007") — was "15+ years" and had
+  // drifted 4 years stale; findExperienceMismatches (lib/firm-facts.ts) is
+  // what caught it. Bump this periodically so it doesn't drift again.
+  experience: "19+ years",
   credentials: "J.D., New York University School of Law (Vanderbilt Medal)",
   barAdmissions: [
     "New York",

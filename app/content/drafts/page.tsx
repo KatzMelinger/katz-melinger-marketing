@@ -809,6 +809,7 @@ export default function DraftsPage() {
                   onApplyFindings={(fs) => setApplyingFindings(fs)}
                   onApplyTitle={applyTitle}
                   currentTitle={selectedDraft.title}
+                  format={selectedDraft.format}
                 />
               )}
 

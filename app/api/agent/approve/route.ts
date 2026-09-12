@@ -180,6 +180,10 @@ async function approveContent(
       };
       const mergedMetadata = {
         ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+        // Overwritten on every hold attempt so the drawer always shows the
+        // CURRENT reason, not a stale one left over from an earlier gate that
+        // has since been fixed (metadata otherwise only ever grows).
+        held_reason: "freshness",
         freshness_gate: freshness,
       };
       await supabase
@@ -280,18 +284,28 @@ async function approveContent(
   // gated exactly like the agent's auto-path, fail-closed to needs_legal — so a
   // reviewer can't sign off on content the gate would have held (and edits made
   // since drafting are re-checked). The gate throwing = treat as held.
+  //
+  // Scoped to legal blogs and service pages (spec item 11) — the firm's
+  // Attorney Advertising label/disclaimer requirement is a hard block only for
+  // those two surfaces. Other content types that reach this same endpoint
+  // (e.g. an email newsletter draft) still get the identical check and its
+  // violations are recorded for visibility, but a failing verdict there does
+  // not hold the draft — it stays advisory, same as the scorecard already
+  // shows during editing.
+  const surface = surfaceForFormat((draft.format as string | null) ?? "blog");
+  const complianceGateApplies = surface === "blog" || surface === "webpage";
   let verdict;
   try {
     verdict = await runComplianceGate({
       content: typeof draft.body === "string" ? draft.body : "",
-      surface: surfaceForFormat((draft.format as string | null) ?? "blog"),
+      surface,
       practiceArea: (draft.practice_area as string | null) ?? undefined,
     });
   } catch {
     verdict = null;
   }
 
-  if (!verdict || !verdict.pass) {
+  if (complianceGateApplies && (!verdict || !verdict.pass)) {
     const compliance = verdict
       ? {
           pass: verdict.pass,
@@ -309,6 +323,7 @@ async function approveContent(
 
     const mergedMetadata = {
       ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+      held_reason: "compliance",
       compliance,
     };
     await supabase
@@ -395,11 +410,33 @@ async function approveContent(
 
       if (cannibal.status === "conflict") {
         await setDraftStatus(supabase, tenantId, id, "review");
+        // Record WHICH gate held this, so the pipeline can say
+        // "cannibalization" rather than always reporting "compliance".
+        await supabase
+          .from("content_drafts")
+          .update({
+            metadata: {
+              ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+              held_reason: "cannibalization",
+              cannibalization_conflict: { conflicts: cannibal.conflicts },
+            },
+          })
+          .eq("id", id)
+          .eq("tenant_id", tenantId);
         await recordAuditEvent({
           tenantId,
           draftId: id,
           event: "draft_held_cannibalization",
           detail: { conflicts: cannibal.conflicts.map((c) => ({ url: c.url, keyword: c.keyword })) },
+        });
+        await notifyDraftBlocked({
+          draftId: id,
+          tenantId,
+          reason: "cannibalization",
+          detail: cannibal.conflicts
+            .slice(0, 5)
+            .map((c) => `"${c.keyword}" is already targeted by ${c.title} (${c.url}).`)
+            .join(" "),
         });
         return NextResponse.json(
           {
@@ -517,9 +554,24 @@ async function approveContent(
         .slice(0, 5)
         .map((f) => `- ${f.title}: "${(f.excerpt ?? "").slice(0, 120)}"`)
         .join("\n");
+      const legalHold = {
+        stats: legalStats,
+        critical: critical.map((c) => ({
+          title: c.title,
+          excerpt: c.excerpt,
+          source: c.sourceChecked,
+        })),
+      };
       await supabase
         .from("content_drafts")
-        .update({ status: "needs_legal" })
+        .update({
+          status: "needs_legal",
+          metadata: {
+            ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+            held_reason: "legal",
+            legal_hold: legalHold,
+          },
+        })
         .eq("id", id)
         .eq("tenant_id", tenantId);
       await supabase
@@ -546,19 +598,13 @@ async function approveContent(
         {
           error: `Held for legal review — ${critical.length} claim(s) need an attorney before this can publish.`,
           status: "needs_legal",
-          legal: {
-            stats: legalStats,
-            critical: critical.map((f) => ({
-              title: f.title,
-              excerpt: f.excerpt,
-              source: f.sourceChecked,
-            })),
-          },
+          legal: legalHold,
         },
         { status: 422 },
       );
     }
   }
+
   await setDraftStatus(supabase, tenantId, id, "approved");
   // Who approved this, and what the checks said at the time. Approval was the
   // one action with no durable record of either.
@@ -570,8 +616,12 @@ async function approveContent(
     actorUserId: approver?.id ?? null,
     actorEmail: approver?.email ?? null,
     detail: {
-      compliance_score: verdict.score,
-      compliance_status: verdict.status,
+      // verdict can be null here now that the gate is scoped off some
+      // surfaces (spec item 11) — a non-blog/webpage draft whose compliance
+      // check itself failed still reaches approval, with no verdict to report.
+      compliance_score: verdict?.score ?? null,
+      compliance_status: verdict?.status ?? null,
+      compliance_gate_applied: complianceGateApplies,
       freshness_gate: freshnessGateEnabled() ? "enforced" : "off",
       freshness_verified_keys: Array.from(verifiedKeys),
     },
