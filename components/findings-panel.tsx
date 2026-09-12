@@ -75,7 +75,34 @@ function isBlocker(f: StoredFinding): boolean {
 
 type Engines = { legal: boolean; freshness: boolean };
 
-export function FindingsPanel({ draftId, nonce }: { draftId: string; nonce?: number }) {
+/**
+ * Converts a finding into the same free-text feedback shape the apply-suggestion
+ * endpoint (app/api/content/drafts/[id]/apply-suggestion) already accepts
+ * from the Analysis card — it just wants a natural-language description of
+ * what to fix plus the excerpt to anchor on, not a specific schema. Mirrors
+ * the "Rule N: description. fix "excerpt"" shape formatReadabilityFindings
+ * already produces, generalized to every source.
+ */
+function findingToFeedback(f: StoredFinding): string {
+  const head = [f.title, f.detail].filter(Boolean).join(". ");
+  const fix = f.fix ? ` ${f.fix}` : "";
+  const excerpt = f.excerpt ? ` "${f.excerpt}"` : "";
+  return `${head}.${fix}${excerpt}`.replace(/\s+/g, " ").trim();
+}
+
+export function FindingsPanel({
+  draftId,
+  nonce,
+  onApplyFinding,
+}: {
+  draftId: string;
+  nonce?: number;
+  /** Sends this finding's text to the same Apply-and-review-diff flow the
+   *  Analysis card uses (via ApplySuggestionModal) — the caller owns opening
+   *  the modal, this component just hands it the feedback text. Omit to hide
+   *  the Apply button entirely (e.g. a read-only context). */
+  onApplyFinding?: (findingText: string) => void;
+}) {
   const [findings, setFindings] = useState<StoredFinding[]>([]);
   const [engines, setEngines] = useState<Engines>({ legal: false, freshness: false });
   const [loading, setLoading] = useState(true);
@@ -284,6 +311,16 @@ export function FindingsPanel({ draftId, nonce }: { draftId: string; nonce?: num
                   </div>
                   {!isClosed && (
                     <div className="flex shrink-0 gap-1">
+                      {onApplyFinding && (
+                        <button
+                          type="button"
+                          onClick={() => onApplyFinding(findingToFeedback(f))}
+                          className="rounded border border-brand/40 bg-brand/5 px-1.5 py-0.5 text-[10px] font-medium text-brand hover:bg-brand/10"
+                          title="Send this finding to Claude for a rewrite — you review the diff before it saves."
+                        >
+                          Apply fix
+                        </button>
+                      )}
                       {f.status === "open" && (
                         <button
                           type="button"

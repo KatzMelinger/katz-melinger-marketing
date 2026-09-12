@@ -1875,7 +1875,14 @@ export function DraftDrawer({
                 suggested titles/images/links, compliance, and overlap. */}
             {draft && (
               <div className="mt-4">
-                <FindingsPanel draftId={draft.id} nonce={findingsNonce} />
+                <FindingsPanel
+                  draftId={draft.id}
+                  nonce={findingsNonce}
+                  onApplyFinding={(text) => {
+                    if (unsavedEditGuard()) return;
+                    setApplyingFindings([text]);
+                  }}
+                />
               </div>
             )}
 
