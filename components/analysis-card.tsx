@@ -1040,7 +1040,7 @@ export function ApplySuggestionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-5xl max-h-[90vh] flex flex-col rounded-xl bg-white border border-slate-200 shadow-xl relative">
+      <div className="w-full max-w-6xl h-[90vh] flex flex-col rounded-xl bg-white border border-slate-200 shadow-xl relative">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl"
@@ -1071,14 +1071,14 @@ export function ApplySuggestionModal({
         </div>
 
         {loading ? (
-          <div className="p-12 flex flex-col items-center gap-3 text-sm text-slate-600">
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-sm text-slate-600">
             <DashSpinner />
             {isMulti
               ? `Asking Claude to resolve all ${findings.length} in one pass…`
               : "Asking Claude for the smallest edit that resolves this…"}
           </div>
         ) : error ? (
-          <div className="p-5 text-sm text-red-700 bg-red-50 border-t border-red-200">
+          <div className="flex-1 p-5 text-sm text-red-700 bg-red-50 border-t border-red-200">
             {error}
             <div className="mt-3">
               <DashButton variant="outline" onClick={onClose}>
@@ -1184,7 +1184,7 @@ function RedlinePanel({
           </span>
         )}
       </div>
-      <pre className="flex-1 overflow-auto p-4 text-xs whitespace-pre-wrap font-mono text-slate-700 leading-relaxed">
+      <pre className="flex-1 overflow-auto p-5 text-sm whitespace-pre-wrap font-mono text-slate-700 leading-loose">
         {changes.map((c, i) => {
           if (c.added) {
             return (
