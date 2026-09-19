@@ -248,20 +248,29 @@ export async function ensureDraftMetadata(
   }
 
   const keyword = primaryKeyword(draft);
-  const h1 = bodyH1(draft.body ?? "");
+  // Root-cause fix: lib/content-multiformat.ts's blog prompt (the agent/Peggy
+  // path) deliberately generates H2/H3-only bodies — the draft's own `title`
+  // column is what WordPress publishes as the post title, which the theme
+  // renders as the page's H1 (lib/wp-content-publish.ts). A body-embedded `#
+  // Heading` (the OTHER generation path, e.g. km-draft/route.ts) is just a
+  // second, equally valid way to arrive at the same real page H1 — so this
+  // must accept either, not require the body to duplicate the title. Without
+  // this fallback, EVERY draft generated through the agent/Peggy path skipped
+  // metadata generation forever, which is what made D1 look broken at volume.
+  const h1 = bodyH1(draft.body ?? "") || (draft.title ?? "").trim();
   // Both prerequisites are named separately so the reviewer is told which one to
   // supply, rather than "metadata could not be generated".
   if (!keyword && !h1) {
     return {
       status: "skipped",
-      reason: "No primary keyword and no H1 in the body — add both before metadata can be written.",
+      reason: "No primary keyword and no title or H1 — add one of each before metadata can be written.",
     };
   }
   if (!keyword) {
     return { status: "skipped", reason: "No primary keyword set on this draft." };
   }
   if (!h1) {
-    return { status: "skipped", reason: "No H1 in the body (a line starting with '# ')." };
+    return { status: "skipped", reason: "No title and no H1 in the body (a line starting with '# ')." };
   }
 
   const base = {

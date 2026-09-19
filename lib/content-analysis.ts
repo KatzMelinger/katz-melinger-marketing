@@ -53,7 +53,8 @@ import { classifyFreshness } from "./freshness-classify";
 import { getCurrentFacts } from "./current-facts-store";
 import { runLegalCheck } from "./legal-verify";
 import { notifyNewFindings } from "./content-notifications";
-import { ensureDraftMetadata } from "./draft-metadata";
+import { ensureDraftMetadata, hasWebPage } from "./draft-metadata";
+import { checkInternalLinks } from "./internal-links-check";
 import { evaluateAiReadabilityRules } from "./readability-ai";
 import { logEvent } from "./telemetry";
 
@@ -441,9 +442,18 @@ function heuristicSEO(args: {
   const h2Matches = body.match(/^##\s+/gm) ?? [];
   const h3Matches = body.match(/^###\s+/gm) ?? [];
   let headingStructure = 50;
-  if (h1Matches.length === 0) {
+  // A body-embedded H1 and a draft `title` are both real ways to arrive at
+  // the page's actual H1: lib/wp-content-publish.ts publishes `title` as the
+  // WordPress post title, which the theme renders as the page's H1. Some
+  // generation paths (lib/content-multiformat.ts's blog prompt) deliberately
+  // write H2/H3-only bodies for exactly this reason — prepending the title
+  // into the body too would duplicate it on the published page. So this only
+  // penalizes the genuine gap: no body H1 AND no title either.
+  if (h1Matches.length === 0 && !lowerTitle.trim()) {
     headingStructure -= 20;
-    findings.push("No H1 in body (# Heading). The title alone isn't enough — the body should open with a markdown H1.");
+    findings.push("No H1 in the body and no title set — the page needs one or the other for a real H1.");
+  } else if (h1Matches.length === 0) {
+    headingStructure += 20; // the title becomes the page's H1 on publish
   } else if (h1Matches.length > 1) {
     headingStructure -= 10;
     findings.push(`Found ${h1Matches.length} H1 headings. Use exactly one H1 per page.`);
@@ -946,6 +956,7 @@ export async function analyzeDraft(args: {
     cannibalization,
     freshnessResult,
     legalResult,
+    internalLinks,
   ] = await Promise.all([
     brandVoiceMatch(body, tid),
     cashScore(body),
@@ -1012,7 +1023,23 @@ export async function analyzeDraft(args: {
           .then((r) => ({ ran: true, findings: r.findings }))
           .catch(() => ({ ran: true, findings: [] as NormalizedFinding[] }))
       : Promise.resolve({ ran: false, findings: [] as NormalizedFinding[] }),
+    // D3 (spec 2.9) — confirm internal links against the Cluster Map. Only
+    // formats with a real page need this (a social caption has nothing to
+    // link a reader onward to within the same review).
+    hasWebPage(format)
+      ? checkInternalLinks(body, tid).catch(() => ({ confirmedCount: 0, totalLinks: 0, findings: [] as string[] }))
+      : Promise.resolve({ confirmedCount: 0, totalLinks: 0, findings: [] as string[] }),
   ]);
+
+  // D3: fold the internal-links check into the SEO tile — it's the same
+  // dimension D1/D2 (metadata, H1) already live in, and a reviewer should
+  // see "why is my SEO score low" in one place. Only formats with a page were
+  // checked at all (see hasWebPage gate above), so this can't ding a social
+  // caption for having no on-page links to confirm.
+  if (hasWebPage(format) && internalLinks.findings.length > 0) {
+    seo.findings.push(...internalLinks.findings);
+    seo.score = Math.max(0, seo.score - 15);
+  }
 
   // Now that the AI rules are in, compute the final rule-based readability result.
   const ruleResult = useReadabilityRules
