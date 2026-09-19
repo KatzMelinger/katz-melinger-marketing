@@ -99,6 +99,7 @@ export interface LocalBusinessInfo {
   name: string;
   address: string;
   phone: string;
+  phoneFlag: string | null;
   website: string;
   hoursSummary: string;
   categories: string[];
@@ -1033,6 +1034,12 @@ export default function LocalSeoPlatformPage() {
                 <div>
                   <dt className="text-slate-500">Phone</dt>
                   <dd className="text-slate-700">{business.phone}</dd>
+                  {business.phoneFlag && (
+                    <p className="mt-1 flex items-start gap-1 text-xs text-amber-700">
+                      <span aria-hidden>⚠</span>
+                      <span>{business.phoneFlag}</span>
+                    </p>
+                  )}
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="text-slate-500">Address</dt>

@@ -84,6 +84,40 @@ export async function isPublicUrl(raw: string): Promise<boolean> {
 }
 
 /**
+ * Same redirect-following contract as safeFetch, but also reports how many
+ * redirect hops it took and the URL it settled on — for callers (technical
+ * SEO crawl) that need to grade the chain itself, not just reach the end of it.
+ */
+export async function safeFetchTrace(
+  raw: string,
+  opts: { headers?: Record<string, string>; timeoutMs?: number; maxRedirects?: number } = {},
+): Promise<{ res: Response; hops: number; finalUrl: string }> {
+  const { headers = {}, timeoutMs = 15_000, maxRedirects = 5 } = opts;
+
+  let current = raw;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    try {
+      await assertPublicUrl(current);
+    } catch (e) {
+      const why = e instanceof Error ? e.message : "blocked";
+      throw new Error(hop === 0 ? why : `Redirect blocked at hop ${hop}: ${why}`);
+    }
+
+    const res = await fetch(current, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "manual",
+    });
+
+    if (res.status < 300 || res.status > 399) return { res, hops: hop, finalUrl: current };
+    const location = res.headers.get("location");
+    if (!location) return { res, hops: hop, finalUrl: current };
+    current = new URL(location, current).toString();
+  }
+  throw new Error(`Too many redirects (over ${maxRedirects})`);
+}
+
+/**
  * Fetch a user-supplied URL, re-checking every redirect hop with
  * assertPublicUrl.
  *

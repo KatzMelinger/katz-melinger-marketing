@@ -111,6 +111,29 @@ const NOT_PRACTICED_PATTERNS: RegExp[] = [
   /\bon[- ]the[- ]job injury\b/,
 ];
 
+/**
+ * Travel/hospitality industry noise (Diana, spec 4.2). The firm's two
+ * practice areas — "domestication of judgments" and "collections" — share
+ * vocabulary with the travel industry ("domestic flights", "hotel
+ * collections"), so DataForSEO's keyword suggestions surface real travel-
+ * industry terms next to real legal opportunities. Matched on the
+ * industry-specific noun, never the bare word "travel" or "domestic" alone —
+ * "travel time pay" is a real FLSA wage-and-hour topic and must stay.
+ */
+const TRAVEL_HOSPITALITY_PATTERNS: RegExp[] = [
+  /\bhotel(s)?\b/,
+  /\bresort(s)?\b/,
+  /\bvacation(s)?\b/,
+  /\bcruise(s)?\b/,
+  /\bairfare\b/,
+  /\bairline(s)?\b/,
+  /\bboarding pass\b/,
+  /\bfrequent flyer\b/,
+  /\btravel insurance\b/,
+  /\bdomestic flight(s)?\b/,
+  /\b(expedia|tripadvisor|airbnb|marriott|hilton|booking\.com)\b/,
+];
+
 function normalize(keyword: string): string {
   return ` ${keyword.toLowerCase().trim()} `;
 }
@@ -156,6 +179,9 @@ export function scoreKeyword(
   }
   if (NOT_PRACTICED_PATTERNS.some((re) => re.test(lc))) {
     return { relevanceScore: 0, excluded: true, excludeReason: "Not a practice area (workers' comp)", flags: ["not_practiced"] };
+  }
+  if (TRAVEL_HOSPITALITY_PATTERNS.some((re) => re.test(lc))) {
+    return { relevanceScore: 0, excluded: true, excludeReason: "Travel/hospitality noise, not a law-firm topic", flags: ["travel_noise"] };
   }
   if (ctx.customExclusions?.length) {
     const hit = ctx.customExclusions.find((t) => t && lc.includes(t));
