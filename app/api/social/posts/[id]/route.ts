@@ -19,9 +19,10 @@ import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { gateSocialPost, loadDraftCtaAndSourceBlog } from "@/lib/social-post-gate";
 import { generateSpanishCompanion } from "@/lib/social-spanish";
 import { isSocialFormat } from "@/lib/social-format-rules";
-import { guardUser } from "@/lib/supabase-route";
+import { guardUser, getCurrentUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
+import { recordAuditEvent } from "@/lib/content-findings-store";
 import {
   getAyrshareApiKey,
   postToAyrshare,
@@ -141,6 +142,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const denied = await guardUser();
   if (denied) return denied;
   const { id } = await params;
+  const actor = await getCurrentUser();
 
   const body = (await req.json().catch(() => ({}))) as {
     content?: string;
@@ -168,6 +170,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ({ error } = await db.from("social_posts").update({ status: "draft" }).eq("id", id));
     }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await recordAuditEvent({
+      tenantId: db.tenantId,
+      draftId: row.source_draft_id,
+      event: "social_post_flag_cleared",
+      actorUserId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      detail: { postId: id, platform: row.platform },
+    });
     return NextResponse.json({
       ok: true,
       message: "Flag cleared — the post is a draft again and can be approved.",
@@ -236,6 +246,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         .update({ status: "flagged", last_error: `Needs review: ${gate.reasons.join("; ")}` })
         .eq("id", id)
         .then(undefined, () => {});
+      await recordAuditEvent({
+        tenantId: db.tenantId,
+        draftId: row.source_draft_id,
+        event: "social_post_flagged",
+        actorUserId: actor?.id ?? null,
+        actorEmail: actor?.email ?? null,
+        detail: { postId: id, platform: row.platform, reasons: gate.reasons },
+      });
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
@@ -247,6 +265,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!apiKey) {
       const { error } = await db.from("social_posts").update({ status: "scheduled" }).eq("id", id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      await recordAuditEvent({
+        tenantId: db.tenantId,
+        draftId: row.source_draft_id,
+        event: "social_post_approved",
+        actorUserId: actor?.id ?? null,
+        actorEmail: actor?.email ?? null,
+        detail: { postId: id, platform: row.platform, viaAyrshare: false },
+      });
       void queueSpanishCompanion(db, row).catch((e) => console.warn("[social/posts approve] Spanish companion failed:", e));
       return NextResponse.json({
         ok: true,
@@ -320,6 +346,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         message: `Published on Ayrshare, but the calendar status couldn't be saved (${updErr.message}). Do NOT re-approve — it's already out.`,
       });
     }
+    await recordAuditEvent({
+      tenantId: db.tenantId,
+      draftId: row.source_draft_id,
+      event: "social_post_approved",
+      actorUserId: actor?.id ?? null,
+      actorEmail: actor?.email ?? null,
+      detail: { postId: id, platform: row.platform, viaAyrshare: true, published: !futureAt },
+    });
     void queueSpanishCompanion(db, row).catch((e) => console.warn("[social/posts approve] Spanish companion failed:", e));
     return NextResponse.json({
       ok: true,

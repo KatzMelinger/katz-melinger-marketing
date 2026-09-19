@@ -37,6 +37,7 @@ import { stripEmDashes, hasEmDash } from "./sanitize-content";
 import { isSensitiveTopic, sensitiveToneBlock } from "./sensitive-topic";
 import { checkMonthlyDuplicates, type AngleConflict } from "./social-duplicate";
 import { AD_TERMS_RULE } from "./ad-terms";
+import { sanitizeLinksForPlatform } from "./social-links";
 import { renderFirmFactsBlock } from "./firm-facts";
 import { getOperatingBrief, type OperatingBrief } from "./social-operating-brief";
 import { chooseCta, ctaInstruction, loadRecentCtas, type CtaChoice } from "./social-cta";
@@ -91,7 +92,9 @@ type SocialClaudeOutput = {
   formats: Record<string, { body?: string }>;
 };
 
-function buildSocialSystemPrompt(firm: string, skillsContext: string, brief: OperatingBrief): string {
+/** Exported for lib/social-rewrite.ts (6.13) — the rewrite/regenerate actions
+ *  reuse the exact same brand/rules system prompt as first generation. */
+export function buildSocialSystemPrompt(firm: string, skillsContext: string, brief: OperatingBrief): string {
   return `You are a social media copywriter for a law firm. This is SHORT-FORM SOCIAL copy — it is
 NOT a blog post and must never read like one. One idea per post, scannable, hook-driven.
 
@@ -298,6 +301,16 @@ ${AD_TERMS_RULE}`;
     bodies[format] = body;
   }
 
+  // 6.14's link/UTM bullet: strip any inherited tracking param (a pasted
+  // ChatGPT link's utm_source=chatgpt.com, a stray gclid) and set the firm's
+  // own per-channel UTM, right at generation — never something a reviewer
+  // has to remember to clean up by hand.
+  for (const format of args.formats) {
+    const body = bodies[format];
+    if (!body) continue;
+    bodies[format] = sanitizeLinksForPlatform(body, format, args.source.title).body;
+  }
+
   // Rule 8 — duplicate-angle check against this month's Content Calendar. Ordered
   // to match the generated formats so results map back by index. Advisory: we
   // flag conflicts, we don't block or auto-regenerate. Fails soft (ran=false).
@@ -343,6 +356,11 @@ ${AD_TERMS_RULE}`;
         title: args.source.title,
         url: args.source.url ?? null,
         id: args.source.id ?? null,
+        // Kept (same 6000-char cap used at generation) so a later Rewrite
+        // (6.13) can draw a genuinely new angle from the same source without
+        // re-fetching it — source.id isn't always a re-fetchable draft (a
+        // pasted page has none), so this is the only reliable copy.
+        text: args.source.text.slice(0, 6000),
       },
       social_checklist: checklist,
       // S2 — read by the S3 gate (missing-offer/CTA checks) and by the next

@@ -26,10 +26,10 @@
 
 import { writeAlert } from "./alerts-engine";
 import { recordAuditEvent } from "./content-findings-store";
-import { dispatch } from "./messaging";
 import { getSupabaseAdmin } from "./supabase-server";
 import type { NormalizedFinding } from "./content-findings";
 import { reviewersFor } from "./legal-reviewers";
+import { adminEmails, sendEmails } from "./notify-shared";
 
 
 /** Where the app lives, for links in emails. */
@@ -50,7 +50,7 @@ function appBaseUrl(): string {
  * get it, because an unowned blocked draft is the one most likely to be lost.
  */
 async function recipientsFor(draftId: string, tenantId: string): Promise<string[]> {
-  const emails = new Set<string>();
+  const emails = new Set(adminEmails());
   try {
     const sb = getSupabaseAdmin();
     const { data: rows } = await sb
@@ -73,25 +73,7 @@ async function recipientsFor(draftId: string, tenantId: string): Promise<string[
     console.warn("[notify] owner lookup failed:", e);
   }
 
-  for (const raw of (process.env.ADMIN_EMAILS ?? "").split(",")) {
-    const email = raw.trim().toLowerCase();
-    if (email) emails.add(email);
-  }
   return [...emails];
-}
-
-async function sendEmails(to: string[], subject: string, body: string): Promise<number> {
-  let sent = 0;
-  for (const address of to) {
-    try {
-      const result = await dispatch("email", { to: address, subject, body });
-      if (result.status !== "failed") sent += 1;
-      else console.warn(`[notify] email to ${address} failed:`, result.error);
-    } catch (e) {
-      console.warn(`[notify] email to ${address} threw:`, e);
-    }
-  }
-  return sent;
 }
 
 async function draftTitle(draftId: string): Promise<string> {
@@ -310,5 +292,61 @@ ${appBaseUrl()}/content-production`,
     });
   } catch (e) {
     console.warn("[notify] legal review notification failed:", e);
+  }
+}
+
+/**
+ * S13's legal alert (6.14) — a social post's legal-accuracy check found a
+ * critical problem. Called from ONE place, lib/social-post-gate.ts's
+ * gateSocialPost(), which itself runs at generation, after a rewrite (6.13),
+ * on repurpose-schedule, and on approve — so this fires everywhere the gate
+ * does, not just from whichever call site happened to remember to wire it in.
+ * Never silently as just a logged finding — this is exactly the gap the
+ * wage-theft post's invented act name and employer-side line exposed: the
+ * check ran and found nothing wrong with itself, but nobody was told.
+ */
+export async function notifySocialLegalAlert(args: {
+  draftId: string;
+  tenantId: string;
+  reasons: string[];
+}): Promise<void> {
+  try {
+    const title = await draftTitle(args.draftId);
+    const heading = `Legal alert on social post: ${title}`;
+    const detail = args.reasons.join("\n");
+
+    const wrote = await writeAlert(
+      {
+        type: "social_legal_flag",
+        severity: "high",
+        source: "social",
+        title: heading,
+        body: detail,
+        payload: { draft_id: args.draftId, reasons: args.reasons },
+        // Deduped on the exact reason set — a newly-invented problem alerts
+        // fresh, but re-checking the same still-flagged version doesn't spam.
+        dedupeKey: `social_legal:${args.draftId}:${[...args.reasons].sort().join("|")}`,
+      },
+      args.tenantId,
+    );
+    if (!wrote) return;
+
+    const to = adminEmails();
+    const sent = to.length
+      ? await sendEmails(
+          to,
+          `[Huraqan] ${heading}`,
+          `${heading}\n\n${detail}\n\nThis post cannot be scheduled until the legal issue clears.\n\n${appBaseUrl()}/social`,
+        )
+      : 0;
+
+    await recordAuditEvent({
+      tenantId: args.tenantId,
+      draftId: args.draftId,
+      event: "notified_social_legal",
+      detail: { reasons: args.reasons, emails_sent: sent },
+    });
+  } catch (e) {
+    console.warn("[notify] social legal alert failed:", e);
   }
 }

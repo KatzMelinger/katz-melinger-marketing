@@ -22,10 +22,11 @@ import { NextResponse } from "next/server";
 import { checkCalendarDuplicates, type AngleConflict } from "@/lib/social-duplicate";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { gateSocialPost } from "@/lib/social-post-gate";
-import { guardUser } from "@/lib/supabase-route";
+import { guardUser, getCurrentUser } from "@/lib/supabase-route";
 import { socialMultiformatEnabled } from "@/lib/feature-flags";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
+import { recordAuditEvent } from "@/lib/content-findings-store";
 import {
   AYRSHARE_PLATFORMS,
   getAyrshareApiKey,
@@ -56,6 +57,7 @@ function isPlatform(p: unknown): p is AyrsharePlatform {
 export async function POST(req: Request) {
   const denied = await guardUser();
   if (denied) return denied;
+  const actor = await getCurrentUser();
 
   const body = (await req.json().catch(() => ({}))) as {
     posts?: IncomingPost[];
@@ -328,6 +330,26 @@ export async function POST(req: Request) {
         { status: 500 },
       );
     }
+
+    // 5.5/E5: who scheduled/flagged/failed this social post, and when — the
+    // same audit trail blog approvals already get (lib/content-findings-store.ts),
+    // which social publishing never had despite being an equivalent "approval".
+    await Promise.all(
+      rows.map((r) =>
+        recordAuditEvent({
+          tenantId: db.tenantId,
+          draftId: r.source_draft_id as string | null,
+          event: `social_post_${r.status}`,
+          actorUserId: actor?.id ?? null,
+          actorEmail: actor?.email ?? null,
+          detail: {
+            platform: r.platform,
+            ayrshareId: r.ayrshare_id,
+            lastError: r.last_error,
+          },
+        }),
+      ),
+    );
   }
 
   // Persist any edits back onto the source drafts (best-effort, RLS-scoped).

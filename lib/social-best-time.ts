@@ -60,6 +60,15 @@ export function bestSlot(network: string): { day: number; hour: number } | null 
   return { day: top.day, hour: top.hour };
 }
 
+/** The top N recommended slots for a network, ranked strongest first — spec
+ *  6.8's "show the top slots inline" (rather than only exposing the single
+ *  best one behind a click). */
+export function topSlots(network: string, n = 3): BenchmarkSlot[] {
+  const arr = BEST_TIME_BENCHMARKS[network];
+  if (!arr?.length) return [];
+  return [...arr].sort((a, b) => b.score - a.score).slice(0, n);
+}
+
 /**
  * Resolve a wall-clock reading into the real UTC instant it denotes in a zone.
  *
