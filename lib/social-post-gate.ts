@@ -11,9 +11,13 @@
 
 import { checkSocialCompliance } from "./social-compliance";
 import { runLegalCheck } from "./legal-verify";
+import { checkImagesLegalText } from "./image-text-check";
 import { syncFindings, listFindings } from "./content-findings-store";
 import { checkSourceCurrency } from "./source-currency";
 import { legalAccuracyEnabled } from "./feature-flags";
+import { notifySocialLegalAlert } from "./content-notifications";
+import { checkLinksResolve, recommendsFirstComment } from "./social-links";
+import { findSourceContradictions } from "./social-source-consistency";
 import type { OperatingBrief } from "./social-operating-brief";
 import type { getTenantDb } from "./tenant-db";
 
@@ -48,6 +52,40 @@ export async function loadDraftCtaAndSourceBlog(
   return {
     ctaType: typeof meta.cta_type === "string" ? meta.cta_type : null,
     sourceBlogId: typeof meta.source_blog_id === "string" ? meta.source_blog_id : null,
+  };
+}
+
+/**
+ * A draft's generated carousel/quote-card images (spec 5.1), from its own
+ * metadata (set by /api/content-production/repurpose/carousel-images).
+ * Resolved internally here — rather than threaded through as a caller-
+ * supplied param — so every gate call site (generation, rewrite, approve,
+ * schedule) resolves the exact same set. If one call site passed its own
+ * media list and another didn't, the ones that omitted it would each
+ * silently auto-resolve the other's image findings (reconcileFindings clears
+ * anything not in the incoming set), so this can't be optional per caller.
+ * Scope: covers carousel slides; a manually-uploaded image that was never run
+ * through the slide generator has no known text to check.
+ */
+async function loadDraftMediaUrls(db: TenantDb, draftId: string | null): Promise<string[]> {
+  if (!draftId) return [];
+  const { data } = await db.from("content_drafts").select("metadata").eq("id", draftId).maybeSingle();
+  const meta = (data?.metadata ?? {}) as Record<string, unknown>;
+  const urls = meta.carousel_media_urls;
+  return Array.isArray(urls) ? urls.filter((u): u is string => typeof u === "string") : [];
+}
+
+/** A draft's topic (S5/6.6) and practice area (1.3) — one row, two checks:
+ *  "body mentions its own topic" and "addresses the right audience". */
+async function loadDraftTopicAndPracticeArea(
+  db: TenantDb,
+  draftId: string | null,
+): Promise<{ topic: string | null; practiceArea: string | null }> {
+  if (!draftId) return { topic: null, practiceArea: null };
+  const { data } = await db.from("content_drafts").select("topic, practice_area").eq("id", draftId).maybeSingle();
+  return {
+    topic: typeof data?.topic === "string" ? data.topic : null,
+    practiceArea: typeof data?.practice_area === "string" ? data.practice_area : null,
   };
 }
 
@@ -108,6 +146,7 @@ export async function gateSocialPost(args: {
   // by code) rather than picking a single platform — a shared body going to
   // several platforms at once must still be checked against each of them.
   const platforms = Array.isArray(args.platform) ? args.platform : args.platform ? [args.platform] : [undefined];
+  const { topic, practiceArea } = await loadDraftTopicAndPracticeArea(args.db, args.draftId);
   const complianceFlagsByCode = new Map<string, string>();
   for (const platform of platforms) {
     for (const f of checkSocialCompliance(args.content, {
@@ -116,6 +155,8 @@ export async function gateSocialPost(args: {
       ctaType: resolved.ctaType ?? undefined,
       offerPhrase: args.operatingBrief.offerPhrase,
       offerPhraseEs: args.operatingBrief.offerPhraseEs,
+      topic,
+      practiceArea,
     })) {
       if (f.severity === "block") complianceFlagsByCode.set(f.code, f.label);
     }
@@ -132,8 +173,26 @@ export async function gateSocialPost(args: {
     if (!legalAccuracyEnabled() || !args.draftId) return { reasons: [], failed: false };
     try {
       const legal = await runLegalCheck(args.content, { tenantId: args.tenantId });
-      await syncFindings({ draftId: args.draftId, tenantId: args.tenantId, incoming: legal.findings });
-      const critical = legal.findings.filter((f) => f.severity === "critical").map((f) => f.title);
+      // 5.1/E1: the same legal-accuracy check, run against the text baked
+      // into any generated carousel/quote-card images on this draft — a
+      // claim in a slide's pixels was invisible to every check that only
+      // ever looked at body text. Merged into ONE syncFindings call with the
+      // body findings (see loadDraftMediaUrls) so neither set auto-resolves
+      // the other.
+      const mediaUrls = await loadDraftMediaUrls(args.db, args.draftId);
+      const imageFindings = mediaUrls.length
+        ? await checkImagesLegalText(mediaUrls, args.tenantId).catch(() => [])
+        : [];
+      const allFindings = [...legal.findings, ...imageFindings];
+      await syncFindings({ draftId: args.draftId, tenantId: args.tenantId, incoming: allFindings });
+      const critical = allFindings.filter((f) => f.severity === "critical").map((f) => f.title);
+      // THE ALERT (6.14, Diana's ask): called from here rather than by each
+      // caller of gateSocialPost, so it fires wherever this gate runs —
+      // generation, a rewrite (6.13), repurpose-schedule, and approve —
+      // without depending on every call site remembering to wire it in.
+      if (critical.length > 0) {
+        await notifySocialLegalAlert({ draftId: args.draftId, tenantId: args.tenantId, reasons: critical });
+      }
       return { reasons: critical, failed: false };
     } catch (e) {
       console.warn(`[social-post-gate] legal check failed (draft ${args.draftId}):`, e);
@@ -159,21 +218,73 @@ export async function gateSocialPost(args: {
     if (currency) await patchDraftMetadata(args.db, args.draftId, { source_currency_flag: currency });
   };
 
-  // Run all three concurrently, but await legal/inherited by name (not by
-  // Promise.all array position) so a future fourth check — or currencyCheck
-  // someday returning a value — can't silently shift what this destructure
-  // reads. currencyPromise is still started here (not after) to keep it
-  // running alongside the other two, not sequentially behind them.
+  // 6.14's link mechanics, blocking half: "confirm the link resolves (200)
+  // before scheduling." Generation and a rewrite (6.13) already strip
+  // inherited tracking and set the firm's own UTM (lib/social-links.ts) at
+  // the point the text is written, so this only needs to check reachability
+  // — a link a reviewer hand-typed into the composer is checked the same way.
+  const linkResolveCheck = async (): Promise<string[]> => {
+    const results = await checkLinksResolve(args.content).catch(() => []);
+    return results
+      .filter((r) => !r.ok)
+      .map((r) => `Link doesn't resolve (${r.status ?? r.error ?? "unreachable"}): ${r.url}`);
+  };
+
+  // 6.14's "recommend the link in the first comment" — advisory, same
+  // non-blocking pattern as source-currency above (this app has no
+  // first-comment posting path yet, so it's guidance on the draft, not a
+  // gate).
+  const linkAdvisoryCheck = async (): Promise<void> => {
+    if (!args.draftId) return;
+    const flagPlatforms = platforms.filter(
+      (p): p is string => !!p && recommendsFirstComment(args.content, p),
+    );
+    if (flagPlatforms.length === 0) return;
+    await patchDraftMetadata(args.db, args.draftId, {
+      link_first_comment_recommended: flagPlatforms,
+    });
+  };
+
+  // 6.14's source-consistency check: a claim that contradicts another live KM
+  // page. A "critical" seeded contradiction blocks like a compliance flag —
+  // it's a confirmed conflict, not a guess; "important" ones are attached to
+  // the draft for a reviewer, the same advisory posture as source-currency.
+  const sourceConsistencyCheck = async (): Promise<string[]> => {
+    const hits = await findSourceContradictions(args.content, args.tenantId).catch(() => []);
+    if (hits.length === 0) return [];
+    if (args.draftId) {
+      await patchDraftMetadata(args.db, args.draftId, { source_consistency_flags: hits });
+    }
+    return hits
+      .filter((h) => h.severity === "critical")
+      .map((h) => `Contradicts ${h.contradictingUrl}: ${h.contradictingSummary}`);
+  };
+
+  // Run everything concurrently, but await by name (not Promise.all array
+  // position) so a future check — or one of these someday returning a value —
+  // can't silently shift what this destructure reads. The advisory-only
+  // checks are still started here (not after) to run alongside the blocking
+  // ones rather than sequentially behind them.
   const legalPromise = legalCheck();
   const inheritedPromise = inheritedCheck();
   const currencyPromise = currencyCheck();
-  const [legal, inheritedReasons] = await Promise.all([legalPromise, inheritedPromise]);
-  await currencyPromise;
+  const linkResolvePromise = linkResolveCheck();
+  const linkAdvisoryPromise = linkAdvisoryCheck();
+  const sourceConsistencyPromise = sourceConsistencyCheck();
+  const [legal, inheritedReasons, linkReasons, contradictionReasons] = await Promise.all([
+    legalPromise,
+    inheritedPromise,
+    linkResolvePromise,
+    sourceConsistencyPromise,
+  ]);
+  await Promise.all([currencyPromise, linkAdvisoryPromise]);
 
   const reasons = [
     ...blockingFlags,
     ...legal.reasons.map((t) => `Legal review: ${t}`),
     ...inheritedReasons.map((t) => `Source blog unresolved: ${t}`),
+    ...linkReasons,
+    ...contradictionReasons,
   ];
   return {
     flagged: reasons.length > 0,

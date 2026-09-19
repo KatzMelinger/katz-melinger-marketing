@@ -13,6 +13,7 @@
  */
 
 import { normalizePhone } from "./lead-response";
+import { checkAudienceAngle } from "./audience-angle";
 
 export type FlagSeverity = "block" | "warn";
 
@@ -37,6 +38,11 @@ type ComplianceContext = {
    *  missing_offer with EITHER this or the English offerPhrase, since the
    *  English one can legitimately appear in a bilingual caption. */
   offerPhraseEs?: string;
+  /** The post's own topic/blog title (S5/6.6) — used to require at least one
+   *  of its own significant words appear in the body, not just in hashtags. */
+  topic?: string | null;
+  /** "employment" or "collections" (spec 1.3) — gates the audience-angle check. */
+  practiceArea?: string | null;
 };
 
 // `re` and `reEs` are tested independently and unconditionally — a post is
@@ -96,8 +102,51 @@ const RULES: Rule[] = [
   },
 ];
 
+// S8/6.9: hashtag count + required closing tag. LinkedIn convention is far
+// lighter than Instagram/Facebook/X, so it gets its own range rather than
+// being exempted outright. Carousel SLIDE text never reaches this function
+// (it's checked separately, see lib/image-text-check.ts) — only the caption
+// does, and a carousel post's caption follows the same platform rule as any
+// other post on that platform.
+const HASHTAG_RE = /#[A-Za-z0-9_]+/g;
+const KM_HASHTAG_RE = /^#katzmelinger$/i;
+
+function hashtagRange(platform: string | undefined): { min: number; max: number } {
+  // "never ... LinkedIn beyond 1-2" (spec 6.9) is an upper bound, not a floor
+  // — LinkedIn's own convention is light-to-no hashtags, confirmed against
+  // real live posts (every current LinkedIn post has zero and that's normal).
+  return platform === "linkedin" ? { min: 0, max: 2 } : { min: 4, max: 5 };
+}
+
 const INSTAGRAM_LINK_CTA_RE =
   /\b(click the link|link below|swipe up|haz clic en el enlace|enlace (de )?abajo|desliza hacia arriba)\b|https?:\/\/\S+/i;
+
+// S5/6.6: AEO and GEO need the location and topic words IN THE BODY — a
+// hashtag isn't read as body content by an AI-search engine the way sentence
+// text is. A plain "New York"/"New Jersey" word-boundary match already can't
+// match a hashtag-smashed form like "#NewYorkLawyer" (no space between the
+// words), so no separate hashtag-stripping step is needed.
+const LOCATION_RE = /\bNew York\b|\bNew Jersey\b/i;
+const LOCATION_RE_ES = /\bNueva York\b|\bNueva Jersey\b/i;
+
+const TOPIC_STOPWORDS = new Set([
+  "the", "and", "for", "with", "from", "this", "that", "your", "into",
+  "about", "over", "under", "what", "when", "where", "does", "have", "will",
+  "can", "are", "was", "you", "how", "why", "new", "york", "jersey", "nyc",
+  "nj", "law", "lawyer", "lawyers", "attorney", "attorneys",
+]);
+
+/** Significant words from a topic/title — 4+ letters, not a stopword,
+ *  de-duplicated. Deliberately loose: this only needs ONE hit in the body to
+ *  pass, so a short, imprecise list is fine — it can't cause a false block. */
+function significantWords(topic: string): string[] {
+  const words = topic
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !TOPIC_STOPWORDS.has(w));
+  return [...new Set(words)];
+}
 
 /** Run every rule (plus the context-dependent S3 checks) and return the flags that fired. */
 export function checkSocialCompliance(text: string, ctx: ComplianceContext = {}): ComplianceFlag[] {
@@ -148,6 +197,30 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
     }
   }
 
+  // S8/6.9: every generated post needs its hashtag block — count in range for
+  // the platform, and the LAST hashtag must be #KatzMelinger. Skipped on
+  // blank/in-progress text (an empty draft isn't "missing hashtags" yet, it's
+  // just not written).
+  if (body.trim().length > 0) {
+    const hashtags = body.match(HASHTAG_RE) ?? [];
+    const { min, max } = hashtagRange(ctx.platform);
+    if (hashtags.length < min || hashtags.length > max) {
+      flags.push({
+        code: "hashtag_count",
+        label: `Needs ${min}-${max} hashtags (found ${hashtags.length})`,
+        severity: "block",
+        excerpt: hashtags.join(" ").slice(0, 40),
+      });
+    } else if (hashtags.length > 0 && !KM_HASHTAG_RE.test(hashtags[hashtags.length - 1])) {
+      flags.push({
+        code: "hashtag_ending",
+        label: "Hashtags must end with #KatzMelinger",
+        severity: "block",
+        excerpt: hashtags[hashtags.length - 1],
+      });
+    }
+  }
+
   // Instagram captions can't render a clickable link — "click the link" / a
   // bare URL sends the reader nowhere. Steer to "link in bio" instead.
   if (ctx.platform === "instagram") {
@@ -179,6 +252,55 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
         excerpt: "",
       });
     }
+  }
+
+  // S5/6.6: a consultation post needs its own location and topic words in the
+  // body — the audience an AEO/GEO answer engine reads is the sentence text,
+  // not the hashtag block. Gated the same way missing_offer is (consultation
+  // CTAs only) since that's the concrete case the spec's done-when names.
+  if (ctx.ctaType === "consultation") {
+    if (!LOCATION_RE.test(body) && !LOCATION_RE_ES.test(body)) {
+      flags.push({
+        code: "missing_location",
+        label: "Consultation post is missing the location (New York / New Jersey) in the body",
+        severity: "block",
+        excerpt: "",
+      });
+    }
+    if (ctx.topic) {
+      const words = significantWords(ctx.topic);
+      const lower = body.toLowerCase();
+      if (words.length > 0 && !words.some((w) => lower.includes(w))) {
+        flags.push({
+          code: "missing_target_term",
+          // Fuzzy on purpose (see significantWords) — a miss here is worth a
+          // second look, not a certain problem, so it warns rather than blocks.
+          label: `Body doesn't mention this post's own topic ("${ctx.topic}")`,
+          severity: "warn",
+          excerpt: "",
+        });
+      }
+    }
+  }
+
+  // 1.3: never address the audience the firm does NOT represent in this
+  // practice area — the live trap was a wage-theft (employment) post reading
+  // "For employers: this is a wake-up call to review payroll practices
+  // immediately." Narrow and pattern-based on purpose (see audience-angle.ts):
+  // this catches a direct wrong-audience callout, not general mentions of
+  // "employers" (a post can accurately say "employers must pay overtime" while
+  // still being written to the employee reader).
+  const angleHit = checkAudienceAngle(body, ctx.practiceArea);
+  if (angleHit) {
+    flags.push({
+      code: "wrong_audience_angle",
+      label:
+        ctx.practiceArea === "employment"
+          ? "Addresses employers on an employment topic — must be written to the employee"
+          : "Addresses the debtor on a collections topic — must be written to the creditor",
+      severity: "block",
+      excerpt: angleHit.matched,
+    });
   }
 
   return flags;

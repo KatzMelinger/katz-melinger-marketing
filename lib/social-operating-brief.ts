@@ -24,9 +24,13 @@ export type OperatingBrief = {
 
 const DEFAULTS: OperatingBrief = {
   socialPhone: "646-466-6267",
-  offerPhrase: "a free, confidential case review",
+  // Locked verbatim, exact capitalization (spec 1.1) — never "a free,
+  // confidential case review" or any other casing/rewording.
+  offerPhrase: "Free Confidential Case Review",
   offerPhraseEs: "una evaluación de caso gratuita y confidencial",
-  hashtagRule: "3 to 5 relevant hashtags",
+  // Spec 6.9: "4 to 5 hashtags ending #KatzMelinger" — was "3 to 5 relevant
+  // hashtags" with no mention of the required closing tag at all.
+  hashtagRule: "4 to 5 hashtags, ending with #KatzMelinger (LinkedIn: 1 to 2)",
 };
 
 export async function getOperatingBrief(tenantId?: string): Promise<OperatingBrief> {
