@@ -199,3 +199,85 @@ export function hasAwardsNotice(pageText: string): boolean {
   const t = pageText.toLowerCase();
   return t.includes("approved by the nj supreme court") || t.includes("award methodology");
 }
+
+/**
+ * Per-post disclaimers — spec 1.4, Diana's decision of 2026-09-18. Distinct
+ * from FOOTER_DISCLAIMER above (Kenneth's Aug 31 SITE-WIDE footer wording,
+ * inserted by the WordPress theme on every page regardless of content): these
+ * are inserted INTO the body of each generated blog/service-page draft by the
+ * content pipeline itself (2.12) — a newly generated page carries them before
+ * anyone reviews it, the same "fixed text, auto-inserted" pattern as the
+ * locked offer phrase and social phone numbers (1.1).
+ *
+ * Wording is exactly what the spec quotes; it is not this module's to edit.
+ */
+export const ATTORNEY_ADVERTISING_LABEL = "Attorney Advertising";
+
+export const GENERAL_LEGAL_DISCLAIMER =
+  "This article provides general information and is not legal advice. Consult with an attorney about your specific situation.";
+
+export const RESULTS_DISCLAIMER =
+  "Prior results do not guarantee a similar outcome. Results vary depending on your particular facts and legal circumstances.";
+
+export function hasAttorneyAdvertisingLabel(body: string): boolean {
+  return body.toLowerCase().includes("attorney advertising");
+}
+
+export function hasGeneralLegalDisclaimer(body: string): boolean {
+  const t = body.toLowerCase();
+  return t.includes("general information") && t.includes("not legal advice");
+}
+
+export function hasResultsDisclaimer(body: string): boolean {
+  const t = body.toLowerCase();
+  return t.includes("prior results do not guarantee") && t.includes("results vary depending on your particular facts");
+}
+
+/**
+ * Deliberately narrow signal for "this content discusses a case result or
+ * outcome" (1.4's trigger for the results disclaimer): a dollar figure
+ * appearing near a result-shaped word. Prose ABOUT the concept of damages in
+ * the abstract ("employees may recover unpaid wages") shouldn't trip this —
+ * only a claim that reads like an actual result should, which is why this
+ * requires the dollar sign, not just the vocabulary alone.
+ */
+const RESULT_SIGNAL =
+  /\$\s?[\d,]+(?:\.\d{2})?(?:\s*(?:million|k|thousand))?\b[^.!?]{0,80}\b(settlement|verdict|judgment|award(?:ed)?|recovered|secured|obtained|won)\b|\b(settlement|verdict|judgment|awarded|recovered|secured|obtained|won)\b[^.!?]{0,80}\$\s?[\d,]+(?:\.\d{2})?/i;
+
+export function looksLikeCaseResult(body: string): boolean {
+  return RESULT_SIGNAL.test(body);
+}
+
+/**
+ * Auto-insert the fixed 1.4 elements into a freshly generated (or redrafted)
+ * legal blog/service-page body — the label at the top, the general
+ * disclaimer near the end always, and the results disclaimer additionally
+ * when the content discusses a result. Idempotent: a body that already
+ * carries an element is left untouched for that element, so calling this
+ * twice (generation, then a later redraft of the same content) never
+ * duplicates anything.
+ *
+ * Scope boundary (2.12's own): this only ever ADDS these three fixed
+ * elements. It never touches, removes, or judges anything else — an
+ * interpretive legal problem still routes to a human via the legal-accuracy
+ * layer (Section 3), same as always.
+ */
+export function applyRequiredDisclaimers(body: string): { body: string; inserted: string[] } {
+  if (!body?.trim()) return { body, inserted: [] };
+  const inserted: string[] = [];
+  let next = body;
+
+  if (!hasAttorneyAdvertisingLabel(next)) {
+    next = `*${ATTORNEY_ADVERTISING_LABEL}*\n\n${next}`;
+    inserted.push("label");
+  }
+  if (!hasGeneralLegalDisclaimer(next)) {
+    next = `${next.trimEnd()}\n\n*${GENERAL_LEGAL_DISCLAIMER}*`;
+    inserted.push("general_disclaimer");
+  }
+  if (looksLikeCaseResult(next) && !hasResultsDisclaimer(next)) {
+    next = `${next.trimEnd()}\n\n*${RESULTS_DISCLAIMER}*`;
+    inserted.push("results_disclaimer");
+  }
+  return { body: next, inserted };
+}

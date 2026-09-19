@@ -94,6 +94,8 @@ export function FindingsPanel({
   draftId,
   nonce,
   onApplyFindings,
+  sourceFilter,
+  onCounts,
 }: {
   draftId: string;
   nonce?: number;
@@ -104,6 +106,16 @@ export function FindingsPanel({
    *  button, or the full selection for "Apply N selected". Omit to hide both
    *  (e.g. a read-only context). */
   onApplyFindings?: (findingTexts: string[]) => void;
+  /** 2.15 — locks the view to one source (e.g. "legal" for DraftDrawer's
+   *  dedicated Legal tab) and hides the tab bar, since there's nothing to
+   *  switch between. Omit for the normal all-sources view. */
+  sourceFilter?: FindingSource;
+  /** 2.15 — reports open-finding counts (overall, and legal specifically)
+   *  whenever they change, so a parent tab bar can show a badge without
+   *  re-fetching findings itself. Fires on every load, independent of which
+   *  tab (if any) is actually visible — this component is meant to stay
+   *  mounted so the count is right before a reviewer ever clicks in. */
+  onCounts?: (counts: { total: number; legal: number }) => void;
 }) {
   const [findings, setFindings] = useState<StoredFinding[]>([]);
   const [engines, setEngines] = useState<Engines>({ legal: false, freshness: false });
@@ -196,7 +208,7 @@ export function FindingsPanel({
 
   // A single tab is its own "All" — showing both would just duplicate it.
   const showAllTab = tabs.length > 1;
-  const effectiveTab = activeTab === "all" && !showAllTab ? (tabs[0] ?? "all") : activeTab;
+  const effectiveTab = sourceFilter ?? (activeTab === "all" && !showAllTab ? (tabs[0] ?? "all") : activeTab);
 
   const bySource = effectiveTab === "all" ? findings : findings.filter((f) => f.source === effectiveTab);
   const open = bySource.filter((f) => f.status === "open" || f.status === "in_progress");
@@ -217,6 +229,15 @@ export function FindingsPanel({
     return { total: inTab.length, blockers: inTab.filter(isBlocker).length };
   };
 
+  const legalOpenCount = openAll.filter((f) => f.source === "legal").length;
+  useEffect(() => {
+    onCounts?.({ total: openAll.length, legal: legalOpenCount });
+    // openAll/legalOpenCount are derived fresh from `findings` every render,
+    // so depending on `findings` (the actual state) is what avoids an
+    // infinite-update loop from new array identities each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findings]);
+
   const selectedCount = selected.size;
   const applySelected = () => {
     if (!onApplyFindings || selectedCount === 0) return;
@@ -225,6 +246,19 @@ export function FindingsPanel({
     // Not cleared here — the modal might be discarded, in which case the
     // selection should still be there to retry. A successful apply reloads
     // (nonce bump from re-analysis) which clears it in load() above.
+  };
+
+  // 2.3 — "Apply all fixes, coherent": every open, non-legal finding sent to
+  // Claude in the SAME one-shot batch "Apply N selected" already uses (one
+  // call, one merged diff, one accept/revert — see apply-suggestion/route.ts's
+  // multi-finding instructions for the merge/dedupe behavior). Legal findings
+  // are never included: 3.3 forbids auto-applying a legal fix, so those stay
+  // open and keep routing to a human via the Legal tab.
+  const autoApplicable = openAll.filter((f) => f.source !== "legal");
+  const legalExcludedCount = openAll.length - autoApplicable.length;
+  const applyAll = () => {
+    if (!onApplyFindings || autoApplicable.length === 0) return;
+    onApplyFindings(autoApplicable.map(findingToFeedback));
   };
 
   if (loading) {
@@ -288,6 +322,25 @@ export function FindingsPanel({
         </div>
       </div>
 
+      {onApplyFindings && autoApplicable.length > 0 && (
+        <div className="mb-2 flex items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-2.5 py-1.5">
+          <button
+            type="button"
+            onClick={applyAll}
+            className="rounded border border-brand/40 bg-white px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/10"
+            title="Send every open, non-legal finding to Claude in one shot and review a single merged diff."
+          >
+            Apply all fixes ({autoApplicable.length})
+          </button>
+          <span className="text-[11px] text-slate-500">
+            One coherent draft, one diff to accept or revert.
+            {legalExcludedCount > 0
+              ? ` ${legalExcludedCount} legal finding${legalExcludedCount === 1 ? "" : "s"} excluded — needs an attorney.`
+              : ""}
+          </span>
+        </div>
+      )}
+
       {onApplyFindings && selectedCount > 0 && (
         <div className="mb-2 flex items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-2.5 py-1.5">
           <span className="text-[11px] text-slate-600">
@@ -311,7 +364,7 @@ export function FindingsPanel({
         </div>
       )}
 
-      {(showAllTab || tabs.length > 0) && (
+      {!sourceFilter && (showAllTab || tabs.length > 0) && (
         <div className="mb-2 flex flex-wrap gap-1.5 border-b border-slate-100 pb-2">
           {showAllTab && (
             <TabChip

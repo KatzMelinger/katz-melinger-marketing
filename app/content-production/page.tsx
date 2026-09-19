@@ -22,6 +22,7 @@ import { DraftDrawer } from "@/components/draft-drawer";
 import { KmBriefWizard, type WizardOpportunity } from "@/components/km-brief-wizard";
 import { requestRepurpose, type RepurposeDraft } from "@/components/repurpose-review-drawer";
 import { SocialComposerDrawer } from "@/components/social-composer-drawer";
+import { SocialProductionBoard } from "@/components/social-production-board";
 
 // The rest of the production line lives one click away from this page, so the
 // sidebar carries a single "Content Production" tab instead of five.
@@ -132,6 +133,11 @@ export default function ContentProductionPage() {
   const [repurposingId, setRepurposingId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+  // 2.16 — Website / Social funnel toggle (Diana's ask). Social gets its own
+  // component entirely (components/social-production-board.tsx) rather than
+  // threading a second data source through this already-large Kanban, so
+  // "no blogs mixed in" is true by construction, not by careful filtering.
+  const [boardView, setBoardView] = useState<"website" | "social">("website");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -268,10 +274,39 @@ export default function ContentProductionPage() {
     setStatusFilter((cur) => (cur === s ? "all" : s));
   };
 
+  if (boardView === "social") {
+    return (
+      <main className="mx-auto max-w-[1400px] px-6 py-6">
+        <header className="mb-4">
+          <div className="mb-3 inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+            <button
+              onClick={() => setBoardView("website")}
+              className="rounded px-3 py-1 font-medium text-slate-500 hover:text-slate-700"
+            >
+              Website
+            </button>
+            <button className="rounded bg-brand px-3 py-1 font-medium text-white">Social</button>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900">Production Board — Social</h1>
+        </header>
+        <SocialProductionBoard onSwitchToWebsite={() => setBoardView("website")} />
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-[1400px] px-6 py-6">
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
+          <div className="mb-2 inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+            <button className="rounded bg-brand px-3 py-1 font-medium text-white">Website</button>
+            <button
+              onClick={() => setBoardView("social")}
+              className="rounded px-3 py-1 font-medium text-slate-500 hover:text-slate-700"
+            >
+              Social
+            </button>
+          </div>
           <h1 className="text-2xl font-bold text-slate-900">Production Board</h1>
           <p className="text-sm text-slate-500">
             One board — create, review, approve, and publish content.
