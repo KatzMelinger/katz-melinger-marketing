@@ -23,7 +23,9 @@ import { detectCannibalization } from "@/lib/cannibalization";
 import { listCompetitors, normalizeDomain } from "@/lib/seo-competitors";
 import { writeRankSnapshots } from "@/lib/rank-history";
 import { writeAuthoritySnapshots } from "@/lib/authority-history";
+import { evaluateSeoTrackerFreshness } from "@/lib/alerts-engine";
 import {
+  getAccountBalance,
   getAIOverviewForKeyword,
   getDomainKeywords,
   getKeywordDifficulty,
@@ -294,6 +296,22 @@ async function refreshTrackedKeywords(tenantId: string) {
       );
     }
 
+    // Record what existed BEFORE this run writes anything, so the freshness
+    // check below (D5) measures real staleness rather than always seeing a
+    // snapshot from seconds ago. Best-effort: an unreadable timestamp just
+    // skips that one check rather than failing the refresh.
+    let lastSnapshotAt: string | null = null;
+    try {
+      const { data: lastRow } = await db
+        .select("seo_rank_snapshots", "created_at")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      lastSnapshotAt = ((lastRow as { created_at?: string } | null)?.created_at) ?? null;
+    } catch {
+      // Table unreachable — treated as "unknown", not "stale forever".
+    }
+
     // Append today's rank snapshot for the firm domain AND every tracked
     // competitor, building the position-history time-series (DataForSEO-style
     // trend chart + date-over-date columns). Non-fatal: a failure here must
@@ -316,6 +334,19 @@ async function refreshTrackedKeywords(tenantId: string) {
     } catch (err) {
       console.error(
         "[seo/keywords/refresh] rank-history snapshot failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // Freshness alert (D5): no snapshot in 48h, this run wrote zero rows, or
+    // the DataForSEO balance is running low. Best-effort and last, so it can
+    // never be the thing that makes a refresh report as failed.
+    try {
+      const balance = await getAccountBalance();
+      await evaluateSeoTrackerFreshness({ lastSnapshotAt, snapshotRowsThisRun: snapshotRows, balance }, tenantId);
+    } catch (err) {
+      console.error(
+        "[seo/keywords/refresh] freshness alert check failed:",
         err instanceof Error ? err.message : String(err),
       );
     }

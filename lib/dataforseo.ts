@@ -23,6 +23,8 @@
 
 import { cachedDataForSeoPost } from "./dataforseo-cache";
 
+export { getAccountBalance } from "./dataforseo-cache";
+
 // ============================================================================
 // Constants — default target domain + DataForSEO location/language codes
 // ============================================================================

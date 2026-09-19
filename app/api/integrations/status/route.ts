@@ -84,14 +84,20 @@ function envCheck(names: string[]): { missing: string[]; set: string[] } {
 async function constantContactStatus(): Promise<Status> {
   const envs = ["CONSTANT_CONTACT_CLIENT_ID", "CONSTANT_CONTACT_CLIENT_SECRET"];
   if (envs.some((e) => !present(e))) return "missing_env";
-  // Need a stored OAuth token in supabase to actually be "connected".
+  // Need a stored OAuth token in supabase to actually be "connected". This
+  // reads the same table + provider filter as
+  // lib/constant-contact-server.ts's getLatestConstantContactTokens() — it
+  // used to query a "constant_contact_tokens" table that was never created,
+  // which made this always report "needs_oauth" even with a live, actively
+  // refreshing token sitting in oauth_tokens.
   const supabase = getSupabaseServer();
   if (!supabase) return "needs_oauth";
   try {
     const { data } = await supabase
-      .from("constant_contact_tokens")
+      .from("oauth_tokens")
       .select("access_token")
       .eq("tenant_id", await resolveTenantId())
+      .eq("provider", "constant_contact")
       .limit(1);
     return data && data.length > 0 ? "connected" : "needs_oauth";
   } catch {
