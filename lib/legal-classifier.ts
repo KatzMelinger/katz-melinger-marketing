@@ -64,13 +64,18 @@ export type LegalClaim = {
  * Deliberately broad. A false positive costs an unnecessary attorney review; a
  * false negative sends an unverifiable claim to a lookup that will find nothing
  * and report no problem. Those costs are not symmetric.
+ *
+ * Spanish patterns are tested unconditionally alongside the English ones
+ * (spec 5.2) — same approach as lib/social-compliance.ts's `reEs`: a wrong
+ * language guess could only ever suppress a real check, never add one, so
+ * there's no language-detection step to get wrong.
  */
 const NEGATIVE_STATEMENT =
-  /\b(?:is|are|was|were|does|do|did|has|have|can|could|will|would|shall|may|must)\s+(?:not|n['’]t)\b|\bcannot\b|\bnever\b|\bno longer\b|\bneither\b|\bnor\b|\bdoes not apply\b|\bnot (?:covered|required|eligible|enforced|governed|protected|available)\b|\bexempt from\b|\bnot a\b/i;
+  /\b(?:is|are|was|were|does|do|did|has|have|can|could|will|would|shall|may|must)\s+(?:not|n['’]t)\b|\bcannot\b|\bnever\b|\bno longer\b|\bneither\b|\bnor\b|\bdoes not apply\b|\bnot (?:covered|required|eligible|enforced|governed|protected|available)\b|\bexempt from\b|\bnot a\b|\bno\s+(?:es|est(?:á|a)|cubre|aplica|requiere|proh[ií]be|protege)\b|\bnunca\b|\bya no\b|\bni\s+\w+\s+ni\b|\bexent[oa]\s+de\b/i;
 
 /** Language that marks a conclusion rather than a retrievable fact. */
 const INTERPRETIVE =
-  /\b(?:means|meaning|constitutes|amounts to|qualifies as|counts as|is considered|treated as|generally|typically|usually|likely|may be able|courts have|has been held|interpreted|depends on|in most cases|as a practical matter)\b/i;
+  /\b(?:means|meaning|constitutes|amounts to|qualifies as|counts as|is considered|treated as|generally|typically|usually|likely|may be able|courts have|has been held|interpreted|depends on|in most cases|as a practical matter)\b|\b(?:significa|constituye|se considera|se trata como|generalmente|por lo general|usualmente|probablemente|los tribunales han|se ha interpretado|depende de|en la mayor[ií]a de los casos)\b/i;
 
 /**
  * Legal DOCTRINES — a conclusion drawn from the law, not a fact an authority
@@ -85,16 +90,16 @@ const INTERPRETIVE =
  * the layer built to recognize conclusions.
  */
 const DOCTRINE_TERM =
-  /\b(?:doctrine|preclud\w*|estoppel|waive[sd]?|waiver|election of remedies|res judicata|exhaustion of (?:administrative )?remedies|standing to sue|preempt\w*|supersed\w*)\b/i;
+  /\b(?:doctrine|preclud\w*|estoppel|waive[sd]?|waiver|election of remedies|res judicata|exhaustion of (?:administrative )?remedies|standing to sue|preempt\w*|supersed\w*)\b|\b(?:doctrina|impedimento legal|renunci\w*|elecci[oó]n de recursos|cosa juzgada|agotamiento de (?:los )?recursos(?: administrativos)?|legitimaci[oó]n (?:activa|para demandar)|prevalece(?:r)? sobre)\b/i;
 
 /** A lookup-able fact: a number, a money amount, a period, or a date. */
 const FACTUAL_SIGNAL =
-  /\b\d{1,4}\s*(?:days?|months?|years?|weeks?|hours?)\b|\$\s?[\d,]+(?:\.\d{2})?\b|\b\d{1,3}\s*(?:%|percent)\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b|\b\d{4}\s+amendments?\b|\b(?:effective|amended|enacted)\s+(?:on\s+)?\w+\s+\d/i;
+  /\b\d{1,4}\s*(?:days?|months?|years?|weeks?|hours?)\b|\$\s?[\d,]+(?:\.\d{2})?\b|\b\d{1,3}\s*(?:%|percent)\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b|\b\d{4}\s+amendments?\b|\b(?:effective|amended|enacted)\s+(?:on\s+)?\w+\s+\d|\b\d{1,4}\s*(?:d[ií]as?|meses?|a[nñ]os?|semanas?|horas?)\b|\b\d{1,3}\s*(?:por ciento)\b|\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+\d{4}\b|\benmiendas?\s+(?:de\s+)?\d{4}\b|\b(?:vigente|enmendad[oa]|promulgad[oa])\s+(?:desde|el)\s+\w+\s+\d/i;
 
 /** Jurisdiction signals, checked most specific first. */
 function detectJurisdiction(sentence: string): LegalJurisdiction | null {
-  if (/\bNew Jersey\b|\bNJ\b|\bNJDOL\b|\bNJLAD\b|\bN\.J\.S\.A\b/i.test(sentence)) return "NJ";
-  if (/\bNew York\b|\bNY\b|\bNYC\b|\bNYLL\b|\bNYSHRL\b|\bNYCHRL\b|\bCPLR\b/i.test(sentence)) return "NY";
+  if (/\bNew Jersey\b|\bNJ\b|\bNJDOL\b|\bNJLAD\b|\bN\.J\.S\.A\b|\bNueva Jersey\b/i.test(sentence)) return "NJ";
+  if (/\bNew York\b|\bNY\b|\bNYC\b|\bNYLL\b|\bNYSHRL\b|\bNYCHRL\b|\bCPLR\b|\bNueva York\b/i.test(sentence)) return "NY";
   if (/\bFMLA\b|\bFLSA\b|\bTitle VII\b|\bEEOC\b|\bADA\b|\bADEA\b|\bfederal\b|\bU\.?S\.?C\b|\bC\.?F\.?R\b/i.test(sentence)) {
     return "federal";
   }
@@ -130,6 +135,11 @@ function looksLegal(sentence: string): boolean {
     /\b(?:law|laws|statute|section|\u00a7|act\b|regulation|rule|court|claim|file|filing|deadline|entitled|require[sd]?|prohibit|protect|liable|damages|penalty|employer|employee|charge|rights?|leave|wages?)\b/i.test(
       sentence,
     ) ||
+    // Spanish legal vocabulary \u2014 tested unconditionally alongside the English
+    // list above (spec 5.2), same reasoning as NEGATIVE_STATEMENT/INTERPRETIVE.
+    /\b(?:ley|leyes|estatuto|secci[o\u00f3]n|\u00a7|acta\b|reglamento|regla|corte|tribunal|reclamo|demanda|presentar|plazo|derecho\s+a|requiere[n]?|proh[i\u00ed]be[n]?|protege[n]?|responsable|da[n\u00f1]os(?:\s+y\s+perjuicios)?|multa|sanci[o\u00f3]n|empleador(?:es)?|emplead[oa]s?|cargo|derechos?|licencia|salarios?|sueldos?)\b/i.test(
+      sentence,
+    ) ||
     FACTUAL_SIGNAL.test(sentence)
   );
 }
@@ -142,7 +152,10 @@ function looksLegal(sentence: string): boolean {
  * uncheckable. Splitting only where terminal punctuation is followed by
  * whitespace and a capital keeps decimals and section numbers intact.
  */
-function splitSentences(body: string): { text: string; index: number }[] {
+/** Exported for lib/legal-value-check.ts (3.13) — the value/region/date check
+ *  needs the same citation-safe sentence boundaries (a naive split would cut
+ *  "$1,199.10" in half at the decimal point). */
+export function splitSentences(body: string): { text: string; index: number }[] {
   const out: { text: string; index: number }[] = [];
   let offset = 0;
   // Built via RegExp so the escapes are unambiguous: split on terminal

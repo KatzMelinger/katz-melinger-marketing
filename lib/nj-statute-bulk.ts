@@ -26,7 +26,12 @@ import { unzipSync, strFromU8 } from "fflate";
 import type { ParsedCitation } from "./legal-citation";
 
 const BULK_ZIP_URL = "https://pub.njleg.state.nj.us/statutes/STATUTES-TEXT.zip";
-const BULK_SOURCE_LABEL =
+// Exported so legal-verify.ts can recognize a result that came from here — by
+// exact string equality, since it's written verbatim into legal_facts_cache's
+// source_url column too — and force it to human review even on a "supported"
+// verdict (Diana's decision, 3.11: this source is lower-trust and must never
+// auto-clear).
+export const BULK_SOURCE_LABEL =
   "NJ Legislature official bulk statute text (https://pub.njleg.state.nj.us/statutes/), automated extraction — not attorney-reviewed";
 
 const USER_AGENT =

@@ -42,6 +42,10 @@ import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
 import { classifyLegalClaims, type LegalClaim } from "./legal-classifier";
 import { retrieveAuthority } from "./legal-retrieval";
 import { formatCitation } from "./legal-citation";
+import { BULK_SOURCE_LABEL as NJ_BULK_SOURCE_LABEL } from "./nj-statute-bulk";
+import { findUnverifiedActs, unverifiedActFindings } from "./legal-named-acts";
+import { checkValuesAgainstKnowledgeBase } from "./legal-value-check";
+import { checkKnownTraps } from "./legal-known-traps";
 
 export type Verdict = "supported" | "contradicted" | "inconclusive";
 
@@ -195,20 +199,31 @@ export async function verifyClaimAgainst(
   return { verdict: "contradicted", quote: first.quote.trim(), reason: first.reason };
 }
 
-/** Turn a verdict into the finding a reviewer sees. */
-function toFinding(v: ClaimVerdict): NormalizedFinding | null {
+/** Turn a verdict into the finding a reviewer sees. Exported for
+ *  scripts/eval-legal-layer.ts (5.3) — the NJ-bulk-never-auto-clears behavior
+ *  (3.11) is a pure function of a verdict + sourceUrl, so it's tested
+ *  directly here instead of through a live NJ bulk-export download. */
+export function toFinding(v: ClaimVerdict): NormalizedFinding | null {
   const { claim } = v;
 
-  // A verified claim is not a finding. Recording every correct sentence would
-  // bury the handful that are not.
-  if (v.verdict === "supported") return null;
+  // A claim verified only against the NJ Legislature's unreviewed bulk export
+  // is lower-trust by design (3.11, Diana's decision) — it must still reach a
+  // human even when "supported", never auto-clear like a curated-source hit.
+  const njBulkOnly = v.sourceUrl === NJ_BULK_SOURCE_LABEL;
+
+  // A verified claim from a trusted source is not a finding. Recording every
+  // correct sentence would bury the handful that are not.
+  if (v.verdict === "supported" && !njBulkOnly) return null;
 
   const contradicted = v.verdict === "contradicted";
+  const needsHumanOnly = v.verdict === "supported" && njBulkOnly;
   const title = contradicted
     ? `Contradicted by ${
         claim.citations[0] ? formatCitation(claim.citations[0]) : "the cited authority"
       }`
-    : claimNeedsReviewTitle(claim);
+    : needsHumanOnly
+      ? "NJ citation verified only against the unreviewed bulk statute export — confirm before relying on it"
+      : claimNeedsReviewTitle(claim);
 
   return {
     fingerprint: fingerprintFinding("legal", claim.claimType, claim.sentence),
@@ -218,11 +233,17 @@ function toFinding(v: ClaimVerdict): NormalizedFinding | null {
     // itself evidence of an error.
     severity: contradicted ? "critical" : "important",
     title,
-    detail: v.quote ? `Authority says: "${v.quote}"` : v.reason,
+    detail: needsHumanOnly
+      ? `The bulk export appears to support this claim (${v.reason}), but that source is an automated extraction, not attorney-reviewed text — confirm it against the curated corpus or Westlaw.`
+      : v.quote
+        ? `Authority says: "${v.quote}"`
+        : v.reason,
     excerpt: claim.sentence,
     fix: contradicted
       ? "Correct the claim to match the cited authority, or cite the provision that actually supports it."
-      : "An attorney needs to confirm this claim — it cannot be settled by looking a source up.",
+      : needsHumanOnly
+        ? "An attorney should confirm this NJ citation against the curated corpus or Westlaw; the bulk export is an unreviewed automated extraction."
+        : "An attorney needs to confirm this claim — it cannot be settled by looking a source up.",
     claimType: claim.claimType,
     sourceChecked: v.sourceUrl,
     jurisdiction: claim.jurisdiction,
@@ -307,9 +328,36 @@ export async function runLegalCheck(
     });
   }
 
-  const findings = verdicts
+  const citationFindings = verdicts
     .map(toFinding)
     .filter((f): f is NormalizedFinding => f !== null);
+
+  // 3.12 and 3.13 both catch errors a citation-and-retrieve pass structurally
+  // can't: a claim naming an act by NAME rather than a formal citation, and a
+  // dollar figure that's wrong for its region or effective date rather than
+  // simply absent from an authority page. Neither depends on classifyLegalClaims
+  // having produced a claim at all, so they run over the whole body directly.
+  const [unverifiedActs, valueFindings, trapFindings] = await Promise.all([
+    findUnverifiedActs(body, opts.tenantId).catch((e) => {
+      console.warn("[legal-verify] named-act check failed:", e);
+      return [];
+    }),
+    checkValuesAgainstKnowledgeBase(body, opts.tenantId).catch((e) => {
+      console.warn("[legal-verify] value/region/date check failed:", e);
+      return [];
+    }),
+    // 3.14/B6 — known traps: text patterns already caught wrong once (FMLA/
+    // EEOC, the 2611(4) pinpoint, etc). Independent of classifyLegalClaims
+    // the same way the two checks above are — it scans the whole body, not
+    // a per-claim sentence.
+    checkKnownTraps(body, opts.tenantId).catch((e) => {
+      console.warn("[legal-verify] known-traps check failed:", e);
+      return [];
+    }),
+  ]);
+  const actFindings = unverifiedActFindings(body, unverifiedActs);
+
+  const findings = [...citationFindings, ...actFindings, ...valueFindings, ...trapFindings];
 
   return {
     verdicts,
@@ -320,7 +368,10 @@ export async function runLegalCheck(
       supported: verdicts.filter((v) => v.verdict === "supported").length,
       contradicted: verdicts.filter((v) => v.verdict === "contradicted").length,
       inconclusive: verdicts.filter((v) => v.verdict === "inconclusive").length,
-      routedToHuman: verdicts.filter((v) => v.verdict !== "supported").length,
+      // A finding is exactly what reaches a human (see toFinding) — including a
+      // "supported" NJ-bulk-only verdict, which a raw verdict count would miss,
+      // and the 3.12/3.13 findings below, which never went through a verdict.
+      routedToHuman: findings.length,
     },
   };
 }
