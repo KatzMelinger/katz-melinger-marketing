@@ -22,6 +22,7 @@ import {
 } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
+import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -321,6 +322,11 @@ export async function POST(req: Request) {
   // E-E-A-T: append the credentialed author bio box (idempotent — replaces any
   // prior one on re-refresh). Behind the flag.
   if (eeatAuthorshipEnabled()) updatedBody = appendAuthorBioBox(updatedBody, contentAuthor);
+
+  // 2.12 — "at generation AND redraft": this IS the redraft path (Site
+  // Inventory's Redraft/Optimize flow), and it's idempotent, so a page
+  // refreshed a second time doesn't grow a second label or disclaimer.
+  updatedBody = applyRequiredDisclaimers(updatedBody).body;
 
   // Heading changes: compare the live page's headings against the redraft's, so
   // the reviewer can see the H1/section changes at a glance (kept vs improved vs

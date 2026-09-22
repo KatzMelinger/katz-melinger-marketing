@@ -14,6 +14,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
 import { logger } from "./logger";
+import { adminEmails, sendEmails } from "./notify-shared";
 
 export type AlertType =
   | "rank_drop"
@@ -34,7 +35,18 @@ export type AlertType =
   // (lib/legal-authority-watch.ts). The fix is an attorney re-confirming the
   // new text, not editing a draft — closer to integration_credential than to
   // content_finding, which is why it's its own type rather than reusing one.
-  | "authority_changed";
+  | "authority_changed"
+  // S13's legal alert (6.14): a social post's legal-accuracy check found a
+  // critical problem (wrong forum, invented statute name, wrong figure, wrong
+  // audience angle) at generation, after a rewrite, or before Schedule. The
+  // fix is a human reviewing the post, but it's flagged separately from
+  // content_blocked because social posts don't move through the same
+  // needs_legal pipeline status blogs do.
+  | "social_legal_flag"
+  // The keyword rank tracker isn't producing fresh data — no snapshot in 48h,
+  // a refresh wrote zero rows, or the DataForSEO balance is running low (D5).
+  // The fix is someone checking the cron/API/balance, not a content action.
+  | "seo_tracker_stale";
 
 export type AlertSeverity = "low" | "medium" | "high";
 
@@ -319,5 +331,107 @@ export async function evaluateCannibalizationAlerts(
     });
     if (ok) written++;
   }
+  return { written };
+}
+
+// ---------------------------------------------------------------------------
+// SEO tracker freshness alerts (D5) — called from the daily rank-refresh cron
+// with what it just observed, since it's the one place that knows whether the
+// snapshot write ran, how many rows it wrote, and what the account balance is.
+// ---------------------------------------------------------------------------
+
+/** No news for 48h is itself the news — the cron can keep firing while every
+ *  run silently fails before it ever reaches the write step. Exported so the
+ *  SEO Ops Hub can show the same threshold as a "stale" badge, not just wait
+ *  for the alert. */
+export const SEO_STALE_HOURS = 48;
+/** Below this many dollars, DataForSEO calls can start failing before
+ *  autorecharge catches up (or if autorecharge itself is misconfigured). */
+const DEFAULT_BALANCE_ALERT_THRESHOLD = 15;
+
+export type SeoFreshnessInputs = {
+  /** ISO timestamp of the most recent snapshot row written BEFORE this run,
+   *  or null if the table has never had one for this tenant. */
+  lastSnapshotAt: string | null;
+  /** Rows written by THIS run's snapshot step; null if that step threw. */
+  snapshotRowsThisRun: number | null;
+  /** Current DataForSEO account balance in USD, or null if unreadable. */
+  balance: number | null;
+};
+
+export async function evaluateSeoTrackerFreshness(
+  inputs: SeoFreshnessInputs,
+  tenantId?: string,
+): Promise<{ written: number }> {
+  const tid = tenantId ?? (await resolveTenantId());
+  // One alert per condition per day — a fixable problem still gets a fresh
+  // alert (and email) tomorrow if it's still broken, but three cron
+  // invocations in the same hour don't triple-notify anyone. Email follows
+  // the alert: writeAlert's own dedupe is the single source of truth for
+  // "is this actually new", so a re-run that finds nothing new to write also
+  // sends nothing.
+  const today = new Date().toISOString().slice(0, 10);
+  const admins = adminEmails();
+  const write = async (a: WriteAlertArgs) => {
+    const wrote = await writeAlert(a, tid);
+    if (wrote && admins.length > 0) {
+      await sendEmails(admins, `[Huraqan] ${a.title}`, `${a.title}\n\n${a.body ?? ""}`);
+    }
+    return wrote;
+  };
+  let written = 0;
+
+  if (inputs.lastSnapshotAt) {
+    const ageMs = Date.now() - new Date(inputs.lastSnapshotAt).getTime();
+    if (ageMs > SEO_STALE_HOURS * 3600 * 1000) {
+      const ageHours = Math.round(ageMs / 3600_000);
+      const ok = await write({
+        type: "seo_tracker_stale",
+        severity: "high",
+        source: "seo",
+        title: `Keyword tracker has not recorded a snapshot in ${ageHours}h`,
+        body: `Last successful rank snapshot: ${inputs.lastSnapshotAt}. The daily refresh should write one every day — check the Vercel cron logs and DataForSEO connectivity.`,
+        payload: { last_snapshot_at: inputs.lastSnapshotAt, age_hours: ageHours },
+        dedupeKey: `seo_stale::${today}`,
+      });
+      if (ok) written++;
+    }
+  }
+
+  if (inputs.snapshotRowsThisRun === 0 || inputs.snapshotRowsThisRun === null) {
+    const failed = inputs.snapshotRowsThisRun === null;
+    const ok = await write({
+      type: "seo_tracker_stale",
+      severity: "high",
+      source: "seo",
+      title: failed
+        ? "Today's rank-snapshot write failed"
+        : "Today's rank refresh wrote zero snapshot rows",
+      body: failed
+        ? "The snapshot-write step (lib/rank-history.ts) threw an error — see server logs."
+        : "The refresh ran but recorded no rows for the firm or any tracked competitor today.",
+      payload: { snapshot_rows: inputs.snapshotRowsThisRun },
+      dedupeKey: `seo_zero_rows::${today}`,
+    });
+    if (ok) written++;
+  }
+
+  const threshold = Math.max(
+    0,
+    Number(process.env.DATAFORSEO_BALANCE_ALERT_THRESHOLD ?? DEFAULT_BALANCE_ALERT_THRESHOLD),
+  );
+  if (inputs.balance !== null && inputs.balance < threshold) {
+    const ok = await write({
+      type: "seo_tracker_stale",
+      severity: inputs.balance <= 0 ? "high" : "medium",
+      source: "seo",
+      title: `DataForSEO balance is low: $${inputs.balance.toFixed(2)}`,
+      body: `Balance is below the $${threshold} alert threshold. If autorecharge doesn't cover it in time, rankings and other SEO data will silently stop updating.`,
+      payload: { balance: inputs.balance, threshold },
+      dedupeKey: `seo_balance::${today}`,
+    });
+    if (ok) written++;
+  }
+
   return { written };
 }

@@ -97,6 +97,39 @@ function countSyllables(word: string): number {
   return groups ? groups.length : 1;
 }
 
+/**
+ * Spanish syllable count (spec 5.2). Spanish orthography is far more regular
+ * than English's — no silent-e/-ed/-es stripping needed — so this is just
+ * vowel-group counting, with one correction: an accented weak vowel (í/ú)
+ * next to another vowel is a HIATUS (its own syllable: pa-ís, ba-úl), not a
+ * diphthong, which a naive vowel-group count would collapse into one.
+ */
+function countSyllablesEs(word: string): number {
+  const w = word.toLowerCase().replace(/[^a-zàáâäèéêëìíîïòóôöùúûüñ]/g, "");
+  if (!w) return 0;
+  const withHiatusBreaks = w.replace(
+    /([aeiouáéóú])([íú])|([íú])([aeiouáéó])/g,
+    (_m, a, b, c, d) => (a ? `${a}-${b}` : `${c}-${d}`),
+  );
+  const groups = withHiatusBreaks.match(/[aeiouáéíóúü]+/g);
+  return groups ? groups.length : 1;
+}
+
+/**
+ * Is this body Spanish? Checked by character markers (ñ, ¿, ¡, or an
+ * accented vowel) rather than a stopword list — legal content keeps English
+ * statute names/acronyms verbatim even in a Spanish piece (lib/content-
+ * language.ts's own generation rule), so word-overlap against English would
+ * be noisy. These markers essentially never appear in English prose and
+ * reliably appear throughout real Spanish prose, so a light density bar (not
+ * just one borrowed accented word) is enough.
+ */
+export function looksSpanish(body: string): boolean {
+  const markers = (body.match(/[ñÑ¿¡áéíóúÁÉÍÓÚ]/g) ?? []).length;
+  const words = body.split(/\s+/).filter(Boolean).length;
+  return words > 0 && markers / words > 0.03;
+}
+
 /** Flatten Markdown to plain sentences, preserving readable sentence text. */
 export function splitSentences(body: string): string[] {
   const text = (body ?? "")
@@ -118,11 +151,16 @@ export type SentenceMetric = {
   grade: number;
 };
 
-export function sentenceMetrics(sentence: string): SentenceMetric {
+export function sentenceMetrics(sentence: string, spanish = false): SentenceMetric {
   const words = sentence.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
+  const countSyll = spanish ? countSyllablesEs : countSyllables;
   let syllables = 0;
-  for (const w of words) syllables += countSyllables(w);
+  for (const w of words) syllables += countSyll(w);
+  // The US-grade-level formula has no dedicated Spanish standard the way
+  // Flesch does via Fernández-Huerta (see readabilityStats' `flesch` below) —
+  // for Spanish this is a rough approximation (correct syllable count fed
+  // into the English grade formula), advisory only, not a calibrated measure.
   const grade = wordCount
     ? 0.39 * wordCount + 11.8 * (syllables / wordCount) - 15.59
     : 0;
@@ -143,19 +181,33 @@ export type ReadabilityStats = {
   longestSentence: number;
   overThresholdCount: number;
   sentenceCount: number;
+  /**
+   * Which scale `flesch` is on (spec 5.2). Spanish content is scored with
+   * Fernández-Huerta (1959) — the standard Spanish adaptation of Flesch
+   * Reading Ease, calibrated for Spanish's higher average syllable count —
+   * not plain Flesch. Detected from the text itself (see looksSpanish); the
+   * UI must label the score accordingly rather than show a Spanish score on
+   * what reads as the English scale.
+   */
+  language: "en" | "es";
 };
 
 export function readabilityStats(body: string): ReadabilityStats {
   const sentences = splitSentences(body);
+  const spanish = looksSpanish(body);
+  const language: "en" | "es" = spanish ? "es" : "en";
   if (sentences.length === 0) {
-    return { flesch: 0, grade: 0, avgSentenceLen: 0, passivePct: 0, longestSentence: 0, overThresholdCount: 0, sentenceCount: 0 };
+    return { flesch: 0, grade: 0, avgSentenceLen: 0, passivePct: 0, longestSentence: 0, overThresholdCount: 0, sentenceCount: 0, language };
   }
-  const metrics = sentences.map(sentenceMetrics);
+  const metrics = sentences.map((s) => sentenceMetrics(s, spanish));
   const totalWords = metrics.reduce((n, m) => n + m.words, 0);
+  const countSyll = spanish ? countSyllablesEs : countSyllables;
   let totalSyll = 0;
-  for (const s of sentences) for (const w of s.split(/\s+/).filter(Boolean)) totalSyll += countSyllables(w);
+  for (const s of sentences) for (const w of s.split(/\s+/).filter(Boolean)) totalSyll += countSyll(w);
   const flesch = totalWords
-    ? 206.835 - 1.015 * (totalWords / sentences.length) - 84.6 * (totalSyll / totalWords)
+    ? spanish
+      ? 206.84 - 60 * (totalSyll / totalWords) - 1.02 * (totalWords / sentences.length)
+      : 206.835 - 1.015 * (totalWords / sentences.length) - 84.6 * (totalSyll / totalWords)
     : 0;
   const grade = totalWords
     ? 0.39 * (totalWords / sentences.length) + 11.8 * (totalSyll / totalWords) - 15.59
@@ -172,6 +224,7 @@ export function readabilityStats(body: string): ReadabilityStats {
     longestSentence: metrics.reduce((n, m) => Math.max(n, m.words), 0),
     overThresholdCount: over,
     sentenceCount: sentences.length,
+    language,
   };
 }
 
@@ -183,8 +236,9 @@ export function readabilityStats(body: string): ReadabilityStats {
 export function readabilityFindings(body: string, cap = 25): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
+  const spanish = looksSpanish(body);
   for (const s of splitSentences(body)) {
-    const m = sentenceMetrics(s);
+    const m = sentenceMetrics(s, spanish);
     const reasons: string[] = [];
     if (m.words > LONG_SENTENCE_WORDS) reasons.push(`long (${m.words} words)`);
     if (m.passive) reasons.push("passive voice");

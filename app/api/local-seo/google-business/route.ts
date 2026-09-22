@@ -16,6 +16,25 @@ import { guardUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
 
+// Spec 1.1 locked constants. The retired number is called out by name because
+// it's the one that actually leaked into the live GBP listing (spec 4.2); any
+// other unrecognized number is still flagged, just with a more generic message.
+const RETIRED_PHONE = "212-460-0047";
+const LOCKED_PHONES = ["646-466-6267", "646-849-3352"];
+const onlyDigits = (s: string) => s.replace(/\D/g, "");
+
+function flagWrongGbpPhone(phone: string): string | null {
+  const digits = onlyDigits(phone);
+  if (!digits) return null;
+  if (digits === onlyDigits(RETIRED_PHONE)) {
+    return `This is the retired firm number (${RETIRED_PHONE}). Update it in Google Business Profile to ${LOCKED_PHONES.join(" or ")}.`;
+  }
+  if (!LOCKED_PHONES.some((p) => onlyDigits(p) === digits)) {
+    return `This number isn't one of the firm's locked numbers (${LOCKED_PHONES.join(" or ")}). Confirm it's correct.`;
+  }
+  return null;
+}
+
 type GbpLocationRow = {
   name: string;
   locationId: string;
@@ -650,6 +669,9 @@ export async function GET(req: Request) {
     );
 
     const storefront = location.storefrontAddress as Parameters<typeof formatAddress>[0];
+    const phone = String(
+      (location.phoneNumbers as { primaryPhone?: string })?.primaryPhone ?? "—",
+    );
     const business = {
       name: String(
         (location.title as string | undefined) ||
@@ -657,9 +679,13 @@ export async function GET(req: Request) {
           "Business",
       ),
       address: formatAddress(storefront),
-      phone: String(
-        (location.phoneNumbers as { primaryPhone?: string })?.primaryPhone ?? "—",
-      ),
+      phone,
+      // Spec 1.1: "Never use: 212-460-0047, or any other number [besides the
+      // two locked ones]. Flag for confirmation if present." Diana reported
+      // the live GBP listing reads the retired 212 number (spec 4.2) — this
+      // makes that a visible flag on the dashboard instead of something only
+      // caught by chance.
+      phoneFlag: flagWrongGbpPhone(phone),
       website: String(location.websiteUri ?? "—"),
       hoursSummary: formatHoursSummary(
         location as Parameters<typeof formatHoursSummary>[0],

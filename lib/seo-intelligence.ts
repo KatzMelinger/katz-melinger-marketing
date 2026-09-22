@@ -16,6 +16,7 @@ import { listTargets } from "@/lib/seo-targets";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantConfig, DEFAULT_SEO_DOMAIN } from "@/lib/tenant-config";
+import { runTechnicalCrawl, type CrawlError } from "@/lib/technical-seo-crawl";
 
 /**
  * The current tenant's primary domain. KM's config returns "katzmelinger.com",
@@ -63,7 +64,10 @@ export type BacklinkDomain = {
 export type TechnicalMetric = {
   name: string;
   score: number;
-  status: "healthy" | "warning" | "critical";
+  // "unknown" is for genuinely missing data (e.g. PageSpeed's quota exhausted
+  // with no API key) — distinct from "critical", which means we measured a
+  // real bad score. Conflating the two shows a fake failing grade.
+  status: "healthy" | "warning" | "critical" | "unknown";
   detail: string;
 };
 
@@ -111,6 +115,21 @@ const NON_COMPETITOR_DOMAINS = [
   "glassdoor.com",
   "reddit.com",
   "quora.com",
+  // Travel/hospitality (spec 4.2, Diana): "domestication of judgments" and
+  // "collections" overlap with travel-industry vocabulary ("domestic
+  // flights", "hotel collections"), which pulled these into the auto-detected
+  // competitor list even though none of them are law firms.
+  "expedia.com",
+  "tripadvisor.com",
+  "booking.com",
+  "airbnb.com",
+  "marriott.com",
+  "hilton.com",
+  "hotels.com",
+  "kayak.com",
+  "priceline.com",
+  "orbitz.com",
+  "travelocity.com",
 ];
 
 export function isNonCompetitorDomain(domain: string): boolean {
@@ -655,6 +674,8 @@ async function fetchPageSpeed(
   url: string,
   strategy: "mobile" | "desktop",
 ): Promise<{
+  available: boolean;
+  reason: string | null;
   performance: number;
   lcp: number;
   cls: number;
@@ -671,9 +692,17 @@ async function fetchPageSpeed(
   if (apiKey) {
     endpoint.searchParams.set("key", apiKey);
   }
+  const empty = { performance: 0, lcp: 0, cls: 0, inp: 0, tbt: 0 };
   const res = await fetch(endpoint.toString(), { cache: "no-store" });
   if (!res.ok) {
-    return { performance: 0, lcp: 0, cls: 0, inp: 0, tbt: 0 };
+    // A 0 score reads as "your site failed Core Web Vitals" — that's not what
+    // happened here. Without PAGESPEED_API_KEY, the API runs on a shared
+    // anonymous quota that's frequently already exhausted (429), and the
+    // caller needs to see "no data" as a distinct state, not a fake failing score.
+    const reason = !apiKey
+      ? "PAGESPEED_API_KEY is not set — using the shared anonymous quota, which is exhausted."
+      : `PageSpeed API returned ${res.status}.`;
+    return { available: false, reason, ...empty };
   }
   const payload = (await res.json()) as {
     lighthouseResult?: {
@@ -682,7 +711,12 @@ async function fetchPageSpeed(
     };
   };
   const audits = payload.lighthouseResult?.audits ?? {};
+  if (!payload.lighthouseResult) {
+    return { available: false, reason: "PageSpeed API returned no Lighthouse result.", ...empty };
+  }
   return {
+    available: true,
+    reason: null,
     performance: toPercent((payload.lighthouseResult?.categories?.performance?.score ?? 0) * 100),
     lcp: Math.round((audits["largest-contentful-paint"]?.numericValue ?? 0) / 100) / 10,
     cls: Math.round((audits["cumulative-layout-shift"]?.numericValue ?? 0) * 1000) / 1000,
@@ -697,7 +731,7 @@ export async function getTechnicalSeoMonitoring(
   mobile: TechnicalMetric[];
   desktop: TechnicalMetric[];
   schemaChecks: TechnicalMetric[];
-  crawlErrors: Array<{ url: string; issue: string; severity: "warning" | "critical" }>;
+  crawlErrors: CrawlError[];
 }> {
   if (url === `https://${DEFAULT_SEO_DOMAIN}`) url = `https://${await tenantDomain()}`;
   const [mobile, desktop] = await Promise.all([
@@ -708,69 +742,56 @@ export async function getTechnicalSeoMonitoring(
   const toStatus = (score: number): "healthy" | "warning" | "critical" =>
     score >= 80 ? "healthy" : score >= 60 ? "warning" : "critical";
 
-  const mobileMetrics: TechnicalMetric[] = [
-    {
-      name: "Mobile performance score",
-      score: mobile.performance,
-      status: toStatus(mobile.performance),
-      detail: `Core Web Vitals: LCP ${mobile.lcp}s, INP ${mobile.inp}s, CLS ${mobile.cls}`,
-    },
-    {
-      name: "Mobile total blocking time",
-      score: toPercent(100 - mobile.tbt / 10),
-      status: toStatus(toPercent(100 - mobile.tbt / 10)),
-      detail: `TBT ${mobile.tbt}ms`,
-    },
-  ];
+  const mobileMetrics: TechnicalMetric[] = mobile.available
+    ? [
+        {
+          name: "Mobile performance score",
+          score: mobile.performance,
+          status: toStatus(mobile.performance),
+          detail: `Core Web Vitals: LCP ${mobile.lcp}s, INP ${mobile.inp}s, CLS ${mobile.cls}`,
+        },
+        {
+          name: "Mobile total blocking time",
+          score: toPercent(100 - mobile.tbt / 10),
+          status: toStatus(toPercent(100 - mobile.tbt / 10)),
+          detail: `TBT ${mobile.tbt}ms`,
+        },
+      ]
+    : [
+        {
+          name: "Mobile performance score",
+          score: 0,
+          status: "unknown",
+          detail: mobile.reason ?? "PageSpeed data unavailable.",
+        },
+      ];
 
-  const desktopMetrics: TechnicalMetric[] = [
-    {
-      name: "Desktop performance score",
-      score: desktop.performance,
-      status: toStatus(desktop.performance),
-      detail: `Core Web Vitals: LCP ${desktop.lcp}s, INP ${desktop.inp}s, CLS ${desktop.cls}`,
-    },
-    {
-      name: "Desktop total blocking time",
-      score: toPercent(100 - desktop.tbt / 10),
-      status: toStatus(toPercent(100 - desktop.tbt / 10)),
-      detail: `TBT ${desktop.tbt}ms`,
-    },
-  ];
+  const desktopMetrics: TechnicalMetric[] = desktop.available
+    ? [
+        {
+          name: "Desktop performance score",
+          score: desktop.performance,
+          status: toStatus(desktop.performance),
+          detail: `Core Web Vitals: LCP ${desktop.lcp}s, INP ${desktop.inp}s, CLS ${desktop.cls}`,
+        },
+        {
+          name: "Desktop total blocking time",
+          score: toPercent(100 - desktop.tbt / 10),
+          status: toStatus(toPercent(100 - desktop.tbt / 10)),
+          detail: `TBT ${desktop.tbt}ms`,
+        },
+      ]
+    : [
+        {
+          name: "Desktop performance score",
+          score: 0,
+          status: "unknown",
+          detail: desktop.reason ?? "PageSpeed data unavailable.",
+        },
+      ];
 
-  const schemaChecks: TechnicalMetric[] = [
-    {
-      name: "Organization schema",
-      score: 86,
-      status: "healthy",
-      detail: "LegalService and Organization entities detected on homepage.",
-    },
-    {
-      name: "FAQ schema coverage",
-      score: 62,
-      status: "warning",
-      detail: "FAQ markup missing on key practice area pages.",
-    },
-    {
-      name: "Article schema consistency",
-      score: 71,
-      status: "warning",
-      detail: "Some blog posts miss dateModified and author fields.",
-    },
-  ];
-
-  const crawlErrors = [
-    {
-      url: "/blog/nyc-wage-theft-rights-guide",
-      issue: "Missing canonical tag",
-      severity: "warning" as const,
-    },
-    {
-      url: "/practice-areas/discrimination-attorney-nyc",
-      issue: "Redirect chain found (3 hops)",
-      severity: "critical" as const,
-    },
-  ];
+  // Real, live crawl — replaces the old hardcoded placeholders (4.2).
+  const { schemaChecks, crawlErrors } = await runTechnicalCrawl(url);
 
   return { mobile: mobileMetrics, desktop: desktopMetrics, schemaChecks, crawlErrors };
 }

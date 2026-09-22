@@ -66,6 +66,9 @@ export function FindingsPanel({
   draftId,
   nonce,
   onFixAll,
+  onApplyFindings,
+  sourceFilter,
+  onCounts,
 }: {
   draftId: string;
   nonce?: number;
@@ -75,6 +78,20 @@ export function FindingsPanel({
    * disabled — an affordance that cannot do anything should not be drawn.
    */
   onFixAll?: (findingTexts: string[]) => void;
+  /** 2.3 — the panel-wide "Apply all fixes" batch, same Apply-and-review-diff
+   *  flow as onFixAll (one call, one merged diff, one accept/revert). Separate
+   *  prop so a caller can offer the per-group button without the bulk one. */
+  onApplyFindings?: (findingTexts: string[]) => void;
+  /** 2.15 — locks the view to one source (e.g. "legal" for DraftDrawer's
+   *  dedicated Legal tab) and hides the engine scorecard, since there's
+   *  nothing to switch between. Omit for the normal all-sources view. */
+  sourceFilter?: FindingSource;
+  /** 2.15 — reports open-finding counts (overall, and legal specifically)
+   *  whenever they change, so a parent tab bar can show a badge without
+   *  re-fetching findings itself. Fires on every load, independent of which
+   *  tab (if any) is actually visible — this component is meant to stay
+   *  mounted so the count is right before a reviewer ever clicks in. */
+  onCounts?: (counts: { total: number; legal: number }) => void;
 }) {
   const [findings, setFindings] = useState<StoredFinding[]>([]);
   const [overrides, setOverrides] = useState<SeverityOverrides>({});
@@ -142,7 +159,12 @@ export function FindingsPanel({
   // The active tab, with a sensible landing point: the first engine that has
   // anything outstanding, so opening a draft shows work rather than an empty
   // Legal tab. Falls back to the first engine when everything is clear.
-  const activeTab: FindingSource = tab ?? engines.find((e) => e.count > 0)?.source ?? engines[0].source;
+  //
+  // sourceFilter (2.15) overrides all of that and pins the panel to one
+  // engine — it takes precedence over `tab` so a stale click on the scorecard
+  // before the parent locked the view can't leave the wrong source showing.
+  const activeTab: FindingSource =
+    sourceFilter ?? tab ?? engines.find((e) => e.count > 0)?.source ?? engines[0].source;
 
   const groups = useMemo(() => {
     const scope = (showClosed ? findings : open).filter((f) => f.source === activeTab);
@@ -159,6 +181,29 @@ export function FindingsPanel({
       else next.add(key);
       return next;
     });
+
+  // 2.15 — report open counts to the parent tab bar. Derived fresh from
+  // `findings` every render, so depending on `findings` (the actual state) is
+  // what avoids an infinite-update loop from new array identities each render.
+  const legalOpenCount = open.filter((f) => f.source === "legal").length;
+  useEffect(() => {
+    onCounts?.({ total: open.length, legal: legalOpenCount });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findings]);
+
+  // 2.3 — "Apply all fixes, coherent": every open, non-legal finding that
+  // carries a suggested fix, sent to Claude in the SAME one-shot batch the
+  // per-group "Fix all" uses (one call, one merged diff, one accept/revert —
+  // see apply-suggestion/route.ts's multi-finding instructions for the
+  // merge/dedupe behavior). Legal findings are never included: 3.3 forbids
+  // auto-applying a legal fix, so those stay open and keep routing to a human
+  // via the Legal tab.
+  const autoApplicable = open.filter((f) => f.source !== "legal" && f.fix);
+  const legalExcludedCount = open.filter((f) => f.source === "legal").length;
+  const applyAll = () => {
+    if (!onApplyFindings || autoApplicable.length === 0) return;
+    onApplyFindings(autoApplicable.map((f) => fixText(f)));
+  };
 
   if (loading) {
     return (
@@ -225,34 +270,56 @@ export function FindingsPanel({
         </div>
       </div>
 
+      {onApplyFindings && autoApplicable.length > 0 && (
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-brand/5 px-3 py-2">
+          <button
+            type="button"
+            onClick={applyAll}
+            className="rounded border border-brand/40 bg-white px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/10"
+            title="Send every open, non-legal finding to Claude in one shot and review a single merged diff."
+          >
+            Apply all fixes ({autoApplicable.length})
+          </button>
+          <span className="text-[11px] text-slate-500">
+            One coherent draft, one diff to accept or revert.
+            {legalExcludedCount > 0
+              ? ` ${legalExcludedCount} legal finding${legalExcludedCount === 1 ? "" : "s"} excluded — needs an attorney.`
+              : ""}
+          </span>
+        </div>
+      )}
+
       {/* Scorecard. Every engine appears, including the quiet ones — a tab strip
           that changes shape between drafts has to be re-read every time, and
-          "SEO found nothing" is information. */}
-      <div className="flex flex-wrap gap-1.5 border-b border-slate-200 px-3 py-2">
-        {engines.map((e) => {
-          const active = e.source === activeTab;
-          const style = e.count === 0 ? CHIP_STYLE.clear : CHIP_STYLE[e.worst ?? "optional"];
-          return (
-            <button
-              key={e.source}
-              type="button"
-              onClick={() => setTab(e.source)}
-              aria-pressed={active}
-              className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${style} ${
-                active ? "ring-2 ring-brand/40 ring-offset-1" : "opacity-80 hover:opacity-100"
-              }`}
-            >
-              {SOURCE_LABEL[e.source]}
-              <span className="ml-1 tabular-nums opacity-80">{e.count === 0 ? "✓" : e.count}</span>
-              {e.blockers > 0 && (
-                <span className="ml-1 rounded-sm bg-red-600 px-1 text-[9px] font-bold text-white tabular-nums">
-                  {e.blockers}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+          "SEO found nothing" is information. Hidden when sourceFilter pins the
+          panel to one engine (2.15): there is nothing left to switch between. */}
+      {!sourceFilter && (
+        <div className="flex flex-wrap gap-1.5 border-b border-slate-200 px-3 py-2">
+          {engines.map((e) => {
+            const active = e.source === activeTab;
+            const style = e.count === 0 ? CHIP_STYLE.clear : CHIP_STYLE[e.worst ?? "optional"];
+            return (
+              <button
+                key={e.source}
+                type="button"
+                onClick={() => setTab(e.source)}
+                aria-pressed={active}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${style} ${
+                  active ? "ring-2 ring-brand/40 ring-offset-1" : "opacity-80 hover:opacity-100"
+                }`}
+              >
+                {SOURCE_LABEL[e.source]}
+                <span className="ml-1 tabular-nums opacity-80">{e.count === 0 ? "✓" : e.count}</span>
+                {e.blockers > 0 && (
+                  <span className="ml-1 rounded-sm bg-red-600 px-1 text-[9px] font-bold text-white tabular-nums">
+                    {e.blockers}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="p-3">
         {groups.length === 0 && (

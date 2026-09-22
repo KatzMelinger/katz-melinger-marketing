@@ -18,7 +18,7 @@ import { useTenantSiteUrl } from "@/components/tenant-provider";
 type Metric = {
   name: string;
   score: number;
-  status: "healthy" | "warning" | "critical";
+  status: "healthy" | "warning" | "critical" | "unknown";
   detail: string;
 };
 
@@ -87,6 +87,13 @@ function statusTone(status: string): { dot: string; text: string; bg: string } {
       dot: "bg-amber-500",
       text: "text-amber-700",
       bg: "bg-amber-50 border-amber-200",
+    };
+  }
+  if (status === "unknown") {
+    return {
+      dot: "bg-slate-400",
+      text: "text-slate-600",
+      bg: "bg-slate-50 border-slate-200",
     };
   }
   return { dot: "bg-red-500", text: "text-red-700", bg: "bg-red-50 border-red-200" };

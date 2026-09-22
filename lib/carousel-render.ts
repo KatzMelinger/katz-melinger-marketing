@@ -37,7 +37,12 @@ function backgroundPrompt(slide: SlideInput, brand: CarouselBrand): string {
     `Editorial abstract background for a professional law firm social media carousel slide. ` +
     `Visual theme inspired by: "${slide.headline}". Modern, clean, high quality, lots of negative space. ` +
     `IMPORTANT: absolutely NO text, NO words, NO letters, NO numbers, NO logos, NO watermarks anywhere in the image. ` +
-    `Keep the lower two-thirds darker and visually quiet so overlaid text stays readable.` +
+    `Keep the lower two-thirds darker and visually quiet so overlaid text stays readable. ` +
+    // Spec 6.9's visual-system rule, stated directly rather than left to the
+    // (optionally blank) style suffix: the brand's own configured accent —
+    // not a fixed literal — so a future rebrand only changes the one config
+    // value, not this prompt.
+    `Color palette: built around the firm's brand accent color ${brand.accentColor}. Do NOT use red or yellow anywhere in the image, even as a small accent.` +
     (brand.styleSuffix || "")
   );
 }

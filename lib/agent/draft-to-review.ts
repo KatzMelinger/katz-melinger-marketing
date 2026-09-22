@@ -25,6 +25,7 @@ import { getTenantJobDb } from "@/lib/tenant-db";
 import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
 import { analyzeDraft } from "@/lib/content-analysis";
 import { runComplianceGate, surfaceForFormat } from "@/lib/agent/compliance-filter";
+import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 
 export type ComplianceSummary = {
   pass: boolean;
@@ -114,12 +115,28 @@ export async function draftTopicToReview(args: {
     };
   }
 
+  // 2.12 — auto-insert the fixed 1.4 elements (Attorney Advertising label,
+  // general disclaimer, results disclaimer when applicable) BEFORE anything
+  // downstream reads the body. This is the one blog-content path that never
+  // got this fix: app/api/content/draft/route.ts, km-draft/route.ts, and
+  // update-draft/route.ts all apply it, but this cron/Peggy-shared path
+  // generates its own body via generateMultiFormat and never touched it — a
+  // real agent-sourced draft was found live missing both elements, which the
+  // compliance gate then had to hold as a violation instead of the label
+  // simply being present already. Only for the long-form legal-advertising
+  // format; the other FormatKeys generated through this same function
+  // (social, email, video) are checked by their own separate compliance path.
+  let body = draft.body;
+  if (format === "blog") {
+    body = applyRequiredDisclaimers(body).body;
+  }
+
   // 2. Analyze — full scorecard (persists to content_analyses internally).
   // Non-fatal: a scorecard failure must not block the compliance gate.
   try {
     await analyzeDraft({
       draftId: draft.id,
-      body: draft.body,
+      body,
       targetKeywords: args.targetKeywords ?? [],
       title: draft.title,
       topic: args.topic,
@@ -135,7 +152,7 @@ export async function draftTopicToReview(args: {
 
   // 3. Compliance HARD GATE.
   const verdict = await runComplianceGate({
-    content: draft.body,
+    content: body,
     surface: surfaceForFormat(format),
     practiceArea: args.practiceArea ?? undefined,
     minScore: args.minComplianceScore,
@@ -175,7 +192,7 @@ export async function draftTopicToReview(args: {
 
   const { error: updErr } = await db.raw
     .from("content_drafts")
-    .update({ status: newStatus, metadata: mergedMetadata })
+    .update({ status: newStatus, metadata: mergedMetadata, body })
     .eq("id", draft.id)
     .eq("tenant_id", tenantId);
   if (updErr) {

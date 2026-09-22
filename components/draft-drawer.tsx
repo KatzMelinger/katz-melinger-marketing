@@ -446,6 +446,17 @@ export function DraftDrawer({
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [status, setStatus] = useState<PipelineStatus>(item.status);
+  // 2.15 — review-panel tabs. Content defaults to today's compact view
+  // (draft + basic SEO context + status); the heavier detail (QA specifics,
+  // Findings, Legal) only renders once its tab is picked, so opening the
+  // drawer never means scrolling past everything to reach Legal or Findings.
+  const [activeTab, setActiveTab] = useState<"content" | "seo" | "qa" | "legal" | "findings" | "assets">(
+    "content",
+  );
+  const [findingsCounts, setFindingsCounts] = useState<{ total: number; legal: number }>({
+    total: 0,
+    legal: 0,
+  });
   // Reviewer certifications, persisted on the draft with who and when. These
   // were session-only useState booleans: nothing was stored, no name was
   // attached, and a refresh cleared them — so the two boxes certified nothing
@@ -977,6 +988,11 @@ export function DraftDrawer({
     return false;
   };
 
+  const applyFindingTexts = (texts: string[]) => {
+    if (unsavedEditGuard()) return;
+    setApplyingFindings(texts);
+  };
+
   const saveBody = async () => {
     if (!draft) return;
     setSaving(true);
@@ -1315,9 +1331,58 @@ export function DraftDrawer({
               )}
             </div>
 
+            {/* 2.15 — review-panel tabs. Content is the compact default (draft +
+                basic SEO context + status); Legal/Findings/QA render nothing
+                until picked, so opening the drawer is never a scroll past
+                everything to reach them. The status/action card and Content
+                info stay visible on every tab — they're the "always know where
+                this stands" summary, not one tab's content. */}
+            {draft && (
+              <div className="mt-3 flex flex-wrap gap-1 border-b border-slate-200">
+                {(
+                  [
+                    { id: "content", label: "Content" },
+                    { id: "findings", label: "Findings", count: findingsCounts.total },
+                    { id: "legal", label: "Legal", count: findingsCounts.legal },
+                    { id: "seo", label: "SEO" },
+                    {
+                      id: "qa",
+                      label: "QA",
+                      count:
+                        qaFailed.length +
+                        outstandingFresh.length +
+                        (structureCheck && !structureCheck.passed ? structureCheck.missing.length : 0),
+                    },
+                    { id: "assets", label: "Assets" },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-sm font-medium ${
+                      activeTab === t.id
+                        ? "border-brand text-brand"
+                        : "border-transparent text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {t.label}
+                    {"count" in t && t.count > 0 && (
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                          activeTab === t.id ? "bg-brand/10 text-brand" : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {t.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Redraft summary — what the Redraft flow detected + set out to fill.
                 Only present on drafts created via Redraft (page updates). */}
-            {redraft && (
+            {redraft && activeTab === "content" && (
               <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50/60 p-4">
                 <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
                   Redraft summary
@@ -1379,45 +1444,54 @@ export function DraftDrawer({
               </div>
             )}
 
-            {/* SEO metadata bar — full width, on top */}
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">SEO metadata</span>
-                {onEditMeta && (
-                  <button onClick={onEditMeta} className="text-xs font-medium text-brand hover:underline">
-                    Edit all fields
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-                <MetaField label="Meta title" value={brief.metaTitle} />
-                <MetaField label="URL slug" value={brief.urlSlug} />
-                <MetaField label="Pillar link" value={brief.internalPillarLink || PILLAR_URL[brief.pillarId ?? ""]} />
-                <MetaField label="Search intent" value={brief.searchIntent} />
-              </div>
-              <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
-                <MetaField label="Meta description" value={brief.metaDescription} multiline />
-                <div>
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Secondary keywords</div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {(brief.secondaryKeywords ?? []).length === 0 ? (
-                      <span className="text-xs text-slate-400">—</span>
-                    ) : (
-                      brief.secondaryKeywords!.map((k) => (
-                        <span key={k} className="rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand">
-                          {k}
-                        </span>
-                      ))
-                    )}
+            {/* SEO metadata bar — full width, on top. Content shows it by
+                default (unchanged from before tabs existed); SEO's own tab
+                shows just this + internal links, without the draft body. */}
+            {(activeTab === "content" || activeTab === "seo") && (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">SEO metadata</span>
+                  {onEditMeta && (
+                    <button onClick={onEditMeta} className="text-xs font-medium text-brand hover:underline">
+                      Edit all fields
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                  <MetaField label="Meta title" value={brief.metaTitle} />
+                  <MetaField label="URL slug" value={brief.urlSlug} />
+                  <MetaField label="Pillar link" value={brief.internalPillarLink || PILLAR_URL[brief.pillarId ?? ""]} />
+                  <MetaField label="Search intent" value={brief.searchIntent} />
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                  <MetaField label="Meta description" value={brief.metaDescription} multiline />
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Secondary keywords</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {(brief.secondaryKeywords ?? []).length === 0 ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        brief.secondaryKeywords!.map((k) => (
+                          <span key={k} className="rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand">
+                            {k}
+                          </span>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Two-column body */}
             <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
-              {/* LEFT: draft content + internal links */}
+              {/* LEFT: draft content + internal links. Draft content is
+                  Content-tab-only (it's the thing that made this "one long
+                  scroll" — hiding it is most of what makes the other tabs
+                  reachable without scrolling past it); internal links stays
+                  visible on SEO too, since it's the same underlying concern. */}
               <div className="space-y-4">
+                {(!draft || activeTab === "content") && (
                 <div className="rounded-lg border border-slate-200">
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Draft content</span>
@@ -1503,9 +1577,11 @@ export function DraftDrawer({
                     />
                   )}
                 </div>
+                )}
 
                 {/* Internal links panel — status line, list collapsed behind a
                     toggle. QA passes at 3+ links confirmed in the Cluster Map. */}
+                {(activeTab === "content" || activeTab === "seo") && (
                 <div className="rounded-lg border border-slate-200">
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1564,6 +1640,7 @@ export function DraftDrawer({
                     )}
                   </div>
                 </div>
+                )}
               </div>
 
               {/* RIGHT: publish + QA + content info */}
@@ -1766,8 +1843,10 @@ export function DraftDrawer({
                 )}
 
                 {/* Structure gap — which required sections are missing. Only
-                    shown when the KM structure check failed. */}
-                {structureCheck && !structureCheck.passed && structureCheck.missing.length > 0 && (
+                    shown when the KM structure check failed. QA-tab detail —
+                    Content still sees it too, unchanged from before tabs. */}
+                {(activeTab === "content" || activeTab === "qa") &&
+                  structureCheck && !structureCheck.passed && structureCheck.missing.length > 0 && (
                   <div className="rounded-lg border border-rose-300 bg-rose-50 p-3">
                     <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-rose-800">
                       Missing required sections
@@ -1787,7 +1866,7 @@ export function DraftDrawer({
                 {/* Content freshness — each time-sensitive figure is classified;
                     the reviewer applies the current value or marks it verified.
                     Hard gate: approval blocks until every figure is resolved. */}
-                {freshnessFlags.length > 0 && (
+                {(activeTab === "content" || activeTab === "qa") && freshnessFlags.length > 0 && (
                   <div className="rounded-lg border border-amber-300 bg-amber-50/60 p-3">
                     <div className="mb-1 flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wide text-amber-800">
@@ -1897,6 +1976,7 @@ export function DraftDrawer({
                 )}
 
                 {/* QA checklist */}
+                {(activeTab === "content" || activeTab === "qa") && (
                 <div className="rounded-lg border border-slate-200 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">QA checklist</span>
@@ -1960,6 +2040,7 @@ export function DraftDrawer({
                     {certMsg && <p className="text-[10px] text-red-600">{certMsg}</p>}
                   </div>
                 </div>
+                )}
 
                 {/* Content info */}
                 <div className="rounded-lg border border-slate-200 p-3">
@@ -1991,24 +2072,31 @@ export function DraftDrawer({
 
             {/* Analysis results — full width, at the bottom. The same rich card
                 used in the Drafts studio: scores, findings (apply-to-rewrite),
-                suggested titles/images/links, compliance, and overlap. */}
+                suggested titles/images/links, compliance, and overlap.
+                Findings/Legal tabs — kept MOUNTED (never unmounted) rather
+                than conditionally rendered, so it fetches and reports counts
+                for the tab badges before a reviewer ever clicks either tab;
+                only its visibility toggles. Legal locks it to the legal
+                source via sourceFilter, per 2.15. */}
             {draft && (
-              <div className="mt-4">
+              <div className={`mt-4 ${activeTab === "findings" || activeTab === "legal" ? "" : "hidden"}`}>
                 <FindingsPanel
                   draftId={draft.id}
                   nonce={findingsNonce}
-                  // Same Apply flow the analysis card uses, so a group fixed
-                  // from here goes through the identical review-and-accept
-                  // step rather than a second path that could diverge.
-                  onFixAll={(texts) => {
-                    if (unsavedEditGuard()) return;
-                    setApplyingFindings(texts);
-                  }}
+                  sourceFilter={activeTab === "legal" ? "legal" : undefined}
+                  onCounts={setFindingsCounts}
+                  // Both entry points land on the same Apply flow the analysis
+                  // card uses — a group fixed from here goes through the
+                  // identical review-and-accept step rather than a second path
+                  // that could diverge. onFixAll is the per-group button,
+                  // onApplyFindings the selection/auto-applicable one.
+                  onFixAll={applyFindingTexts}
+                  onApplyFindings={applyFindingTexts}
                 />
               </div>
             )}
 
-            {draft &&
+            {draft && activeTab === "qa" &&
               (analysis ? (
                 <div className="mt-4">
                   {staleness?.stale && (
@@ -2063,6 +2151,19 @@ export function DraftDrawer({
                   )}
                 </div>
               ))}
+
+            {/* Assets tab — this review drawer (blogs/service pages) has no
+                image/media pipeline of its own today, unlike the social
+                composer. Named honestly rather than faked: a pointer to where
+                a featured image would actually be produced. */}
+            {draft && activeTab === "assets" && (
+              <div className="mt-4 rounded-lg border border-slate-200 p-4 text-center text-xs text-slate-500">
+                No assets attached to this draft yet.{" "}
+                <a href="/content/images" className="font-medium text-brand hover:underline">
+                  Generate a featured image →
+                </a>
+              </div>
+            )}
 
             {draft && applyingFindings && (
               <ApplySuggestionModal

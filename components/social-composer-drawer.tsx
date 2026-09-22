@@ -19,8 +19,9 @@
  *     rules (lib/social-compliance). A blocking flag stops that post from
  *     scheduling until it is cleared. The flagged tab shows a warning marker.
  *   - A legal-review checkbox must be confirmed before Approve is available.
- *   - Nothing publishes automatically. "Approve & schedule" is the deliberate
- *     step; it reuses the existing, unchanged schedule + Ayrshare path.
+ *   - Nothing publishes automatically on its own. "Approve & schedule" and,
+ *     per network, "Publish now" (S11 — one confirm, immediate) are the two
+ *     deliberate steps; both reuse the same schedule + gate + Ayrshare path.
  *
  * Generation is untouched: the drafts come from the existing repurpose run.
  * Google Business is seeded from the Facebook copy; TikTok carries the short-
@@ -34,13 +35,7 @@ import Link from "next/link";
 
 import type { RepurposeDraft } from "@/components/repurpose-review-drawer";
 import { checkSocialCompliance, type ComplianceFlag } from "@/lib/social-compliance";
-import {
-  REWRITE_REASONS,
-  REWRITE_REASON_HINT,
-  REWRITE_REASON_LABEL,
-  type RewriteReason,
-} from "@/lib/social-rewrite-reasons";
-import { bestSlot, nyWallClockToUtc } from "@/lib/social-best-time";
+import { bestSlot, topSlots, nyWallClockToUtc } from "@/lib/social-best-time";
 import type { AngleConflict } from "@/lib/social-duplicate";
 
 /** The networks the composer can compose for. `platform` (the key) is the
@@ -115,29 +110,21 @@ const SOCIAL_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "video/mp4"
 const SOCIAL_MEDIA_ACCEPT = SOCIAL_MEDIA_TYPES.join(",");
 const SOCIAL_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
 
+/** S12 — the version history a rewrite/regenerate returns, shaped exactly as
+ *  the API responds (snake_case, matching the spec's own field names). */
+type RewriteVersionClient = { version_id: string; text: string; created_at: string; source: string };
+type RewriteStateClient = {
+  active_version_id: string;
+  versions: RewriteVersionClient[];
+  rejected_version_ids: string[];
+};
+type RewriteActionKey = "rewrite" | "more_engaging" | "cta_change" | "revert";
+
 type Slide = { n: number; headline: string; url: string };
 
 /** A manually-uploaded image/video (Metricool-style upload). Its `url` is also
  *  pushed into the variation's mediaUrls so it flows to Ayrshare. */
 type UploadedAsset = { url: string; kind: "image" | "video"; filename: string };
-
-/**
- * One generated version of a variation's copy (S12, item 16).
- *
- * Versions live in memory only, until the reviewer schedules one. That is what
- * makes reverting free — a version they turned down never became a row anyone
- * has to clean up later — and it is why `rejectedIds` is the interesting field:
- * the rejected TEXT goes back into the next prompt as negative context, so
- * pressing Rewrite three times gives three different angles instead of the
- * first one again.
- */
-type CopyVersion = {
-  id: string;
-  text: string;
-  createdAt: string;
-  /** "original" for the generated copy, otherwise which button made it. */
-  source: "original" | RewriteReason;
-};
 
 type Variation = {
   key: NetworkKey;
@@ -165,27 +152,15 @@ type Variation = {
   reelScript?: { hook: string; body: string; cta: string };
   scriptBusy?: boolean;
   scriptMsg?: string | null;
-  /** S12 — every version generated for this platform, oldest first. */
-  versions?: CopyVersion[];
-  activeVersionId?: string | null;
-  /** Versions the reviewer moved away from. Fed to the next prompt to avoid. */
-  rejectedIds?: string[];
-  rewriteBusy?: RewriteReason | null;
+  /** S12 — version history from the last rewrite/regenerate call, if any. */
+  rewrite?: RewriteStateClient;
+  rewriteBusy?: RewriteActionKey | null;
   rewriteMsg?: string | null;
+  /** S13's legal alert (6.14) — set when the last rewrite's gate found a
+   *  critical legal problem with the new text. Cleared by the next call that
+   *  doesn't. */
+  legalFlag?: string[] | null;
 };
-
-let versionSeq = 0;
-const newVersionId = () => `v${++versionSeq}`;
-
-/** Seed a variation's version list with the copy it was generated with. */
-function seedVersions(copy: string): Pick<Variation, "versions" | "activeVersionId" | "rejectedIds"> {
-  const id = newVersionId();
-  return {
-    versions: [{ id, text: copy, createdAt: new Date().toISOString(), source: "original" }],
-    activeVersionId: id,
-    rejectedIds: [],
-  };
-}
 
 /** Human label for a duplicate/angle conflict, naming the matching post. */
 function conflictLabel(c: AngleConflict): string {
@@ -284,31 +259,42 @@ function buildVariations(
   const video = byFormat.get("video_short");
   const base = facebook?.body ?? linkedin?.body ?? instagram?.body ?? "";
 
-  // Staggered slots, one per network (KM + extra) in checklist order.
+  // Staggered slots, one per network (KM + extra) in checklist order — the
+  // fallback for a network with no best-time benchmark at all.
   const slots = staggeredSlots(KM_NETWORKS.length + EXTRA_NETWORKS.length);
-  const slot = (i: number) => {
-    const s = slots[i] ?? { date: ymd(new Date()), time: "09:00" };
-    return presetDate ? { date: presetDate, time: s.time } : s;
+  // S7/6.8 — pre-fill the network's OWN top best-time slot by default rather
+  // than a generic staggered time, so "best time" is what a reviewer sees
+  // without having to click anything first. When opened from a specific
+  // calendar day (presetDate), the day is already fixed, so only the hour
+  // comes from the benchmark; with no presetDate, both the day and hour do.
+  const slot = (i: number, key: NetworkKey) => {
+    const fallback = slots[i] ?? { date: ymd(new Date()), time: "09:00" };
+    const top = bestSlot(key);
+    if (presetDate) {
+      return { date: presetDate, time: top ? `${String(top.hour).padStart(2, "0")}:00` : fallback.time };
+    }
+    return top ? nextSlotDate(top.day, top.hour) : fallback;
   };
 
   const v = new Map<NetworkKey, Variation>();
-  v.set("linkedin", { key: "linkedin", copy: linkedin?.body ?? base, draftId: linkedin?.id ?? null, ...slot(0), ...seedVersions(linkedin?.body ?? base) });
-  v.set("facebook", { key: "facebook", copy: facebook?.body ?? base, draftId: facebook?.id ?? null, ...slot(1), ...seedVersions(facebook?.body ?? base) });
+  v.set("linkedin", { key: "linkedin", copy: linkedin?.body ?? base, draftId: linkedin?.id ?? null, ...slot(0, "linkedin") });
+  v.set("facebook", { key: "facebook", copy: facebook?.body ?? base, draftId: facebook?.id ?? null, ...slot(1, "facebook") });
   v.set("instagram", {
     key: "instagram",
     copy: instagram?.body ?? base,
     carouselScript: carousel?.body,
     draftId: instagram?.id ?? null,
-    ...slot(2),
-    ...seedVersions(instagram?.body ?? base),
+    ...slot(2, "instagram"),
   });
-  v.set("gmb", { key: "gmb", copy: seedGmb(base), draftId: null, ...slot(3), ...seedVersions(seedGmb(base)) });
-  v.set("tiktok", { key: "tiktok", copy: video?.body ?? "", isScript: true, draftId: null, ...slot(4), ...seedVersions(video?.body ?? "") });
+  v.set("gmb", { key: "gmb", copy: seedGmb(base), draftId: null, ...slot(3, "gmb") });
+  // draftId wired to the video_short draft (was hardcoded null) so TikTok's
+  // script can be rewritten (6.13) like the other AI-generated formats.
+  v.set("tiktok", { key: "tiktok", copy: video?.body ?? "", isScript: true, draftId: video?.id ?? null, ...slot(4, "tiktok") });
   // Extra networks (Threads / Pinterest / YouTube) are seeded too, so choosing
   // one from "+ add network" opens an editable, schedulable tab rather than an
   // inert empty one. They start from the base message and default to unselected.
   EXTRA_NETWORKS.forEach((n, i) => {
-    v.set(n.key, { key: n.key, copy: base, draftId: null, ...slot(KM_NETWORKS.length + i), ...seedVersions(base) });
+    v.set(n.key, { key: n.key, copy: base, draftId: null, ...slot(KM_NETWORKS.length + i, n.key) });
   });
   return v;
 }
@@ -538,6 +524,15 @@ export function SocialComposerDrawer({
     [selectedList, variations],
   );
 
+  // S13's legal alert (6.14): a network whose last rewrite came back legally
+  // flagged can't schedule until a fresh, unflagged rewrite (or a revert to a
+  // clean version) clears it — same "cannot be scheduled" bar as a blocking
+  // compliance flag.
+  const legalFlaggedNets = useMemo(
+    () => selectedList.filter((n) => (variations.get(n.key)?.legalFlag?.length ?? 0) > 0),
+    [selectedList, variations],
+  );
+
   const toggleNetwork = (key: NetworkKey) =>
     setSelected((s) => {
       const next = new Set(s);
@@ -558,101 +553,99 @@ export function SocialComposerDrawer({
       return next;
     });
 
-  // ---- S12: Rewrite / More engaging / Change CTA ---------------------------
-
-  /**
-   * Ask for another version of one platform's copy.
-   *
-   * Every version the reviewer has moved away from is sent along as negative
-   * context. Without it the same source and the same instruction converge:
-   * press Rewrite three times, get the first draft back, stop using the button.
-   */
-  const requestRewrite = async (key: NetworkKey, reason: RewriteReason) => {
-    const v = variations.get(key);
-    if (!v?.copy?.trim()) return;
-    if (!v.draftId) {
-      patchVar(key, { rewriteMsg: "This platform has no source draft to rewrite from." });
-      return;
-    }
-    patchVar(key, { rewriteBusy: reason, rewriteMsg: null });
-    try {
-      const versions = v.versions ?? [];
-      const rejectedIds = new Set(v.rejectedIds ?? []);
-      // The copy on screen counts as rejected too — they are asking to move off it.
-      const rejectedTexts = [
-        ...versions.filter((ver) => rejectedIds.has(ver.id)).map((ver) => ver.text),
-        v.copy,
-      ];
-      const res = await fetch("/api/content-production/social/rewrite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          draftId: v.draftId,
-          // NetworkKey -> SocialFormatKey. Only the three platforms seeded from
-          // their own generated draft can rewrite; the rest carry no draftId and
-          // are disabled in the UI before reaching here.
-          format: v.key === "tiktok" ? "video_short" : v.key,
-          currentText: v.copy,
-          rejectedTexts,
-          reason,
-        }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.body) {
-        patchVar(key, { rewriteBusy: null, rewriteMsg: j?.error || "Couldn't generate another version." });
-        return;
-      }
-      const prev = v.versions?.find((ver) => ver.id === v.activeVersionId);
-      const version: CopyVersion = {
-        id: newVersionId(),
-        text: j.body as string,
-        createdAt: new Date().toISOString(),
-        source: reason,
-      };
-      patchVar(key, {
-        copy: version.text,
-        versions: [...(v.versions ?? []), version],
-        activeVersionId: version.id,
-        // The version they moved off is now rejected, so the next request steers
-        // away from it as well.
-        rejectedIds: prev ? [...new Set([...(v.rejectedIds ?? []), prev.id])] : v.rejectedIds,
-        rewriteBusy: null,
-        rewriteMsg: null,
-      });
-    } catch {
-      patchVar(key, { rewriteBusy: null, rewriteMsg: "Couldn't generate another version." });
-    }
-  };
-
-  /**
-   * Go back to a version. Reverting UN-rejects it — the reviewer has changed
-   * their mind, and continuing to tell the model to avoid the copy they just
-   * chose would be actively wrong.
-   */
-  const revertVersion = (key: NetworkKey, versionId: string) => {
-    const v = variations.get(key);
-    const target = v?.versions?.find((ver) => ver.id === versionId);
-    if (!v || !target) return;
-    const prev = v.versions?.find((ver) => ver.id === v.activeVersionId);
-    const rejected = new Set(v.rejectedIds ?? []);
-    if (prev && prev.id !== versionId) rejected.add(prev.id);
-    rejected.delete(versionId);
+  // S12 — Rewrite / More engaging / Change CTA, plus reverting to a past
+  // version. All three actions and revert go through the same endpoint;
+  // the server re-runs the S3 + legal gate (6.14) against the new text
+  // before returning, so a legal problem shows up here immediately rather
+  // than only surfacing later at Schedule.
+  const applyRewriteResult = (
+    key: NetworkKey,
+    j: {
+      body: string;
+      rewrite: RewriteStateClient;
+      gate: { legalFlagged: boolean; reasons: string[] };
+    },
+  ) =>
     patchVar(key, {
-      copy: target.text,
-      activeVersionId: versionId,
-      rejectedIds: [...rejected],
+      copy: j.body,
+      rewrite: j.rewrite,
+      legalFlag: j.gate.legalFlagged ? j.gate.reasons.filter((r) => r.startsWith("Legal review:")) : null,
+      rewriteBusy: null,
       rewriteMsg: null,
     });
+
+  const runRewrite = async (key: NetworkKey, action: "rewrite" | "more_engaging" | "cta_change") => {
+    const v = variations.get(key);
+    if (!v?.draftId) return;
+    patchVar(key, { rewriteBusy: action, rewriteMsg: null });
+    try {
+      const res = await fetch(`/api/content-production/social/${v.draftId}/rewrite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, platforms: [key] }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        patchVar(key, { rewriteBusy: null, rewriteMsg: j?.error || "Rewrite failed." });
+        return;
+      }
+      applyRewriteResult(key, j);
+    } catch {
+      patchVar(key, { rewriteBusy: null, rewriteMsg: "Rewrite failed." });
+    }
   };
 
-  // Fill this network's slot with its recommended best time (Phase-1 static
-  // benchmark per platform). No-op for a network without a suggestion.
-  const applyBestTime = (key: NetworkKey) => {
-    const slot = bestSlot(key);
-    if (!slot) return;
-    const { date, time } = nextSlotDate(slot.day, slot.hour);
+  const revertToVersion = async (key: NetworkKey, versionId: string) => {
+    const v = variations.get(key);
+    if (!v?.draftId) return;
+    patchVar(key, { rewriteBusy: "revert", rewriteMsg: null });
+    try {
+      const res = await fetch(`/api/content-production/social/${v.draftId}/rewrite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "revert", versionId, platforms: [key] }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        patchVar(key, { rewriteBusy: null, rewriteMsg: j?.error || "Revert failed." });
+        return;
+      }
+      applyRewriteResult(key, j);
+    } catch {
+      patchVar(key, { rewriteBusy: null, rewriteMsg: "Revert failed." });
+    }
+  };
+
+  const REWRITE_SOURCE_LABEL: Record<string, string> = {
+    original: "Original",
+    rewrite: "Rewrite",
+    more_engaging: "More engaging",
+    cta_change: "CTA change",
+  };
+
+  // Fill this network's slot with ONE specific recommended time (day/hour from
+  // a benchmark slot, per lib/social-best-time.ts). Used by each inline chip,
+  // not just the top one — 6.8 wants every ranked slot pickable, not only the
+  // single best.
+  const applySlot = (key: NetworkKey, day: number, hour: number) => {
+    const { date, time } = nextSlotDate(day, hour);
     patchVar(key, { date, time });
   };
+
+  const WEEKDAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  function formatSlotLabel(day: number, hour: number): string {
+    const h12 = hour % 12 === 0 ? 12 : hour % 12;
+    const ampm = hour < 12 ? "AM" : "PM";
+    return `${WEEKDAY_ABBR[day]} ${h12}:00 ${ampm}`;
+  }
+  /** Best-effort highlight: does this variation's current date/time already
+   *  match this slot's weekday + hour? Parsed as UTC to match how
+   *  nextSlotDate/staggeredSlots compute the date string in the first place. */
+  function isSlotActive(v: Variation, day: number, hour: number): boolean {
+    if (!v.date) return false;
+    const d = new Date(`${v.date}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.getUTCDay() === day && v.time === `${String(hour).padStart(2, "0")}:00`;
+  }
 
   // ---- Manual media upload (Metricool-style) --------------------------------
   const [dragOverNet, setDragOverNet] = useState<NetworkKey | null>(null);
@@ -774,8 +767,11 @@ export function SocialComposerDrawer({
   // Approve & schedule — gated on legal review + zero blocking flags. Reuses the
   // existing schedule route (unchanged Ayrshare path). Nothing publishes here on
   // its own; posts land on the Content Calendar at their scheduled time.
+  // publishNow (item 15) sends straight out instead of queueing; it clears the
+  // same gates either way — a "Publish now" that skipped the legal-flag check
+  // would be the one path around it.
   const schedule = async (publishNow = false) => {
-    if (!legalOk || blockedNets.length > 0 || mediaMissingNets.length > 0) return;
+    if (!legalOk || blockedNets.length > 0 || legalFlaggedNets.length > 0 || mediaMissingNets.length > 0) return;
     if (duplicateNets.length > 0 && !dupAck) return;
     const posts = buildPosts(true);
     if (!posts.length) {
@@ -853,6 +849,10 @@ This posts immediately instead of waiting for the scheduled time. It cannot be u
           }).some((f) => f.severity === "block")
         )
           return null;
+        // A legal alert (6.14) from the last rewrite is just as blocking as a
+        // compliance flag — a stale "it passed before I clicked Rewrite" post
+        // must not slip through Approve.
+        if (compliant && (v?.legalFlag?.length ?? 0) > 0) return null;
         // The date/time inputs are America/New_York wall-clock. Convert to the
         // correct UTC instant explicitly (offset-less strings would otherwise be
         // parsed as browser-local, wrong on any non-ET machine). Ayrshare +
@@ -915,8 +915,79 @@ This posts immediately instead of waiting for the scheduled time. It cannot be u
     readyCount > 0 &&
     legalOk &&
     blockedNets.length === 0 &&
+    legalFlaggedNets.length === 0 &&
     mediaMissingNets.length === 0 &&
     (duplicateNets.length === 0 || dupAck);
+
+  // S11 — "Publish now": the single active tab's post, immediately, behind a
+  // confirm. Depends on S10 (done) and still requires the S3 gate — that gate
+  // is enforced server-side (gateSocialPost runs for every non-draft post
+  // regardless of scheduleDate), this is just the same set of client-side
+  // preconditions Approve already checks, scoped to one network instead of
+  // the whole selected set.
+  const canPublishNow =
+    !busy &&
+    !draftBusy &&
+    activeVar !== null &&
+    activeMeta !== null &&
+    activeCopy.trim().length > 0 &&
+    legalOk &&
+    activeFlags.every((f) => f.severity !== "block") &&
+    !(activeVar.legalFlag && activeVar.legalFlag.length > 0) &&
+    mediaShortfall(activeMeta) === null;
+
+  const publishNow = async () => {
+    if (!activeVar || active === "template") return;
+    const key = active;
+    const copy = activeVar.copy.trim();
+    if (!copy) return;
+    const label = META_BY_KEY.get(key)?.label ?? key;
+    if (!window.confirm(`Publish this ${label} post now? It goes live immediately — this isn't a scheduled time, it's real right now.`)) {
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    setPostErrors(new Map());
+    try {
+      // A moment in the past, not the future — the schedule route already
+      // treats an elapsed time as "publish now" rather than a stale slot
+      // (see app/api/content-production/repurpose/schedule/route.ts's
+      // `futureAt` check), so this reuses that path exactly rather than
+      // adding a second one.
+      const scheduleDate = new Date(Date.now() - 60_000).toISOString();
+      const post = {
+        draftId: activeVar.draftId,
+        format: key,
+        platform: key,
+        postType: formatOf(key),
+        body: copy,
+        mediaUrls: activeVar.mediaUrls ?? [],
+        scheduleDate,
+      };
+      const res = await fetch("/api/content-production/repurpose/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ posts: [post], ackDuplicates: true }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setResult({ tone: "warn", text: j?.error || "Publish failed.", recorded: false });
+        return;
+      }
+      const r = (j.results ?? [])[0] as { status?: string; error?: string } | undefined;
+      if (r && (r.status === "failed" || r.status === "flagged")) {
+        setPostErrors(new Map([[key, r.error || "Held for review."]]));
+        setResult({ tone: "warn", text: r.error || "Could not publish.", recorded: false });
+      } else {
+        setResult({ tone: "ok", text: `Published to ${label} now.`, recorded: true });
+        onScheduled?.();
+      }
+    } catch {
+      setResult({ tone: "warn", text: "Publish failed.", recorded: false });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
@@ -1044,69 +1115,6 @@ This posts immediately instead of waiting for the scheduled time. It cannot be u
                 <span>{activeTags.length} / 30 hashtags</span>
               </div>
 
-              {/* S12 — another version of this platform's copy. Not on the
-                  Template tab: there is no single platform to rewrite for, and
-                  no source draft behind it. */}
-              {active !== "template" && activeVar && (
-                <div className="mt-2 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {REWRITE_REASONS.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        title={
-                          activeVar.draftId
-                            ? REWRITE_REASON_HINT[r]
-                            : "Rewriting needs the approved source this post came from, and this platform was seeded from the shared message rather than its own draft."
-                        }
-                        disabled={
-                          !!activeVar.rewriteBusy || !activeVar.copy?.trim() || !activeVar.draftId
-                        }
-                        onClick={() => void requestRewrite(activeVar.key, r)}
-                        className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {activeVar.rewriteBusy === r ? "Writing…" : REWRITE_REASON_LABEL[r]}
-                      </button>
-                    ))}
-                    {(activeVar.versions?.length ?? 0) > 1 && (
-                      <span className="ml-1 text-xs text-slate-400">
-                        {activeVar.versions?.length} versions
-                      </span>
-                    )}
-                  </div>
-
-                  {activeVar.rewriteMsg && (
-                    <p className="text-xs text-amber-700">{activeVar.rewriteMsg}</p>
-                  )}
-
-                  {/* Version history. Every version stays revertable — the point
-                      of generating alternatives is being able to go back to the
-                      one that was better. */}
-                  {(activeVar.versions?.length ?? 0) > 1 && (
-                    <div className="flex flex-wrap items-center gap-1">
-                      {activeVar.versions?.map((ver, i) => {
-                        const isActive = ver.id === activeVar.activeVersionId;
-                        return (
-                          <button
-                            key={ver.id}
-                            type="button"
-                            onClick={() => revertVersion(activeVar.key, ver.id)}
-                            title={ver.text.slice(0, 140)}
-                            className={`rounded px-1.5 py-0.5 text-[10px] ${
-                              isActive
-                                ? "bg-brand text-white"
-                                : "border border-slate-300 text-slate-600 hover:border-brand hover:text-brand"
-                            }`}
-                          >
-                            {i === 0 ? "Original" : `v${i + 1} · ${REWRITE_REASON_LABEL[ver.source as RewriteReason]}`}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Compliance flags for the active variation — blocks scheduling. */}
               {activeFlags.length > 0 && (
                 <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
@@ -1121,6 +1129,112 @@ This posts immediately instead of waiting for the scheduled time. It cannot be u
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {/* S12 — Rewrite / More engaging / Change CTA. Only for networks
+                  with a real generated draft behind them (the derived/manual
+                  tabs like GMB or Threads have no draft to regenerate). */}
+              {activeVar?.draftId && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => runRewrite(activeVar.key, "rewrite")}
+                    disabled={!!activeVar.rewriteBusy}
+                    className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    title="A distinctly different angle on the same source"
+                  >
+                    {activeVar.rewriteBusy === "rewrite" ? "Rewriting…" : "↻ Rewrite"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runRewrite(activeVar.key, "more_engaging")}
+                    disabled={!!activeVar.rewriteBusy}
+                    className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    title="Same angle, sharper hook and energy"
+                  >
+                    {activeVar.rewriteBusy === "more_engaging" ? "Punching up…" : "⚡ More engaging"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runRewrite(activeVar.key, "cta_change")}
+                    disabled={!!activeVar.rewriteBusy}
+                    className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    title="Keep the hook and body, swap the closing CTA"
+                  >
+                    {activeVar.rewriteBusy === "cta_change" ? "Changing CTA…" : "Change CTA"}
+                  </button>
+                  {activeVar.rewrite && activeVar.rewrite.versions.length > 1 && (
+                    <label className="flex items-center gap-1 text-xs text-slate-500">
+                      <span>
+                        Version{" "}
+                        {activeVar.rewrite.versions.findIndex(
+                          (v) => v.version_id === activeVar.rewrite!.active_version_id,
+                        ) + 1}{" "}
+                        of {activeVar.rewrite.versions.length}
+                      </span>
+                      <select
+                        value={activeVar.rewrite.active_version_id}
+                        onChange={(e) => revertToVersion(activeVar.key, e.target.value)}
+                        disabled={!!activeVar.rewriteBusy}
+                        className="rounded border border-slate-300 px-1 py-0.5 text-xs"
+                      >
+                        {activeVar.rewrite.versions.map((ver, i) => (
+                          <option key={ver.version_id} value={ver.version_id}>
+                            {i + 1}. {REWRITE_SOURCE_LABEL[ver.source] ?? ver.source}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {activeVar.rewriteMsg && <span className="text-xs text-rose-600">{activeVar.rewriteMsg}</span>}
+                </div>
+              )}
+
+              {/* S13's legal alert (6.14) — the last rewrite's legal check
+                  found a real problem. Separate from the brand/compliance
+                  flags above: this one can only be cleared by another rewrite
+                  or a revert, never by editing the text by hand (an edit
+                  doesn't re-run the legal check until the next rewrite). */}
+              {activeVar?.legalFlag && activeVar.legalFlag.length > 0 && (
+                <div className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-rose-800">
+                    ⚠ Legal alert — this version cannot be scheduled:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {activeVar.legalFlag.map((r, i) => (
+                      <li key={i} className="text-xs text-rose-800">
+                        {r}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* S11 — Publish now: one confirm, this network only, immediately.
+                  Only for networks with a real draft — same scope as the
+                  rewrite actions above. */}
+              {activeVar?.draftId && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={publishNow}
+                    disabled={!canPublishNow}
+                    title={
+                      !legalOk
+                        ? "Confirm the legal review first."
+                        : activeFlags.some((f) => f.severity === "block")
+                          ? "Clear the flagged issues first."
+                          : activeVar.legalFlag && activeVar.legalFlag.length > 0
+                            ? "Clear the legal alert first."
+                            : activeMeta && mediaShortfall(activeMeta)
+                              ? "Attach the required media first."
+                              : undefined
+                    }
+                    className="rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busy ? "Publishing…" : "🚀 Publish now"}
+                  </button>
                 </div>
               )}
 
@@ -1142,7 +1256,9 @@ This posts immediately instead of waiting for the scheduled time. It cannot be u
                 </p>
               )}
 
-              {/* Per-network staggered schedule slot. */}
+              {/* Per-network schedule slot — pre-filled to the network's own
+                  top best-time slot by buildVariations (S7/6.8), still
+                  editable here directly. */}
               {activeVar && (
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span className="font-medium text-slate-600">Schedule this {activeMeta?.label} post</span>
@@ -1158,17 +1274,39 @@ This posts immediately instead of waiting for the scheduled time. It cannot be u
                     onChange={(e) => patchVar(activeVar.key, { time: e.target.value })}
                     className="rounded-md border border-slate-300 px-2 py-1 text-xs"
                   />
-                  {bestSlot(activeVar.key) && (
-                    <button
-                      type="button"
-                      onClick={() => applyBestTime(activeVar.key)}
-                      title={`Fill the next recommended posting slot for ${activeMeta?.label} (Eastern).`}
-                      className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-1 font-medium text-emerald-700 hover:bg-emerald-100"
-                    >
-                      <span aria-hidden>⏰</span> Apply best time
-                    </button>
-                  )}
-                  <span className="text-slate-400">· Eastern · staggered per platform</span>
+                  <span className="text-slate-400">· Eastern</span>
+                </div>
+              )}
+
+              {/* S7/6.8 — the ranked best-time slots themselves, inline and
+                  clickable, tinted by strength, instead of hidden behind a
+                  single "Apply best time" button. The currently-set slot (the
+                  default above, or whatever's been edited) is ringed. */}
+              {activeVar && topSlots(activeVar.key).length > 0 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-xs">
+                  <span className="text-slate-400">Best times for {activeMeta?.label}:</span>
+                  {topSlots(activeVar.key).map((s, i) => {
+                    const tone =
+                      s.score >= 9
+                        ? "border-emerald-400 bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                        : s.score >= 7
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                          : "border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100";
+                    const active = isSlotActive(activeVar, s.day, s.hour);
+                    return (
+                      <button
+                        key={`${s.day}-${s.hour}-${i}`}
+                        type="button"
+                        onClick={() => applySlot(activeVar.key, s.day, s.hour)}
+                        title={`Recommended slot for ${activeMeta?.label} (score ${s.score}/10, Eastern).`}
+                        className={`rounded-full border px-2 py-0.5 font-medium ${tone} ${
+                          active ? "ring-2 ring-brand ring-offset-1" : ""
+                        }`}
+                      >
+                        {formatSlotLabel(s.day, s.hour)}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 

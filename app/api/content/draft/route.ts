@@ -23,6 +23,7 @@ import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
+import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import {
   CONTENT_TYPE_TO_INTENT,
   isCompoundKeyword,
@@ -530,6 +531,15 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       /* non-JSON — keep raw text as body, derive a title below */
     }
     title = title || deriveTitle(body, topic);
+
+    // 2.12 — the fixed 1.4 elements (label, general disclaimer, results
+    // disclaimer when applicable), auto-inserted on every legal blog/web page
+    // at generation so a reviewer never has to remember to add them by hand.
+    // Scoped to blog/web content only — social has its own compliance layer
+    // (lib/social-compliance.ts) and email isn't public-facing advertising.
+    if (isWebContent) {
+      body = applyRequiredDisclaimers(body).body;
+    }
 
     // The Per-Page Brief this generation ran under. Written to metadata.km_brief
     // so the reviewer's SEO metadata bar and Content Info panel read real values

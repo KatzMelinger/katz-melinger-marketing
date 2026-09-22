@@ -26,6 +26,7 @@
  */
 
 import { normalizePhone } from "./lead-response";
+import { checkAudienceAngle } from "./audience-angle";
 
 export type FlagSeverity = "block" | "warn";
 
@@ -67,6 +68,11 @@ export type ComplianceContext = {
   offerPhraseEs?: string;
   /** Path or URL of the general-information disclaimer page (S3, item 4). */
   disclaimerUrl?: string;
+  /** The post's own topic/blog title (S5/6.6) — used to require at least one
+   *  of its own significant words appear in the body, not just in hashtags. */
+  topic?: string | null;
+  /** "employment" or "collections" (spec 1.3) — gates the audience-angle check. */
+  practiceArea?: string | null;
 };
 
 type RuleScope = "all" | "social";
@@ -153,6 +159,22 @@ const RULES: Rule[] = [
   },
 ];
 
+// S8/6.9: hashtag count + required closing tag. LinkedIn convention is far
+// lighter than Instagram/Facebook/X, so it gets its own range rather than
+// being exempted outright. Carousel SLIDE text never reaches this function
+// (it's checked separately, see lib/image-text-check.ts) — only the caption
+// does, and a carousel post's caption follows the same platform rule as any
+// other post on that platform.
+const HASHTAG_RE = /#[A-Za-z0-9_]+/g;
+const KM_HASHTAG_RE = /^#katzmelinger$/i;
+
+function hashtagRange(platform: string | undefined): { min: number; max: number } {
+  // "never ... LinkedIn beyond 1-2" (spec 6.9) is an upper bound, not a floor
+  // — LinkedIn's own convention is light-to-no hashtags, confirmed against
+  // real live posts (every current LinkedIn post has zero and that's normal).
+  return platform === "linkedin" ? { min: 0, max: 2 } : { min: 4, max: 5 };
+}
+
 const INSTAGRAM_LINK_CTA_RE =
   /\b(click the link|link below|swipe up)\b|\b(haz|haga)\s+clic\s+en\s+el\s+enlace\b|\benlace\s+(abajo|debajo)\b|\bdesliza\s+hacia\s+arriba\b|https?:\/\/\S+/i;
 
@@ -173,21 +195,16 @@ const AD_LABEL_RE = /attorney\s*advertising|#attorneyadvertising/i;
 /* -------------------------------------------------------------------------- */
 
 /**
- * Platforms that carry a full hashtag block.
+ * Formats with no caption hashtag block at all.
  *
- * LinkedIn is deliberately absent. The generation prompt has said "never
- * carousel slides or LinkedIn beyond 1-2" since the operating brief was
- * written, so requiring four to five there would make the checker contradict
- * the instruction that produced the copy. Diana's rule says "on the channels
- * that use them", and by the firm's own standing rule LinkedIn is not one.
+ * Spoken scripts only. LinkedIn used to be handled by excluding it from a
+ * platform allowlist; hashtagRange() now gives it its own 0-2 range instead,
+ * which says the same thing without exempting the channel from the closing-tag
+ * rule. Carousel is deliberately NOT here — its caption carries hashtags like
+ * any other post, and its slide pixels are checked in lib/image-text-check.ts.
  */
-const HASHTAG_BLOCK_PLATFORMS = new Set(["instagram", "facebook", "threads", "tiktok"]);
+const NO_HASHTAG_FORMATS = /script|video|reel/i;
 
-/** Formats with no hashtag block at all — slides and scripts carry none. */
-const NO_HASHTAG_FORMATS = /carousel|slide|script|video|reel/i;
-
-const HASHTAG_RE = /#[A-Za-z0-9_]+/g;
-const FIRM_HASHTAG = "#katzmelinger";
 
 /**
  * Blank out the runs a hyphen is allowed to live in, so what remains is prose.
@@ -205,6 +222,33 @@ function maskHyphenExemptRuns(body: string): string {
     .replace(/\/[A-Za-z0-9._~\-/]+\//g, blank)
     .replace(PHONE_RE, blank)
     .replace(/#[A-Za-z0-9_-]+/g, blank);
+}
+
+// S5/6.6: AEO and GEO need the location and topic words IN THE BODY — a
+// hashtag isn't read as body content by an AI-search engine the way sentence
+// text is. A plain "New York"/"New Jersey" word-boundary match already can't
+// match a hashtag-smashed form like "#NewYorkLawyer" (no space between the
+// words), so no separate hashtag-stripping step is needed.
+const LOCATION_RE = /\bNew York\b|\bNew Jersey\b/i;
+const LOCATION_RE_ES = /\bNueva York\b|\bNueva Jersey\b/i;
+
+const TOPIC_STOPWORDS = new Set([
+  "the", "and", "for", "with", "from", "this", "that", "your", "into",
+  "about", "over", "under", "what", "when", "where", "does", "have", "will",
+  "can", "are", "was", "you", "how", "why", "new", "york", "jersey", "nyc",
+  "nj", "law", "lawyer", "lawyers", "attorney", "attorneys",
+]);
+
+/** Significant words from a topic/title — 4+ letters, not a stopword,
+ *  de-duplicated. Deliberately loose: this only needs ONE hit in the body to
+ *  pass, so a short, imprecise list is fine — it can't cause a false block. */
+function significantWords(topic: string): string[] {
+  const words = topic
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !TOPIC_STOPWORDS.has(w));
+  return [...new Set(words)];
 }
 
 /** Run every rule (plus the context-dependent S3 checks) and return the flags that fired. */
@@ -312,29 +356,34 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
       });
     }
 
-    const usesHashtagBlock =
-      ctx.platform != null &&
-      HASHTAG_BLOCK_PLATFORMS.has(ctx.platform) &&
-      !(ctx.format && NO_HASHTAG_FORMATS.test(ctx.format));
-    const tags = body.match(HASHTAG_RE) ?? [];
-    if (usesHashtagBlock && (tags.length < 4 || tags.length > 5)) {
-      flags.push({
-        code: "hashtag_count",
-        label: `Hashtag block must be four to five tags — found ${tags.length}`,
-        severity: "block",
-        excerpt: tags.join(" ").slice(0, 40),
-      });
-    }
-    // The firm tag is required wherever hashtags are used at all, including the
-    // one or two LinkedIn carries — the count rule is what varies by channel,
-    // not the signature.
-    if (tags.length > 0 && !tags.some((t) => t.toLowerCase() === FIRM_HASHTAG)) {
-      flags.push({
-        code: "missing_firm_hashtag",
-        label: "Hashtag block must include #KatzMelinger",
-        severity: "block",
-        excerpt: tags.join(" ").slice(0, 40),
-      });
+    // Count and closing tag come from the platform range (LinkedIn runs far
+    // lighter than Instagram/Facebook), and the firm tag must be the LAST one
+    // — the operating brief's hashtagRule and Diana's 6.9 both say "ending
+    // with #KatzMelinger", not merely "including" it.
+    //
+    // Scripts are exempt: video_short is spoken copy with no caption block at
+    // all, so a range check there flags every compliant script. A carousel is
+    // NOT exempt — only its caption reaches this function (slide pixels go to
+    // lib/image-text-check.ts) and that caption carries hashtags like any other.
+    const carriesHashtagBlock = !(ctx.format && NO_HASHTAG_FORMATS.test(ctx.format));
+    if (carriesHashtagBlock && body.trim().length > 0) {
+      const tags = body.match(HASHTAG_RE) ?? [];
+      const { min, max } = hashtagRange(ctx.platform);
+      if (tags.length < min || tags.length > max) {
+        flags.push({
+          code: "hashtag_count",
+          label: `Needs ${min}-${max} hashtags (found ${tags.length})`,
+          severity: "block",
+          excerpt: tags.join(" ").slice(0, 40),
+        });
+      } else if (tags.length > 0 && !KM_HASHTAG_RE.test(tags[tags.length - 1])) {
+        flags.push({
+          code: "hashtag_ending",
+          label: "Hashtags must end with #KatzMelinger",
+          severity: "block",
+          excerpt: tags[tags.length - 1],
+        });
+      }
     }
   }
 
@@ -390,6 +439,55 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
         });
       }
     }
+  }
+
+  // S5/6.6: a consultation post needs its own location and topic words in the
+  // body — the audience an AEO/GEO answer engine reads is the sentence text,
+  // not the hashtag block. Gated the same way missing_offer is (consultation
+  // CTAs only) since that's the concrete case the spec's done-when names.
+  if (ctx.ctaType === "consultation") {
+    if (!LOCATION_RE.test(body) && !LOCATION_RE_ES.test(body)) {
+      flags.push({
+        code: "missing_location",
+        label: "Consultation post is missing the location (New York / New Jersey) in the body",
+        severity: "block",
+        excerpt: "",
+      });
+    }
+    if (ctx.topic) {
+      const words = significantWords(ctx.topic);
+      const lower = body.toLowerCase();
+      if (words.length > 0 && !words.some((w) => lower.includes(w))) {
+        flags.push({
+          code: "missing_target_term",
+          // Fuzzy on purpose (see significantWords) — a miss here is worth a
+          // second look, not a certain problem, so it warns rather than blocks.
+          label: `Body doesn't mention this post's own topic ("${ctx.topic}")`,
+          severity: "warn",
+          excerpt: "",
+        });
+      }
+    }
+  }
+
+  // 1.3: never address the audience the firm does NOT represent in this
+  // practice area — the live trap was a wage-theft (employment) post reading
+  // "For employers: this is a wake-up call to review payroll practices
+  // immediately." Narrow and pattern-based on purpose (see audience-angle.ts):
+  // this catches a direct wrong-audience callout, not general mentions of
+  // "employers" (a post can accurately say "employers must pay overtime" while
+  // still being written to the employee reader).
+  const angleHit = checkAudienceAngle(body, ctx.practiceArea);
+  if (angleHit) {
+    flags.push({
+      code: "wrong_audience_angle",
+      label:
+        ctx.practiceArea === "employment"
+          ? "Addresses employers on an employment topic — must be written to the employee"
+          : "Addresses the debtor on a collections topic — must be written to the creditor",
+      severity: "block",
+      excerpt: angleHit.matched,
+    });
   }
 
   return flags;

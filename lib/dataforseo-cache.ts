@@ -94,6 +94,29 @@ export function isDataForSeoOk(json: unknown): boolean {
 }
 
 /**
+ * Current account balance in USD, or null if it could not be read (bad creds,
+ * network failure, unexpected response shape). This endpoint costs nothing to
+ * call (result[0].money.balance, confirmed against a live account), so it is
+ * never cached and safe to check on every refresh run — used by the D5
+ * freshness alert (lib/alerts-engine.ts) to warn before a low balance quietly
+ * stops the ranking tracker.
+ */
+export async function getAccountBalance(): Promise<number | null> {
+  try {
+    const res = await fetch(`${API_BASE}/appendix/user_data`, {
+      headers: { Authorization: authHeader() },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const balance = json?.tasks?.[0]?.result?.[0]?.money?.balance;
+    return typeof balance === "number" ? balance : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * POST to a DataForSEO v3 endpoint with transparent caching.
  *
  * @param path     endpoint path under /v3, e.g.

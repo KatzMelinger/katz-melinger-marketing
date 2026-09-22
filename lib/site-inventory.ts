@@ -48,6 +48,8 @@ export type SitePageType =
   | "practice_area"
   | "other";
 
+export type RefreshStatus = "not_started" | "in_progress" | "updated";
+
 export type SitePage = {
   id: string;
   url: string;
@@ -66,6 +68,11 @@ export type SitePage = {
   aeo_score: number | null;
   cash_score: number | null;
   scored_at: string | null;
+  // From the sitemap's <lastmod> when the site publishes one (Site Inventory
+  // "Refresh" tab). Null means the sitemap didn't say — not "never updated".
+  page_last_modified: string | null;
+  refresh_status: RefreshStatus;
+  refresh_status_updated_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -84,10 +91,21 @@ function normalizeUrl(u: string, host: string): string | null {
   }
 }
 
-async function resolveSitemapUrls(base: string, host: string): Promise<string[]> {
+/** Parses a sitemap <lastmod> value into an ISO timestamp, or null if unparseable. */
+function parseLastmod(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const d = new Date(raw.trim());
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+async function resolveSitemapUrls(
+  base: string,
+  host: string,
+): Promise<Map<string, string | null>> {
   const MAX_DEPTH = 3;
   const visited = new Set<string>();
-  const pages = new Set<string>();
+  // url -> lastmod (from the sitemap's <lastmod>, when present).
+  const pages = new Map<string, string | null>();
 
   async function expand(sitemapUrl: string, depth: number): Promise<void> {
     if (depth > MAX_DEPTH || visited.has(sitemapUrl)) return;
@@ -115,15 +133,27 @@ async function resolveSitemapUrls(base: string, host: string): Promise<string[]>
       if (isIndex || /\.xml(\.gz)?(\?|$)/i.test(u)) subs.push(u);
       else {
         const n = normalizeUrl(u, host);
-        if (n) pages.add(n);
+        if (n && !pages.has(n)) pages.set(n, null);
       }
+    }
+    // Best-effort per-<url> lastmod — scanned separately so it never affects
+    // which pages are discovered above (only which date, if any, gets attached).
+    const blockRe = /<url\b[\s\S]*?<\/url>/gi;
+    let bm: RegExpExecArray | null;
+    while ((bm = blockRe.exec(xml)) !== null) {
+      const locM = /<loc>\s*([^<\s]+)\s*<\/loc>/i.exec(bm[0]);
+      const lastmodM = /<lastmod>\s*([^<\s]+)\s*<\/lastmod>/i.exec(bm[0]);
+      if (!locM || !lastmodM) continue;
+      const n = normalizeUrl(locM[1].trim(), host);
+      const parsed = parseLastmod(lastmodM[1]);
+      if (n && parsed) pages.set(n, parsed);
     }
     for (const sub of subs) await expand(sub, depth + 1);
   }
 
   await expand(`${base}/sitemap.xml`, 0);
   if (pages.size === 0) await expand(`${base}/sitemap_index.xml`, 0);
-  return Array.from(pages);
+  return pages;
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +346,7 @@ export async function crawlSiteInventory(args?: {
   // "blog only" and the page-type filters find nothing. Order non-blog pages
   // first (stable) so they're always indexed, then blog posts fill the remainder.
   const discovered = await resolveSitemapUrls(base, host);
-  const ordered = [...discovered].sort(
+  const ordered = [...discovered.keys()].sort(
     (a, b) => Number(isBlogUrl(a)) - Number(isBlogUrl(b)),
   );
   const urls = ordered.slice(0, args?.maxPages ?? MAX_PAGES);
@@ -362,6 +392,10 @@ export async function crawlSiteInventory(args?: {
       practice_area: cls?.practice_area ?? null,
       topics: cls?.topics ?? [],
       last_crawled_at: now,
+      // Only set when the sitemap actually said — omitting the key on a miss
+      // would be wrong too (it'd silently keep a stale date forever if the
+      // page later drops its lastmod), so an explicit null here is correct.
+      page_last_modified: discovered.get(f.url) ?? null,
       tenant_id: tid,
     };
   });
@@ -500,6 +534,19 @@ export async function setSitePagePillar(
   const { error } = await sb
     .from("site_pages")
     .update({ pillar, pillar_locked: true })
+    .eq("tenant_id", await resolveTenantId())
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function setSitePageRefreshStatus(
+  id: string,
+  status: RefreshStatus,
+): Promise<void> {
+  const sb = getSupabaseAdmin();
+  const { error } = await sb
+    .from("site_pages")
+    .update({ refresh_status: status, refresh_status_updated_at: new Date().toISOString() })
     .eq("tenant_id", await resolveTenantId())
     .eq("id", id);
   if (error) throw new Error(error.message);

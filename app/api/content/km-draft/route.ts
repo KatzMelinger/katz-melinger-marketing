@@ -65,6 +65,7 @@ import {
 import { getTenantConfig } from "@/lib/tenant-config";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
+import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -450,6 +451,13 @@ ${renderFirmFactsBlock()}`),
     // E-E-A-T: append the credentialed author bio box (deterministic — accurate
     // credentials + real bio link, not model-written). Behind the flag.
     if (eeatAuthorshipEnabled()) text = appendAuthorBioBox(text, contentAuthor);
+
+    // 2.12 — the fixed 1.4 elements (label, general disclaimer, results
+    // disclaimer when applicable). Every km content type (practice page, blog
+    // post, case result) is legal advertising for this firm, so this is
+    // unconditional here, unlike app/api/content/draft/route.ts which also
+    // generates non-legal formats (social, email) through the same route.
+    text = applyRequiredDisclaimers(text).body;
 
     // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
     // deadlines) so the reviewer verifies them before approval. Attach the

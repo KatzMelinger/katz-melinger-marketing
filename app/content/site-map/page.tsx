@@ -11,6 +11,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+type RefreshStatus = "not_started" | "in_progress" | "updated";
+
 type SitePage = {
   id: string;
   url: string;
@@ -25,7 +27,20 @@ type SitePage = {
   aeo_score: number | null;
   cash_score: number | null;
   scored_at: string | null;
+  page_last_modified: string | null;
+  refresh_status: RefreshStatus;
+  refresh_status_updated_at: string | null;
 };
+
+const REFRESH_STATUS_LABEL: Record<RefreshStatus, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  updated: "Updated",
+};
+
+function daysAgo(iso: string): number {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
+}
 
 const PILLARS: { id: string; label: string }[] = [
   { id: "wage-theft", label: "Wage Theft and Overtime" },
@@ -85,12 +100,13 @@ export default function SiteMapPage() {
   const [crawling, setCrawling] = useState(false);
   const [crawlMsg, setCrawlMsg] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState("");
-  const [view, setView] = useState<"inventory" | "optimize">("inventory");
+  const [view, setView] = useState<"inventory" | "optimize" | "refresh">("inventory");
   const [scoring, setScoring] = useState(false);
   const [scoreMsg, setScoreMsg] = useState<string | null>(null);
   const [redraftingUrl, setRedraftingUrl] = useState<string | null>(null);
   const [redraftMsg, setRedraftMsg] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"worst" | "seo" | "aeo" | "cash">("worst");
+  const [refreshStatusFilter, setRefreshStatusFilter] = useState<RefreshStatus | "">("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -195,6 +211,21 @@ export default function SiteMapPage() {
     );
   }
 
+  async function setRefreshStatus(id: string, status: RefreshStatus) {
+    await fetch("/api/content/site-inventory", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, refreshStatus: status }),
+    });
+    setPages((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? { ...p, refresh_status: status, refresh_status_updated_at: new Date().toISOString() }
+          : p,
+      ),
+    );
+  }
+
   const filtered = useMemo(
     () => (typeFilter ? pages.filter((p) => p.page_type === typeFilter) : pages),
     [pages, typeFilter],
@@ -240,6 +271,24 @@ export default function SiteMapPage() {
     return [...optimizePages].sort((a, b) => rank(a) - rank(b));
   }, [optimizePages, sortBy]);
 
+  // Refresh tab — oldest content first, so writers know what to work through
+  // next. Pages with no sitemap <lastmod> sort to the bottom (unknown age is
+  // not the same as "oldest"), not faked with a fallback date.
+  const refreshRows = useMemo(() => {
+    const rows = refreshStatusFilter
+      ? filtered.filter((p) => p.refresh_status === refreshStatusFilter)
+      : filtered;
+    return [...rows].sort((a, b) => {
+      if (!a.page_last_modified && !b.page_last_modified) return 0;
+      if (!a.page_last_modified) return 1;
+      if (!b.page_last_modified) return -1;
+      return (
+        new Date(a.page_last_modified).getTime() - new Date(b.page_last_modified).getTime()
+      );
+    });
+  }, [filtered, refreshStatusFilter]);
+  const refreshNotUpdatedCount = filtered.filter((p) => p.refresh_status !== "updated").length;
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-6">
@@ -256,7 +305,7 @@ export default function SiteMapPage() {
       </header>
 
       <div className="mb-4 flex gap-1 border-b border-slate-200">
-        {(["inventory", "optimize"] as const).map((v) => (
+        {(["inventory", "optimize", "refresh"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -268,7 +317,9 @@ export default function SiteMapPage() {
           >
             {v === "inventory"
               ? "Inventory"
-              : `Optimize${optimizePages.length ? ` (${optimizePages.length})` : ""}`}
+              : v === "optimize"
+                ? `Optimize${optimizePages.length ? ` (${optimizePages.length})` : ""}`
+                : `Refresh${refreshNotUpdatedCount ? ` (${refreshNotUpdatedCount})` : ""}`}
           </button>
         ))}
       </div>
@@ -392,6 +443,90 @@ export default function SiteMapPage() {
           </ul>
           </>
         )
+      ) : view === "refresh" ? (
+        <>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Status:</span>
+            <select
+              value={refreshStatusFilter}
+              onChange={(e) => setRefreshStatusFilter(e.target.value as RefreshStatus | "")}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+            >
+              <option value="">All statuses</option>
+              <option value="not_started">Not started</option>
+              <option value="in_progress">In progress</option>
+              <option value="updated">Updated</option>
+            </select>
+            <span className="text-xs text-slate-400">
+              Sorted oldest content first — pages with no sitemap date sort to
+              the bottom.
+            </span>
+          </div>
+          {redraftMsg && (
+            <div className="mb-2 flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              <span>{redraftMsg}</span>
+              <a href="/content-production" className="shrink-0 font-medium underline">
+                Production Board →
+              </a>
+            </div>
+          )}
+          {refreshRows.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500">
+              No pages match this filter.
+            </div>
+          ) : (
+            <ul className="space-y-1.5">
+              {refreshRows.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <a
+                      href={p.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-slate-900 hover:underline"
+                    >
+                      {p.title ?? p.h1 ?? p.url}
+                    </a>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-slate-400">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">
+                        {TYPE_LABEL[p.page_type] ?? p.page_type}
+                      </span>
+                      <span>
+                        {p.page_last_modified
+                          ? `Updated ${daysAgo(p.page_last_modified)}d ago (${new Date(p.page_last_modified).toLocaleDateString()})`
+                          : "No sitemap date available"}
+                      </span>
+                      <span className="truncate">{p.url}</span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <select
+                      value={p.refresh_status}
+                      onChange={(e) => setRefreshStatus(p.id, e.target.value as RefreshStatus)}
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                    >
+                      {(Object.keys(REFRESH_STATUS_LABEL) as RefreshStatus[]).map((s) => (
+                        <option key={s} value={s}>
+                          {REFRESH_STATUS_LABEL[s]}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => redraft(p)}
+                      disabled={redraftingUrl === p.url}
+                      className="rounded border border-brand px-2 py-0.5 text-[11px] font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
+                    >
+                      {redraftingUrl === p.url ? "Drafting…" : "Redraft →"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       ) : (
         <div className="space-y-6">
           {orderedKeys.map((key) => {

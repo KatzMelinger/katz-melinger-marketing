@@ -43,13 +43,27 @@ type CompetitorsPayload = {
   trackedDomains?: string[];
 };
 
+type TrackerStatusPayload = {
+  lastSnapshotAt?: string | null;
+  ageHours?: number | null;
+  stale?: boolean;
+};
+
+/** "3h ago", "2d ago" — for the tracker freshness tile, not a full date. */
+function relativeAge(ageHours: number): string {
+  if (ageHours < 1) return "<1h ago";
+  if (ageHours < 48) return `${ageHours}h ago`;
+  return `${Math.round(ageHours / 24)}d ago`;
+}
+
 export default async function SeoHubPage() {
   const base = await getRequestOrigin();
 
-  const [keywords, backlinks, competitors] = await Promise.all([
+  const [keywords, backlinks, competitors, trackerStatus] = await Promise.all([
     fetchJsonSafe<KeywordsPayload>(`${base}/api/seo/keywords`),
     fetchJsonSafe<BacklinksPayload>(`${base}/api/seo/backlinks`),
     fetchJsonSafe<CompetitorsPayload>(`${base}/api/seo/competitors`),
+    fetchJsonSafe<TrackerStatusPayload>(`${base}/api/seo/tracker-status`),
   ]);
 
   const tracked = keywords?.tracked ?? [];
@@ -58,6 +72,8 @@ export default async function SeoHubPage() {
   const totalValue = tracked.reduce((s, k) => s + (k.trafficCost ?? 0), 0);
   const trackedCompetitors = competitors?.trackedDomains?.length ?? 0;
   const authorityScore = backlinks?.overview?.authorityScore ?? 0;
+  const trackerStale = trackerStatus?.stale ?? true;
+  const trackerAgeHours = trackerStatus?.ageHours ?? null;
 
   const kpis: HubKpi[] = [
     {
@@ -89,6 +105,15 @@ export default async function SeoHubPage() {
       value: trackedCompetitors.toString(),
       hint: "Domains monitored",
       tone: "neutral",
+    },
+    {
+      label: "Rank tracker",
+      value: trackerStale ? "Stale" : "Fresh",
+      hint:
+        trackerAgeHours === null
+          ? "No snapshot recorded yet"
+          : `Last synced ${relativeAge(trackerAgeHours)}`,
+      tone: trackerStale ? "rose" : "emerald",
     },
   ];
 
