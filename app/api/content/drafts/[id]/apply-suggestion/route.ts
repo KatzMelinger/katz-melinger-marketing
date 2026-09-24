@@ -7,10 +7,18 @@
  * and the current draft body, asks Claude to make the minimum edits needed to
  * resolve them, and returns { updated_body, summary, no_change }.
  *
- * Multi-finding mode batches all changes into a single Claude call, which
- * is dramatically faster than looping single-finding calls and also lets the
+ * Multi-finding mode batches changes into a single Claude call, which is
+ * dramatically faster than looping single-finding calls and also lets the
  * model deconflict overlapping edits (e.g. "no H1" + "no keywords in title"
  * naturally combine into one new heading).
+ *
+ * Above CHUNK_SIZE items that single call stopped fitting: "Apply all fixes"
+ * on a 37-finding draft returned FUNCTION_INVOCATION_TIMEOUT (Diana, 21 Sep).
+ * Long lists are therefore applied in sequential passes, each pass editing the
+ * body the previous one produced, so later items still see earlier edits and
+ * the deconfliction above still holds across the whole list. The response
+ * reports `passes` and any `unapplied` tail so the caller can say what
+ * happened rather than silently dropping items.
  *
  * Does NOT save the change — the caller (UI) shows a diff and the user
  * accepts before PATCH-ing the draft. This keeps the AI out of the
@@ -30,7 +38,25 @@ import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// 300s to match the other long-running content routes. The deadline budget
+// below returns partial work before Vercel kills the function, so this is a
+// ceiling rather than something we intend to spend.
+export const maxDuration = 300;
+
+/**
+ * Findings per Claude call. 12 keeps a pass well inside its time budget on a
+ * long blog while still giving the model enough related items to merge
+ * overlapping edits. A list at or under this runs as one call, exactly as
+ * before — the chunked path only engages when it has to.
+ */
+const CHUNK_SIZE = 12;
+
+/**
+ * Stop starting new passes after this much wall clock and return what is done.
+ * Comfortably under maxDuration so the final response still gets out; a
+ * timeout returns nothing at all and loses every pass already paid for.
+ */
+const DEADLINE_MS = 240_000;
 
 export async function POST(
   req: NextRequest,
@@ -77,10 +103,17 @@ export async function POST(
 
   const firm = await getFirmContext();
 
-  const multi = findingList.length > 1;
+  // One pass over one chunk of the list. Everything below reads this pass's
+  // slice rather than findingList, so a chunked run and a single-call run
+  // build byte-identical prompts for the same items.
+  const runPass = async (
+    passBody: string,
+    passFindings: string[],
+  ): Promise<{ body: string; summary: string; no_change: boolean }> => {
+  const multi = passFindings.length > 1;
   const feedbackBlock = multi
-    ? findingList.map((f, i) => `${i + 1}. ${f}`).join("\n")
-    : findingList[0];
+    ? passFindings.map((f, i) => `${i + 1}. ${f}`).join("\n")
+    : passFindings[0];
 
   const system = `You are an expert legal-content editor for a plaintiff-side employment law firm. You receive a finished draft and ${multi ? "a list of feedback items" : "a single piece of feedback"} from an analysis tool. Your job is to make the SMALLEST possible edits that resolve ${multi ? "ALL of the listed items" : "the feedback"} — never rewrite the whole piece, never restructure unprompted, never invent facts the original didn't include.
 
@@ -108,7 +141,7 @@ ${feedbackBlock}
 
 Current draft body:
 """
-${draft.body as string}
+${passBody}
 """
 
 Call the apply_edit tool with the complete updated body, a short summary of what changed${multi ? " (and which items, if any, you skipped and why)" : ""}, and the no_change flag.`;
@@ -164,30 +197,83 @@ Call the apply_edit tool with the complete updated body, a short summary of what
 
     // Hard filter: strip em/en dashes the model may reintroduce while rewriting.
     // See lib/sanitize-content.ts.
-    const updated_body = stripEmDashes(
+    const passOut = stripEmDashes(
       typeof parsed?.updated_body === "string" && parsed.updated_body.trim()
         ? parsed.updated_body
-        : (draft.body as string),
+        : passBody,
     );
-    const summary =
-      typeof parsed?.summary === "string" ? parsed.summary : "";
-    // Normalize the ORIGINAL the same way so the redline shows only the real
-    // edit — otherwise the global em/en-dash strip renders as scattered "edits"
-    // across untouched sections, overstating a minimal readability fix.
-    const original_body = stripEmDashes(draft.body as string);
-    const no_change =
-      parsed?.no_change === true || updated_body === original_body;
-
-    return NextResponse.json({
-      updated_body,
-      original_body,
-      summary,
-      no_change,
-    });
+    return {
+      body: passOut,
+      summary: typeof parsed?.summary === "string" ? parsed.summary : "",
+      no_change: parsed?.no_change === true || passOut === passBody,
+    };
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Apply failed" },
-      { status: 500 },
-    );
+    // Thrown, not swallowed: the caller below decides whether a failed pass
+    // ends the run or just stops the remaining chunks.
+    throw err instanceof Error ? err : new Error("Apply failed");
   }
+  };
+
+  // Normalize the ORIGINAL the same way so the redline shows only the real
+  // edit — otherwise the global em/en-dash strip renders as scattered "edits"
+  // across untouched sections, overstating a minimal readability fix.
+  const original_body = stripEmDashes(draft.body as string);
+
+  // Short lists stay exactly as they were: one call, one prompt, no chunking.
+  const chunks: string[][] = [];
+  for (let i = 0; i < findingList.length; i += CHUNK_SIZE) {
+    chunks.push(findingList.slice(i, i + CHUNK_SIZE));
+  }
+
+  const startedAt = Date.now();
+  let working = original_body;
+  const summaries: string[] = [];
+  let applied = 0;
+  let passes = 0;
+
+  try {
+    for (const chunk of chunks) {
+      // Budget check BEFORE starting a pass, never mid-flight: a pass that has
+      // begun is paid for either way, and killing it would throw away the
+      // edits it is about to return.
+      if (passes > 0 && Date.now() - startedAt > DEADLINE_MS) break;
+      const out = await runPass(working, chunk);
+      passes++;
+      applied += chunk.length;
+      working = out.body;
+      if (out.summary.trim()) summaries.push(out.summary.trim());
+    }
+  } catch (err) {
+    // A mid-run failure keeps the passes that already succeeded. Returning a
+    // 500 here would discard real edits the reviewer can still use, and the
+    // caller shows a diff before anything is saved.
+    if (passes === 0) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Apply failed" },
+        { status: 500 },
+      );
+    }
+  }
+
+  const unapplied = findingList.slice(applied);
+  const summary = [
+    summaries.join(" "),
+    unapplied.length
+      ? `${unapplied.length} of ${findingList.length} item${
+          findingList.length === 1 ? "" : "s"
+        } were not applied in this run — apply again to continue.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return NextResponse.json({
+    updated_body: working,
+    original_body,
+    summary,
+    no_change: working === original_body,
+    passes,
+    unapplied,
+  });
 }

@@ -397,7 +397,19 @@ export function FindingsPanel({
                                     Apply fix
                                   </button>
                                 )}
-                                {f.status === "open" && (
+                                {/* 2.3 — a legal finding gets Apply fix and
+                                    Dismiss, nothing else.
+
+                                    Start is workflow bookkeeping that means
+                                    nothing on a factual error, and Resolve
+                                    cannot stick here: syncFindings re-opens
+                                    anything a check still reports, so marking
+                                    a legal finding resolved without changing
+                                    the text just returns it next run wearing
+                                    a "Re-opened" note. Correct the text (the
+                                    check then falls silent on its own) or
+                                    Dismiss it as a false positive. */}
+                                {f.source !== "legal" && f.status === "open" && (
                                   <button
                                     type="button"
                                     disabled={busy === f.id}
@@ -407,14 +419,16 @@ export function FindingsPanel({
                                     Start
                                   </button>
                                 )}
-                                <button
-                                  type="button"
-                                  disabled={busy === f.id}
-                                  onClick={() => void move(f, "resolved")}
-                                  className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
-                                >
-                                  Resolve
-                                </button>
+                                {f.source !== "legal" && (
+                                  <button
+                                    type="button"
+                                    disabled={busy === f.id}
+                                    onClick={() => void move(f, "resolved")}
+                                    className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
+                                  >
+                                    Resolve
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   disabled={busy === f.id}

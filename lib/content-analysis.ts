@@ -48,6 +48,7 @@ import { findTimeSensitiveFacts } from "./freshness-check";
 import { classifyFreshness } from "./freshness-classify";
 import { getCurrentFacts } from "./current-facts-store";
 import { runLegalCheck } from "./legal-verify";
+import { runTrapCheck } from "./trap-gate";
 import { notifyNewFindings } from "./content-notifications";
 import { ensureDraftMetadata, hasWebPage } from "./draft-metadata";
 import { checkInternalLinks } from "./internal-links-check";
@@ -960,6 +961,7 @@ export async function analyzeDraft(args: {
     cannibalization,
     freshnessResult,
     legalResult,
+    trapResult,
     internalLinks,
   ] = await Promise.all([
     brandVoiceMatch(body, tid),
@@ -1036,6 +1038,23 @@ export async function analyzeDraft(args: {
           .then((r) => ({ ran: true, findings: r.findings }))
           .catch(() => ({ ran: true, findings: [] as NormalizedFinding[] }))
       : Promise.resolve({ ran: false, findings: [] as NormalizedFinding[] }),
+    // Known traps (Diana 1A). Deliberately NOT behind LEGAL_ACCURACY: a trap is
+    // a text search over patterns that have already been wrong once, so there
+    // is no model call to meter and no reason to gate it.
+    //
+    // It ran only at the approval gate before, which is why "Run analysis" on
+    // the FMLA draft reported zero legal findings while the body still cited
+    // 2611(4)(A)(i) — the trap that catches exactly that was seeded months ago
+    // (supabase/content_known_traps_schema.sql) but nothing on this path ever
+    // matched against it. A reviewer working the Findings tab could not see a
+    // trap until they tried to approve.
+    //
+    // `failed` is kept rather than swallowed: a check that could not run has no
+    // opinion, and folding its silence into the sync below would auto-resolve
+    // the traps a previous run legitimately found.
+    runTrapCheck(body, { tenantId: tid })
+      .then((r) => ({ ran: !r.failed, findings: r.findings }))
+      .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
     // D3 (spec 2.9) — confirm internal links against the Cluster Map. Only
     // formats with a real page need this (a social caption has nothing to
     // link a reader onward to within the same review).
@@ -1286,6 +1305,13 @@ export async function analyzeDraft(args: {
       ...normalizeComplianceFindings(analysis.compliance_violations),
       ...freshnessResult.findings,
       ...legalResult.findings,
+      // Traps: this run's hits when the check ran, otherwise the ones a
+      // previous run found. syncFindings auto-resolves anything it is not
+      // handed, so dropping them on a failed check would silently clear a
+      // seeded trap that is still sitting in the text.
+      ...(trapResult.ran
+        ? trapResult.findings
+        : priorFindings.filter((f) => f.ruleId?.startsWith("trap:"))),
     ];
 
     // Item 19 — one concern, one engine. The style engines overlap heavily, so
