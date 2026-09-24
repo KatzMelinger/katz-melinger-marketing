@@ -23,11 +23,20 @@ export type KbThresholdEntry = {
   practiceArea: string;
   jurisdiction: LegalJurisdiction;
   region: string | null;
-  unit: "usd_per_hour" | "usd_per_week" | "usd_per_year" | "days";
+  /** Money units, plus the two Diana's constants needed: a deadline measured
+   *  in days or years, and a coverage threshold measured in employees. */
+  unit: "usd_per_hour" | "usd_per_week" | "usd_per_year" | "days" | "years" | "employees";
   currentValue: number;
   effectiveDate: string | null;
   priorValue: number | null;
   priorEffectiveDate: string | null;
+  /** Terms that must appear in a sentence for this entry to apply to it. Each
+   *  element is a |-separated alternation and ALL elements must match; empty
+   *  means match on jurisdiction/unit/region alone. Without this, the NYSHRL
+   *  administrative deadline and the NYCHRL statute of limitations are
+   *  indistinguishable - both NY, both measured in years. */
+  matchKeywords: string[];
+  enforcementPath: string | null;
   sourceUrl: string | null;
   notes: string | null;
 };
@@ -54,6 +63,8 @@ type Row = {
   effective_date: string | null;
   prior_value: number | null;
   prior_effective_date: string | null;
+  match_keywords: string[] | null;
+  enforcement_path: string | null;
   source_url: string | null;
   notes: string | null;
 };
@@ -70,7 +81,7 @@ async function loadRows(tenantId: string): Promise<Row[]> {
     const { data, error } = await sb
       .from("legal_knowledge_base")
       .select(
-        "entry_type, key, label, practice_area, jurisdiction, region, aliases, canonical_citation, unit, current_value, effective_date, prior_value, prior_effective_date, source_url, notes",
+        "entry_type, key, label, practice_area, jurisdiction, region, aliases, canonical_citation, unit, current_value, effective_date, prior_value, prior_effective_date, match_keywords, enforcement_path, source_url, notes",
       )
       .eq("tenant_id", tenantId);
     if (error) throw new Error(error.message);
@@ -117,6 +128,8 @@ export async function getThresholds(tenantId?: string): Promise<KbThresholdEntry
       effectiveDate: r.effective_date,
       priorValue: r.prior_value,
       priorEffectiveDate: r.prior_effective_date,
+      matchKeywords: r.match_keywords ?? [],
+      enforcementPath: r.enforcement_path ?? null,
       sourceUrl: r.source_url,
       notes: r.notes,
     }));

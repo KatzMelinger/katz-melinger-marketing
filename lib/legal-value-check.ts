@@ -247,6 +247,187 @@ function findInternalConflicts(mentions: ValueMention[]): NormalizedFinding[] {
   return findings;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Employment-law CONSTANTS: deadlines and coverage thresholds (Diana 2.2)     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The money check above only ever saw "$X per hour/week/year". Diana's
+ * five-draft test found the same two errors again and again, and neither is a
+ * dollar figure:
+ *
+ *   - "the NYSHRL administrative deadline is one year"  (it is 3 years)
+ *   - "the NYSHRL applies to employers with four or more employees"
+ *     (it applies to all employers)
+ *
+ * So a deadline stated in days or years, and a coverage threshold stated in
+ * employees, are extracted and compared the same way a wage figure is. The
+ * difference is how an entry is SELECTED: a jurisdiction has exactly one
+ * minimum wage per region, but several deadlines, so these entries carry
+ * match_keywords and a mention only compares against an entry whose keywords
+ * all appear in the same sentence.
+ */
+
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+  nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, eighteen: 18,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, ninety: 90,
+};
+
+function toNumber(raw: string): number | null {
+  const word = NUMBER_WORDS[raw.toLowerCase()];
+  if (word !== undefined) return word;
+  const n = Number(raw.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+const NUM = "(?:[\\d,]{1,7}|" + Object.keys(NUMBER_WORDS).join("|") + ")";
+
+/** "3 years", "one year", "300 days", "180 calendar days". */
+const DURATION_RE = new RegExp(
+  "\\b(" + NUM + ")\\s+(?:calendar\\s+|business\\s+|work(?:ing)?\\s+)?(day|days|month|months|year|years)\\b",
+  "gi",
+);
+
+/** "four or more employees", "at least 15 employees", "20+ employees". */
+const COVERAGE_RE = new RegExp(
+  "\\b(" + NUM + ")\\s*\\+?\\s*(?:or\\s+more\\s+|or\\s+fewer\\s+)?employees\\b" +
+    "|\\b(?:at\\s+least|fewer\\s+than|more\\s+than|minimum\\s+of|no\\s+fewer\\s+than)\\s+(" + NUM + ")\\s+employees\\b",
+  "gi",
+);
+
+/**
+ * Coverage stated in words rather than a number: "all employers", "any size",
+ * "regardless of size". Recorded as 1, which is how the knowledge base stores
+ * an all-employers rule, so one comparison serves both phrasings.
+ */
+const COVERAGE_ANY_SIZE_RE =
+  /\b(?:all employers|any size|regardless of (?:their )?size|no matter (?:the|their) size|every employer)\b/i;
+
+type ConstantMention = {
+  sentence: string;
+  index: number;
+  value: number;
+  unit: "days" | "years" | "employees";
+  /** The exact text matched, so a fix can tell the model what to replace. */
+  matchedText: string;
+};
+
+export function extractConstantMentions(body: string): ConstantMention[] {
+  if (!body?.trim()) return [];
+  const out: ConstantMention[] = [];
+  for (const s of splitSentences(body)) {
+    for (const m of s.text.matchAll(DURATION_RE)) {
+      const value = toNumber(m[1]);
+      if (value === null) continue;
+      const word = m[2].toLowerCase();
+      // Months normalise to days so "18 months" and "540 days" compare against
+      // the same entry. Years stay years: every deadline the knowledge base
+      // records in years is written that way in copy too.
+      const unit = word.startsWith("year") ? "years" : "days";
+      const scaled = word.startsWith("month") ? value * 30 : value;
+      out.push({
+        sentence: s.text,
+        index: s.index + (m.index ?? 0),
+        value: scaled,
+        unit,
+        matchedText: m[0],
+      });
+    }
+    for (const m of s.text.matchAll(COVERAGE_RE)) {
+      const value = toNumber(m[1] ?? m[2] ?? "");
+      if (value === null) continue;
+      out.push({
+        sentence: s.text,
+        index: s.index + (m.index ?? 0),
+        value,
+        unit: "employees",
+        matchedText: m[0],
+      });
+    }
+    const anySize = s.text.match(COVERAGE_ANY_SIZE_RE);
+    if (anySize) {
+      out.push({
+        sentence: s.text,
+        index: s.index + (anySize.index ?? 0),
+        value: 1,
+        unit: "employees",
+        matchedText: anySize[0],
+      });
+    }
+  }
+  return out;
+}
+
+/** Does every one of an entry's keyword alternations appear in the sentence? */
+function keywordsMatch(entry: KbThresholdEntry, sentence: string): boolean {
+  if (entry.matchKeywords.length === 0) return false;
+  const hay = sentence.toLowerCase();
+  return entry.matchKeywords.every((group) =>
+    group.split("|").some((term) => {
+      const t = term.trim().toLowerCase();
+      return t.length > 0 && hay.includes(t);
+    }),
+  );
+}
+
+/** How a value reads back to a reviewer, in its own unit. */
+function formatConstant(value: number, unit: ConstantMention["unit"]): string {
+  if (unit === "employees") {
+    return value <= 1 ? "all employers (any size)" : `${value} or more employees`;
+  }
+  if (unit === "years") return `${value} ${value === 1 ? "year" : "years"}`;
+  return `${value} days`;
+}
+
+function checkConstantAgainstKnowledgeBase(
+  mention: ConstantMention,
+  thresholds: KbThresholdEntry[],
+): NormalizedFinding | null {
+  // Only entries in the same unit whose keywords the sentence actually carries.
+  // Most specific wins when several qualify, so a sentence naming both the
+  // statute and the deadline beats one matched on the statute alone.
+  const entry = thresholds
+    .filter((t) => t.unit === mention.unit && keywordsMatch(t, mention.sentence))
+    .sort((a, b) => b.matchKeywords.length - a.matchKeywords.length)[0];
+  if (!entry) return null; // nothing in the knowledge base speaks to this sentence
+  if (mention.value === entry.currentValue) return null; // correct
+
+  const current = formatConstant(entry.currentValue, mention.unit);
+  const stated = formatConstant(mention.value, mention.unit);
+  const since = entry.effectiveDate ? ` since ${entry.effectiveDate}` : "";
+  const wasRight = entry.priorValue !== null && mention.value === entry.priorValue;
+
+  return {
+    fingerprint: fingerprintFinding("legal", "constant_mismatch", mention.sentence),
+    source: "legal",
+    ruleId: "constant_mismatch",
+    // A named legal constant that disagrees with the maintained knowledge base
+    // is a definite error, not a prompt to go and think about it.
+    severity: "critical",
+    title: `${entry.label} is ${current}, not ${stated}`,
+    detail: wasRight
+      ? `This says ${stated}, which was right until it changed. The current value is ${current}${since}.` +
+        (entry.sourceUrl ? ` Source: ${entry.sourceUrl}` : "")
+      : `This says ${stated}; the current value is ${current}${since}.` +
+        (entry.notes ? ` ${entry.notes}` : ""),
+    excerpt: mention.sentence,
+    // A literal instruction, so "Apply fix" swaps the value in (Diana 2.2)
+    // instead of handing a reviewer something to go and look up.
+    //
+    // An all-employers rule is phrased as an instruction rather than a string
+    // swap: dropping "all employers (any size)" into the slot a threshold
+    // occupied produces "applies to employers with all employers (any size)".
+    // The other direction is a clean substitution and stays one.
+    fix:
+      mention.unit === "employees" && entry.currentValue <= 1
+        ? `Remove the "${mention.matchedText}" threshold and say the law applies to ALL employers regardless of size. Change nothing else in the sentence.`
+        : `Replace "${mention.matchedText}" with "${current}". Change nothing else in the sentence.`,
+    sourceChecked: entry.sourceUrl,
+    jurisdiction: entry.jurisdiction,
+  };
+}
+
 /** Both checks, pure and DB-free — split out from checkValuesAgainstKnowledgeBase
  *  so it's directly testable against a fixture threshold list. */
 export function checkValuesAgainst(
@@ -254,7 +435,12 @@ export function checkValuesAgainst(
   thresholds: KbThresholdEntry[],
 ): NormalizedFinding[] {
   const mentions = extractValueMentions(body);
-  if (mentions.length === 0) return [];
+  const constants = thresholds.length
+    ? extractConstantMentions(body)
+        .map((m) => checkConstantAgainstKnowledgeBase(m, thresholds))
+        .filter((f): f is NormalizedFinding => f !== null)
+    : [];
+  if (mentions.length === 0) return dedupe(constants);
 
   const kbFindings = thresholds.length
     ? mentions
@@ -267,7 +453,18 @@ export function checkValuesAgainst(
   // internal conflict — dedupe by fingerprint, KB findings winning (they name
   // the actual correct figure, which is more useful than "these disagree").
   const seen = new Set(kbFindings.map((f) => f.fingerprint));
-  return [...kbFindings, ...conflictFindings.filter((f) => !seen.has(f.fingerprint))];
+  return dedupe([
+    ...kbFindings,
+    ...conflictFindings.filter((f) => !seen.has(f.fingerprint)),
+    ...constants,
+  ]);
+}
+
+/** One finding per fingerprint. The same wrong figure written twice in one
+ *  sentence is one error a reviewer fixes once. */
+function dedupe(findings: NormalizedFinding[]): NormalizedFinding[] {
+  const seen = new Set<string>();
+  return findings.filter((f) => (seen.has(f.fingerprint) ? false : (seen.add(f.fingerprint), true)));
 }
 
 /** Run both checks over a draft body, reading the knowledge base live. A read
