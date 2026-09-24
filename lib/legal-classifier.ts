@@ -38,6 +38,7 @@ import { findFeeLanguage } from "./fee-language";
 import { findFirmFactClaims } from "./firm-facts";
 import { findCitations, type ParsedCitation } from "./legal-citation";
 import type { LegalClaimType, LegalJurisdiction } from "./content-findings";
+import { inLegalScope } from "./legal-scope";
 
 export type LegalClaim = {
   /** The sentence as written. */
@@ -311,11 +312,29 @@ async function classifyWithModel(
 export async function classifyLegalClaims(body: string): Promise<LegalClaim[]> {
   if (!body?.trim()) return [];
 
-  // A firm claim ("Katz Melinger works on contingency") often carries no legal
-  // vocabulary at all, so it must bypass the relevance filter or it is dropped
-  // before anything can classify it.
+  // THE SCOPE RULE (Diana 2.1) — see lib/legal-scope.ts.
+  //
+  // This used to be looksLegal(), which admitted any sentence containing a word
+  // like "employer", "rights" or "wages". On an employment-law blog that is
+  // nearly every sentence, and each one the model could not confidently
+  // classify became an "Unclassified legal claim - routed for review" finding:
+  // ~96 of them on one draft, sitting on correct prose and on a heading.
+  //
+  // Scope is now what a lookup could settle - a citation, a legal figure, or a
+  // claim about the firm. Everything else produces nothing at all, which is
+  // also what stops this layer paying for a classification call on prose it was
+  // never going to have an opinion about.
+  //
+  // looksLegal is kept below as the relevance signal it always was, but it no
+  // longer decides scope on its own: a sentence must be in scope AND look
+  // legal.
+  //
+  // Firm claims used to bypass this filter entirely. They no longer do —
+  // lib/content-compliance.ts already runs findFeeLanguage and
+  // findFirmFactClaims over the same body and files them under `compliance`,
+  // so admitting them here filed every hit a second time under `legal`.
   const sentences = splitSentences(body).filter(
-    (s) => looksLegal(s.text) || classifyDeterministic(s.text)?.claimType === "firm_claim",
+    (s) => inLegalScope(s.text) && looksLegal(s.text),
   );
   const claims: LegalClaim[] = [];
   const needModel: { text: string; index: number }[] = [];

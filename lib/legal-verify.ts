@@ -36,6 +36,7 @@
  * sampling is not enough to spend either.
  */
 
+import { isAnchored } from "./legal-scope";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import { focusedExcerpt, quoteRelatesToClaim } from "./authority-excerpt";
 import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
@@ -215,6 +216,26 @@ export function toFinding(v: ClaimVerdict): NormalizedFinding | null {
   if (v.verdict === "supported" && !njBulkOnly) return null;
 
   const contradicted = v.verdict === "contradicted";
+
+  // THE SCOPE RULE AT EMISSION (Diana 2.1).
+  //
+  // A contradiction is always a finding: an authority says otherwise, and that
+  // is the whole point of the layer.
+  //
+  // Everything else must be ANCHORED to a citation or a figure to be worth a
+  // reviewer's attention. An inconclusive verdict on a sentence with neither
+  // is the old noise: a plain-language explanation the classifier could not
+  // place, filed as "Unclassified legal claim - routed for review" against
+  // prose that was correct. Diana's rule is that such a sentence produces
+  // nothing, and this is where that becomes true for a claim that was in scope
+  // when extracted but turned out to rest on no checkable assertion.
+  //
+  // Firm claims produce nothing here at all: lib/content-compliance.ts runs
+  // the same findFeeLanguage/findFirmFactClaims checks and owns them under
+  // `compliance`. A hit reaching a reviewer twice, under two sources, is the
+  // duplication the known-traps gate already had.
+  if (claim.claimType === "firm_claim") return null;
+  if (!contradicted && !isAnchored(claim.sentence)) return null;
   const needsHumanOnly = v.verdict === "supported" && njBulkOnly;
   const title = contradicted
     ? `Contradicted by ${
