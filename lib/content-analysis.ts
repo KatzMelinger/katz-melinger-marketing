@@ -47,7 +47,7 @@ import { capSourceExpertise, coordinateFindings } from "./finding-coordination";
 import { findTimeSensitiveFacts } from "./freshness-check";
 import { classifyFreshness } from "./freshness-classify";
 import { getCurrentFacts } from "./current-facts-store";
-import { runLegalCheck } from "./legal-verify";
+import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
 import { runTrapCheck } from "./trap-gate";
 import { notifyNewFindings } from "./content-notifications";
 import { ensureDraftMetadata, hasWebPage } from "./draft-metadata";
@@ -962,6 +962,7 @@ export async function analyzeDraft(args: {
     freshnessResult,
     legalResult,
     trapResult,
+    factResult,
     internalLinks,
   ] = await Promise.all([
     brandVoiceMatch(body, tid),
@@ -1054,6 +1055,13 @@ export async function analyzeDraft(args: {
     // the traps a previous run legitimately found.
     runTrapCheck(body, { tenantId: tid })
       .then((r) => ({ ran: !r.failed, findings: r.findings }))
+      .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
+    // The knowledge-base fact checks (Diana 2.2) and named-act validation.
+    // Also unflagged, and for the same reason as the traps above: one cached
+    // read of legal_knowledge_base and a regex pass, nothing to meter. Behind
+    // LEGAL_ACCURACY they were dark exactly where they were most useful.
+    runLegalFactChecks(body, { tenantId: tid })
+      .then((findings) => ({ ran: true, findings }))
       .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
     // D3 (spec 2.9) — confirm internal links against the Cluster Map. Only
     // formats with a real page need this (a social caption has nothing to
@@ -1312,6 +1320,14 @@ export async function analyzeDraft(args: {
       ...(trapResult.ran
         ? trapResult.findings
         : priorFindings.filter((f) => f.ruleId?.startsWith("trap:"))),
+      // Same carry-forward as the traps: a check that could not run has no
+      // opinion, and letting its silence reach the sync would auto-resolve
+      // findings that are still true.
+      ...(factResult.ran
+        ? factResult.findings
+        : priorFindings.filter(
+            (f) => f.ruleId === "constant_mismatch" || f.ruleId === "named_act_unverified",
+          )),
     ];
 
     // Item 19 — one concern, one engine. The style engines overlap heavily, so

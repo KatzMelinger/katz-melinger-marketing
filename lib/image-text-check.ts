@@ -16,7 +16,7 @@
 
 import { getAnthropic, CONTENT_SHORT_FORM_MODEL } from "@/lib/anthropic";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { runLegalCheck } from "@/lib/legal-verify";
+import { runLegalCheck, runLegalFactChecks } from "@/lib/legal-verify";
 import { safeFetch } from "@/lib/url-safety";
 import type { NormalizedFinding } from "@/lib/content-findings";
 
@@ -126,9 +126,17 @@ export async function checkImagesLegalText(
   for (let i = 0; i < urls.length; i++) {
     const text = await extractImageText(urls[i], tenantId);
     if (!text) continue;
-    const result = await runLegalCheck(text, { tenantId }).catch(() => null);
-    if (!result) continue;
-    for (const f of result.findings) {
+    // Both halves: the authority loop for cited claims, and the deterministic
+    // fact checks — a wrong salary threshold baked into a quote card is the
+    // same error it would be in body text, and it is the half that still runs
+    // when LEGAL_ACCURACY is off.
+    const [result, factFindings] = await Promise.all([
+      runLegalCheck(text, { tenantId }).catch(() => null),
+      runLegalFactChecks(text, { tenantId }).catch(() => []),
+    ]);
+    // Not gated on `result`: the authority loop returning null means it could
+    // not run, which says nothing about the fact checks that did.
+    for (const f of [...(result?.findings ?? []), ...factFindings]) {
       findings.push({
         ...f,
         fingerprint: `image:${i}:${f.fingerprint}`,

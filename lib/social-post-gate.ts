@@ -10,7 +10,7 @@
  */
 
 import { checkSocialCompliance } from "./social-compliance";
-import { runLegalCheck } from "./legal-verify";
+import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
 import { runTrapCheck } from "./trap-gate";
 import { checkImagesLegalText } from "./image-text-check";
 import { syncFindings, listFindings } from "./content-findings-store";
@@ -238,6 +238,31 @@ export async function gateSocialPost(args: {
     }
   };
 
+  // The knowledge-base fact checks (Diana 2.2): a stated deadline, coverage
+  // threshold or wage figure that disagrees with the maintained value, and a
+  // named act nobody can find. Deterministic — one cached read and a regex
+  // pass — so like the traps it runs unflagged, and unlike the authority loop
+  // it DOES run on a Spanish companion: a wrong figure is just as wrong
+  // translated, and the companion is exactly the copy the expensive half is
+  // deliberately never spent on.
+  const factCheck = async (): Promise<{
+    reasons: string[];
+    findings: NormalizedFinding[];
+    failed: boolean;
+  }> => {
+    try {
+      const findings = await runLegalFactChecks(args.content, { tenantId: args.tenantId });
+      return {
+        reasons: findings.filter((f) => f.severity === "critical").map((f) => f.title),
+        findings,
+        failed: false,
+      };
+    } catch (e) {
+      console.warn(`[social-post-gate] fact check failed (draft ${args.draftId}):`, e);
+      return { reasons: [], findings: [], failed: true };
+    }
+  };
+
   const trapCheck = async (): Promise<{
     reasons: string[];
     findings: NormalizedFinding[];
@@ -324,14 +349,16 @@ export async function gateSocialPost(args: {
   // ones rather than sequentially behind them.
   const legalPromise = legalCheck();
   const trapPromise = trapCheck();
+  const factPromise = factCheck();
   const inheritedPromise = inheritedCheck();
   const currencyPromise = currencyCheck();
   const linkResolvePromise = linkResolveCheck();
   const linkAdvisoryPromise = linkAdvisoryCheck();
   const sourceConsistencyPromise = sourceConsistencyCheck();
-  const [legal, traps, inheritedReasons, linkReasons, contradictionReasons] = await Promise.all([
+  const [legal, traps, facts, inheritedReasons, linkReasons, contradictionReasons] = await Promise.all([
     legalPromise,
     trapPromise,
+    factPromise,
     inheritedPromise,
     linkResolvePromise,
     sourceConsistencyPromise,
@@ -350,12 +377,12 @@ export async function gateSocialPost(args: {
   // produce any. It is also why a failed run writes nothing at all — a check
   // that could not run has no opinion, and recording that as "no findings"
   // would auto-resolve the real ones it failed to reproduce.
-  const legalProducersRan = !legal.failed && !traps.failed;
+  const legalProducersRan = !legal.failed && !traps.failed && !facts.failed;
   if (args.draftId && legalProducersRan) {
     await syncFindings({
       draftId: args.draftId,
       tenantId: args.tenantId,
-      incoming: [...legal.findings, ...traps.findings],
+      incoming: [...legal.findings, ...traps.findings, ...facts.findings],
       sources: ["legal"],
     });
   }
@@ -363,6 +390,7 @@ export async function gateSocialPost(args: {
   const reasons = [
     ...blockingFlags,
     ...traps.reasons.map((t) => `Known trap: ${t}`),
+    ...facts.reasons.map((t) => `Legal fact: ${t}`),
     ...legal.reasons.map((t) => `Legal review: ${t}`),
     ...inheritedReasons.map((t) => `Source blog unresolved: ${t}`),
     ...linkReasons,

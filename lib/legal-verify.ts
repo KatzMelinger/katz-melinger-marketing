@@ -348,36 +348,9 @@ export async function runLegalCheck(
     });
   }
 
-  const citationFindings = verdicts
+  const findings = verdicts
     .map(toFinding)
     .filter((f): f is NormalizedFinding => f !== null);
-
-  // 3.12 and 3.13 both catch errors a citation-and-retrieve pass structurally
-  // can't: a claim naming an act by NAME rather than a formal citation, and a
-  // dollar figure that's wrong for its region or effective date rather than
-  // simply absent from an authority page. Neither depends on classifyLegalClaims
-  // having produced a claim at all, so they run over the whole body directly.
-  //
-  // Known traps (3.14/B6) are deliberately NOT run here. They are the same
-  // scan, but lib/trap-gate.ts runs them as an always-on gate instead — on
-  // every post, including the Spanish companions and the drafts this
-  // flag-gated authority loop is never spent on. Running them in both places
-  // filed the same trap twice under source "legal" with two different rule
-  // ids (`trap:<id>` here, `known_trap` there), so a reviewer had to clear
-  // each hit two times. See lib/trap-gate.ts for why it is the always-on half.
-  const [unverifiedActs, valueFindings] = await Promise.all([
-    findUnverifiedActs(body, opts.tenantId).catch((e) => {
-      console.warn("[legal-verify] named-act check failed:", e);
-      return [];
-    }),
-    checkValuesAgainstKnowledgeBase(body, opts.tenantId).catch((e) => {
-      console.warn("[legal-verify] value/region/date check failed:", e);
-      return [];
-    }),
-  ]);
-  const actFindings = unverifiedActFindings(body, unverifiedActs);
-
-  const findings = [...citationFindings, ...actFindings, ...valueFindings];
 
   return {
     verdicts,
@@ -389,9 +362,53 @@ export async function runLegalCheck(
       contradicted: verdicts.filter((v) => v.verdict === "contradicted").length,
       inconclusive: verdicts.filter((v) => v.verdict === "inconclusive").length,
       // A finding is exactly what reaches a human (see toFinding) — including a
-      // "supported" NJ-bulk-only verdict, which a raw verdict count would miss,
-      // and the 3.12/3.13 findings below, which never went through a verdict.
+      // "supported" NJ-bulk-only verdict, which a raw verdict count would miss.
+      // The fact checks are counted separately: they are their own pass now,
+      // see runLegalFactChecks.
       routedToHuman: findings.length,
     },
   };
+}
+
+
+/**
+ * The DETERMINISTIC half of the legal layer: named acts (3.12) and
+ * value/region/date plus the employment-law constants (3.13, Diana 2.2).
+ *
+ * Split out of runLegalCheck and deliberately NOT behind LEGAL_ACCURACY.
+ *
+ * The flag exists because the authority loop above is expensive — a
+ * classification call plus up to two verification calls per claim, each
+ * carrying statute text. These two are the opposite: one cached read of
+ * legal_knowledge_base and a regex pass over the body. There is nothing to
+ * meter, so there is no reason to gate them, and gating them meant the check
+ * Diana calls the high-value feature — "find the error, alert, click Apply
+ * fix" — was dark wherever the flag was off, including on every Spanish
+ * companion the authority loop deliberately skips.
+ *
+ * This is the same reasoning that made lib/trap-gate.ts always-on, and these
+ * three now form the deterministic floor together: traps catch text that has
+ * been wrong before, the knowledge base catches a figure that disagrees with
+ * the maintained value, and named acts catch a statute nobody can find.
+ *
+ * Callers must merge these findings with runLegalCheck's before syncing under
+ * source "legal" — syncFindings auto-resolves anything in a recomputed source
+ * it was not handed, so writing one set without the other silently closes the
+ * other's findings.
+ */
+export async function runLegalFactChecks(
+  body: string,
+  opts: { tenantId: string },
+): Promise<NormalizedFinding[]> {
+  const [unverifiedActs, valueFindings] = await Promise.all([
+    findUnverifiedActs(body, opts.tenantId).catch((e) => {
+      console.warn("[legal-verify] named-act check failed:", e);
+      return [];
+    }),
+    checkValuesAgainstKnowledgeBase(body, opts.tenantId).catch((e) => {
+      console.warn("[legal-verify] value/constant check failed:", e);
+      return [];
+    }),
+  ]);
+  return [...unverifiedActFindings(body, unverifiedActs), ...valueFindings];
 }

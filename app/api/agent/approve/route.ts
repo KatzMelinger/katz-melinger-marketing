@@ -28,7 +28,7 @@ import { logEvent } from "@/lib/telemetry";
 import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { notifyDraftBlocked, notifyLegalReview } from "@/lib/content-notifications";
-import { runLegalCheck } from "@/lib/legal-verify";
+import { runLegalCheck, runLegalFactChecks } from "@/lib/legal-verify";
 import { runTrapCheck } from "@/lib/trap-gate";
 import { runKbChecks } from "@/lib/legal-kb";
 import { checkBlogCannibalization } from "@/lib/blog-cannibalization";
@@ -507,7 +507,19 @@ async function approveContent(
       );
     }
 
-    let findings = [...traps.findings, ...kb.findings];
+    // The constants check (Diana 2.2) and named-act validation. Unflagged for
+    // the same reason as the traps and the knowledge base above: one cached
+    // read and a regex pass, nothing to meter. A failure here is NOT a 503 —
+    // unlike the traps and runKbChecks, these degrade to "found nothing" on
+    // their own (see runLegalFactChecks), so there is no silent-pass risk to
+    // guard against, and holding an approval on a transient read failure the
+    // function already swallowed would just block a clean draft.
+    const factFindings = await runLegalFactChecks(body, { tenantId }).catch((e) => {
+      console.warn("[approve] legal fact checks failed:", e);
+      return [];
+    });
+
+    let findings = [...traps.findings, ...kb.findings, ...factFindings];
     let legalStats: Record<string, number> | null = null;
 
     if (legalAccuracyEnabled()) {
@@ -516,7 +528,7 @@ async function approveContent(
         // Merged, not synced separately: both write under source `legal`, and
         // a scoped sync auto-resolves anything in that source it was not
         // handed — so two calls would each close the other's findings.
-        findings = [...legal.findings, ...traps.findings, ...kb.findings];
+        findings = [...legal.findings, ...traps.findings, ...kb.findings, ...factFindings];
         legalStats = legal.stats;
       } catch (e) {
         // The legal check failing must not silently approve. Hold the draft and
@@ -543,6 +555,7 @@ async function approveContent(
       ...(legalStats ?? {}),
       traps: traps.findings.length,
       kb: kb.findings.length,
+      facts: factFindings.length,
       kbEntries: kb.stats.entries,
       kbApplied: kb.stats.applied,
       authorityLoop: legalAccuracyEnabled() ? "on" : "off",
