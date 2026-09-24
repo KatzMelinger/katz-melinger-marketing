@@ -189,6 +189,23 @@ export async function buildLinkPlan(input: LinkPlanInput): Promise<LinkPlan> {
       seen.add(path);
       links.push({ url: sib.url, anchor: sib.label, section: "Body" });
     }
+
+    // Last resort: the practice-area hub. Only reached when the Cluster Map and
+    // the scored siblings together still cannot reach the minimum, which is a
+    // real state — an FMLA retaliation article matches the retaliation pillar
+    // and the leave pillar and nothing else on a 449-page site. The hub is
+    // always on topic for its practice area and always live, so it is a
+    // defensible third link rather than filler, and it is where a reader who
+    // wants the broader service should go anyway.
+    if (links.length < input.minLinks) {
+      const hubId = input.practiceArea === "collections" ? "collections-hub" : "employment-hub";
+      const hub = (await getPillars()).find((p) => p.id === hubId);
+      const hubPath = hub ? normalizePath(hub.url) : null;
+      if (hub && hubPath && !seen.has(hubPath) && hubPath !== excludePath) {
+        seen.add(hubPath);
+        links.push({ url: hub.url, anchor: hub.label, section: "Body" });
+      }
+    }
   }
 
   // Cap total links if requested — keeps the pillar (index 0) and the

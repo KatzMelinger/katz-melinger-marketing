@@ -82,10 +82,13 @@ export const EMPLOYMENT_PILLARS: KMPillar[] = [
   { id: "wrongful-termination", label: "Wrongful Termination", url: "/practice-areas/employment-law/wrongful-termination/", practiceArea: "employment" },
   { id: "discrimination", label: "Workplace Discrimination", url: "/practice-areas/employment-law/discrimination/", practiceArea: "employment" },
   { id: "sexual-harassment", label: "Sexual Harassment", url: "/practice-areas/employment-law/sexual-harassment/", practiceArea: "employment" },
-  // FMLA violations is the only leave practice-area page on the site. It is
-  // narrower than "Leave and Accommodations" — if the firm wants accommodations
-  // covered too, that is a new page, not a different URL. Worth confirming.
-  { id: "leave", label: "FMLA and Leave Violations", url: "/practice-areas/employment-law/fmla-violations/", practiceArea: "employment" },
+  // Leave AND accommodations, confirmed by Kenneth 2026-09-24. Half the
+  // keywords routing to this pillar are accommodation/ADA terms ("ada
+  // accommodation", "accommodations", "ada lawyer", "breastfeeding") rather
+  // than leave, so /fmla-violations/ — the first choice here — would have sent
+  // an ADA accommodation reader to an FMLA page. This page covers both halves
+  // and its title is the pillar's own name.
+  { id: "leave", label: "Leave and Accommodation Violations", url: "/new-york-leave-and-accommodation-violations-lawyer/", practiceArea: "employment" },
   { id: "hostile", label: "Hostile Work Environment", url: "/practice-areas/employment-law/sexual-harassment/hostile-work-environment/", practiceArea: "employment" },
   // There is no dedicated severance practice-area page; employment agreements
   // is the closest live parent and is where severance agreements sit. Also
