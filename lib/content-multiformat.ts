@@ -27,6 +27,7 @@ import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
 import { approvedLinkPlanBlock, buildLinkPlan } from "./internal-links";
+import { MIN_CONFIRMED_INTERNAL_LINKS } from "./internal-links-check";
 import {
   cachedSystemPrompt,
   CONTENT_LONG_FORM_MODEL,
@@ -266,6 +267,32 @@ export async function generateMultiFormat(args: {
       formatDurations: args.formatDurations,
     });
 
+  // SEO metadata for the article format. Generated OUTSIDE the 5-step brief
+  // wizard, this path (batch, autonomous agent, repurpose) previously left every
+  // metadata field empty, so blog/service-page drafts arrived at Draft Review
+  // blocked on missing meta description + pillar. Derive them once from the topic
+  // so the blog draft is review-ready. Non-article formats don't carry page
+  // metadata. Fails soft — the draft still saves without it.
+  let seoMeta: Awaited<ReturnType<typeof autoSeoMetadata>> | null = null;
+  if (args.formats.includes("blog")) {
+    // Respect an explicit practice-area selection over inferring one from the
+    // topic text alone — a user-picked "Employment"/"Collections" shouldn't be
+    // silently overridden by an ambiguous topic string.
+    const paHint = args.practiceArea?.toLowerCase().trim();
+    const practiceAreaHint = paHint === "employment" || paHint === "collections" ? paHint : undefined;
+    try {
+      seoMeta = await autoSeoMetadata({
+        topic: args.topic,
+        secondaryKeywords: args.targetKeywords,
+        tenantId: tid,
+        pillars: await getPillars(tid),
+        practiceAreaHint,
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   // Internal links: when the batch includes the long-form blog, hand the
   // generator an approved link plan from the Cluster Map (site_pages) so the
   // article links out to related firm pages. Scoped to the blog body — the
@@ -276,6 +303,16 @@ export async function generateMultiFormat(args: {
       const plan = await buildLinkPlan({
         primaryKeyword: args.topic,
         secondaryKeywords: args.targetKeywords,
+        // The pillar up-link, and with it the required "Pillar / CTA" section.
+        // seoMeta is derived from the topic and keywords alone, which is why it
+        // can be computed before generation and handed to the plan rather than
+        // only recorded on the draft afterwards.
+        pillarId: seoMeta?.pillarId || undefined,
+        // See the same note in app/api/content/draft/route.ts: one page per
+        // term left drafts short of the three-confirmed-links minimum.
+        perTermLimit: 2,
+        practiceArea: seoMeta?.practiceArea,
+        minLinks: MIN_CONFIRMED_INTERNAL_LINKS,
       });
       const block = approvedLinkPlanBlock(plan.links);
       if (block) {
@@ -322,31 +359,6 @@ export async function generateMultiFormat(args: {
 
   const draftRows: { id: string; format: FormatKey; title: string | null; body: string; metadata: Record<string, unknown> }[] = [];
 
-  // SEO metadata for the article format. Generated OUTSIDE the 5-step brief
-  // wizard, this path (batch, autonomous agent, repurpose) previously left every
-  // metadata field empty, so blog/service-page drafts arrived at Draft Review
-  // blocked on missing meta description + pillar. Derive them once from the topic
-  // so the blog draft is review-ready. Non-article formats don't carry page
-  // metadata. Fails soft — the draft still saves without it.
-  let seoMeta: Awaited<ReturnType<typeof autoSeoMetadata>> | null = null;
-  if (args.formats.includes("blog")) {
-    // Respect an explicit practice-area selection over inferring one from the
-    // topic text alone — a user-picked "Employment"/"Collections" shouldn't be
-    // silently overridden by an ambiguous topic string.
-    const paHint = args.practiceArea?.toLowerCase().trim();
-    const practiceAreaHint = paHint === "employment" || paHint === "collections" ? paHint : undefined;
-    try {
-      seoMeta = await autoSeoMetadata({
-        topic: args.topic,
-        secondaryKeywords: args.targetKeywords,
-        tenantId: tid,
-        pillars: await getPillars(tid),
-        practiceAreaHint,
-      });
-    } catch {
-      /* non-fatal */
-    }
-  }
 
   for (const format of args.formats) {
     const data = merged.formats?.[format];

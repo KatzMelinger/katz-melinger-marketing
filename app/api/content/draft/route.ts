@@ -21,6 +21,7 @@ import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
+import { MIN_CONFIRMED_INTERNAL_LINKS } from "@/lib/internal-links-check";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
@@ -382,6 +383,27 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     userPrompt += `\n\n${langBlock}`;
   }
 
+  // The pillar this draft has to link up to.
+  //
+  // Derived HERE rather than only inside the kmBrief closure further down,
+  // because the link plan needs it: buildLinkPlan adds the pillar up-link only
+  // when it is given a pillarId, and that link is what becomes the required
+  // "Pillar / CTA" section. Every generation path used to call buildLinkPlan
+  // without one, so no generated draft ever carried that section and the
+  // approval gate held it for a missing required element (Diana item 4).
+  const linkPracticeArea = kmPracticeAreaFor(
+    practiceArea,
+    `${topic} ${targetKeywords.join(" ")}`,
+  );
+  const linkPillarId = inferPillar(
+    {
+      clusterName: topic,
+      primaryKeyword: primaryKeyword || topic,
+      secondaryKeywords: targetKeywords,
+    },
+    linkPracticeArea,
+  );
+
   // Internal links: for long-form web content, ask the Cluster Map (site_pages)
   // which existing firm pages relate to this topic and hand the generator an
   // approved link plan so the draft links out to related blogs/pages. Mirrors
@@ -391,6 +413,17 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       const plan = await buildLinkPlan({
         primaryKeyword: topic,
         secondaryKeywords: targetKeywords,
+        // Empty string means inferPillar could not place this topic (an
+        // ambiguous drug-testing angle, say). Passing undefined keeps the plan
+        // pillar-less rather than inventing one; the draft's needsPillarReview
+        // flag is what surfaces it for a human to assign.
+        pillarId: linkPillarId || undefined,
+        // Two candidates per term, not one. lib/internal-links-check.ts needs
+        // three CONFIRMED links and the default of one page per term left most
+        // drafts at two, so a compliant article still tripped the gate.
+        perTermLimit: 2,
+        practiceArea: linkPracticeArea,
+        minLinks: MIN_CONFIRMED_INTERNAL_LINKS,
       });
       const block = approvedLinkPlanBlock(plan.links);
       if (block) userPrompt += `\n\n---\n${block}`;
@@ -548,18 +581,11 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     const kmBrief =
       isWebContent && kmContentType && primaryKeyword
         ? (() => {
-            const practiceAreaKey = kmPracticeAreaFor(
-              practiceArea,
-              `${topic} ${targetKeywords.join(" ")}`,
-            );
-            const pillarId = inferPillar(
-              {
-                clusterName: topic,
-                primaryKeyword,
-                secondaryKeywords: targetKeywords,
-              },
-              practiceAreaKey,
-            );
+            // Same derivation the link plan above used — reused rather than
+            // recomputed so the brief's pillar and the pillar the draft was
+            // told to link to can never disagree.
+            const practiceAreaKey = linkPracticeArea;
+            const pillarId = linkPillarId;
             const intent: SearchIntent =
               normalizeIntent(originContext?.intent) ??
               CONTENT_TYPE_TO_INTENT[kmContentType];
