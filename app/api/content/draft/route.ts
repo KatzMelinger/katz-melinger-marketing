@@ -25,6 +25,7 @@ import { MIN_CONFIRMED_INTERNAL_LINKS } from "@/lib/internal-links-check";
 import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "@/lib/readability-rules";
 import { remediateReadability } from "@/lib/readability-remediate";
 import { logEvent } from "@/lib/telemetry";
+import { keywordPlacementBlock } from "@/lib/keyword-placement";
 import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
@@ -412,6 +413,16 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     },
     linkPracticeArea,
   );
+
+  // Primary-keyword placement (Diana item 3b), in the four spots the scorer
+  // actually counts — see lib/keyword-placement.ts.
+  if (targetKeywords.length > 0 && contentType !== "social") {
+    const kwBlock = keywordPlacementBlock(primaryKeyword || targetKeywords[0], targetKeywords.slice(1));
+    if (kwBlock) userPrompt += `
+
+---
+${kwBlock}`;
+  }
 
   // Readability as a generation constraint (Diana item 3). Same reasoning as
   // lib/content-multiformat.ts: readabilityPromptBlock existed and nothing

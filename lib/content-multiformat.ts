@@ -30,6 +30,7 @@ import { approvedLinkPlanBlock, buildLinkPlan } from "./internal-links";
 import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "./readability-rules";
 import { remediateReadability } from "./readability-remediate";
 import { logEvent } from "./telemetry";
+import { keywordPlacementBlock } from "./keyword-placement";
 import { readabilityRulesEngineEnabled } from "./feature-flags";
 import { MIN_CONFIRMED_INTERNAL_LINKS } from "./internal-links-check";
 import {
@@ -310,6 +311,13 @@ export async function generateMultiFormat(args: {
   // constraint at all and then scored against fifteen rules it had never been
   // told about. That is most of why a typical draft arrived with ~15 sentences
   // over the limit: the generator was never asked to keep them short.
+  // Primary-keyword placement (Diana item 3b), long-form only — the scorer
+  // grades page metadata, which a social caption does not have.
+  const keywordBlock =
+    args.targetKeywords?.length && longForm.length > 0
+      ? keywordPlacementBlock(args.targetKeywords[0], args.targetKeywords.slice(1))
+      : "";
+
   const readabilityBlock = readabilityPromptBlock(
     readabilityContentType(longForm.includes("blog") ? "blog" : shortForm[0]),
     readabilityRulesEngineEnabled(),
@@ -346,7 +354,10 @@ export async function generateMultiFormat(args: {
       ? callClaudeForFormats({
           model: CONTENT_LONG_FORM_MODEL,
           system,
-          user: `${buildUserFor(longForm)}
+          user: `${buildUserFor(longForm)}${keywordBlock ? `
+
+---
+${keywordBlock}` : ""}
 
 ---
 ${readabilityBlock}${linkBlock}`,
