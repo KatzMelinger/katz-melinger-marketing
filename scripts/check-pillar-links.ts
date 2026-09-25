@@ -42,11 +42,15 @@ async function main() {
   const live = await getPillars();
   const codeUrls = new Map([...EMPLOYMENT_PILLARS, ...COLLECTIONS_PILLARS].map((p) => [p.id, p.url]));
   const stale = live.filter((p) => codeUrls.get(p.id) && codeUrls.get(p.id) !== p.url);
-  const missingHub = !live.some((p) => p.id === "employment-hub");
-  if (stale.length || missingHub) {
-    console.log("!! tenant_settings.pillars is STALE — run supabase/tenant_pillars_fix_urls.sql");
+  // Any pillar the code knows about and the stored list does not. A MISSING
+  // pillar is worse than a stale URL: buildLinkPlan looks the pillar up by id
+  // in the stored list, so a draft assigned to one that isn't there gets no
+  // Pillar/CTA link at all rather than a wrong one.
+  const missing = [...codeUrls.keys()].filter((id) => !live.some((p) => p.id === id));
+  if (stale.length || missing.length) {
+    console.log("!! tenant_settings.pillars is STALE — run the pending supabase/tenant_pillars_*.sql");
     for (const p of stale) console.log(`   ${p.id.padEnd(22)} stored ${p.url}  should be ${codeUrls.get(p.id)}`);
-    if (missingHub) console.log("   employment-hub is MISSING — un-pillared topics get no pillar link at all");
+    for (const id of missing) console.log(`   ${id.padEnd(22)} MISSING from the stored list — drafts assigned to it get no CTA link`);
     console.log("   (the link-count section below cannot pass until it is applied)");
     console.log("");
   }
@@ -69,6 +73,7 @@ async function main() {
   const CASES: Array<[string, string[]]> = [
     ["is gender a protected class", ["gender discrimination", "protected class"]],
     ["are non competes legal", ["non-compete", "restrictive covenant"]],
+    ["restrictive covenants after termination", ["restrictive covenant"]],
     ["ny overtime laws for salaried employees", ["overtime pay", "salaried employees"]],
     ["quid pro quo harassment", ["sexual harassment", "quid pro quo"]],
     ["how do i prove an fmla retaliation claim", ["fmla retaliation", "medical leave"]],

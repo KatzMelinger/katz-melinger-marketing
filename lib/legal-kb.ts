@@ -307,50 +307,29 @@ export async function runKbChecks(
       blocking.push(f.title);
     }
 
-    /* R3 — fact and citation validation ----------------------------------- */
+    /* R3 — knowledge-base integrity only ---------------------------------- */
     //
-    // Two comparisons, not one. A figure is checked against the stored value
-    // AND against the derivation, because those can disagree: the firm's own
-    // facts table can carry a stale number, and a check that only compared
-    // against it would certify the stale number as correct. That is exactly the
-    // $1,199.10 case — the table says it, the formula says otherwise.
+    // The per-draft figure comparison that used to live here is GONE. It
+    // duplicated lib/legal-value-check.ts, which now owns every figure in a
+    // draft: on "the salary threshold is $1,275.00 per week in the rest of the
+    // state" both fired, so a reviewer cleared one error twice, under
+    // kb:R3:ny-exempt-salary-threshold-upstate and value_region_mismatch.
+    //
+    // One owner per concern, the same resolution the known-traps gate got:
+    //
+    //   legal_knowledge_base + checkValuesAgainstKnowledgeBase
+    //     -> is a figure in the DRAFT correct (Diana 2.2, every constant)
+    //   legal_kb_entries + these rules
+    //     -> forum and authority (R1), required qualifiers (R2), completeness
+    //        (R4), and the integrity check just below
+    //
+    // What stays is the half with no counterpart anywhere: the knowledge base
+    // disagreeing with ITSELF. That is a fact about the base, not about a
+    // draft, and it is the more useful finding of the two — it means every
+    // draft on the topic is being measured against a number nobody has
+    // reconciled.
     const expectedFromValue = entry.currentValue ? moneyToNumber(entry.currentValue) : null;
     const expectedFromDerivation = entry.derivation ? derivedValue(entry.derivation, facts) : null;
-
-    if (expectedFromValue !== null || expectedFromDerivation !== null) {
-      const accepted = new Set(
-        [expectedFromValue, expectedFromDerivation].filter((n): n is number => n !== null),
-      );
-      for (const hit of hits) {
-        for (const raw of hit.text.match(MONEY_RE) ?? []) {
-          const stated = moneyToNumber(raw);
-          if (stated === null || accepted.has(stated)) continue;
-          const expectations: string[] = [];
-          if (expectedFromDerivation !== null && entry.derivation) {
-            expectations.push(
-              `${formatMoney(expectedFromDerivation)} by the stated formula (${entry.derivation.formula})`,
-            );
-          }
-          if (expectedFromValue !== null) {
-            expectations.push(`${formatMoney(expectedFromValue)} on record`);
-          }
-          const f = finding({
-            rule: "R3",
-            topic: entry.topic,
-            severity: "critical",
-            title: `${raw.trim()} does not match ${entry.label}`,
-            detail: `Expected ${expectations.join("; ")}.${
-              entry.citationSays ? ` ${entry.citationSays}` : ""
-            }`,
-            excerpt: hit.text,
-            fix: `Correct the figure, or confirm which value is right — the knowledge base and the draft disagree.`,
-            sourceUrl: entry.sourceUrl,
-          });
-          findings.push(f);
-          blocking.push(f.title);
-        }
-      }
-    }
 
     // The base's own two sources disagreeing is a finding in its own right, and
     // a more useful one than any per-draft flag: it means every draft on this

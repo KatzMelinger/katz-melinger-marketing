@@ -145,7 +145,10 @@ export function inferPillar(
     "sexual-harassment": ["sexual harassment", "sexual misconduct", "quid pro quo", "groping"],
     "leave": ["leave", "fmla", "ada accommodation", "pregnancy leave", "medical leave", "family leave"],
     "hostile": ["hostile work", "hostile environment", "workplace bullying"],
-    "severance": ["severance", "non-compete", "noncompete", "non compete", "employment agreement", "employment contract", "restrictive covenant", "non-disclosure", "non-solicit", "nda"],
+    // Non-compete spellings moved to their own pillar below; severance keeps
+    // the agreement/covenant terms that belong to the agreements page.
+    "severance": ["severance", "employment agreement", "employment contract", "non-disclosure", "non-solicit", "nda"],
+    "non-compete": ["non-compete", "noncompete", "non compete", "restrictive covenant", "non-competition", "no-compete"],
     "retaliation": ["retaliation", "retaliat", "reprisal", "retaliatory"],
     "whistleblower": ["whistleblower", "whistle blow", "whistleblowing", "whistle-blower"],
     "collections-hub": ["collect", "collections", "creditor", "debt", "debt lawyer", "debt attorney", "information subpoena", "notice of pendency", "judgment recovery", "judgement recovery", "debt recovery"],

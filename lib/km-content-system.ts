@@ -91,9 +91,15 @@ export const EMPLOYMENT_PILLARS: KMPillar[] = [
   { id: "leave", label: "Leave and Accommodation Violations", url: "/new-york-leave-and-accommodation-violations-lawyer/", practiceArea: "employment" },
   { id: "hostile", label: "Hostile Work Environment", url: "/practice-areas/employment-law/sexual-harassment/hostile-work-environment/", practiceArea: "employment" },
   // There is no dedicated severance practice-area page; employment agreements
-  // is the closest live parent and is where severance agreements sit. Also
-  // worth confirming — it is a placement decision, not a lookup.
+  // is the closest live parent and is where severance agreements sit.
+  // Confirmed by Kenneth 2026-09-24.
   { id: "severance", label: "Employment Agreements and Contracts", url: "/practice-areas/employment-law/employment-agreements-contracts/", practiceArea: "employment" },
+  // Non-compete gets its own pillar (Diana item 4, confirmed 2026-09-25). It
+  // used to route to severance, so every non-compete blog pointed at the
+  // agreements page — and before the URL fix, at an unrelated case result.
+  // The page exists and is live, so the only thing that was missing was a
+  // pillar pointing at it.
+  { id: "non-compete", label: "Non-Compete Agreements", url: "/practice-areas/employment-law/what-is-a-non-compete-agreement/", practiceArea: "employment" },
   { id: "retaliation", label: "Retaliation", url: "/practice-areas/employment-law/retaliation/", practiceArea: "employment" },
   { id: "whistleblower", label: "Whistleblower Protections", url: "/practice-areas/employment-law/whistleblower-protections/", practiceArea: "employment" },
   // Catch-all hub for general high-intent employment terms ("employment lawyer
