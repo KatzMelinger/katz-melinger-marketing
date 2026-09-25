@@ -22,6 +22,8 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
 import { MIN_CONFIRMED_INTERNAL_LINKS } from "@/lib/internal-links-check";
+import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "@/lib/readability-rules";
+import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
@@ -404,6 +406,18 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     linkPracticeArea,
   );
 
+  // Readability as a generation constraint (Diana item 3). Same reasoning as
+  // lib/content-multiformat.ts: readabilityPromptBlock existed and nothing
+  // called it, so drafts were written with no readability constraint and then
+  // scored against rules they had never been given.
+  userPrompt += `
+
+---
+${readabilityPromptBlock(
+    readabilityContentType(contentType),
+    readabilityRulesEngineEnabled(),
+  )}`;
+
   // Internal links: for long-form web content, ask the Cluster Map (site_pages)
   // which existing firm pages relate to this topic and hand the generator an
   // approved link plan so the draft links out to related blogs/pages. Mirrors
@@ -613,6 +627,11 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
         : null;
 
     const draftFormat = contentType === "social" ? "social" : "blog";
+    // The one readability fix applied silently (Diana item 3): break any
+    // paragraph still past rule 02's limit. Long-form only — a social caption's
+    // shape is deliberate. Only inserts breaks at sentence boundaries, leaving
+    // wording and structure untouched (scripts/check-readability-autobreak.ts).
+    if (draftFormat === "blog") body = autoBreakLongParagraphs(body).body;
     const draftId = await autosave(
       draftFormat,
       body,

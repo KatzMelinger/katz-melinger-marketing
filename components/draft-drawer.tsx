@@ -659,16 +659,14 @@ export function DraftDrawer({
   if (structureCheck) {
     qaRequired.push({ key: "structure", label: "Required section structure present" });
   }
-  // Readability floor is a hard gate once the draft has been analyzed, so a low
-  // draft can't pass quietly. Below the floor blocks; 60-70 is an advisory band.
-  if (analysis) {
-    qaRequired.push({
-      key: "readability",
-      label: staleness?.stale
-        ? "Readability — re-run the analysis (score is out of date)"
-        : `Readability ${READABILITY_FLOOR}+ (aim ${READABILITY_TARGET})`,
-    });
-  }
+  // Readability is NOT a gate (Diana, 21 September: "Readability is never a
+  // blocker", and §5: "nothing advisory blocks"). It stays in the `qa` map
+  // above, so the score still shows in the checklist and still counts toward
+  // the pass tally a reviewer reads — it simply cannot hold a draft on its own.
+  //
+  // The thing it was guarding against, a draft quietly shipping unreadable, is
+  // better served by the score being visible than by a block: the remaining
+  // findings are style, and style is the reviewer's call.
   const qaFailed = qaRequired.filter((c) => !qa[c.key]);
   const qaGatePassed = qaFailed.length === 0;
 

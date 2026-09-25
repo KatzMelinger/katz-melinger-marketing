@@ -27,6 +27,8 @@ import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
 import { approvedLinkPlanBlock, buildLinkPlan } from "./internal-links";
+import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "./readability-rules";
+import { readabilityRulesEngineEnabled } from "./feature-flags";
 import { MIN_CONFIRMED_INTERNAL_LINKS } from "./internal-links-check";
 import {
   cachedSystemPrompt,
@@ -297,6 +299,20 @@ export async function generateMultiFormat(args: {
   // generator an approved link plan from the Cluster Map (site_pages) so the
   // article links out to related firm pages. Scoped to the blog body — the
   // social/script formats don't need inline links. Fails soft if no inventory.
+  // Readability, as a generation constraint rather than something measured
+  // afterwards (Diana item 3: "Bake readability into generation — short
+  // sentences and paragraphs, active voice").
+  //
+  // readabilityPromptBlock has existed since the rules engine shipped and
+  // nothing ever called it, so every draft was written with no readability
+  // constraint at all and then scored against fifteen rules it had never been
+  // told about. That is most of why a typical draft arrived with ~15 sentences
+  // over the limit: the generator was never asked to keep them short.
+  const readabilityBlock = readabilityPromptBlock(
+    readabilityContentType(longForm.includes("blog") ? "blog" : shortForm[0]),
+    readabilityRulesEngineEnabled(),
+  );
+
   let linkBlock = "";
   if (longForm.includes("blog")) {
     try {
@@ -328,14 +344,23 @@ export async function generateMultiFormat(args: {
       ? callClaudeForFormats({
           model: CONTENT_LONG_FORM_MODEL,
           system,
-          user: buildUserFor(longForm) + linkBlock,
+          user: `${buildUserFor(longForm)}
+
+---
+${readabilityBlock}${linkBlock}`,
         })
       : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
     shortForm.length > 0
       ? callClaudeForFormats({
           model: CONTENT_SHORT_FORM_MODEL,
           system,
-          user: buildUserFor(shortForm),
+          // Short-form gets the social-scope rules, which are a subset — the
+          // web/blog-only rules (contractions, first person) do not apply to a
+          // caption written in the firm's voice.
+          user: `${buildUserFor(shortForm)}
+
+---
+${readabilityPromptBlock("social", readabilityRulesEngineEnabled())}`,
         })
       : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
   ]);
@@ -365,7 +390,15 @@ export async function generateMultiFormat(args: {
     if (!data?.body) continue;
     // Hard filter: strip em/en dashes the model let through despite the prompt
     // rule, across every format, before persisting. See lib/sanitize-content.ts.
-    const cleanBody = stripEmDashes(data.body);
+    //
+    // Then the one readability fix applied silently (Diana item 3): break any
+    // paragraph that still runs past rule 02's limit. Long-form only — a social
+    // caption's shape is deliberate. Wording is untouched; this only inserts
+    // breaks at sentence boundaries, and structure (headings, lists, code) is
+    // left byte-identical. See scripts/check-readability-autobreak.ts.
+    const cleanBody = LONG_FORM_FORMATS.includes(format)
+      ? autoBreakLongParagraphs(stripEmDashes(data.body)).body
+      : stripEmDashes(data.body);
     const cleanTitle = data.title ? stripEmDashes(data.title) : data.title;
     const metadata: Record<string, unknown> = {};
     if (data.subject) metadata.subject = stripEmDashes(data.subject);

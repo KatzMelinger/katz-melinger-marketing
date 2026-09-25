@@ -45,6 +45,21 @@ export type ReadabilityRule = {
   fix: string;
   scope: ReadabilityContentType[];
   unit: RuleUnit;
+  /**
+   * Report this rule as ONE summary finding with a count, rather than one
+   * finding per instance.
+   *
+   * For a rule where a single instance is not itself an error, per-instance
+   * findings are noise: the reviewer cannot act on "this sentence is passive"
+   * because the sentence is usually fine — what matters is whether the draft
+   * leans on the construction throughout. Diana, 21 September: "not every
+   * passive voice is an error".
+   *
+   * The score is unaffected either way. Scoring has always worked on density
+   * (see ruleTolerance), so an aggregated rule fails at exactly the same point
+   * it did when it emitted one finding per sentence.
+   */
+  aggregate?: boolean;
 };
 
 /**
@@ -92,7 +107,12 @@ export function ruleTolerance(unit: RuleUnit, opportunities: number): number {
   return Math.max(1, Math.floor(opportunities * RULE_TOLERANCE_RATE));
 }
 
+/** Rule 02's limit, shared with autoBreakLongParagraphs so the fix and the
+ *  check can never disagree about what "too long" means. */
+export const MAX_PARAGRAPH_SENTENCES = 4;
+
 const WEB_BLOG: ReadabilityContentType[] = ["web", "blog"];
+const WEB_ONLY: ReadabilityContentType[] = ["web"];
 const ALL: ReadabilityContentType[] = ["web", "blog", "social"];
 
 /** One source of truth read by the scorer (to flag) and the generator (to instruct). */
@@ -100,8 +120,11 @@ export const READABILITY_RULES: ReadabilityRule[] = [
   { id: "01", type: "deterministic", description: "Sentence over 25 words", fix: "Split into shorter sentences.", scope: ALL , unit: "sentence" },
   { id: "02", type: "deterministic", description: "Paragraph over 4 sentences", fix: "Break into smaller paragraphs.", scope: ALL , unit: "paragraph" },
   { id: "03", type: "deterministic", description: "Three or more consecutive similar-length sentences", fix: "Vary the rhythm — combine or expand some.", scope: ALL , unit: "paragraph" },
-  { id: "04", type: "deterministic", description: "Passive voice (a form of 'to be' + past participle)", fix: "Rewrite in active voice.", scope: ALL , unit: "sentence" },
-  { id: "05", type: "deterministic", description: "Contraction on a web or blog page", fix: "Expand the contraction.", scope: WEB_BLOG , unit: "sentence" },
+  { id: "04", type: "deterministic", description: "Passive voice (a form of 'to be' + past participle)", fix: "Rewrite in active voice.", scope: ALL , unit: "sentence", aggregate: true },
+  // Blog dropped from scope (Diana, 21 September: "contractions such as
+  // 'don't' are fine on a blog"). Kept for web pages, where the firm's own
+  // service copy is written formally.
+  { id: "05", type: "deterministic", description: "Contraction on a web page", fix: "Expand the contraction.", scope: WEB_ONLY , unit: "sentence" },
   { id: "06", type: "deterministic", description: "Two or more hedges in one sentence", fix: "State it directly.", scope: ALL , unit: "sentence" },
   { id: "07", type: "deterministic", description: "Weak qualifier (very, really, quite, somewhat…)", fix: "Remove it or replace with a specific term.", scope: ALL , unit: "sentence" },
   { id: "08", type: "ai", description: "Vague instead of specific ('significant', 'many')", fix: "Name the specific fact or number.", scope: ALL , unit: "sentence" },
@@ -327,7 +350,9 @@ export function runDeterministicRules(
 
   for (const p of paragraphs) {
     // Rule 02 — paragraph over 4 sentences
-    if (p.sentences.length > 4) push("02", excerptOf(p.text, 90), `(${p.sentences.length} sentences)`);
+    if (p.sentences.length > MAX_PARAGRAPH_SENTENCES) {
+      push("02", excerptOf(p.text, 90), `(${p.sentences.length} sentences)`);
+    }
 
     // Rule 03 — 3+ consecutive similar-length sentences (spread ≤ 2 words)
     const lens = p.sentences.map(wordCount);
@@ -494,7 +519,35 @@ export function formatReadabilityFindings(
   const out: string[] = [];
   const seen = new Set<string>();
   const perRule = new Map<RuleId, number>();
+
+  // Rules marked `aggregate` collapse to one line naming the count, with the
+  // first instance as the excerpt so the reviewer has somewhere to start
+  // reading. Passive voice alone was 347 open findings across 18 drafts — more
+  // than a third of everything a reviewer faced, on a construction that is
+  // usually correct.
+  const aggregated = new Map<RuleId, ReadabilityFinding[]>();
+  const perInstance: ReadabilityFinding[] = [];
   for (const f of findings) {
+    if (rule(f.ruleId).aggregate) {
+      const list = aggregated.get(f.ruleId) ?? [];
+      list.push(f);
+      aggregated.set(f.ruleId, list);
+    } else {
+      perInstance.push(f);
+    }
+  }
+
+  for (const [ruleId, list] of aggregated) {
+    const first = list[0];
+    const s = `Rule ${ruleId}: ${first.rule} (${list.length} in this draft). ${first.fix} "${first.excerpt}"`
+      .replace(/\s+/g, " ")
+      .trim();
+    if (seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+
+  for (const f of perInstance) {
     const used = perRule.get(f.ruleId) ?? 0;
     if (used >= perRuleCap) continue;
     const head = [f.rule, f.detail].filter(Boolean).join(" ");
@@ -505,6 +558,63 @@ export function formatReadabilityFindings(
     perRule.set(f.ruleId, used + 1);
   }
   return out;
+}
+
+/**
+ * Break paragraphs that run past the rule-02 limit, silently (Diana item 3:
+ * "Auto-apply the safe mechanical fixes silently ... break a long paragraph").
+ *
+ * This is the ONLY readability fix applied without a reviewer seeing it, and
+ * that is deliberate: inserting a paragraph break at a sentence boundary
+ * changes no wording at all. Splitting a long SENTENCE is not in the same
+ * category — it requires rewriting, so it stays with the model-backed Apply
+ * flow where the reviewer sees a diff.
+ *
+ * Conservative by construction. Only plain prose paragraphs are touched:
+ * anything that looks like a heading, list item, table row, blockquote, fenced
+ * code, or an HTML block is returned exactly as it was. A paragraph is split
+ * after every `per` sentences, and only when it exceeds the limit, so a
+ * four-sentence paragraph is never reflowed for the sake of it.
+ */
+export function autoBreakLongParagraphs(
+  body: string,
+  opts: { max?: number; per?: number } = {},
+): { body: string; broken: number } {
+  const max = opts.max ?? MAX_PARAGRAPH_SENTENCES;
+  const per = opts.per ?? MAX_PARAGRAPH_SENTENCES;
+  if (!body?.trim()) return { body, broken: 0 };
+
+  // Fenced code is passed through untouched, including any blank lines in it.
+  const parts = body.split(/(```[\s\S]*?```)/g);
+  let broken = 0;
+
+  const out = parts.map((part) => {
+    if (part.startsWith("```")) return part;
+    return part
+      .split(/(\n\s*\n)/)
+      .map((chunk) => {
+        if (/^\n\s*\n$/.test(chunk)) return chunk; // separator, keep verbatim
+        const text = chunk.trim();
+        if (!text) return chunk;
+        // Structure, not prose — leave alone.
+        if (/^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|\||<)/.test(text)) return chunk;
+        if (text.includes("\n")) return chunk; // multi-line block; not a plain paragraph
+        const sentences = text
+          .split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/)
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (sentences.length <= max) return chunk;
+        const groups: string[] = [];
+        for (let i = 0; i < sentences.length; i += per) {
+          groups.push(sentences.slice(i, i + per).join(" "));
+        }
+        broken++;
+        return chunk.replace(text, groups.join("\n\n"));
+      })
+      .join("");
+  });
+
+  return { body: out.join(""), broken };
 }
 
 /**
