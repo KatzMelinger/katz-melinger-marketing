@@ -43,7 +43,7 @@ for (const l of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
   if (!process.env[k]) process.env[k] = l.slice(i + 1).trim().replace(/^["']|["']$/g, "");
 }
 
-import { runLegalCheck, toFinding, type ClaimVerdict } from "@/lib/legal-verify";
+import { runLegalCheck, runLegalFactChecks, toFinding, type ClaimVerdict } from "@/lib/legal-verify";
 import { BULK_SOURCE_LABEL as NJ_BULK_SOURCE_LABEL } from "@/lib/nj-statute-bulk";
 import type { NormalizedFinding } from "@/lib/content-findings";
 
@@ -131,12 +131,18 @@ const CASES: Case[] = [
 ];
 
 async function runCases() {
-  console.log(`Running ${CASES.length} live cases through runLegalCheck (tenant ${TENANT_ID}):\n`);
+  console.log(`Running ${CASES.length} live cases through the legal layer (tenant ${TENANT_ID}):\n`);
   for (const c of CASES) {
     let findings: NormalizedFinding[] = [];
     try {
-      const result = await runLegalCheck(c.body, { tenantId: TENANT_ID });
-      findings = result.findings;
+      // Both halves. runLegalCheck is the authority loop only since the
+      // deterministic fact checks were split out to run unflagged; a case
+      // asserting on a wrong figure or an unknown act lives in the other one.
+      const [result, facts] = await Promise.all([
+        runLegalCheck(c.body, { tenantId: TENANT_ID }),
+        runLegalFactChecks(c.body, { tenantId: TENANT_ID }),
+      ]);
+      findings = [...result.findings, ...facts];
     } catch (e) {
       t(c.name + " (threw: " + (e instanceof Error ? e.message : String(e)) + ")", false);
       continue;

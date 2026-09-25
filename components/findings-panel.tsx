@@ -8,12 +8,17 @@
  * runs: who resolved what, what came back after being marked fixed, and what
  * the checks stopped reporting on their own.
  *
- * Tabbed by engine (spec item 2): one chip per source that has findings, plus
- * Legal accuracy / Content freshness whenever their gate flag is armed — even
- * with zero findings, so a reviewer sees "checked, clear" rather than a tab
- * that's just missing. A readiness line and a "Blockers only" toggle work off
- * severity: `critical`/`important` count as blockers, `advisory` never does —
- * which is why a style nit (e.g. first person) can never show up there.
+ * ITEM 12 — WHY THIS IS A SCORECARD AND NOT A LIST
+ *
+ * It was a flat list. One blog carried 83 open findings and 298 closed, and a
+ * wrong statute and a passive-voice note rendered identically, so the question
+ * a reviewer actually has — "can I publish this, and if not, why not" — had no
+ * answer anywhere on screen.
+ *
+ * So: one chip per engine showing its count and its worst severity, each chip a
+ * tab; findings grouped by rule and collapsed, because 40 instances of one rule
+ * is one decision and not 40; and a readiness line that counts ONLY blockers.
+ * Everything else on the panel is context for that one number.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,94 +26,65 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashSpinner } from "@/components/dashboard-ui";
 import {
   SOURCE_LABEL,
-  type FindingSeverity,
-  type FindingSource,
   type FindingStatus,
+  type FindingSource,
   type StoredFinding,
 } from "@/lib/content-findings";
+import {
+  countBlockers,
+  groupByRule,
+  isOpen,
+  publishSeverity,
+  summarizeByEngine,
+  type PublishSeverity,
+  type SeverityOverrides,
+} from "@/lib/finding-severity";
 
-const SEVERITY_STYLE: Record<FindingSeverity, string> = {
-  critical: "border-red-300 bg-red-50 text-red-800",
-  important: "border-amber-300 bg-amber-50 text-amber-800",
-  advisory: "border-slate-200 bg-white text-slate-600",
+/** Colour by what a finding DOES, not by which engine raised it. */
+const SEVERITY_STYLE: Record<PublishSeverity, string> = {
+  blocker: "border-red-300 bg-red-50 text-red-900",
+  recommended: "border-amber-300 bg-amber-50 text-amber-900",
+  optional: "border-slate-200 bg-white text-slate-600",
+};
+
+const CHIP_STYLE: Record<PublishSeverity | "clear", string> = {
+  blocker: "border-red-300 bg-red-50 text-red-800",
+  recommended: "border-amber-300 bg-amber-50 text-amber-800",
+  optional: "border-slate-300 bg-slate-50 text-slate-600",
+  clear: "border-emerald-200 bg-emerald-50 text-emerald-700",
 };
 
 const STATUS_LABEL: Record<FindingStatus, string> = {
   open: "Open",
   in_progress: "In progress",
   resolved: "Resolved",
+  resolved_by_edit: "Fixed in the text",
   dismissed: "Dismissed",
 };
-
-/** Tab order: gate-related engines first, then the rest. Only sources that are
- *  actually present (or an armed-but-clear gate) become a tab — see `tabs`. */
-const TAB_ORDER: FindingSource[] = [
-  "compliance",
-  "legal",
-  "freshness",
-  "readability",
-  "seo",
-  "aeo",
-  "cash",
-  "brand_voice",
-  "linkability",
-  "structure",
-];
-
-const SEVERITY_RANK: Record<FindingSeverity, number> = { critical: 0, important: 1, advisory: 2 };
-
-/** Sources with their own approval gate (app/api/agent/approve/route.ts).
- *  Readability/SEO/AEO/CASH/brand-voice/linkability have no gate of their
- *  own — per spec item 6 ("none of the three can be a blocker"), a finding
- *  from one of those can be styled `important` but must never count toward
- *  the readiness line, however serious it looks. */
-const GATED_SOURCES = new Set<FindingSource>(["compliance", "legal", "freshness"]);
-
-/** A finding counts as a "blocker" for the readiness line/toggle: `critical`
- *  always does (lib/content-findings.ts reserves it for things with their own
- *  gate); `important` only does when it's FROM a gated source — an ungated
- *  engine's "important" finding is worth flagging visually but can't hold up
- *  approval on its own. */
-function isBlocker(f: StoredFinding): boolean {
-  return f.severity === "critical" || (f.severity === "important" && GATED_SOURCES.has(f.source));
-}
-
-type Engines = { legal: boolean; freshness: boolean };
-
-/**
- * Converts a finding into the same free-text feedback shape the apply-suggestion
- * endpoint (app/api/content/drafts/[id]/apply-suggestion) already accepts
- * from the Analysis card — it just wants a natural-language description of
- * what to fix plus the excerpt to anchor on, not a specific schema. Mirrors
- * the "Rule N: description. fix "excerpt"" shape formatReadabilityFindings
- * already produces, generalized to every source.
- */
-function findingToFeedback(f: StoredFinding): string {
-  const head = [f.title, f.detail].filter(Boolean).join(". ");
-  const fix = f.fix ? ` ${f.fix}` : "";
-  const excerpt = f.excerpt ? ` "${f.excerpt}"` : "";
-  return `${head}.${fix}${excerpt}`.replace(/\s+/g, " ").trim();
-}
 
 export function FindingsPanel({
   draftId,
   nonce,
+  onFixAll,
   onApplyFindings,
   sourceFilter,
   onCounts,
 }: {
   draftId: string;
   nonce?: number;
-  /** Sends one or more findings' text to the same Apply-and-review-diff flow
-   *  the Analysis card uses (via ApplySuggestionModal) — the caller owns
-   *  opening the modal, this component just hands it the feedback text(es).
-   *  Called with a single-element array for one finding's own "Apply fix"
-   *  button, or the full selection for "Apply N selected". Omit to hide both
-   *  (e.g. a read-only context). */
+  /**
+   * Hand a group's finding text to the Apply flow. Absent on a read-only
+   * mount, which is why every Fix all button is conditional rather than
+   * disabled — an affordance that cannot do anything should not be drawn.
+   */
+  onFixAll?: (findingTexts: string[]) => void;
+  /** 2.3 — the panel-wide "Apply all fixes" batch, same Apply-and-review-diff
+   *  flow as onFixAll (one call, one merged diff, one accept/revert). Separate
+   *  prop so a caller can offer the per-group button without the bulk one. */
   onApplyFindings?: (findingTexts: string[]) => void;
   /** 2.15 — locks the view to one source (e.g. "legal" for DraftDrawer's
-   *  dedicated Legal tab) and hides the tab bar, since there's nothing to
-   *  switch between. Omit for the normal all-sources view. */
+   *  dedicated Legal tab) and hides the engine scorecard, since there's
+   *  nothing to switch between. Omit for the normal all-sources view. */
   sourceFilter?: FindingSource;
   /** 2.15 — reports open-finding counts (overall, and legal specifically)
    *  whenever they change, so a parent tab bar can show a badge without
@@ -118,17 +94,14 @@ export function FindingsPanel({
   onCounts?: (counts: { total: number; legal: number }) => void;
 }) {
   const [findings, setFindings] = useState<StoredFinding[]>([]);
-  const [engines, setEngines] = useState<Engines>({ legal: false, freshness: false });
+  const [overrides, setOverrides] = useState<SeverityOverrides>({});
   const [loading, setLoading] = useState(true);
   const [showClosed, setShowClosed] = useState(false);
   const [blockersOnly, setBlockersOnly] = useState(false);
-  const [activeTab, setActiveTab] = useState<FindingSource | "all">("all");
+  const [tab, setTab] = useState<FindingSource | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  // Selected finding ids — spans every tab (like the Analysis card's batch
-  // apply), so the reviewer can mix findings from different engines into one
-  // Claude call rather than applying tab-by-tab.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -137,10 +110,7 @@ export function FindingsPanel({
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setFindings(data.findings ?? []);
-        setEngines(data.engines ?? { legal: false, freshness: false });
-        // A reload means fresh finding ids (re-analysis, or the Apply flow
-        // just fired) — any prior selection no longer means anything.
-        setSelected(new Set());
+        setOverrides(data.severityOverrides ?? {});
       }
     } finally {
       setLoading(false);
@@ -176,89 +146,63 @@ export function FindingsPanel({
         return;
       }
       setFindings(data.findings ?? []);
-      // The finding just moved off "open" — selecting it no longer means
-      // anything, whether that was via this row's own action or a batch one.
-      setSelected((prev) => {
-        if (!prev.has(finding.id)) return prev;
-        const next = new Set(prev);
-        next.delete(finding.id);
-        return next;
-      });
     } finally {
       setBusy(null);
     }
   };
 
-  const toggleSelected = (id: string) =>
-    setSelected((prev) => {
+  const open = useMemo(() => findings.filter(isOpen), [findings]);
+  const closed = useMemo(() => findings.filter((f) => !isOpen(f)), [findings]);
+  const engines = useMemo(() => summarizeByEngine(findings, overrides), [findings, overrides]);
+  const blockers = useMemo(() => countBlockers(findings, overrides), [findings, overrides]);
+
+  // The active tab, with a sensible landing point: the first engine that has
+  // anything outstanding, so opening a draft shows work rather than an empty
+  // Legal tab. Falls back to the first engine when everything is clear.
+  //
+  // sourceFilter (2.15) overrides all of that and pins the panel to one
+  // engine — it takes precedence over `tab` so a stale click on the scorecard
+  // before the parent locked the view can't leave the wrong source showing.
+  const activeTab: FindingSource =
+    sourceFilter ?? tab ?? engines.find((e) => e.count > 0)?.source ?? engines[0].source;
+
+  const groups = useMemo(() => {
+    const scope = (showClosed ? findings : open).filter((f) => f.source === activeTab);
+    const filtered = blockersOnly
+      ? scope.filter((f) => publishSeverity(f, overrides) === "blocker")
+      : scope;
+    return groupByRule(filtered, overrides);
+  }, [findings, open, activeTab, showClosed, blockersOnly, overrides]);
+
+  const toggle = (key: string) =>
+    setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
 
-  // Tabs: any source with at least one finding, plus Legal/Freshness whenever
-  // their gate is armed (even at zero findings — that's the "clear" state).
-  const tabs = useMemo(() => {
-    const present = new Set(findings.map((f) => f.source));
-    if (engines.legal) present.add("legal");
-    if (engines.freshness) present.add("freshness");
-    return TAB_ORDER.filter((s) => present.has(s));
-  }, [findings, engines]);
-
-  // A single tab is its own "All" — showing both would just duplicate it.
-  const showAllTab = tabs.length > 1;
-  const effectiveTab = sourceFilter ?? (activeTab === "all" && !showAllTab ? (tabs[0] ?? "all") : activeTab);
-
-  const bySource = effectiveTab === "all" ? findings : findings.filter((f) => f.source === effectiveTab);
-  const open = bySource.filter((f) => f.status === "open" || f.status === "in_progress");
-  const closed = bySource.filter((f) => f.status === "resolved" || f.status === "dismissed");
-  let visible = showClosed ? [...open, ...closed] : open;
-  if (blockersOnly) visible = visible.filter(isBlocker);
-  visible = [...visible].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
-
-  // Readiness line counts across the WHOLE draft, not just the active tab —
-  // that's the number a reviewer needs before approving, regardless of which
-  // tab happens to be open.
-  const openAll = findings.filter((f) => f.status === "open" || f.status === "in_progress");
-  const blockerCount = openAll.filter(isBlocker).length;
-  const advisoryCount = openAll.length - blockerCount;
-
-  const tabCount = (source: FindingSource) => {
-    const inTab = openAll.filter((f) => f.source === source);
-    return { total: inTab.length, blockers: inTab.filter(isBlocker).length };
-  };
-
-  const legalOpenCount = openAll.filter((f) => f.source === "legal").length;
+  // 2.15 — report open counts to the parent tab bar. Derived fresh from
+  // `findings` every render, so depending on `findings` (the actual state) is
+  // what avoids an infinite-update loop from new array identities each render.
+  const legalOpenCount = open.filter((f) => f.source === "legal").length;
   useEffect(() => {
-    onCounts?.({ total: openAll.length, legal: legalOpenCount });
-    // openAll/legalOpenCount are derived fresh from `findings` every render,
-    // so depending on `findings` (the actual state) is what avoids an
-    // infinite-update loop from new array identities each render.
+    onCounts?.({ total: open.length, legal: legalOpenCount });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findings]);
 
-  const selectedCount = selected.size;
-  const applySelected = () => {
-    if (!onApplyFindings || selectedCount === 0) return;
-    const texts = findings.filter((f) => selected.has(f.id)).map(findingToFeedback);
-    onApplyFindings(texts);
-    // Not cleared here — the modal might be discarded, in which case the
-    // selection should still be there to retry. A successful apply reloads
-    // (nonce bump from re-analysis) which clears it in load() above.
-  };
-
-  // 2.3 — "Apply all fixes, coherent": every open, non-legal finding sent to
-  // Claude in the SAME one-shot batch "Apply N selected" already uses (one
-  // call, one merged diff, one accept/revert — see apply-suggestion/route.ts's
-  // multi-finding instructions for the merge/dedupe behavior). Legal findings
-  // are never included: 3.3 forbids auto-applying a legal fix, so those stay
-  // open and keep routing to a human via the Legal tab.
-  const autoApplicable = openAll.filter((f) => f.source !== "legal");
-  const legalExcludedCount = openAll.length - autoApplicable.length;
+  // 2.3 — "Apply all fixes, coherent": every open, non-legal finding that
+  // carries a suggested fix, sent to Claude in the SAME one-shot batch the
+  // per-group "Fix all" uses (one call, one merged diff, one accept/revert —
+  // see apply-suggestion/route.ts's multi-finding instructions for the
+  // merge/dedupe behavior). Legal findings are never included: 3.3 forbids
+  // auto-applying a legal fix, so those stay open and keep routing to a human
+  // via the Legal tab.
+  const autoApplicable = open.filter((f) => f.source !== "legal" && f.fix);
+  const legalExcludedCount = open.filter((f) => f.source === "legal").length;
   const applyAll = () => {
     if (!onApplyFindings || autoApplicable.length === 0) return;
-    onApplyFindings(autoApplicable.map(findingToFeedback));
+    onApplyFindings(autoApplicable.map((f) => fixText(f)));
   };
 
   if (loading) {
@@ -269,11 +213,11 @@ export function FindingsPanel({
     );
   }
 
-  // Nothing tracked yet, and no gated engine is armed to show a clear state —
-  // a normal state (the migration may not be run, or the draft has never
-  // been analyzed). Say so plainly rather than showing an empty box that
-  // reads like "no problems".
-  if (findings.length === 0 && tabs.length === 0) {
+  // Nothing tracked yet, and no gated engine armed to show a "checked, clear"
+  // chip — a normal state (the migration may not be run, or the draft has
+  // never been analyzed). Say so plainly rather than showing an empty box
+  // that reads like "no problems".
+  if (findings.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 p-3 text-xs text-slate-500">
         No tracked findings yet — they are recorded the next time the analysis runs.
@@ -282,31 +226,35 @@ export function FindingsPanel({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+    <div className="rounded-lg border border-slate-200">
+      {/* Publish readiness. The only line on the panel that decides anything,
+          so it leads and it counts blockers and nothing else. */}
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b px-3 py-2 ${
+          blockers > 0
+            ? "border-red-200 bg-red-50 text-red-900"
+            : "border-emerald-200 bg-emerald-50 text-emerald-800"
+        }`}
+      >
         <div className="text-xs font-semibold">
-          {blockerCount > 0 ? (
-            <span className="text-red-700">
-              <span aria-hidden>🚫</span> {blockerCount} blocker{blockerCount === 1 ? "" : "s"} to resolve
-            </span>
+          {blockers > 0 ? (
+            <>
+              Not ready to publish · {blockers} blocker{blockers === 1 ? "" : "s"}
+            </>
           ) : (
-            <span className="text-emerald-700">
-              <span aria-hidden>✓</span> No blockers
-            </span>
+            <>Ready to publish · no blockers</>
           )}
-          {advisoryCount > 0 && (
-            <span className="ml-1.5 font-normal text-slate-500">
-              · {advisoryCount} advisory
-            </span>
-          )}
+          <span className="ml-1.5 font-normal opacity-70">
+            {open.length} open finding{open.length === 1 ? "" : "s"} in total
+          </span>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1 text-[10px] text-slate-500">
+        <div className="flex items-center gap-2.5 text-[10px]">
+          <label className="flex cursor-pointer items-center gap-1">
             <input
               type="checkbox"
               checked={blockersOnly}
               onChange={(e) => setBlockersOnly(e.target.checked)}
-              className="h-3 w-3"
+              className="h-3 w-3 cursor-pointer accent-current"
             />
             Blockers only
           </label>
@@ -314,16 +262,16 @@ export function FindingsPanel({
             <button
               type="button"
               onClick={() => setShowClosed((v) => !v)}
-              className="text-[10px] text-slate-500 underline hover:text-brand"
+              className="underline opacity-80 hover:opacity-100"
             >
-              {showClosed ? "hide" : `show ${closed.length} closed`}
+              {showClosed ? "hide closed" : `show ${closed.length} closed`}
             </button>
           )}
         </div>
       </div>
 
       {onApplyFindings && autoApplicable.length > 0 && (
-        <div className="mb-2 flex items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-2.5 py-1.5">
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-brand/5 px-3 py-2">
           <button
             type="button"
             onClick={applyAll}
@@ -341,206 +289,216 @@ export function FindingsPanel({
         </div>
       )}
 
-      {onApplyFindings && selectedCount > 0 && (
-        <div className="mb-2 flex items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-2.5 py-1.5">
-          <span className="text-[11px] text-slate-600">
-            {selectedCount} selected{selectedCount > 1 ? " (from any tab)" : ""}
-          </span>
-          <button
-            type="button"
-            onClick={() => setSelected(new Set())}
-            className="text-[10px] text-slate-500 underline hover:text-slate-700"
-          >
-            clear
-          </button>
-          <button
-            type="button"
-            onClick={applySelected}
-            className="ml-auto rounded border border-brand/40 bg-white px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/10"
-            title={`Send all ${selectedCount} selected findings to Claude in one shot.`}
-          >
-            Apply {selectedCount} selected
-          </button>
-        </div>
-      )}
-
-      {!sourceFilter && (showAllTab || tabs.length > 0) && (
-        <div className="mb-2 flex flex-wrap gap-1.5 border-b border-slate-100 pb-2">
-          {showAllTab && (
-            <TabChip
-              label="All"
-              active={effectiveTab === "all"}
-              onClick={() => setActiveTab("all")}
-            />
-          )}
-          {tabs.map((s) => {
-            const c = tabCount(s);
+      {/* Scorecard. Every engine appears, including the quiet ones — a tab strip
+          that changes shape between drafts has to be re-read every time, and
+          "SEO found nothing" is information. Hidden when sourceFilter pins the
+          panel to one engine (2.15): there is nothing left to switch between. */}
+      {!sourceFilter && (
+        <div className="flex flex-wrap gap-1.5 border-b border-slate-200 px-3 py-2">
+          {engines.map((e) => {
+            const active = e.source === activeTab;
+            const style = e.count === 0 ? CHIP_STYLE.clear : CHIP_STYLE[e.worst ?? "optional"];
             return (
-              <TabChip
-                key={s}
-                label={SOURCE_LABEL[s]}
-                count={c.total}
-                hasBlocker={c.blockers > 0}
-                active={effectiveTab === s}
-                onClick={() => setActiveTab(s)}
-              />
+              <button
+                key={e.source}
+                type="button"
+                onClick={() => setTab(e.source)}
+                aria-pressed={active}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${style} ${
+                  active ? "ring-2 ring-brand/40 ring-offset-1" : "opacity-80 hover:opacity-100"
+                }`}
+              >
+                {SOURCE_LABEL[e.source]}
+                <span className="ml-1 tabular-nums opacity-80">{e.count === 0 ? "✓" : e.count}</span>
+                {e.blockers > 0 && (
+                  <span className="ml-1 rounded-sm bg-red-600 px-1 text-[9px] font-bold text-white tabular-nums">
+                    {e.blockers}
+                  </span>
+                )}
+              </button>
             );
           })}
         </div>
       )}
 
-      {bySource.length === 0 ? (
-        <p className="text-xs text-emerald-700">
-          <span aria-hidden>✓</span> {SOURCE_LABEL[effectiveTab as FindingSource]} checked — no issues found.
-        </p>
-      ) : open.length === 0 && !showClosed ? (
-        <p className="text-xs text-emerald-700">
-          Nothing outstanding. {closed.length} finding{closed.length === 1 ? "" : "s"} closed.
-        </p>
-      ) : visible.length === 0 && blockersOnly ? (
-        <p className="text-xs text-slate-500">No blockers here.</p>
-      ) : (
+      <div className="p-3">
+        {groups.length === 0 && (
+          <p className="text-xs text-slate-500">
+            {blockersOnly
+              ? `No blockers in ${SOURCE_LABEL[activeTab]}.`
+              : `Nothing outstanding in ${SOURCE_LABEL[activeTab]}.`}
+          </p>
+        )}
+
         <ul className="space-y-1.5">
-          {visible.map((f) => {
-            const isClosed = f.status === "resolved" || f.status === "dismissed";
+          {groups.map((g) => {
+            const isExpanded = expanded.has(g.key);
+            // Only findings that carry a suggested fix can be handed to Apply.
+            const fixable = g.findings.filter((f) => isOpen(f) && f.fix);
             return (
-              <li
-                key={f.id}
-                className={`rounded-md border px-2.5 py-1.5 text-xs ${
-                  isClosed ? "border-slate-200 bg-slate-50 text-slate-500" : SEVERITY_STYLE[f.severity]
-                }`}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex min-w-0 items-start gap-1.5">
-                    {!isClosed && onApplyFindings && (
-                      <input
-                        type="checkbox"
-                        checked={selected.has(f.id)}
-                        onChange={() => toggleSelected(f.id)}
-                        className="mt-0.5 h-3 w-3 shrink-0"
-                        title="Select for batch Apply"
-                      />
-                    )}
-                    <div className="min-w-0">
-                      <span className="font-medium">{f.title}</span>
-                      <span className="ml-1.5 text-[10px] opacity-70">
-                        {SOURCE_LABEL[f.source]}
-                        {f.ruleId ? ` · ${f.ruleId}` : ""}
-                        {isClosed ? ` · ${STATUS_LABEL[f.status]}` : ""}
-                        {f.status === "in_progress" ? " · In progress" : ""}
-                      </span>
-                    </div>
-                  </div>
-                  {!isClosed && (
-                    <div className="flex shrink-0 gap-1">
-                      {onApplyFindings && (
-                        <button
-                          type="button"
-                          onClick={() => onApplyFindings([findingToFeedback(f)])}
-                          className="rounded border border-brand/40 bg-brand/5 px-1.5 py-0.5 text-[10px] font-medium text-brand hover:bg-brand/10"
-                          title="Send this finding to Claude for a rewrite — you review the diff before it saves."
-                        >
-                          Apply fix
-                        </button>
-                      )}
-                      {f.status === "open" && (
-                        <button
-                          type="button"
-                          disabled={busy === f.id}
-                          onClick={() => void move(f, "in_progress")}
-                          className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
-                        >
-                          Start
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        disabled={busy === f.id}
-                        onClick={() => void move(f, "resolved")}
-                        className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
-                      >
-                        Resolve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy === f.id}
-                        onClick={() => void move(f, "dismissed")}
-                        className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
-                  {isClosed && (
+              <li key={g.key} className={`rounded-md border ${SEVERITY_STYLE[g.severity]}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
+                  <button
+                    type="button"
+                    onClick={() => toggle(g.key)}
+                    aria-expanded={isExpanded}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs"
+                  >
+                    <span className="shrink-0 text-[9px] opacity-60">{isExpanded ? "▼" : "▶"}</span>
+                    <span className="truncate font-medium">{g.label}</span>
+                    <span className="shrink-0 rounded-full bg-white/70 px-1.5 text-[10px] tabular-nums">
+                      {g.findings.length}
+                    </span>
+                  </button>
+                  {onFixAll && fixable.length > 0 && (
                     <button
                       type="button"
-                      disabled={busy === f.id}
-                      onClick={() => void move(f, "open")}
-                      className="shrink-0 rounded border border-slate-300 px-1.5 py-0.5 text-[10px] hover:bg-white disabled:opacity-50"
+                      onClick={() => onFixAll(fixable.map((f) => fixText(f)))}
+                      className="shrink-0 rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60"
                     >
-                      Re-open
+                      Fix all {fixable.length}
                     </button>
                   )}
                 </div>
-                {f.excerpt && (
-                  <p className="mt-0.5 truncate text-[10px] italic opacity-80">“{f.excerpt}”</p>
-                )}
-                {f.resolvedByEmail && isClosed && (
-                  <p className="mt-0.5 text-[10px] opacity-70">
-                    {STATUS_LABEL[f.status]} by {f.resolvedByEmail.split("@")[0]}
-                    {f.resolvedAt ? ` · ${new Date(f.resolvedAt).toLocaleDateString()}` : ""}
-                    {f.resolutionNote ? ` — ${f.resolutionNote}` : ""}
-                  </p>
-                )}
-                {/* A finding that came back after being resolved is the signal the
-                    whole table exists to surface. */}
-                {!isClosed && f.resolutionNote?.startsWith("Re-opened") && (
-                  <p className="mt-0.5 text-[10px] font-medium opacity-80">{f.resolutionNote}</p>
+
+                {isExpanded && (
+                  <ul className="space-y-1 border-t border-current/15 px-2.5 py-1.5">
+                    {g.findings.map((f) => {
+                      const closedRow = !isOpen(f);
+                      return (
+                        <li key={f.id} className="text-xs">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className={closedRow ? "line-through opacity-60" : ""}>
+                                {f.title}
+                              </span>
+                              {closedRow && (
+                                <span className="ml-1.5 text-[10px] opacity-70">
+                                  {STATUS_LABEL[f.status]}
+                                </span>
+                              )}
+                              {f.status === "in_progress" && (
+                                <span className="ml-1.5 text-[10px] opacity-70">In progress</span>
+                              )}
+                            </div>
+                            {!closedRow ? (
+                              <div className="flex shrink-0 gap-1">
+                                {/* One finding on its own. "Fix all" above sends
+                                    the whole group; a reviewer who wants just
+                                    this one had to resolve it by hand. Only
+                                    drawn when there is a suggested fix to send
+                                    and somewhere to send it. */}
+                                {onFixAll && f.fix && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onFixAll([fixText(f)])}
+                                    className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60"
+                                  >
+                                    Apply fix
+                                  </button>
+                                )}
+                                {/* 2.3 — a legal finding gets Apply fix and
+                                    Dismiss, nothing else.
+
+                                    Start is workflow bookkeeping that means
+                                    nothing on a factual error, and Resolve
+                                    cannot stick here: syncFindings re-opens
+                                    anything a check still reports, so marking
+                                    a legal finding resolved without changing
+                                    the text just returns it next run wearing
+                                    a "Re-opened" note. Correct the text (the
+                                    check then falls silent on its own) or
+                                    Dismiss it as a false positive. */}
+                                {f.source !== "legal" && f.status === "open" && (
+                                  <button
+                                    type="button"
+                                    disabled={busy === f.id}
+                                    onClick={() => void move(f, "in_progress")}
+                                    className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
+                                  >
+                                    Start
+                                  </button>
+                                )}
+                                {f.source !== "legal" && (
+                                  <button
+                                    type="button"
+                                    disabled={busy === f.id}
+                                    onClick={() => void move(f, "resolved")}
+                                    className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
+                                  >
+                                    Resolve
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={busy === f.id}
+                                  onClick={() => void move(f, "dismissed")}
+                                  className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={busy === f.id}
+                                onClick={() => void move(f, "open")}
+                                className="shrink-0 rounded border border-slate-300 px-1.5 py-0.5 text-[10px] hover:bg-white disabled:opacity-50"
+                              >
+                                Re-open
+                              </button>
+                            )}
+                          </div>
+                          {f.excerpt && (
+                            <p className="mt-0.5 truncate text-[10px] italic opacity-80">
+                              “{f.excerpt}”
+                            </p>
+                          )}
+                          {f.detail && (
+                            <p className="mt-0.5 text-[10px] opacity-75">{f.detail}</p>
+                          )}
+                          {f.resolvedByEmail && closedRow && (
+                            <p className="mt-0.5 text-[10px] opacity-70">
+                              {STATUS_LABEL[f.status]} by {f.resolvedByEmail.split("@")[0]}
+                              {f.resolvedAt
+                                ? ` · ${new Date(f.resolvedAt).toLocaleDateString()}`
+                                : ""}
+                              {f.resolutionNote ? ` — ${f.resolutionNote}` : ""}
+                            </p>
+                          )}
+                          {/* A finding that came back after being resolved is the
+                              signal the whole table exists to surface. */}
+                          {!closedRow && f.resolutionNote?.startsWith("Re-opened") && (
+                            <p className="mt-0.5 text-[10px] font-medium opacity-80">
+                              {f.resolutionNote}
+                            </p>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </li>
             );
           })}
         </ul>
-      )}
 
-      {msg && <p className="mt-1.5 text-[10px] text-red-600">{msg}</p>}
+        {msg && <p className="mt-1.5 text-[10px] text-red-600">{msg}</p>}
+      </div>
     </div>
   );
 }
 
-function TabChip({
-  label,
-  count,
-  hasBlocker,
-  active,
-  onClick,
-}: {
-  label: string;
-  count?: number;
-  hasBlocker?: boolean;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-        active
-          ? "border-brand bg-brand/10 text-brand"
-          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-      }`}
-    >
-      {label}
-      {typeof count === "number" && count > 0 && (
-        <span
-          className={`ml-1 rounded-full px-1.5 text-[10px] ${
-            hasBlocker ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"
-          }`}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
+/**
+ * Rebuild the string the Apply flow expects.
+ *
+ * ApplySuggestionModal takes finding TEXT, not ids — it feeds the rewriter
+ * prose, and the excerpt is what anchors the change to a span. Reassembling it
+ * here keeps the panel from needing its own Apply endpoint.
+ */
+function fixText(f: StoredFinding): string {
+  const head = f.ruleId ? `Rule ${f.ruleId}: ${f.title}.` : `${f.title}.`;
+  const fix = f.fix ? ` ${f.fix}` : "";
+  const excerpt = f.excerpt ? ` "${f.excerpt}"` : "";
+  return `${head}${fix}${excerpt}`.trim();
 }

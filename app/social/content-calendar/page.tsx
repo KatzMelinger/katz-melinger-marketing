@@ -115,9 +115,10 @@ export default function ContentCalendarPage() {
   // staggered defaults apply).
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerDate, setComposerDate] = useState<string | null>(null);
-  // Transient feedback for a drag-to-reschedule that failed (e.g. rejected
-  // by Ayrshare). Separate from `error`, which is the whole-calendar load banner.
-  const [dragMsg, setDragMsg] = useState<string | null>(null);
+  // Item 2 — drag to reschedule. `dragging` is the post under the cursor;
+  // `dropMsg` reports the outcome, including a rollback.
+  const [dragging, setDragging] = useState<CalendarItem | null>(null);
+  const [dropMsg, setDropMsg] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
 
   const load = useCallback(async (): Promise<CalendarItem[]> => {
     try {
@@ -139,6 +140,72 @@ export default function ContentCalendarPage() {
       await load();
     })();
   }, [load]);
+
+  /**
+   * Move a post to another day.
+   *
+   * Optimistic, with a real rollback: the chip moves under the cursor
+   * immediately (a calendar that waits for a round trip before the card moves
+   * feels broken), and the previous item list is captured so a failed save puts
+   * it back exactly where it was rather than leaving the UI claiming a move the
+   * database never made.
+   *
+   * The TIME is preserved, only the date changes. A post scheduled for 1 PM
+   * dragged to Thursday is a Thursday 1 PM post — silently re-slotting it to
+   * some other hour would undo whatever thought went into the original time.
+   */
+  const moveToDay = useCallback(
+    async (item: CalendarItem, day: Date) => {
+      const current = new Date(item.date);
+      if (Number.isNaN(current.getTime())) return;
+
+      const next = new Date(day);
+      next.setHours(current.getHours(), current.getMinutes(), 0, 0);
+      if (ymd(next) === ymd(current)) return;
+
+      if (next.getTime() < Date.now()) {
+        setDropMsg({ tone: "warn", text: "That date has already passed — pick a future day." });
+        return;
+      }
+      if (item.status === "published") {
+        setDropMsg({ tone: "warn", text: "Published posts can't be moved." });
+        return;
+      }
+
+      const previous = items;
+      const iso = next.toISOString();
+      setItems((prev) =>
+        (prev ?? []).map((p) => (p.id === item.id ? { ...p, date: iso } : p)),
+      );
+      setDropMsg(null);
+
+      try {
+        const res = await fetch(`/api/social/posts/${item.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scheduleDate: iso }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setItems(previous);
+          setDropMsg({ tone: "warn", text: j?.error || "Couldn't move that post." });
+          return;
+        }
+        // Re-read rather than trusting the optimistic row: a reschedule can
+        // change more than the date (a failed post comes back as a draft), and
+        // the server is the only thing that knows what it actually became.
+        await load();
+        setDropMsg({
+          tone: "ok",
+          text: j?.message || `Moved to ${next.toLocaleDateString()}.`,
+        });
+      } catch {
+        setItems(previous);
+        setDropMsg({ tone: "warn", text: "Couldn't move that post." });
+      }
+    },
+    [items, load],
+  );
 
   // Index posts by local YYYY-MM-DD for fast cell lookups.
   const byDay = useMemo(() => {
@@ -197,7 +264,7 @@ export default function ContentCalendarPage() {
       const iso = next.toISOString();
       if (iso === item.date) return;
 
-      setDragMsg(null);
+      setDropMsg(null);
       setItems(current.map((it) => (it.id === id ? { ...it, date: iso } : it)));
       try {
         const res = await fetch(`/api/social/posts/${id}`, {
@@ -208,7 +275,7 @@ export default function ContentCalendarPage() {
         const j = await res.json().catch(() => ({}));
         if (!res.ok) {
           setItems(current); // roll back
-          setDragMsg(j?.error || "Couldn't reschedule that post.");
+          setDropMsg({ tone: "warn", text: j?.error || "Couldn't reschedule that post." });
           return;
         }
         // Reload so a status change the server made (e.g. a failed post
@@ -216,7 +283,7 @@ export default function ContentCalendarPage() {
         await load();
       } catch {
         setItems(current); // roll back
-        setDragMsg("Couldn't reschedule that post.");
+        setDropMsg({ tone: "warn", text: "Couldn't reschedule that post." });
       }
     },
     [items, load],
@@ -345,18 +412,6 @@ export default function ContentCalendarPage() {
             </div>
           </div>
 
-          {dragMsg && (
-            <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {dragMsg}{" "}
-              <button
-                type="button"
-                onClick={() => setDragMsg(null)}
-                className="ml-1 font-medium underline"
-              >
-                Dismiss
-              </button>
-            </p>
-          )}
 
           <div className="mt-4">
             {error ? (
@@ -370,14 +425,33 @@ export default function ContentCalendarPage() {
             ) : items.length === 0 ? (
               <EmptyState />
             ) : view === "month" ? (
-              <MonthGrid
-                cursor={cursor}
-                byDay={byDay}
-                today={today}
-                onSelect={setSelected}
-                onCreateAt={openComposerAt}
-                onDropAt={(id, date) => void reschedule(id, date)}
-              />
+              <>
+                {dropMsg && (
+                  <p
+                    className={`mb-2 rounded-md border px-3 py-1.5 text-xs ${
+                      dropMsg.tone === "ok"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
+                    }`}
+                  >
+                    {dropMsg.text}
+                  </p>
+                )}
+                <MonthGrid
+                  cursor={cursor}
+                  byDay={byDay}
+                  today={today}
+                  onSelect={setSelected}
+                  onCreateAt={openComposerAt}
+                  dragging={dragging}
+                  onDragStart={setDragging}
+                  onDragEnd={() => setDragging(null)}
+                  onDropDay={(item, day) => {
+                    setDragging(null);
+                    void moveToDay(item, day);
+                  }}
+                />
+              </>
             ) : (
               <WeekGrid
                 cursor={cursor}
@@ -446,35 +520,47 @@ function EmptyState() {
 function PostChip({
   item,
   onSelect,
-  draggable,
-  dragging,
   onDragStart,
   onDragEnd,
+  dragging,
 }: {
   item: CalendarItem;
   onSelect: (i: CalendarItem) => void;
-  draggable?: boolean;
-  dragging?: boolean;
-  onDragStart?: (e: DragEvent, item: CalendarItem) => void;
+  onDragStart?: (i: CalendarItem) => void;
   onDragEnd?: () => void;
+  dragging?: boolean;
 }) {
   const ch = channelOf(item.platform);
   const scheduled = item.status === "scheduled";
   const failed = item.status === "failed";
   const flagged = item.status === "flagged";
   const draft = item.status === "draft";
+  // Published posts are immutable from here, so they are not draggable. An
+  // affordance for something the API will refuse a moment later is worse than
+  // no affordance at all.
+  const movable = item.status !== "published" && !!onDragStart;
   return (
     <button
       type="button"
-      draggable={draggable}
-      onDragStart={draggable ? (e) => onDragStart?.(e, item) : undefined}
-      onDragEnd={draggable ? onDragEnd : undefined}
       onClick={(e) => {
         e.stopPropagation();
         onSelect(item);
       }}
-      className={`block w-full text-left ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${dragging ? "opacity-40" : ""}`}
-      title={`${ch.label} · ${item.status} — click to view / edit, drag to reschedule\n${item.body}`}
+      draggable={movable}
+      onDragStart={(e) => {
+        if (!movable) return;
+        // setData is not optional: without it the drop never fires in Firefox.
+        e.dataTransfer.setData("text/plain", item.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart?.(item);
+      }}
+      onDragEnd={() => onDragEnd?.()}
+      className={`block w-full text-left ${movable ? "cursor-grab active:cursor-grabbing" : ""} ${
+        dragging ? "opacity-40" : ""
+      }`}
+      title={`${ch.label} · ${item.status} — click to view / edit${
+        movable ? ", or drag to another day" : ""
+      }\n${item.body}`}
     >
       <span
         className={`flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${
@@ -518,21 +604,25 @@ function MonthGrid({
   today,
   onSelect,
   onCreateAt,
-  onDropAt,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onDropDay,
 }: {
   cursor: Date;
   byDay: Map<string, CalendarItem[]>;
   today: Date;
   onSelect: (item: CalendarItem) => void;
   onCreateAt: (date: Date) => void;
-  onDropAt: (id: string, date: Date) => void;
+  dragging?: CalendarItem | null;
+  onDragStart?: (i: CalendarItem) => void;
+  onDragEnd?: () => void;
+  onDropDay?: (item: CalendarItem, day: Date) => void;
 }) {
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = startOfWeek(first);
   // Always render 6 weeks (42 cells) for a stable height.
   const cells = Array.from({ length: 42 }, (_, i) => new Date(gridStart.getTime() + i * DAY_MS));
-  const [dragOver, setDragOver] = useState<string | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   return (
     <div className="overflow-hidden rounded-lg border border-[#e2e8f0]">
@@ -549,33 +639,36 @@ function MonthGrid({
           const isToday = sameDay(d, today);
           const past = isPastDay(d, today);
           const posts = byDay.get(ymd(d)) ?? [];
-          const key = ymd(d);
-          const isDragOver = dragOver === key && !past;
+          // A day accepts a drop while a post is in flight and the day has not
+          // already passed. Past days stay inert rather than accepting a drop
+          // the API would reject a moment later.
+          //
+          // Compared against the `today` prop rather than Date.now(): reading
+          // the clock during render is impure, and the grid already receives
+          // today as a prop for exactly this reason.
+          const canDrop = !!dragging && ymd(d) >= ymd(today);
+          const isSourceDay = !!dragging && ymd(new Date(dragging.date)) === ymd(d);
           return (
             <div
               key={i}
               onClick={() => !past && onCreateAt(d)}
               onDragOver={(e) => {
-                if (past) return;
+                if (!canDrop || isSourceDay) return;
+                // preventDefault is what makes this a drop target at all.
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
-                setDragOver(key);
               }}
-              onDragLeave={() => setDragOver((k) => (k === key ? null : k))}
               onDrop={(e) => {
+                if (!canDrop || isSourceDay || !dragging) return;
                 e.preventDefault();
-                setDragOver(null);
-                if (past) return;
-                const id = draggedId(e);
-                if (id) onDropAt(id, d);
+                onDropDay?.(dragging, d);
               }}
               className={`min-h-[104px] border-b border-r border-[#e2e8f0] p-1.5 last:border-r-0 ${
-                past ? "cursor-not-allowed" : "cursor-pointer"
-              }`}
+                canDrop && !isSourceDay ? "outline-dashed outline-1 outline-offset-[-3px]" : ""
+              } ${past ? "cursor-not-allowed" : "cursor-pointer"}`}
               style={{
-                backgroundColor: isDragOver ? "#eff6ff" : inMonth ? "#fff" : "#f8fafc",
-                outline: isDragOver ? `2px dashed ${ACCENT}` : undefined,
-                outlineOffset: isDragOver ? "-2px" : undefined,
+                backgroundColor: inMonth ? "#fff" : "#f8fafc",
+                outlineColor: canDrop && !isSourceDay ? ACCENT : undefined,
               }}
               title={past ? undefined : "Click to create a post on this day"}
             >
@@ -597,14 +690,9 @@ function MonthGrid({
                     key={p.id}
                     item={p}
                     onSelect={onSelect}
-                    draggable={p.status !== "published"}
-                    dragging={p.id === draggingId}
-                    onDragStart={(e, item) => {
-                      e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", item.id);
-                      setDraggingId(item.id);
-                    }}
-                    onDragEnd={() => setDraggingId(null)}
+                    onDragStart={onDragStart}
+                    onDragEnd={onDragEnd}
+                    dragging={dragging?.id === p.id}
                   />
                 ))}
                 {posts.length > 4 ? (

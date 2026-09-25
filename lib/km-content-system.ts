@@ -53,29 +53,58 @@ export type KMPillar = {
   keywords?: string[];
 };
 
+// ---------------------------------------------------------------------------
+// Pillar URLs, corrected 2026-09-24 against the live site and the Cluster Map.
+//
+// Every one of these was wrong, and in three different ways (Diana item 4,
+// "several drafts have an empty or wrong pillar link"):
+//
+//   - /wage-theft-overtime/, /workplace-discrimination/ and
+//     /leave-accommodations/ returned 404. Wage theft and discrimination are
+//     the firm's two highest-volume pillars, so most drafts were being told to
+//     link up to a dead page.
+//   - /severance/ and /whistleblower/ returned 200 but BOTH redirected to
+//     /new-york-whistleblower-law-food-plant-worker-success/ — a single
+//     unrelated case result. Every severance and non-compete blog has been
+//     pointing there.
+//   - the rest resolved only via redirect to their real /practice-areas/ path.
+//
+// None of them appeared in site_pages either, so lib/internal-links-check.ts
+// could never confirm the pillar link and every draft fell short of the
+// three-confirmed-links minimum however many links it carried.
+//
+// The URLs below are the live pages, taken from the redirect targets the site
+// itself returns and from the practice_area rows in the Cluster Map, so they
+// both resolve directly and count as confirmed.
+// ---------------------------------------------------------------------------
 export const EMPLOYMENT_PILLARS: KMPillar[] = [
-  { id: "wage-theft", label: "Wage Theft and Overtime", url: "/wage-theft-overtime/", practiceArea: "employment" },
-  { id: "wrongful-termination", label: "Wrongful Termination", url: "/wrongful-termination/", practiceArea: "employment" },
-  { id: "discrimination", label: "Workplace Discrimination", url: "/workplace-discrimination/", practiceArea: "employment" },
-  { id: "sexual-harassment", label: "Sexual Harassment", url: "/sexual-harassment/", practiceArea: "employment" },
-  { id: "leave", label: "Leave and Accommodations", url: "/leave-accommodations/", practiceArea: "employment" },
-  { id: "hostile", label: "Hostile Work Environment", url: "/hostile-work-environment/", practiceArea: "employment" },
-  // Added: real practice pages confirmed live (200). These give severance /
-  // non-compete, retaliation, and whistleblower keywords a correct pillar
-  // instead of defaulting to wage-theft.
-  { id: "severance", label: "Severance Agreements", url: "/severance/", practiceArea: "employment" },
-  { id: "retaliation", label: "Retaliation", url: "/retaliation/", practiceArea: "employment" },
-  { id: "whistleblower", label: "Whistleblower Protection", url: "/whistleblower/", practiceArea: "employment" },
+  { id: "wage-theft", label: "Wage and Hour Claims", url: "/practice-areas/employment-law/wage-hour-claims-employees/", practiceArea: "employment" },
+  { id: "wrongful-termination", label: "Wrongful Termination", url: "/practice-areas/employment-law/wrongful-termination/", practiceArea: "employment" },
+  { id: "discrimination", label: "Workplace Discrimination", url: "/practice-areas/employment-law/discrimination/", practiceArea: "employment" },
+  { id: "sexual-harassment", label: "Sexual Harassment", url: "/practice-areas/employment-law/sexual-harassment/", practiceArea: "employment" },
+  // Leave AND accommodations, confirmed by Kenneth 2026-09-24. Half the
+  // keywords routing to this pillar are accommodation/ADA terms ("ada
+  // accommodation", "accommodations", "ada lawyer", "breastfeeding") rather
+  // than leave, so /fmla-violations/ — the first choice here — would have sent
+  // an ADA accommodation reader to an FMLA page. This page covers both halves
+  // and its title is the pillar's own name.
+  { id: "leave", label: "Leave and Accommodation Violations", url: "/new-york-leave-and-accommodation-violations-lawyer/", practiceArea: "employment" },
+  { id: "hostile", label: "Hostile Work Environment", url: "/practice-areas/employment-law/sexual-harassment/hostile-work-environment/", practiceArea: "employment" },
+  // There is no dedicated severance practice-area page; employment agreements
+  // is the closest live parent and is where severance agreements sit. Also
+  // worth confirming — it is a placement decision, not a lookup.
+  { id: "severance", label: "Employment Agreements and Contracts", url: "/practice-areas/employment-law/employment-agreements-contracts/", practiceArea: "employment" },
+  { id: "retaliation", label: "Retaliation", url: "/practice-areas/employment-law/retaliation/", practiceArea: "employment" },
+  { id: "whistleblower", label: "Whistleblower Protections", url: "/practice-areas/employment-law/whistleblower-protections/", practiceArea: "employment" },
   // Catch-all hub for general high-intent employment terms ("employment lawyer
   // nyc", "best employment attorney") that don't belong to a specific pillar.
   // Per Diana (2026-06-15): map these to the hub page, don't spin up new pillars
-  // or competing pages. URL is the LIVE employment hub — Diana's
-  // /nyc-employment-lawyer/ 404s (verified), /employment-law/ is the live page.
-  { id: "employment-hub", label: "Employment Law (Hub)", url: "/employment-law/", practiceArea: "employment" },
+  // or competing pages.
+  { id: "employment-hub", label: "Employment Law (Hub)", url: "/practice-areas/employment-law/", practiceArea: "employment" },
 ];
 
 export const COLLECTIONS_PILLARS: KMPillar[] = [
-  { id: "collections-hub", label: "Collections Hub", url: "/civil-litigation/collections-judgment-enforcement/", practiceArea: "collections" },
+  { id: "collections-hub", label: "Collections Hub", url: "/practice-areas/civil-litigation/collections-judgment-enforcement/", practiceArea: "collections" },
   { id: "judgment-enforcement", label: "Judgment Enforcement", url: "/practice-areas/civil-litigation/judgment-collection/", practiceArea: "collections" },
   { id: "domestication", label: "Domestication of Judgments", url: "/practice-areas/civil-litigation/domesticating-judgments-in-ny-step-by-step-guide/", practiceArea: "collections" },
 ];
@@ -489,6 +518,20 @@ Output: full content in Markdown unless the request specifies another format.`;
  * IMPORTANT: This text is the contract. Do not paraphrase. If the
  * marketing team updates the doc, paste the new version here verbatim
  * (only adjust formatting to keep it as a TypeScript template literal).
+ *
+ * ONE DELIBERATE DEPARTURE FROM THE PASTED DOC, 2026-09-10.
+ *
+ * The Firm Context block said "Phone: 212-460-0047". That is the number that
+ * reached the Unpaid Wages blog four times, and Diana's item 6 calls it wrong
+ * for documents: blogs and pages use 646-849-3352, social uses 646-466-6267.
+ * Kenneth confirmed 646-849-3352 on 2026-09-10, so the line is changed here
+ * rather than left to generate copy the approval gate now holds.
+ *
+ * This is NOT the same field as firmPhone in lib/firm-context.ts, which stays
+ * 212-460-0047 on purpose. That one is the firm's identity for schema.org and
+ * directory listings, and lib/seo-citations.ts checks it for NAP consistency
+ * against the Google Business Profile — changing it would report every correct
+ * listing as inconsistent. Body copy and NAP are different numbers by design.
  */
 export const KM_SYSTEM_PROMPT = `AI System Prompt
 Katz Melinger PLLC | Content Writing Instructions
@@ -506,7 +549,8 @@ You write exclusively for the employee side of employment law. Katz Melinger doe
 
 Firm name: Katz Melinger PLLC
 Website: www.katzmelinger.com
-Phone: 212-460-0047
+Phone: 646-849-3352 — use this exact number in body copy. Never 212-460-0047 and never the
+social line 646-466-6267. A draft carrying any other number is held at approval.
 Location: New York City
 Geographic reach: All five NYC boroughs, Westchester, Long Island, northern New Jersey
 Practice areas: Employment Law + Commercial Collections and Judgment Enforcement

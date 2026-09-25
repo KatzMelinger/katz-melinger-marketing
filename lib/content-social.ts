@@ -104,8 +104,16 @@ ${firm}
 OPERATING BRIEF FOR SOCIAL (overrides the firm phone above for this content — social always uses
 the dedicated social line, never the main office number):
 - Social phone: ${brief.socialPhone} — use this exact number when a CTA needs a phone number.
-- Offer: ${brief.offerPhrase} — weave this in naturally whenever the CTA invites a consultation.
+- Offer: "${brief.offerPhrase}" — this is a LOCKED phrase. When the CTA invites a consultation,
+  reproduce it exactly, capitals included. Do not paraphrase it, lowercase it, or swap a synonym
+  ("free confidential conversation" is wrong). It is checked character for character.
 - Hashtags: ${brief.hashtagRule}, only for formats that use them (never carousel slides or LinkedIn beyond 1-2).
+- Attorney Advertising: every post must carry the label, either as the words "Attorney Advertising"
+  or as #AttorneyAdvertising, and must link to ${brief.disclaimerUrl} for the general-information
+  disclaimer. Instagram is the one exception to the LINK (captions can't render one) — it still
+  needs the label.
+- No hyphens anywhere except inside the phone number. Write "attorney client privilege", not the
+  hyphenated form. Links, email addresses and hashtags are exempt.
 
 ${ANTI_AI_VOICE_RULES}
 ${skillsContext ? `\n${skillsContext}\n` : ""}
@@ -232,6 +240,13 @@ export async function generateSocialPosts(args: {
   tenantId?: string;
   originSource?: string | null;
   originContext?: Record<string, unknown> | null;
+  /**
+   * Collision key for generation that must not run twice (item 7). A unique
+   * index on (tenant_id, idempotency_key) makes a concurrent second attempt
+   * fail at the database rather than producing a duplicate batch, so the
+   * caller must handle a unique violation — see lib/repurpose-idempotency.ts.
+   */
+  idempotencyKey?: string | null;
 }): Promise<SocialResult> {
   // Rule 1 — source required. A source-less post is a manual Content Studio
   // entry, not an AI generation. Fail loudly so the caller surfaces it.
@@ -335,10 +350,18 @@ ${AD_TERMS_RULE}`;
       formats: args.formats,
       source_id: args.source.id ?? null,
       tenant_id: tid,
+      ...(args.idempotencyKey ? { idempotency_key: args.idempotencyKey } : {}),
     })
     .select("id")
     .single();
-  if (batchErr) throw new Error(`Failed to create batch: ${batchErr.message}`);
+  // A unique violation here is the OTHER request winning the race, not a
+  // failure — rethrown with its code intact so the caller can recognise it and
+  // return the batch that already exists. See lib/repurpose-idempotency.ts.
+  if (batchErr) {
+    const err = new Error(`Failed to create batch: ${batchErr.message}`) as Error & { code?: string };
+    err.code = batchErr.code;
+    throw err;
+  }
 
   const drafts: SocialDraft[] = [];
   for (const format of args.formats) {

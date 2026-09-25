@@ -357,6 +357,10 @@ export function SocialComposerDrawer({
   // check simply stays inactive until the real value loads — no local copy of
   // lib/social-operating-brief.ts's server-only default to keep in sync.
   const [socialPhone, setSocialPhone] = useState<string | undefined>(undefined);
+  // Same reasoning for the disclaimer URL: while it is undefined the
+  // missing_disclaimer_link check is a no-op, so the composer never demands a
+  // link it does not yet know the address of.
+  const [disclaimerUrl, setDisclaimerUrl] = useState<string | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/brand-voice/settings")
@@ -365,6 +369,7 @@ export function SocialComposerDrawer({
         if (cancelled) return;
         const settings = (j?.settings ?? {}) as Record<string, string>;
         if (settings.socialPhone) setSocialPhone(settings.socialPhone);
+        if (settings.socialDisclaimerUrl) setDisclaimerUrl(settings.socialDisclaimerUrl);
       })
       .catch(() => {
         /* stays undefined — the wrong_phone check just doesn't run */
@@ -443,10 +448,20 @@ export function SocialComposerDrawer({
     const m = new Map<NetworkKey, ComplianceFlag[]>();
     for (const n of selectedList) {
       const copy = variations.get(n.key)?.copy ?? "";
-      if (copy.trim()) m.set(n.key, checkSocialCompliance(copy, { socialPhone, platform: n.key }));
+      if (copy.trim()) {
+        m.set(
+          n.key,
+          checkSocialCompliance(copy, {
+            socialPhone,
+            platform: n.key,
+            format: variations.get(n.key)?.format,
+            disclaimerUrl,
+          }),
+        );
+      }
     }
     return m;
-  }, [selectedList, variations, socialPhone]);
+  }, [selectedList, variations, socialPhone, disclaimerUrl]);
 
   const blockedNets = useMemo(
     () => selectedList.filter((n) => (flagsByNet.get(n.key) ?? []).some((f) => f.severity === "block")),
@@ -752,13 +767,29 @@ export function SocialComposerDrawer({
   // Approve & schedule — gated on legal review + zero blocking flags. Reuses the
   // existing schedule route (unchanged Ayrshare path). Nothing publishes here on
   // its own; posts land on the Content Calendar at their scheduled time.
-  const schedule = async () => {
+  // publishNow (item 15) sends straight out instead of queueing; it clears the
+  // same gates either way — a "Publish now" that skipped the legal-flag check
+  // would be the one path around it.
+  const schedule = async (publishNow = false) => {
     if (!legalOk || blockedNets.length > 0 || legalFlaggedNets.length > 0 || mediaMissingNets.length > 0) return;
     if (duplicateNets.length > 0 && !dupAck) return;
     const posts = buildPosts(true);
     if (!posts.length) {
       setResult({ tone: "warn", text: "Nothing ready to schedule — add copy (and a valid time) to a platform.", recorded: false });
       return;
+    }
+
+    // S11 — Publish now goes out immediately and cannot be recalled, so it is
+    // the one action here that asks first. Every gate above still applies: this
+    // confirm is about timing, not about bypassing a check.
+    if (publishNow) {
+      const names = selectedList.map((n) => n.label).join(", ");
+      const ok = window.confirm(
+        `Publish to ${names} right now?
+
+This posts immediately instead of waiting for the scheduled time. It cannot be undone from here.`,
+      );
+      if (!ok) return;
     }
 
     setBusy(true);
@@ -768,7 +799,7 @@ export function SocialComposerDrawer({
       const res = await fetch("/api/content-production/repurpose/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posts, ackDuplicates: dupAck }),
+        body: JSON.stringify({ posts, ackDuplicates: dupAck, publishNow }),
       });
       const j = await res.json();
       if (!res.ok) {
@@ -787,7 +818,11 @@ export function SocialComposerDrawer({
       setPostErrors(errs);
       const failed = (j.failed ?? 0) as number;
       const flagged = (j.flagged ?? 0) as number;
-      setResult({ tone: failed > 0 || flagged > 0 ? "warn" : "ok", text: j.message || "Scheduled.", recorded: !!j.ok });
+      setResult({
+        tone: failed > 0 || flagged > 0 ? "warn" : "ok",
+        text: j.message || (publishNow ? "Published." : "Scheduled."),
+        recorded: !!j.ok,
+      });
       onScheduled?.();
     } catch {
       setResult({ tone: "warn", text: "Scheduling failed.", recorded: false });
@@ -806,7 +841,12 @@ export function SocialComposerDrawer({
         if (!copy) return null;
         if (
           compliant &&
-          checkSocialCompliance(copy, { socialPhone, platform: n.key }).some((f) => f.severity === "block")
+          checkSocialCompliance(copy, {
+            socialPhone,
+            platform: n.key,
+            format: variations.get(n.key)?.format,
+            disclaimerUrl,
+          }).some((f) => f.severity === "block")
         )
           return null;
         // A legal alert (6.14) from the last rewrite is just as blocking as a
@@ -1526,7 +1566,19 @@ export function SocialComposerDrawer({
                     {draftBusy ? "Saving…" : "Save as draft"}
                   </button>
                   <button
-                    onClick={schedule}
+                    onClick={() => void schedule(true)}
+                    disabled={!canApprove || busy}
+                    title={
+                      canApprove
+                        ? "Publish immediately instead of waiting for the scheduled time."
+                        : "Clear the gate first — Publish now does not skip any check."
+                    }
+                    className="rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand hover:bg-brand/5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Publish now
+                  </button>
+                  <button
+                    onClick={() => void schedule(false)}
                     disabled={!canApprove}
                     title={
                       blockedNets.length > 0
@@ -1546,7 +1598,8 @@ export function SocialComposerDrawer({
                 </div>
               </div>
               <p className="mt-2 text-xs text-slate-400">
-                Nothing publishes automatically. Posts stay a draft on the Content Calendar until their scheduled time.
+                Nothing publishes automatically. Posts stay a draft on the Content Calendar until their
+                scheduled time — except “Publish now”, which asks first and then posts immediately.
               </p>
             </section>
           </div>

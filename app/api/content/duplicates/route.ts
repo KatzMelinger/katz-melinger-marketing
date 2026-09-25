@@ -9,18 +9,26 @@
 
 import { NextResponse } from "next/server";
 
-import { countContentDuplicates } from "@/lib/content-dedup";
+import { countContentDuplicates, listContentDuplicates } from "@/lib/content-dedup";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   const denied = await guardUser();
   if (denied) return denied;
+  // ?detail=1 returns the GROUPS with their members and a suggested keeper —
+  // what the cleanup view needs (item 20). Without it, the counts the Overview
+  // alert has always read, which is a much smaller payload and is fetched on
+  // every dashboard load.
+  const detail = new URL(req.url).searchParams.get("detail") === "1";
   try {
     const { tenantId } = await getTenantClient();
+    if (detail) {
+      return NextResponse.json({ groups: await listContentDuplicates(tenantId) });
+    }
     return NextResponse.json(await countContentDuplicates(tenantId));
   } catch (e) {
     return NextResponse.json(

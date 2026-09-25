@@ -30,14 +30,10 @@ import {
 } from "./readability-rules";
 import {
   readabilityRulesEngineEnabled,
-  cannibalizationGateEnabled,
   freshnessGateEnabled,
   legalAccuracyEnabled,
 } from "./feature-flags";
-import {
-  checkCannibalizationConflict,
-  type CannibalizationConflict,
-} from "./cannibalization-gate";
+import { checkBlogCannibalization } from "./blog-cannibalization";
 import { buildFingerprint, type AnalysisFingerprint } from "./analysis-fingerprint";
 import {
   normalizeComplianceFindings,
@@ -46,12 +42,13 @@ import {
   normalizeFreshnessFindings,
   type NormalizedFinding,
 } from "./content-findings";
-import { syncFindings } from "./content-findings-store";
-import { coordinateEngineFindings } from "./engine-coordination";
+import { listFindings, syncFindings } from "./content-findings-store";
+import { capSourceExpertise, coordinateFindings } from "./finding-coordination";
 import { findTimeSensitiveFacts } from "./freshness-check";
 import { classifyFreshness } from "./freshness-classify";
 import { getCurrentFacts } from "./current-facts-store";
-import { runLegalCheck } from "./legal-verify";
+import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
+import { runTrapCheck } from "./trap-gate";
 import { notifyNewFindings } from "./content-notifications";
 import { ensureDraftMetadata, hasWebPage } from "./draft-metadata";
 import { checkInternalLinks } from "./internal-links-check";
@@ -139,11 +136,15 @@ export type ContentAnalysis = {
    *  before insert below — so it only shows right after a run, not on reload. */
   compliance_error?: string | null;
   /** Live-only (see the strip before insert below — no migrated column yet):
-   *  set when this blog's target keyword/topic/title matches an existing
-   *  service/practice-area page. Only computed when CANNIBALIZATION_GATE is
-   *  on (lib/feature-flags.ts) — the same flag the approve-route hard gate
-   *  checks, so this tile never implies a block that isn't actually armed. */
-  cannibalization_conflict?: CannibalizationConflict | null;
+   *  set when this blog's target keyword matches a live page that already owns
+   *  it. Same engine the approve-route gate runs (lib/blog-cannibalization.ts),
+   *  so the tile and the gate can never disagree. Null when there is no
+   *  conflict AND when the check could not run — the gate is the authority on
+   *  a hold; this is the scorecard read. */
+  cannibalization_conflict?: {
+    keyword: string;
+    page: { url: string; title: string; pageType: string };
+  } | null;
   suggested_titles: string[];
   /** Per-title conflict detail (only present in the live response — not
    *  persisted). Lets the UI render a warning badge on titles that overlap
@@ -920,6 +921,10 @@ export async function analyzeDraft(args: {
     tenantId,
     notify = true,
   } = args;
+  // The cannibalization gate at approval runs for blogs only — a service page
+  // is ALLOWED to own its commercial term. The scorecard tile below applies the
+  // same test, so it can never warn about a draft the gate would wave through.
+  const isBlogDraft = ["", "blog", "blog_post"].includes((format ?? "blog").toLowerCase().trim());
   const supabase = getSupabaseAdmin();
   const tid = tenantId ?? (await resolveTenantId());
 
@@ -956,6 +961,8 @@ export async function analyzeDraft(args: {
     cannibalization,
     freshnessResult,
     legalResult,
+    trapResult,
+    factResult,
     internalLinks,
   ] = await Promise.all([
     brandVoiceMatch(body, tid),
@@ -986,18 +993,27 @@ export async function analyzeDraft(args: {
     useReadabilityRules
       ? evaluateAiReadabilityRules(body)
       : Promise.resolve({ findings: [], evaluatedRuleIds: [] }),
-    // Commercial-cannibalization check (spec item 5) — only when the gate flag
-    // is on, so this tile never shows a conflict the approve route can't
-    // actually enforce yet. checkCannibalizationConflict already fails open
-    // internally; this catch is only for a totally unexpected throw.
-    cannibalizationGateEnabled()
-      ? checkCannibalizationConflict({
-          tenantId: tid,
-          format,
-          targetKeywords,
-          topic,
-          title,
-        }).catch(() => null)
+    // Commercial-cannibalization (item 17): the same check the approve-route
+    // gate runs, so the tile and the hold always agree. It reports `unchecked`
+    // rather than `clear` when the site inventory is unreadable, and only a
+    // commercial-intent keyword counts as a conflict — an informational blog
+    // covering a service page's subject is the intended arrangement, not a
+    // finding. The catch is only for a totally unexpected throw.
+    isBlogDraft
+      ? checkBlogCannibalization({ targetKeywords, title: title ?? topic ?? null })
+          .then((r) =>
+            r.status === "conflict" && r.conflicts.length
+              ? {
+                  keyword: r.conflicts[0].keyword,
+                  page: {
+                    url: r.conflicts[0].url,
+                    title: r.conflicts[0].title,
+                    pageType: r.conflicts[0].pageType,
+                  },
+                }
+              : null,
+          )
+          .catch(() => null)
       : Promise.resolve(null),
     // Freshness engine (spec item 3 / questions 96-97) — only when flagged, so
     // this never shows a "Freshness" tab the approve route isn't actually
@@ -1023,6 +1039,30 @@ export async function analyzeDraft(args: {
           .then((r) => ({ ran: true, findings: r.findings }))
           .catch(() => ({ ran: true, findings: [] as NormalizedFinding[] }))
       : Promise.resolve({ ran: false, findings: [] as NormalizedFinding[] }),
+    // Known traps (Diana 1A). Deliberately NOT behind LEGAL_ACCURACY: a trap is
+    // a text search over patterns that have already been wrong once, so there
+    // is no model call to meter and no reason to gate it.
+    //
+    // It ran only at the approval gate before, which is why "Run analysis" on
+    // the FMLA draft reported zero legal findings while the body still cited
+    // 2611(4)(A)(i) — the trap that catches exactly that was seeded months ago
+    // (supabase/content_known_traps_schema.sql) but nothing on this path ever
+    // matched against it. A reviewer working the Findings tab could not see a
+    // trap until they tried to approve.
+    //
+    // `failed` is kept rather than swallowed: a check that could not run has no
+    // opinion, and folding its silence into the sync below would auto-resolve
+    // the traps a previous run legitimately found.
+    runTrapCheck(body, { tenantId: tid })
+      .then((r) => ({ ran: !r.failed, findings: r.findings }))
+      .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
+    // The knowledge-base fact checks (Diana 2.2) and named-act validation.
+    // Also unflagged, and for the same reason as the traps above: one cached
+    // read of legal_knowledge_base and a regex pass, nothing to meter. Behind
+    // LEGAL_ACCURACY they were dark exactly where they were most useful.
+    runLegalFactChecks(body, { tenantId: tid })
+      .then((findings) => ({ ran: true, findings }))
+      .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
     // D3 (spec 2.9) — confirm internal links against the Cluster Map. Only
     // formats with a real page need this (a social caption has nothing to
     // link a reader onward to within the same review).
@@ -1050,31 +1090,15 @@ export async function analyzeDraft(args: {
         config: readabilityConfig,
       })
     : null;
-  // Cross-engine coordination (spec item 6): only meaningful once there's a
-  // structured, excerpt-bearing readability result to coordinate — the legacy
-  // Flesch findings (flag off) are plain prose strings with no rule id or
-  // excerpt to match against Legal/Freshness/AEO.
-  const coordination = ruleResult
-    ? coordinateEngineFindings({
-        readabilityFindings: ruleResult.findings,
-        aeoFindings: aeo.findings,
-        legalFindings: legalResult.findings,
-        freshnessFindings: freshnessResult.findings,
-        cashBreakdown: cash.breakdown,
-        cashFindings: cash.findings,
-      })
-    : null;
-
-  // The SCORE stays based on the original (pre-coordination) rule set —
-  // coordination is a display/tracking concern (which engine's row a
-  // reviewer sees), not a change to what counts as a readability defect.
+  // Cross-engine coordination happens further down, on the NORMALIZED findings
+  // (see coordinateFindings below) rather than on each engine's raw output: by
+  // then every engine has an excerpt and a rule id to match on, and the same
+  // ownership rules cover Legal and Freshness too.
   const readabilityScore = ruleResult ? ruleResult.score : normalizeReadability(flesch);
   const readabilityFindingList = ruleResult
-    ? formatReadabilityFindings(coordination!.readabilityFindings)
+    ? formatReadabilityFindings(ruleResult.findings)
     : readabilityFindings(body);
-  const aeoFindingList = coordination ? coordination.aeoFindings : aeo.findings;
-  const cashBreakdown = coordination ? coordination.cashBreakdown : cash.breakdown;
-  const cashFindingList = coordination ? coordination.cashFindings : cash.findings;
+  const aeoFindingList = aeo.findings;
   logEvent("readability_scored", {
     engine: useReadabilityRules ? "rules" : "flesch",
     score: readabilityScore,
@@ -1082,7 +1106,6 @@ export async function analyzeDraft(args: {
     findings: readabilityFindingList.length,
     ai_rules: aiReadability.evaluatedRuleIds.length,
     failed: ruleResult?.failedRuleIds ?? [],
-    coordination_suppressed: coordination?.suppressed ?? 0,
   });
 
   // Cross-check proposed titles against the firm's existing content so the
@@ -1093,6 +1116,40 @@ export async function analyzeDraft(args: {
     draftId,
   );
   const keptTitles = filtered.kept.map((k) => k.title);
+
+  // Item 11 / item 19 — CASH must not credit a citation the legal layer
+  // disputes.
+  //
+  // Source Expertise is scored by asking a model whether claims are grounded.
+  // A model can see that a citation is THERE; it cannot see that Article 6 is
+  // the wrong article for the overtime rule. So on the Unpaid Wages blog it
+  // credited the very citation the legal layer flagged, and the scorecard read
+  // better because of an error.
+  //
+  // Capped rather than zeroed: a draft with ten good sources and one disputed
+  // one has not become unsourced. What it must not do is read as well-sourced
+  // while a source it leans on is contested.
+  const priorFindings = await listFindings(draftId).catch(() => []);
+  const cashAdjusted = (() => {
+    const capped = capSourceExpertise(cash.breakdown.sourceExpertise, priorFindings);
+    if (!capped.capped || capped.score === null) return cash;
+    const b = { ...cash.breakdown, sourceExpertise: capped.score };
+    return {
+      ...cash,
+      breakdown: b,
+      // Re-weight with the capped figure so the headline score moves with it.
+      score: Math.round(
+        b.conversationalAuthority * 0.22 +
+          b.answerCompleteness * 0.3 +
+          b.sourceExpertise * 0.3 +
+          b.humanAttribution * 0.18,
+      ),
+      findings: [
+        ...cash.findings,
+        "[S] Source score capped: the legal layer has an open finding on a citation this draft relies on. A citation being present is not the same as being right.",
+      ],
+    };
+  })();
 
   const analysis: ContentAnalysis = {
     readability_score: readabilityScore,
@@ -1106,9 +1163,9 @@ export async function analyzeDraft(args: {
     aeo_findings: aeoFindingList,
     brand_voice_score: brand.score,
     brand_voice_findings: brand.findings,
-    cash_score: cash.score,
-    cash_breakdown: cashBreakdown,
-    cash_findings: cashFindingList,
+    cash_score: cashAdjusted.score,
+    cash_breakdown: cashAdjusted.breakdown,
+    cash_findings: cashAdjusted.findings,
     seo_score: seo.score,
     seo_breakdown: seo.breakdown,
     seo_findings: seo.findings,
@@ -1246,7 +1303,7 @@ export async function analyzeDraft(args: {
   // survive the next run. Best-effort: a findings failure must not fail the
   // analysis the caller actually asked for.
   try {
-    const tracked: NormalizedFinding[] = [
+    const raw: NormalizedFinding[] = [
       ...normalizeReadabilityFindings(analysis.readability_findings),
       ...normalizeStringFindings("seo", analysis.seo_findings),
       ...normalizeStringFindings("aeo", analysis.aeo_findings),
@@ -1256,7 +1313,43 @@ export async function analyzeDraft(args: {
       ...normalizeComplianceFindings(analysis.compliance_violations),
       ...freshnessResult.findings,
       ...legalResult.findings,
+      // Traps: this run's hits when the check ran, otherwise the ones a
+      // previous run found. syncFindings auto-resolves anything it is not
+      // handed, so dropping them on a failed check would silently clear a
+      // seeded trap that is still sitting in the text.
+      ...(trapResult.ran
+        ? trapResult.findings
+        : priorFindings.filter((f) => f.ruleId?.startsWith("trap:"))),
+      // Same carry-forward as the traps: a check that could not run has no
+      // opinion, and letting its silence reach the sync would auto-resolve
+      // findings that are still true.
+      ...(factResult.ran
+        ? factResult.findings
+        : priorFindings.filter(
+            (f) => f.ruleId === "constant_mismatch" || f.ruleId === "named_act_unverified",
+          )),
     ];
+
+    // Item 19 — one concern, one engine. The style engines overlap heavily, so
+    // the same note arrives under three names and a reviewer fixes it once
+    // while two rows stay open describing the thing they just fixed.
+    //
+    // `existing` carries the legal and freshness findings the approval gate
+    // wrote on an earlier pass. They matter here: a citation concern defers to
+    // the legal layer whether or not legal raised anything in THIS run, and
+    // Readability stays quiet on a span that is about to change for a
+    // correctness reason.
+    // priorFindings was already read for the CASH cap above, and nothing has
+    // written findings since — one round trip, one consistent view.
+    const coordinated = coordinateFindings(raw, { existing: priorFindings });
+    if (coordinated.suppressed.length) {
+      logEvent("findings_coordinated", {
+        draftId,
+        suppressed: coordinated.suppressed.length,
+        concerns: [...new Set(coordinated.suppressed.map((s) => s.concern))],
+      });
+    }
+    const tracked = coordinated.findings;
     const summary = await syncFindings({ draftId, tenantId: tid, incoming: tracked });
     if (summary.inserted || summary.reopened || summary.autoResolved) {
       logEvent("findings_synced", {

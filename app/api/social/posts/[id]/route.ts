@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { gateSocialPost, loadDraftCtaAndSourceBlog } from "@/lib/social-post-gate";
 import { generateSpanishCompanion } from "@/lib/social-spanish";
-import { isSocialFormat } from "@/lib/social-format-rules";
+import { formatForPlatform } from "@/lib/social-format-rules";
 import { guardUser, getCurrentUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -42,14 +42,17 @@ type PostRow = {
   ayrshare_id: string | null;
   media_urls: string[] | null;
   source_draft_id: string | null;
+  /** Per-platform post type (carousel / reel / video), when multiformat is on. */
+  post_type: string | null;
 };
 
 async function loadPost(id: string) {
   const db = await getTenantDb();
-  const full = "id, platform, content, status, scheduled_at, ayrshare_id, media_urls, source_draft_id";
+  const full =
+    "id, platform, content, status, scheduled_at, ayrshare_id, media_urls, source_draft_id, post_type";
   const res = await db.from("social_posts").select(full).eq("id", id).maybeSingle();
-  // Degrade gracefully if media_urls/source_draft_id haven't been migrated yet.
-  if (res.error && /media_urls|source_draft_id/i.test(res.error.message)) {
+  // Degrade gracefully if media_urls/source_draft_id/post_type aren't migrated.
+  if (res.error && /media_urls|source_draft_id|post_type/i.test(res.error.message)) {
     const base = await db
       .from("social_posts")
       .select("id, platform, content, status, scheduled_at, ayrshare_id")
@@ -58,7 +61,12 @@ async function loadPost(id: string) {
     return {
       db,
       row: base.data
-        ? ({ ...(base.data as object), media_urls: null, source_draft_id: null } as PostRow)
+        ? ({
+            ...(base.data as object),
+            media_urls: null,
+            source_draft_id: null,
+            post_type: null,
+          } as PostRow)
         : null,
     };
   }
@@ -77,14 +85,23 @@ async function queueSpanishCompanion(
   db: Awaited<ReturnType<typeof getTenantDb>>,
   row: PostRow,
 ): Promise<void> {
-  if (!isSocialFormat(row.platform)) return; // carousel/video etc. — no 1:1 caption format to adapt
+  // Resolve the PLATFORM to the generation FORMAT whose caps apply. This used
+  // to be `isSocialFormat(row.platform)`, which compares an Ayrshare platform
+  // against a SocialFormatKey — two namespaces that overlap on four values by
+  // accident. It answered false for tiktok, so the pregnancy script never got a
+  // companion, and true for a carousel on Instagram, which would then have been
+  // adapted under caption rules.
+  const format = formatForPlatform(row.platform, row.post_type);
+  if (!format) return;
+  // The Spanish offer phrase is locked and gate-checked, so it is handed to the
+  // adapter rather than left to it — see lib/social-operating-brief.ts.
   const brief = await getOperatingBrief(db.tenantId);
-  const spanishBody = await generateSpanishCompanion(row.content, row.platform, brief.offerPhraseEs);
+  const spanishBody = await generateSpanishCompanion(row.content, format, brief.offerPhraseEs);
   if (!spanishBody?.trim()) return;
 
   const { data: draft, error: draftErr } = await db
     .insert("content_drafts", {
-      format: row.platform,
+      format,
       topic: "Spanish companion",
       title: `Spanish: ${row.content.slice(0, 80)}`,
       body: spanishBody,
@@ -223,6 +240,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       operatingBrief: brief,
       ctaType: draftMeta.ctaType,
       sourceBlogId: draftMeta.sourceBlogId,
+      // Spanish companions skip the authority-verification half of the legal
+      // layer — their claims are a translation of English copy that already
+      // cleared this gate. See lib/social-post-gate.ts.
+      language: draftMeta.language,
     });
     // A legal-check infra failure (service down/timeout) is not a compliance
     // finding — don't hold the post over it. Leave status as-is and let the
@@ -389,24 +410,41 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const apiKey = getAyrshareApiKey();
 
-  // Planned post (never reached Ayrshare) → just update our row. A reschedule
-  // (not just a caption edit) also clears a "failed" post back to draft — the
-  // user just changed the timing, so let them retry Approve instead of the
-  // post sitting failed forever with a stale error (mirrors clearFlag above
-  // for "flagged" posts). A caption-only edit leaves the failed state alone.
+  // Item 2 — rescheduling a FAILED post requeues it.
+  //
+  // A failed post keeps its slot on the calendar so the intent stays visible,
+  // but the failure is about the attempt, not the post: the number was wrong,
+  // the media was missing, Ayrshare was down. Moving it to a new day is the
+  // reviewer saying "try this again", and leaving it marked failed would mean
+  // the retry never happens — it would sit on the new date still failed.
+  //
+  // Back to `draft`, not straight to `scheduled`: a requeued post goes through
+  // the approval gate again like any other draft, so whatever held it the first
+  // time still gets a say.
+  const requeueFailed = row.status === "failed" && newDate !== undefined;
+
+  // Planned post (never reached Ayrshare) → just update our row.
   if (!row.ayrshare_id || !apiKey) {
-    const update: Record<string, unknown> = { content, scheduled_at: scheduledAt };
-    if (newDate !== undefined && row.status === "failed") {
-      update.status = "draft";
-      update.last_error = null;
+    const patch: Record<string, unknown> = { content, scheduled_at: scheduledAt };
+    if (requeueFailed) {
+      patch.status = "draft";
+      patch.last_error = null;
     }
-    let { error } = await db.from("social_posts").update(update).eq("id", id);
+    let { error } = await db.from("social_posts").update(patch).eq("id", id);
+    // Degrade if last_error isn't migrated, matching the clearFlag path above.
     if (error && /last_error/i.test(error.message)) {
-      delete update.last_error;
-      ({ error } = await db.from("social_posts").update(update).eq("id", id));
+      const rest = { ...patch };
+      delete rest.last_error;
+      ({ error } = await db.from("social_posts").update(rest).eq("id", id));
     }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, message: "Updated." });
+    return NextResponse.json({
+      ok: true,
+      message: requeueFailed
+        ? "Moved, and the failed post is a draft again — approve it to retry."
+        : "Updated.",
+      status: requeueFailed ? "draft" : row.status,
+    });
   }
 
   // Real scheduled post → reschedule = delete + recreate on Ayrshare.

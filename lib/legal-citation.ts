@@ -187,13 +187,40 @@ export function parseCitation(input: string): ParsedCitation | null {
 }
 
 /** Every citation in a block of text, de-duplicated by URL/corpus+section. */
+/**
+ * Sentinel standing in for a period INSIDE an abbreviation while the body is
+ * split into sentence-ish chunks. Any character works as long as it cannot
+ * appear in real copy and is not itself a split boundary.
+ */
+const ABBREV_DOT = "\u0000";
+
+/**
+ * Hide the periods inside dotted all-caps abbreviations - U.S.C., C.F.R.,
+ * N.J.S.A., N.J.A.C., N.Y. - so the sentence splitter below cannot cut a
+ * citation in half.
+ *
+ * It did exactly that: "See 29 U.S.C. 2611(2)(B)(ii)." split into
+ * "See 29 U.S.C." and "2611(2)(B)(ii).", and neither half parses. Every
+ * citation written in the formal dotted style - which is most of them in real
+ * legal copy - was therefore invisible to findCitations, so the sentence
+ * carrying it was never autoCheckable and fell through to the model classifier
+ * as an unclassified claim "routed for review". parseCitation itself was
+ * always correct; only the chunking was wrong.
+ */
+function maskAbbrevDots(s: string): string {
+  return s.replace(/(?:[A-Z]\.){2,}[A-Z]?\.?/g, (m) => m.replace(/\./g, ABBREV_DOT));
+}
+
+
 export function findCitations(body: string): ParsedCitation[] {
   if (!body) return [];
   const out: ParsedCitation[] = [];
   const seen = new Set<string>();
   // Split on sentence-ish boundaries so one citation is not swallowed by a
-  // greedy match spanning several.
-  for (const chunk of body.split(/(?<=[.;:\n])\s+/)) {
+  // greedy match spanning several - with abbreviation periods masked first,
+  // since those are not sentence ends.
+  for (const masked of maskAbbrevDots(body).split(/(?<=[.;:\n])\s+/)) {
+    const chunk = masked.split(ABBREV_DOT).join(".");
     const c = parseCitation(chunk);
     if (!c) continue;
     const key = `${c.corpus}|${c.book}|${c.section}`;

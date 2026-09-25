@@ -31,6 +31,7 @@ const WORKSPACE_TABS = [
   { href: "/brand-voice", label: "Brand voice & directions" },
   { href: "/content/sources", label: "Source material" },
   { href: "/content/traps", label: "Known traps" },
+  { href: "/content/duplicates", label: "Duplicate cleanup" },
 ];
 
 export function ContentNav() {

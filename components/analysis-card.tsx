@@ -21,6 +21,7 @@ import {
   DashSpinner,
 } from "@/components/dashboard-ui";
 import { READABILITY_TARGET } from "@/lib/readability";
+import { SCORE_TARGET, scoreNote, humanSubScoreNote } from "@/lib/score-targets";
 
 export type Analysis = {
   readability_score: number;
@@ -187,6 +188,17 @@ export function AnalysisCard({
     readabilityFindingsList.length > 0 &&
     analysis.readability_score < READABILITY_TARGET;
 
+  // The same one-click pass for SEO (Diana item 3b: "For drafts already in
+  // Draft that score low, add a one-click 'Improve SEO' pass. Diana should
+  // never have to raise SEO by hand.").
+  //
+  // Generation now places the primary keyword in the four spots the scorer
+  // counts (lib/keyword-placement.ts), so this is for the drafts written
+  // before that — a library of them — rather than the steady state.
+  const seoFindingsList = analysis.seo_findings ?? [];
+  const canImproveSeo =
+    !!applyFindings && seoFindingsList.length > 0 && (analysis.seo_score ?? 0) < SCORE_TARGET;
+
   return (
     <DashCard>
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
@@ -201,6 +213,17 @@ export function AnalysisCard({
             >
               <span aria-hidden>📖</span>
               Auto-fix readability ({readabilityFindingsList.length})
+            </button>
+          )}
+          {canImproveSeo && selectedCount === 0 && (
+            <button
+              type="button"
+              onClick={() => applyFindings?.(seoFindingsList)}
+              className="text-xs px-2.5 py-1 rounded border border-brand/40 bg-brand/5 text-brand hover:bg-brand/10 inline-flex items-center gap-1.5 font-medium"
+              title={`Apply all ${seoFindingsList.length} SEO findings in one shot — keyword placement, headings and metadata. You review the diff before it saves.`}
+            >
+              <span aria-hidden>🔍</span>
+              Improve SEO ({seoFindingsList.length})
             </button>
           )}
           {applyFindings && selectedCount > 0 && (
@@ -338,6 +361,33 @@ export function AnalysisCard({
             onToggleSelected={applyFindings ? toggleFinding : undefined}
           />
         )}
+        {/* 3c — scores are targets, not a task list. A below-target SEO or CASH
+            number reads as an observation here, and the CASH "Human" sub-score
+            is said in words a reviewer can act on rather than left as a
+            number. See lib/score-targets.ts. */}
+        {(() => {
+          const notes = [
+            scoreNote("SEO", analysis.seo_score ?? null),
+            scoreNote("CASH", analysis.cash_score),
+            humanSubScoreNote(cash?.humanAttribution ?? null),
+          ].filter(Boolean);
+          if (notes.length === 0) return null;
+          return (
+            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-[11px] font-medium text-slate-600">
+                Quality notes (nothing here blocks approval)
+              </div>
+              <ul className="mt-1 space-y-1">
+                {notes.map((n, i) => (
+                  <li key={i} className="text-[11px] leading-relaxed text-slate-600">
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
+
         {analysis.seo_findings && analysis.seo_findings.length > 0 && (
           <FindingsList
             label="SEO findings"

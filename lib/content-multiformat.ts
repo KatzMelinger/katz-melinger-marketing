@@ -27,6 +27,12 @@ import { languageDirective, type ContentLanguage } from "./content-language";
 import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
 import { approvedLinkPlanBlock, buildLinkPlan } from "./internal-links";
+import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "./readability-rules";
+import { remediateReadability } from "./readability-remediate";
+import { logEvent } from "./telemetry";
+import { keywordPlacementBlock } from "./keyword-placement";
+import { readabilityRulesEngineEnabled } from "./feature-flags";
+import { MIN_CONFIRMED_INTERNAL_LINKS } from "./internal-links-check";
 import {
   cachedSystemPrompt,
   CONTENT_LONG_FORM_MODEL,
@@ -266,62 +272,6 @@ export async function generateMultiFormat(args: {
       formatDurations: args.formatDurations,
     });
 
-  // Internal links: when the batch includes the long-form blog, hand the
-  // generator an approved link plan from the Cluster Map (site_pages) so the
-  // article links out to related firm pages. Scoped to the blog body — the
-  // social/script formats don't need inline links. Fails soft if no inventory.
-  let linkBlock = "";
-  if (longForm.includes("blog")) {
-    try {
-      const plan = await buildLinkPlan({
-        primaryKeyword: args.topic,
-        secondaryKeywords: args.targetKeywords,
-      });
-      const block = approvedLinkPlanBlock(plan.links);
-      if (block) {
-        linkBlock = `\n\n---\n${block}\n(Apply these internal links in the blog/article body only; the other formats don't need them.)`;
-      }
-    } catch {
-      /* no inventory / non-fatal */
-    }
-  }
-
-  const [longResult, shortResult] = await Promise.all([
-    longForm.length > 0
-      ? callClaudeForFormats({
-          model: CONTENT_LONG_FORM_MODEL,
-          system,
-          user: buildUserFor(longForm) + linkBlock,
-        })
-      : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
-    shortForm.length > 0
-      ? callClaudeForFormats({
-          model: CONTENT_SHORT_FORM_MODEL,
-          system,
-          user: buildUserFor(shortForm),
-        })
-      : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
-  ]);
-
-  const merged: ClaudeMultiOutput = {
-    formats: { ...longResult.formats, ...shortResult.formats },
-  };
-
-  const { data: batchRow, error: batchErr } = await supabase
-    .from("content_batches")
-    .insert({
-      topic: args.topic,
-      practice_area: args.practiceArea ?? null,
-      formats: args.formats,
-      source_id: args.sourceId ?? null,
-      tenant_id: tid,
-    })
-    .select("id")
-    .single();
-  if (batchErr) throw new Error(`Failed to create batch: ${batchErr.message}`);
-
-  const draftRows: { id: string; format: FormatKey; title: string | null; body: string; metadata: Record<string, unknown> }[] = [];
-
   // SEO metadata for the article format. Generated OUTSIDE the 5-step brief
   // wizard, this path (batch, autonomous agent, repurpose) previously left every
   // metadata field empty, so blog/service-page drafts arrived at Draft Review
@@ -348,12 +298,145 @@ export async function generateMultiFormat(args: {
     }
   }
 
+  // Internal links: when the batch includes the long-form blog, hand the
+  // generator an approved link plan from the Cluster Map (site_pages) so the
+  // article links out to related firm pages. Scoped to the blog body — the
+  // social/script formats don't need inline links. Fails soft if no inventory.
+  // Readability, as a generation constraint rather than something measured
+  // afterwards (Diana item 3: "Bake readability into generation — short
+  // sentences and paragraphs, active voice").
+  //
+  // readabilityPromptBlock has existed since the rules engine shipped and
+  // nothing ever called it, so every draft was written with no readability
+  // constraint at all and then scored against fifteen rules it had never been
+  // told about. That is most of why a typical draft arrived with ~15 sentences
+  // over the limit: the generator was never asked to keep them short.
+  // Primary-keyword placement (Diana item 3b), long-form only — the scorer
+  // grades page metadata, which a social caption does not have.
+  const keywordBlock =
+    args.targetKeywords?.length && longForm.length > 0
+      ? keywordPlacementBlock(args.targetKeywords[0], args.targetKeywords.slice(1))
+      : "";
+
+  const readabilityBlock = readabilityPromptBlock(
+    readabilityContentType(longForm.includes("blog") ? "blog" : shortForm[0]),
+    readabilityRulesEngineEnabled(),
+  );
+
+  let linkBlock = "";
+  if (longForm.includes("blog")) {
+    try {
+      const plan = await buildLinkPlan({
+        primaryKeyword: args.topic,
+        secondaryKeywords: args.targetKeywords,
+        // The pillar up-link, and with it the required "Pillar / CTA" section.
+        // seoMeta is derived from the topic and keywords alone, which is why it
+        // can be computed before generation and handed to the plan rather than
+        // only recorded on the draft afterwards.
+        pillarId: seoMeta?.pillarId || undefined,
+        // See the same note in app/api/content/draft/route.ts: one page per
+        // term left drafts short of the three-confirmed-links minimum.
+        perTermLimit: 2,
+        practiceArea: seoMeta?.practiceArea,
+        minLinks: MIN_CONFIRMED_INTERNAL_LINKS,
+      });
+      const block = approvedLinkPlanBlock(plan.links);
+      if (block) {
+        linkBlock = `\n\n---\n${block}\n(Apply these internal links in the blog/article body only; the other formats don't need them.)`;
+      }
+    } catch {
+      /* no inventory / non-fatal */
+    }
+  }
+
+  const [longResult, shortResult] = await Promise.all([
+    longForm.length > 0
+      ? callClaudeForFormats({
+          model: CONTENT_LONG_FORM_MODEL,
+          system,
+          user: `${buildUserFor(longForm)}${keywordBlock ? `
+
+---
+${keywordBlock}` : ""}
+
+---
+${readabilityBlock}${linkBlock}`,
+        })
+      : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
+    shortForm.length > 0
+      ? callClaudeForFormats({
+          model: CONTENT_SHORT_FORM_MODEL,
+          system,
+          // Short-form gets the social-scope rules, which are a subset — the
+          // web/blog-only rules (contractions, first person) do not apply to a
+          // caption written in the firm's voice.
+          user: `${buildUserFor(shortForm)}
+
+---
+${readabilityPromptBlock("social", readabilityRulesEngineEnabled())}`,
+        })
+      : Promise.resolve<ClaudeMultiOutput>({ formats: {} }),
+  ]);
+
+  const merged: ClaudeMultiOutput = {
+    formats: { ...longResult.formats, ...shortResult.formats },
+  };
+
+  const { data: batchRow, error: batchErr } = await supabase
+    .from("content_batches")
+    .insert({
+      topic: args.topic,
+      practice_area: args.practiceArea ?? null,
+      formats: args.formats,
+      source_id: args.sourceId ?? null,
+      tenant_id: tid,
+    })
+    .select("id")
+    .single();
+  if (batchErr) throw new Error(`Failed to create batch: ${batchErr.message}`);
+
+  const draftRows: { id: string; format: FormatKey; title: string | null; body: string; metadata: Record<string, unknown> }[] = [];
+
+
   for (const format of args.formats) {
     const data = merged.formats?.[format];
     if (!data?.body) continue;
     // Hard filter: strip em/en dashes the model let through despite the prompt
     // rule, across every format, before persisting. See lib/sanitize-content.ts.
-    const cleanBody = stripEmDashes(data.body);
+    //
+    // Then the one readability fix applied silently (Diana item 3): break any
+    // paragraph that still runs past rule 02's limit. Long-form only — a social
+    // caption's shape is deliberate. Wording is untouched; this only inserts
+    // breaks at sentence boundaries, and structure (headings, lists, code) is
+    // left byte-identical. See scripts/check-readability-autobreak.ts.
+    let cleanBody = stripEmDashes(data.body);
+    // BLOG ONLY, not every long-form format. Remediation is up to two extra
+    // model calls, and email/podcast/video_long would multiply that across a
+    // batch for formats whose readability findings are not what Diana's item 3
+    // is about. It also keeps the 60-second content-production/email and
+    // /social routes out of the loop entirely — they generate no blog.
+    if (format === "blog") {
+      // Self-correction before the draft exists (Diana item 3), the same loop
+      // the KM wizard has used since the rules engine shipped. A pass is kept
+      // only when it measurably improves, so this can make a draft better or
+      // leave it alone, never worse.
+      const remediated = await remediateReadability({
+        body: cleanBody,
+        contentType: readabilityContentType(format),
+        useRules: readabilityRulesEngineEnabled(),
+        system,
+      });
+      if (remediated.passes > 0) {
+        logEvent("readability_remediated", {
+          path: "multiformat",
+          format,
+          passes: remediated.passes,
+          from: remediated.scoreBefore,
+          to: remediated.scoreAfter,
+        });
+      }
+      cleanBody = autoBreakLongParagraphs(remediated.body).body;
+    }
     const cleanTitle = data.title ? stripEmDashes(data.title) : data.title;
     const metadata: Record<string, unknown> = {};
     if (data.subject) metadata.subject = stripEmDashes(data.subject);

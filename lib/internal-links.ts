@@ -41,6 +41,14 @@ export type LinkPlanInput = {
   perTermLimit?: number;
   /** Cap on total outbound links returned (pillar up-link included). Unbounded by default. */
   maxLinks?: number;
+  /**
+   * Top the plan up to this many links from sibling pillars when the Cluster
+   * Map is thin on a topic. Off by default; the generation paths set it to the
+   * confirmed-link minimum the approval gate gets held on.
+   *
+   * Needs practiceArea to know which siblings are eligible.
+   */
+  minLinks?: number;
 };
 
 export type LinkPlanFlag = {
@@ -141,6 +149,62 @@ export async function buildLinkPlan(input: LinkPlanInput): Promise<LinkPlan> {
         anchor: pillar.label,
         section: "Pillar / CTA",
       });
+    }
+  }
+
+  // Top up from sibling pillars when the Cluster Map came back thin.
+  //
+  // pageCoversTerm requires EVERY significant word of a term to appear on one
+  // page, so a long question-shaped topic matches nothing at all: "how do I
+  // prove an FMLA retaliation claim" wants one page carrying prove + fmla +
+  // retaliation + claim, and no page does. The article then ships with just its
+  // pillar link and is held for having fewer than three confirmed links —
+  // while /fmla-violations/ sits right there in the inventory.
+  //
+  // Siblings are scored on their own keyword lists and only used when they
+  // actually match the topic, so this adds a genuinely related practice page
+  // (FMLA retaliation -> the FMLA pillar) rather than padding with whatever is
+  // nearby. A pillar with no keywords cannot score and is never added.
+  if (input.minLinks && links.length < input.minLinks && input.practiceArea) {
+    const hay = normalize(
+      [input.primaryKeyword, ...(input.secondaryKeywords ?? [])].join(" "),
+    );
+    const siblings = (await getPillars())
+      .filter((p) => p.practiceArea === input.practiceArea && p.id !== input.pillarId)
+      .map((p) => ({
+        pillar: p,
+        score: (p.keywords ?? []).reduce(
+          (acc, k) => (k.trim() && hay.includes(normalize(k)) ? acc + 1 : acc),
+          0,
+        ),
+      }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    for (const { pillar: sib } of siblings) {
+      if (links.length >= input.minLinks) break;
+      const path = normalizePath(sib.url);
+      if (seen.has(path)) continue;
+      if (excludePath && path === excludePath) continue;
+      seen.add(path);
+      links.push({ url: sib.url, anchor: sib.label, section: "Body" });
+    }
+
+    // Last resort: the practice-area hub. Only reached when the Cluster Map and
+    // the scored siblings together still cannot reach the minimum, which is a
+    // real state — an FMLA retaliation article matches the retaliation pillar
+    // and the leave pillar and nothing else on a 449-page site. The hub is
+    // always on topic for its practice area and always live, so it is a
+    // defensible third link rather than filler, and it is where a reader who
+    // wants the broader service should go anyway.
+    if (links.length < input.minLinks) {
+      const hubId = input.practiceArea === "collections" ? "collections-hub" : "employment-hub";
+      const hub = (await getPillars()).find((p) => p.id === hubId);
+      const hubPath = hub ? normalizePath(hub.url) : null;
+      if (hub && hubPath && !seen.has(hubPath) && hubPath !== excludePath) {
+        seen.add(hubPath);
+        links.push({ url: hub.url, anchor: hub.label, section: "Body" });
+      }
     }
   }
 

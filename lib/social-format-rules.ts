@@ -264,3 +264,59 @@ export function validateSocial(format: SocialFormatKey, body: string): string[] 
 export function trimSocial(format: SocialFormatKey, body: string): string {
   return SOCIAL_CAPS[format].trim(body);
 }
+
+/**
+ * Ayrshare PLATFORM (+ its post type) → the generation FORMAT whose rules apply.
+ *
+ * These are two different namespaces that overlap on four values by accident:
+ * SOCIAL_FORMAT_KEYS is what the generator writes for (carousel, video_short,
+ * linkedin…), while social_posts.platform is where Ayrshare sends it (tiktok,
+ * gmb, threads…). `isSocialFormat(row.platform)` reads as a sensible guard and
+ * is a category error — it answers false for tiktok, gmb, threads, pinterest
+ * and youtube, and true for instagram whether the post is a caption or a
+ * carousel.
+ *
+ * That is why no Spanish companion appeared for the pregnancy script: the
+ * script posts to tiktok, tiktok is not a SocialFormatKey, and the companion
+ * was skipped by a guard whose comment said it was skipping things with "no
+ * 1:1 caption format to adapt".
+ *
+ * post_type wins where it is set, because a carousel on Instagram is a carousel
+ * and must be adapted slide by slide rather than as one caption.
+ */
+export function formatForPlatform(
+  platform: string,
+  postType?: string | null,
+): SocialFormatKey | null {
+  const type = (postType ?? "").toLowerCase();
+  if (type === "carousel") return "carousel";
+  if (type === "reel" || type === "video" || type === "short") return "video_short";
+
+  switch ((platform ?? "").toLowerCase()) {
+    case "linkedin":
+      return "linkedin";
+    case "facebook":
+      return "facebook";
+    case "instagram":
+      return "instagram";
+    case "twitter":
+      return "twitter";
+    // TikTok and YouTube shorts are scripts, not captions — video_short carries
+    // the hook/body/CTA structure they need.
+    case "tiktok":
+    case "youtube":
+      return "video_short";
+    // Threads reads like X; Pinterest like an Instagram caption. Google Business
+    // posts are short and businesslike, and facebook's caps are the closest fit.
+    case "threads":
+      return "twitter";
+    case "pinterest":
+      return "instagram";
+    case "gmb":
+      return "facebook";
+    default:
+      // An unmapped platform gets NO format rather than a guessed one. A
+      // companion adapted under the wrong caps is worse than no companion.
+      return null;
+  }
+}

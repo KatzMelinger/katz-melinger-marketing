@@ -21,6 +21,11 @@ import { getTenantDb } from "@/lib/tenant-db";
 import { generateSocialPosts } from "@/lib/content-social";
 import { fetchPageText } from "@/lib/page-optimizer";
 import { REPURPOSE_FORMAT_KEYS } from "@/lib/repurpose-formats";
+import {
+  findExistingBatch,
+  isUniqueViolation,
+  repurposeIdempotencyKey,
+} from "@/lib/repurpose-idempotency";
 import type { SocialFormatKey } from "@/lib/social-format-rules";
 
 export const runtime = "nodejs";
@@ -73,6 +78,37 @@ export async function POST(req: Request) {
     );
   }
 
+  // ITEM 7 — one batch per source per day.
+  //
+  // This produced two identical five-format batches eleven minutes apart. The
+  // pre-check here is the cheap half: it catches the ordinary repeat and, more
+  // to the point, skips the model call before it is paid for. It cannot be
+  // trusted on its own — two clicks milliseconds apart both read nothing and
+  // both proceed — so the real guarantee is the unique index, handled below.
+  const force = body.force === true;
+  const idempotencyKey = repurposeIdempotencyKey(
+    { sourceDraftId, url: url || null, title: topic },
+    force,
+  );
+
+  if (idempotencyKey && !force) {
+    const existing = await findExistingBatch(db.tenantId, idempotencyKey);
+    if (existing) {
+      return NextResponse.json(
+        {
+          error: `This page was already repurposed today — ${existing.draftCount} draft${
+            existing.draftCount === 1 ? "" : "s"
+          } are waiting in the Drafts library. Open those, or re-run explicitly to generate a second set.`,
+          duplicate: true,
+          batch_id: existing.batchId,
+          created_at: existing.createdAt,
+          draft_count: existing.draftCount,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   let gen;
   try {
     gen = await generateSocialPosts({
@@ -88,8 +124,28 @@ export async function POST(req: Request) {
       originSource: "repurpose",
       originContext: url ? { url } : null,
       tenantId: db.tenantId,
+      idempotencyKey,
     });
   } catch (e) {
+    // The other request won the race and wrote the batch first. That is the
+    // guard working, not a failure — return what it produced rather than an
+    // error, because the person clicking twice wanted the posts either way.
+    if (isUniqueViolation(e) && idempotencyKey) {
+      const existing = await findExistingBatch(db.tenantId, idempotencyKey);
+      if (existing) {
+        return NextResponse.json(
+          {
+            error:
+              "This page was already being repurposed — the drafts from that run are in the Drafts library.",
+            duplicate: true,
+            batch_id: existing.batchId,
+            created_at: existing.createdAt,
+            draft_count: existing.draftCount,
+          },
+          { status: 409 },
+        );
+      }
+    }
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Generation failed" },
       { status: 500 },

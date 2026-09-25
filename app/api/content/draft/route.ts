@@ -21,6 +21,12 @@ import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
+import { MIN_CONFIRMED_INTERNAL_LINKS } from "@/lib/internal-links-check";
+import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "@/lib/readability-rules";
+import { remediateReadability } from "@/lib/readability-remediate";
+import { logEvent } from "@/lib/telemetry";
+import { keywordPlacementBlock } from "@/lib/keyword-placement";
+import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
@@ -42,6 +48,11 @@ import { renderFirmFactsBlock } from "@/lib/firm-facts";
 import { inferPillar } from "@/lib/strategy-engine";
 
 export const dynamic = "force-dynamic";
+// Generation plus up to two readability self-correction passes on a long blog.
+// Matched to app/api/content/batches/route.ts, which runs the same generator.
+// Set explicitly rather than left to the platform default: "Apply all fixes"
+// returned FUNCTION_INVOCATION_TIMEOUT for exactly this reason (Diana 1B).
+export const maxDuration = 300;
 
 // Map the request's narrow content_type / template_key into the broader
 // content-type label that brand-voice directions are scoped by ("Blog Post",
@@ -382,6 +393,49 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     userPrompt += `\n\n${langBlock}`;
   }
 
+  // The pillar this draft has to link up to.
+  //
+  // Derived HERE rather than only inside the kmBrief closure further down,
+  // because the link plan needs it: buildLinkPlan adds the pillar up-link only
+  // when it is given a pillarId, and that link is what becomes the required
+  // "Pillar / CTA" section. Every generation path used to call buildLinkPlan
+  // without one, so no generated draft ever carried that section and the
+  // approval gate held it for a missing required element (Diana item 4).
+  const linkPracticeArea = kmPracticeAreaFor(
+    practiceArea,
+    `${topic} ${targetKeywords.join(" ")}`,
+  );
+  const linkPillarId = inferPillar(
+    {
+      clusterName: topic,
+      primaryKeyword: primaryKeyword || topic,
+      secondaryKeywords: targetKeywords,
+    },
+    linkPracticeArea,
+  );
+
+  // Primary-keyword placement (Diana item 3b), in the four spots the scorer
+  // actually counts — see lib/keyword-placement.ts.
+  if (targetKeywords.length > 0 && contentType !== "social") {
+    const kwBlock = keywordPlacementBlock(primaryKeyword || targetKeywords[0], targetKeywords.slice(1));
+    if (kwBlock) userPrompt += `
+
+---
+${kwBlock}`;
+  }
+
+  // Readability as a generation constraint (Diana item 3). Same reasoning as
+  // lib/content-multiformat.ts: readabilityPromptBlock existed and nothing
+  // called it, so drafts were written with no readability constraint and then
+  // scored against rules they had never been given.
+  userPrompt += `
+
+---
+${readabilityPromptBlock(
+    readabilityContentType(contentType),
+    readabilityRulesEngineEnabled(),
+  )}`;
+
   // Internal links: for long-form web content, ask the Cluster Map (site_pages)
   // which existing firm pages relate to this topic and hand the generator an
   // approved link plan so the draft links out to related blogs/pages. Mirrors
@@ -391,6 +445,17 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
       const plan = await buildLinkPlan({
         primaryKeyword: topic,
         secondaryKeywords: targetKeywords,
+        // Empty string means inferPillar could not place this topic (an
+        // ambiguous drug-testing angle, say). Passing undefined keeps the plan
+        // pillar-less rather than inventing one; the draft's needsPillarReview
+        // flag is what surfaces it for a human to assign.
+        pillarId: linkPillarId || undefined,
+        // Two candidates per term, not one. lib/internal-links-check.ts needs
+        // three CONFIRMED links and the default of one page per term left most
+        // drafts at two, so a compliant article still tripped the gate.
+        perTermLimit: 2,
+        practiceArea: linkPracticeArea,
+        minLinks: MIN_CONFIRMED_INTERNAL_LINKS,
       });
       const block = approvedLinkPlanBlock(plan.links);
       if (block) userPrompt += `\n\n---\n${block}`;
@@ -548,18 +613,11 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
     const kmBrief =
       isWebContent && kmContentType && primaryKeyword
         ? (() => {
-            const practiceAreaKey = kmPracticeAreaFor(
-              practiceArea,
-              `${topic} ${targetKeywords.join(" ")}`,
-            );
-            const pillarId = inferPillar(
-              {
-                clusterName: topic,
-                primaryKeyword,
-                secondaryKeywords: targetKeywords,
-              },
-              practiceAreaKey,
-            );
+            // Same derivation the link plan above used — reused rather than
+            // recomputed so the brief's pillar and the pillar the draft was
+            // told to link to can never disagree.
+            const practiceAreaKey = linkPracticeArea;
+            const pillarId = linkPillarId;
             const intent: SearchIntent =
               normalizeIntent(originContext?.intent) ??
               CONTENT_TYPE_TO_INTENT[kmContentType];
@@ -587,6 +645,31 @@ Return JSON only with keys: "subject" (string) and "body" (string, plain text or
         : null;
 
     const draftFormat = contentType === "social" ? "social" : "blog";
+    // Self-correction before the draft exists (Diana item 3). The loop has run
+    // on the KM wizard path since the rules engine shipped; this path, which
+    // generates most of the library, never had it. A pass is kept only when it
+    // measurably improves, so it can make the draft better or leave it alone.
+    if (draftFormat === "blog") {
+      const remediated = await remediateReadability({
+        body,
+        contentType: readabilityContentType(contentType),
+        useRules: readabilityRulesEngineEnabled(),
+        system,
+      });
+      if (remediated.passes > 0) {
+        logEvent("readability_remediated", {
+          path: "content/draft",
+          passes: remediated.passes,
+          from: remediated.scoreBefore,
+          to: remediated.scoreAfter,
+        });
+      }
+      body = remediated.body;
+    }
+    // Then the one fix applied silently: break any paragraph still past rule
+    // 02's limit. Only inserts breaks at sentence boundaries, leaving wording
+    // and structure untouched (scripts/check-readability-autobreak.ts).
+    if (draftFormat === "blog") body = autoBreakLongParagraphs(body).body;
     const draftId = await autosave(
       draftFormat,
       body,

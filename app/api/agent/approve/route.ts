@@ -23,17 +23,17 @@ import {
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness, outstandingFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
-import {
-  freshnessGateEnabled,
-  legalAccuracyEnabled,
-  cannibalizationGateEnabled,
-} from "@/lib/feature-flags";
-import { checkCannibalizationConflict } from "@/lib/cannibalization-gate";
+import { freshnessGateEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
 import { logEvent } from "@/lib/telemetry";
 import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { notifyDraftBlocked, notifyLegalReview } from "@/lib/content-notifications";
-import { runLegalCheck } from "@/lib/legal-verify";
+import { runLegalCheck, runLegalFactChecks } from "@/lib/legal-verify";
+import { runTrapCheck } from "@/lib/trap-gate";
+import { runKbChecks } from "@/lib/legal-kb";
+import { checkBlogCannibalization } from "@/lib/blog-cannibalization";
+import { checkSocialCompliance } from "@/lib/social-compliance";
+import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { syncFindings } from "@/lib/content-findings-store";
 import { getCurrentUser } from "@/lib/supabase-route";
 
@@ -232,6 +232,54 @@ async function approveContent(
     });
   }
 
+  // The DETERMINISTIC floor, ahead of the LLM verdict below.
+  //
+  // These are the same rules the social gate has always run — brand and RPC
+  // patterns plus the phone-number check — now run on blog and page bodies too
+  // (Diana's item 6). It is what would have caught the wrong office number
+  // appearing four times in the Unpaid Wages blog: the rule existed, it just
+  // only ever saw captions.
+  //
+  // Rules declare their own scope, so the social-only ones do not cross over.
+  // `state_abbrev` in particular must not: it forbids "NYC", which is right for
+  // a caption and wrong for a blog targeting "unpaid wages lawyer NYC".
+  //
+  // Runs first because it is free and certain. A body carrying the wrong phone
+  // number does not need a model's opinion, and a definite answer should not
+  // wait behind an expensive uncertain one.
+  const copyBrief = await getOperatingBrief(tenantId);
+  const copyFlags = checkSocialCompliance(
+    typeof draft.body === "string" ? draft.body : "",
+    { assetType: "document", documentPhone: copyBrief.documentPhone },
+  ).filter((f) => f.severity === "block");
+
+  if (copyFlags.length > 0) {
+    await setDraftStatus(supabase, tenantId, id, "needs_legal");
+    await recordAuditEvent({
+      tenantId,
+      draftId: id,
+      event: "draft_held_compliance",
+      detail: { deterministic: copyFlags.map((f) => f.code) },
+    });
+    return NextResponse.json(
+      {
+        error: `Held by the copy rules — ${copyFlags.map((f) => f.label).join("; ")}`,
+        status: "needs_legal",
+        compliance: {
+          pass: false,
+          status: "non_compliant",
+          violations: copyFlags.map((f) => ({
+            rule: f.code,
+            severity: "high",
+            reason: f.label,
+            excerpt: f.excerpt,
+          })),
+        },
+      },
+      { status: 422 },
+    );
+  }
+
   // Re-run the compliance HARD gate on the CURRENT body. Manual approvals are
   // gated exactly like the agent's auto-path, fail-closed to needs_legal — so a
   // reviewer can't sign off on content the gate would have held (and edits made
@@ -320,118 +368,223 @@ async function approveContent(
     );
   }
 
-  // LEGAL ACCURACY (Diana's A1), feature-flagged and last because it is the
-  // most expensive gate: a classification call plus a retrieval and up to two
-  // verification calls per checkable claim. Running it here rather than on save
-  // is her Q3 answer — the blocking point is approval, not editing.
+  // ITEM 17 — cannibalization, as a GATE rather than a note.
   //
-  // Findings are synced whatever the verdict, so the reviewer sees the whole
-  // picture: what was verified, what was contradicted, and what no lookup could
-  // settle. Only a CRITICAL finding holds the draft.
-  if (legalAccuracyEnabled()) {
-    try {
-      const legal = await runLegalCheck(
-        typeof draft.body === "string" ? draft.body : "",
-        { tenantId },
-      );
-      await syncFindings({ draftId: id, tenantId, incoming: legal.findings });
+  // The panel said "Cannibalization: Not checked" on every blog, and the code
+  // agreed: it was a checkbox a reviewer ticked, and `unchecked` is advisory by
+  // definition. So a blog could be written against the same Google query as a
+  // live service page and nothing would say so.
+  //
+  // Only blogs are gated. A service page is ALLOWED to own its commercial term
+  // — that is the arrangement being protected, not a violation of it.
+  {
+    const format = ((draft.format as string | null) ?? "blog").toLowerCase();
+    const isBlog = format === "blog" || format === "blog_post";
+    if (isBlog) {
+      const brief = (draft.seo_brief as { targetKeywords?: unknown } | null) ?? null;
+      const targetKeywords = Array.isArray(brief?.targetKeywords)
+        ? (brief.targetKeywords as unknown[]).filter((k): k is string => typeof k === "string")
+        : [];
 
-      const critical = legal.findings.filter((f) => f.severity === "critical");
-      logEvent("legal_check", { draftId: id, ...legal.stats, critical: critical.length });
+      const cannibal = await checkBlogCannibalization({
+        targetKeywords,
+        title: (draft.title as string | null) ?? (draft.topic as string | null) ?? null,
+      });
 
-      if (critical.length > 0) {
-        const summary = critical
-          .slice(0, 5)
-          .map((f) => `- ${f.title}: "${(f.excerpt ?? "").slice(0, 120)}"`)
-          .join("\n");
-        const legalHold = {
-          stats: legal.stats,
-          critical: critical.map((f) => ({
-            title: f.title,
-            excerpt: f.excerpt,
-            source: f.sourceChecked,
-          })),
-        };
-        const mergedMetadata = {
-          ...((draft.metadata as Record<string, unknown> | null) ?? {}),
-          held_reason: "legal",
-          legal_hold: legalHold,
-        };
+      // Scoped to `seo` so this does not disturb the other engines' findings.
+      if (cannibal.status !== "unchecked") {
+        await syncFindings({
+          draftId: id,
+          tenantId,
+          incoming: cannibal.findings,
+          sources: ["seo"],
+        });
+      }
+
+      logEvent("cannibalization_check", {
+        draftId: id,
+        status: cannibal.status,
+        conflicts: cannibal.conflicts.length,
+        pagesScanned: cannibal.pagesScanned,
+      });
+
+      if (cannibal.status === "conflict") {
+        await setDraftStatus(supabase, tenantId, id, "review");
+        // Record WHICH gate held this, so the pipeline can say
+        // "cannibalization" rather than always reporting "compliance".
         await supabase
           .from("content_drafts")
-          .update({ status: "needs_legal", metadata: mergedMetadata })
+          .update({
+            metadata: {
+              ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+              held_reason: "cannibalization",
+              cannibalization_conflict: { conflicts: cannibal.conflicts },
+            },
+          })
           .eq("id", id)
-          .eq("tenant_id", tenantId);
-        await supabase
-          .from("content_pipeline")
-          .update({ status: "needs_legal" })
-          .eq("draft_id", id)
           .eq("tenant_id", tenantId);
         await recordAuditEvent({
           tenantId,
           draftId: id,
-          event: "draft_held_legal",
-          detail: { critical: critical.length, ...legal.stats },
+          event: "draft_held_cannibalization",
+          detail: { conflicts: cannibal.conflicts.map((c) => ({ url: c.url, keyword: c.keyword })) },
         });
-        await notifyLegalReview({
+        await notifyDraftBlocked({
           draftId: id,
           tenantId,
-          practiceArea: (draft.practice_area as string | null) ?? null,
-          topic: (draft.topic as string | null) ?? null,
-          title: (draft.title as string | null) ?? null,
-          criticalCount: critical.length,
-          summary,
+          reason: "cannibalization",
+          detail: cannibal.conflicts
+            .slice(0, 5)
+            .map((c) => `"${c.keyword}" is already targeted by ${c.title} (${c.url}).`)
+            .join(" "),
         });
         return NextResponse.json(
           {
-            error: `Held for legal review — ${critical.length} claim(s) conflict with the authority they cite.`,
-            status: "needs_legal",
-            legal: legalHold,
+            error: `Held — ${cannibal.conflicts.length} keyword${
+              cannibal.conflicts.length === 1 ? "" : "s"
+            } already targeted by a live page. Reposition this draft to informational intent and link the owning page.`,
+            status: "review",
+            cannibalization: {
+              status: cannibal.status,
+              conflicts: cannibal.conflicts,
+            },
           },
           { status: 422 },
         );
       }
-    } catch (e) {
-      // The legal check failing must not silently approve. Hold the draft and
-      // say why — an unavailable checker is not a clean bill of health.
-      console.warn("[approve] legal check failed:", e);
+    }
+  }
+
+  // THE LEGAL LAYER (Diana's A1). Two producers, one gate, run last because the
+  // second of them is the most expensive check in the pipeline.
+  //
+  // Known traps are a text search over patterns that have already been wrong
+  // once (lib/trap-gate.ts). No model call, no retrieval, so they are NOT
+  // feature-flagged — they run on every approval and cost nothing to leave on.
+  // This is the half that catches the seeded errors, including the ones that
+  // cite no authority and so were invisible to the loop below.
+  //
+  // The authority loop (runLegalCheck) is a classification call plus a
+  // retrieval and up to two verification calls per checkable claim, each
+  // carrying statute text. It stays behind LEGAL_ACCURACY. Running it at
+  // approval rather than on save is Diana's Q3 answer — the blocking point is
+  // approval, not editing, and a draft nobody kept is not worth verifying.
+  //
+  // Findings are synced whatever the verdict, so the reviewer sees the whole
+  // picture: what was verified, what was contradicted, and what no lookup could
+  // settle. Only a CRITICAL finding holds the draft.
+  {
+    const body = typeof draft.body === "string" ? draft.body : "";
+
+    const traps = await runTrapCheck(body, { tenantId });
+    if (traps.failed) {
+      // Same rule as a failed authority check: a checker that could not run is
+      // not a clean bill of health.
       return NextResponse.json(
         {
           error:
-            "The legal-accuracy check could not run, so this was not approved. Try again, or have an attorney clear it manually.",
+            "The known-traps check could not run, so this was not approved. Try again, or have an attorney clear it manually.",
           status: draft.status,
         },
         { status: 503 },
       );
     }
-  }
 
-  // Commercial-cannibalization HARD gate (feature-flagged, spec item 5). A blog
-  // targeting the same commercial head term as an existing service/practice-area
-  // page splits authority between two of the firm's own pages — the reviewer
-  // should see and resolve that before approving, not discover it once both
-  // pages are live and competing. checkCannibalizationConflict fails open on any
-  // infra error, so an unreachable site_pages table never itself blocks approval.
-  if (cannibalizationGateEnabled()) {
-    const targetKeywords =
-      (draft.seo_brief as { targetKeywords?: string[] } | null)?.targetKeywords ?? [];
-    const conflict = await checkCannibalizationConflict({
-      tenantId,
-      format: (draft.format as string | null) ?? null,
-      targetKeywords,
-      topic: (draft.topic as string | null) ?? null,
-      title: (draft.title as string | null) ?? null,
+    // Stage 2 of item 11 — the knowledge base. Deterministic like the traps,
+    // so it runs unflagged: every check is a lookup against a row an attorney
+    // can read, not a model call. Traps catch what has been wrong BEFORE; the
+    // base catches what is wrong against what is right, which is how the
+    // Article 6 citation gets caught the first time anyone writes it.
+    const kb = await runKbChecks(body, { tenantId });
+    if (kb.failed) {
+      return NextResponse.json(
+        {
+          error:
+            "The legal knowledge base could not be read, so this was not approved. Try again, or have an attorney clear it manually.",
+          status: draft.status,
+        },
+        { status: 503 },
+      );
+    }
+
+    // The constants check (Diana 2.2) and named-act validation. Unflagged for
+    // the same reason as the traps and the knowledge base above: one cached
+    // read and a regex pass, nothing to meter. A failure here is NOT a 503 —
+    // unlike the traps and runKbChecks, these degrade to "found nothing" on
+    // their own (see runLegalFactChecks), so there is no silent-pass risk to
+    // guard against, and holding an approval on a transient read failure the
+    // function already swallowed would just block a clean draft.
+    const factFindings = await runLegalFactChecks(body, { tenantId }).catch((e) => {
+      console.warn("[approve] legal fact checks failed:", e);
+      return [];
     });
-    if (conflict) {
-      const pageLabel = conflict.page.pageType.replace("_", " ");
-      const mergedMetadata = {
-        ...((draft.metadata as Record<string, unknown> | null) ?? {}),
-        held_reason: "cannibalization",
-        cannibalization_conflict: conflict,
+
+    let findings = [...traps.findings, ...kb.findings, ...factFindings];
+    let legalStats: Record<string, number> | null = null;
+
+    if (legalAccuracyEnabled()) {
+      try {
+        const legal = await runLegalCheck(body, { tenantId });
+        // Merged, not synced separately: both write under source `legal`, and
+        // a scoped sync auto-resolves anything in that source it was not
+        // handed — so two calls would each close the other's findings.
+        findings = [...legal.findings, ...traps.findings, ...kb.findings, ...factFindings];
+        legalStats = legal.stats;
+      } catch (e) {
+        // The legal check failing must not silently approve. Hold the draft and
+        // say why — an unavailable checker is not a clean bill of health.
+        console.warn("[approve] legal check failed:", e);
+        return NextResponse.json(
+          {
+            error:
+              "The legal-accuracy check could not run, so this was not approved. Try again, or have an attorney clear it manually.",
+            status: draft.status,
+          },
+          { status: 503 },
+        );
+      }
+    }
+
+    // Scoped to `legal` so this partial run cannot auto-resolve the
+    // readability, SEO, freshness and compliance findings it never looked for.
+    await syncFindings({ draftId: id, tenantId, incoming: findings, sources: ["legal"] });
+
+    const critical = findings.filter((f) => f.severity === "critical");
+    logEvent("legal_check", {
+      draftId: id,
+      ...(legalStats ?? {}),
+      traps: traps.findings.length,
+      kb: kb.findings.length,
+      facts: factFindings.length,
+      kbEntries: kb.stats.entries,
+      kbApplied: kb.stats.applied,
+      authorityLoop: legalAccuracyEnabled() ? "on" : "off",
+      critical: critical.length,
+    });
+
+    if (critical.length > 0) {
+      const summary = critical
+        .slice(0, 5)
+        .map((f) => `- ${f.title}: "${(f.excerpt ?? "").slice(0, 120)}"`)
+        .join("\n");
+      const legalHold = {
+        stats: legalStats,
+        critical: critical.map((c) => ({
+          title: c.title,
+          excerpt: c.excerpt,
+          source: c.sourceChecked,
+        })),
       };
       await supabase
         .from("content_drafts")
-        .update({ status: "needs_legal", metadata: mergedMetadata })
+        .update({
+          status: "needs_legal",
+          metadata: {
+            ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+            held_reason: "legal",
+            legal_hold: legalHold,
+          },
+        })
         .eq("id", id)
         .eq("tenant_id", tenantId);
       await supabase
@@ -442,20 +595,23 @@ async function approveContent(
       await recordAuditEvent({
         tenantId,
         draftId: id,
-        event: "draft_held_cannibalization",
-        detail: { keyword: conflict.keyword, page: conflict.page.url },
+        event: "draft_held_legal",
+        detail: { critical: critical.length, traps: traps.findings.length, ...(legalStats ?? {}) },
       });
-      await notifyDraftBlocked({
+      await notifyLegalReview({
         draftId: id,
         tenantId,
-        reason: "cannibalization",
-        detail: `Targets "${conflict.keyword}", already owned by the ${pageLabel} "${conflict.page.title}" (${conflict.page.url}).`,
+        practiceArea: (draft.practice_area as string | null) ?? null,
+        topic: (draft.topic as string | null) ?? null,
+        title: (draft.title as string | null) ?? null,
+        criticalCount: critical.length,
+        summary,
       });
       return NextResponse.json(
         {
-          error: `Held — this blog competes with an existing ${pageLabel} for "${conflict.keyword}". Reposition it to an informational angle and link to that page, or resolve the conflict before approving.`,
+          error: `Held for legal review — ${critical.length} claim(s) need an attorney before this can publish.`,
           status: "needs_legal",
-          cannibalization: conflict,
+          legal: legalHold,
         },
         { status: 422 },
       );

@@ -10,7 +10,8 @@
  */
 
 import { checkSocialCompliance } from "./social-compliance";
-import { runLegalCheck } from "./legal-verify";
+import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
+import { runTrapCheck } from "./trap-gate";
 import { checkImagesLegalText } from "./image-text-check";
 import { syncFindings, listFindings } from "./content-findings-store";
 import { checkSourceCurrency } from "./source-currency";
@@ -18,6 +19,7 @@ import { legalAccuracyEnabled } from "./feature-flags";
 import { notifySocialLegalAlert } from "./content-notifications";
 import { checkLinksResolve, recommendsFirstComment } from "./social-links";
 import { findSourceContradictions } from "./social-source-consistency";
+import type { NormalizedFinding } from "./content-findings";
 import type { OperatingBrief } from "./social-operating-brief";
 import type { getTenantDb } from "./tenant-db";
 
@@ -41,17 +43,18 @@ export type SocialGateResult = {
   legalCheckFailed: boolean;
 };
 
-/** A draft's cta_type + source_blog_id (S2/S13b), from its own metadata. */
+/** A draft's cta_type + source_blog_id (S2/S13b) + language, from its metadata. */
 export async function loadDraftCtaAndSourceBlog(
   db: TenantDb,
   draftId: string | null,
-): Promise<{ ctaType: string | null; sourceBlogId: string | null }> {
-  if (!draftId) return { ctaType: null, sourceBlogId: null };
+): Promise<{ ctaType: string | null; sourceBlogId: string | null; language: string | null }> {
+  if (!draftId) return { ctaType: null, sourceBlogId: null, language: null };
   const { data } = await db.from("content_drafts").select("metadata").eq("id", draftId).maybeSingle();
   const meta = (data?.metadata ?? {}) as Record<string, unknown>;
   return {
     ctaType: typeof meta.cta_type === "string" ? meta.cta_type : null,
     sourceBlogId: typeof meta.source_blog_id === "string" ? meta.source_blog_id : null,
+    language: typeof meta.language === "string" ? meta.language : null,
   };
 }
 
@@ -135,11 +138,21 @@ export async function gateSocialPost(args: {
   operatingBrief: OperatingBrief;
   ctaType?: string | null;
   sourceBlogId?: string | null;
+  /** BCP-47-ish language tag from the draft's metadata ("es" for a Spanish
+   *  companion). Pass it alongside a pre-resolved ctaType/sourceBlogId. */
+  language?: string | null;
+  /** The social format — carousels and scripts carry no hashtag block. */
+  format?: string | null;
 }): Promise<SocialGateResult> {
   const resolved =
     args.ctaType !== undefined && args.sourceBlogId !== undefined
-      ? { ctaType: args.ctaType, sourceBlogId: args.sourceBlogId }
+      ? { ctaType: args.ctaType, sourceBlogId: args.sourceBlogId, language: args.language ?? null }
       : await loadDraftCtaAndSourceBlog(args.db, args.draftId);
+
+  // A Spanish (or any non-English) companion. Declared up here because both
+  // halves of the gate need it: the compliance check picks the language's offer
+  // phrase, and the legal half skips the authority loop.
+  const isCompanionTranslation = resolved.language != null && resolved.language !== "en";
 
   // Compliance is the one platform-specific check (Instagram's link-CTA rule).
   // Check against EVERY target platform and union the blocking flags (deduped
@@ -150,11 +163,18 @@ export async function gateSocialPost(args: {
   const complianceFlagsByCode = new Map<string, string>();
   for (const platform of platforms) {
     for (const f of checkSocialCompliance(args.content, {
+      assetType: "social",
       socialPhone: args.operatingBrief.socialPhone,
       platform,
+      format: args.format ?? undefined,
       ctaType: resolved.ctaType ?? undefined,
-      offerPhrase: args.operatingBrief.offerPhrase,
-      offerPhraseEs: args.operatingBrief.offerPhraseEs,
+      // A Spanish companion is checked against the Spanish offer phrase, and
+      // only that one. With one phrase for both, every Spanish consultation
+      // post would be held for a missing offer it could not have carried; with
+      // both passed, an untranslated English offer would quietly pass.
+      offerPhrase: isCompanionTranslation ? undefined : args.operatingBrief.offerPhrase,
+      offerPhraseEs: isCompanionTranslation ? args.operatingBrief.offerPhraseEs : undefined,
+      disclaimerUrl: args.operatingBrief.disclaimerUrl,
       topic,
       practiceArea,
     })) {
@@ -163,28 +183,46 @@ export async function gateSocialPost(args: {
   }
   const blockingFlags = [...complianceFlagsByCode.values()];
 
-  // Legal-accuracy check, S13(b) inherited findings, and S13(d) source-currency
-  // are independent of each other (none consumes another's result) — run them
-  // concurrently rather than paying three sequential round trips (one of them
-  // an LLM call) per post. Each is individually guarded so a failure in one
-  // (including its own best-effort DB writes) can never fail the other two or
-  // the gate as a whole.
-  const legalCheck = async (): Promise<{ reasons: string[]; failed: boolean }> => {
-    if (!legalAccuracyEnabled() || !args.draftId) return { reasons: [], failed: false };
+  // The two legal producers, and why only one of them is behind a flag.
+  //
+  // Traps are a text search over patterns that have already been wrong once
+  // (lib/trap-gate.ts). No model call, no retrieval, so there is nothing to
+  // meter and no reason to gate it — it runs on every post, including the ones
+  // the authority loop is deliberately not spent on. It is what actually
+  // catches the seeded errors, like the NYSHRL employer-size threshold.
+  //
+  // The authority loop (runLegalCheck) reasons about cited claims and costs a
+  // classification call plus up to two verification calls per claim, each
+  // carrying statute text. It stays behind LEGAL_ACCURACY, and it is skipped on
+  // Spanish companions: a companion is a translation of English copy that
+  // already cleared this same gate, so re-running the expensive half would pay
+  // twice to verify one set of claims. The companion still gets the traps, the
+  // compliance rules, and its source blog's inherited findings — everything
+  // that could catch a problem the English original did not have.
+  const legalCheck = async (): Promise<{
+    reasons: string[];
+    findings: NormalizedFinding[];
+    failed: boolean;
+  }> => {
+    if (!legalAccuracyEnabled() || !args.draftId || isCompanionTranslation) {
+      return { reasons: [], findings: [], failed: false };
+    }
     try {
       const legal = await runLegalCheck(args.content, { tenantId: args.tenantId });
       // 5.1/E1: the same legal-accuracy check, run against the text baked
       // into any generated carousel/quote-card images on this draft — a
       // claim in a slide's pixels was invisible to every check that only
-      // ever looked at body text. Merged into ONE syncFindings call with the
-      // body findings (see loadDraftMediaUrls) so neither set auto-resolves
-      // the other.
+      // ever looked at body text.
+      //
+      // These are RETURNED rather than synced here, so they land in the single
+      // scoped syncFindings below alongside the trap findings. Syncing them
+      // from inside this function would write source `legal` without the
+      // `sources` scope and auto-resolve every finding the other engines own.
       const mediaUrls = await loadDraftMediaUrls(args.db, args.draftId);
       const imageFindings = mediaUrls.length
         ? await checkImagesLegalText(mediaUrls, args.tenantId).catch(() => [])
         : [];
       const allFindings = [...legal.findings, ...imageFindings];
-      await syncFindings({ draftId: args.draftId, tenantId: args.tenantId, incoming: allFindings });
       const critical = allFindings.filter((f) => f.severity === "critical").map((f) => f.title);
       // THE ALERT (6.14, Diana's ask): called from here rather than by each
       // caller of gateSocialPost, so it fires wherever this gate runs —
@@ -193,10 +231,54 @@ export async function gateSocialPost(args: {
       if (critical.length > 0) {
         await notifySocialLegalAlert({ draftId: args.draftId, tenantId: args.tenantId, reasons: critical });
       }
-      return { reasons: critical, failed: false };
+      return { reasons: critical, findings: allFindings, failed: false };
     } catch (e) {
       console.warn(`[social-post-gate] legal check failed (draft ${args.draftId}):`, e);
-      return { reasons: ["Legal-accuracy check could not run"], failed: true };
+      return { reasons: ["Legal-accuracy check could not run"], findings: [], failed: true };
+    }
+  };
+
+  // The knowledge-base fact checks (Diana 2.2): a stated deadline, coverage
+  // threshold or wage figure that disagrees with the maintained value, and a
+  // named act nobody can find. Deterministic — one cached read and a regex
+  // pass — so like the traps it runs unflagged, and unlike the authority loop
+  // it DOES run on a Spanish companion: a wrong figure is just as wrong
+  // translated, and the companion is exactly the copy the expensive half is
+  // deliberately never spent on.
+  const factCheck = async (): Promise<{
+    reasons: string[];
+    findings: NormalizedFinding[];
+    failed: boolean;
+  }> => {
+    try {
+      const findings = await runLegalFactChecks(args.content, { tenantId: args.tenantId });
+      return {
+        reasons: findings.filter((f) => f.severity === "critical").map((f) => f.title),
+        findings,
+        failed: false,
+      };
+    } catch (e) {
+      console.warn(`[social-post-gate] fact check failed (draft ${args.draftId}):`, e);
+      return { reasons: [], findings: [], failed: true };
+    }
+  };
+
+  const trapCheck = async (): Promise<{
+    reasons: string[];
+    findings: NormalizedFinding[];
+    failed: boolean;
+  }> => {
+    if (!args.draftId) return { reasons: [], findings: [], failed: false };
+    try {
+      const traps = await runTrapCheck(args.content, { tenantId: args.tenantId });
+      return {
+        reasons: traps.blockingReasons,
+        findings: traps.findings,
+        failed: traps.failed,
+      };
+    } catch (e) {
+      console.warn(`[social-post-gate] trap check failed (draft ${args.draftId}):`, e);
+      return { reasons: [], findings: [], failed: true };
     }
   };
 
@@ -266,21 +348,49 @@ export async function gateSocialPost(args: {
   // checks are still started here (not after) to run alongside the blocking
   // ones rather than sequentially behind them.
   const legalPromise = legalCheck();
+  const trapPromise = trapCheck();
+  const factPromise = factCheck();
   const inheritedPromise = inheritedCheck();
   const currencyPromise = currencyCheck();
   const linkResolvePromise = linkResolveCheck();
   const linkAdvisoryPromise = linkAdvisoryCheck();
   const sourceConsistencyPromise = sourceConsistencyCheck();
-  const [legal, inheritedReasons, linkReasons, contradictionReasons] = await Promise.all([
+  const [legal, traps, facts, inheritedReasons, linkReasons, contradictionReasons] = await Promise.all([
     legalPromise,
+    trapPromise,
+    factPromise,
     inheritedPromise,
     linkResolvePromise,
     sourceConsistencyPromise,
   ]);
   await Promise.all([currencyPromise, linkAdvisoryPromise]);
 
+  // ONE sync for both legal producers, scoped to `legal`.
+  //
+  // Both of these write under source `legal`, and syncFindings auto-resolves
+  // anything in a recomputed source it was not handed — so two separate calls
+  // would each close the other's findings. They are merged here instead.
+  //
+  // The `sources` scope is what keeps this partial run from closing findings no
+  // engine here looked for: without it, approving a post would silently resolve
+  // its readability, SEO and compliance findings, because this gate does not
+  // produce any. It is also why a failed run writes nothing at all — a check
+  // that could not run has no opinion, and recording that as "no findings"
+  // would auto-resolve the real ones it failed to reproduce.
+  const legalProducersRan = !legal.failed && !traps.failed && !facts.failed;
+  if (args.draftId && legalProducersRan) {
+    await syncFindings({
+      draftId: args.draftId,
+      tenantId: args.tenantId,
+      incoming: [...legal.findings, ...traps.findings, ...facts.findings],
+      sources: ["legal"],
+    });
+  }
+
   const reasons = [
     ...blockingFlags,
+    ...traps.reasons.map((t) => `Known trap: ${t}`),
+    ...facts.reasons.map((t) => `Legal fact: ${t}`),
     ...legal.reasons.map((t) => `Legal review: ${t}`),
     ...inheritedReasons.map((t) => `Source blog unresolved: ${t}`),
     ...linkReasons,

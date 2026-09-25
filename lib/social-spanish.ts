@@ -54,6 +54,19 @@ const SYSTEM = `You adapt already-approved social media copy for a law firm into
 ADAPTATION of the exact approved English post, not a new piece — keep the same angle, hook,
 and CTA, translated naturally, never adding or dropping a claim.
 
+DO NOT TRANSLATE THESE. They are checked character for character after you write:
+- The words "Attorney Advertising", or the hashtag #AttorneyAdvertising. This is a required
+  legal label under the New York advertising rules, not a phrase — a Spanish rendering of it
+  does not satisfy the rule and the post will be held.
+- The offer phrase. The English post carries the English one; write the firm's Spanish offer
+  phrase in its place, exactly as given to you, and do not invent your own translation of it.
+- #KatzMelinger, the phone number, and any URL.
+
+The same prohibitions apply in Spanish as in English: no guarantee of a result
+("garantizamos", "ganaremos"), no superlatives ("el mejor bufete", "nos especializamos en"),
+no fear-based urgency ("actúe ahora", "no espere"), no fee or price language
+("consulta gratis"). Write "Nueva York" and "Nueva Jersey" in full.
+
 ${ANTI_AI_VOICE_RULES}
 
 Return JSON only: { "body": "..." }`;
@@ -66,23 +79,27 @@ Return JSON only: { "body": "..." }`;
 export async function generateSpanishCompanion(
   englishBody: string,
   format: SocialFormatKey,
-  /** The locked Spanish offer phrase (lib/social-operating-brief.ts). Without
-   *  this, the adaptation translates a consultation offer organically — a
-   *  faithful but not word-for-word translation — while the gate's
-   *  missing_offer check (lib/social-compliance.ts) does an exact substring
-   *  match, so a naturally-translated offer would false-flag as missing. */
+  /**
+   * The firm's locked Spanish offer phrase (lib/social-operating-brief.ts).
+   * Passed in rather than translated: the gate's missing_offer check
+   * (lib/social-compliance.ts) is an exact substring match, so an adapter
+   * inventing its own rendering — even a faithful one — produces a post that
+   * cannot pass. Omitted leaves the offer wording to the adaptation, which is
+   * only right for a firm without a locked phrase.
+   */
   offerPhraseEs?: string,
 ): Promise<string | null> {
+  const offerLine = offerPhraseEs?.trim()
+    ? `\n\nTHE FIRM'S SPANISH OFFER PHRASE IS EXACTLY: "${offerPhraseEs.trim()}"
+Where the English post names its offer, use that string verbatim — same words, same capitals,
+same accents. It is checked character for character.`
+    : "";
   try {
     const directive = languageDirective("es");
-    const offerLine = offerPhraseEs
-      ? `\nIf this post invites a consultation, use this EXACT Spanish phrase for the offer, verbatim, not a paraphrase: "${offerPhraseEs}"`
-      : "";
     const user = `${directive}
 
 Adapt this approved ${SOCIAL_CAPS[format].label} into Spanish, matching its length and structure exactly:
-    ${SOCIAL_CAPS[format].promptRules.join("\n    ")}
-${offerLine}
+    ${SOCIAL_CAPS[format].promptRules.join("\n    ")}${offerLine}
 
 APPROVED ENGLISH POST:
 """
@@ -97,8 +114,8 @@ Return JSON only: { "body": "..." }`;
     let violations = validateSocial(format, body);
     if (violations.length) {
       const retryUser = `Your Spanish adaptation broke its hard caps: ${violations.join("; ")}.
-Rewrite it to obey EVERY cap for ${format}: ${SOCIAL_CAPS[format].promptRules.join("; ")}
-Keep it a faithful Spanish adaptation of the same approved post:${offerLine}
+Rewrite it to obey EVERY cap for ${format}: ${SOCIAL_CAPS[format].promptRules.join("; ")}${offerLine}
+Keep it a faithful Spanish adaptation of the same approved post:
 """
 ${englishBody}
 """
