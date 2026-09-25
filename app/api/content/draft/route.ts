@@ -23,6 +23,8 @@ import { resolveTenantId } from "@/lib/tenant-context";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
 import { MIN_CONFIRMED_INTERNAL_LINKS } from "@/lib/internal-links-check";
 import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "@/lib/readability-rules";
+import { remediateReadability } from "@/lib/readability-remediate";
+import { logEvent } from "@/lib/telemetry";
 import { readabilityRulesEngineEnabled } from "@/lib/feature-flags";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
@@ -45,6 +47,11 @@ import { renderFirmFactsBlock } from "@/lib/firm-facts";
 import { inferPillar } from "@/lib/strategy-engine";
 
 export const dynamic = "force-dynamic";
+// Generation plus up to two readability self-correction passes on a long blog.
+// Matched to app/api/content/batches/route.ts, which runs the same generator.
+// Set explicitly rather than left to the platform default: "Apply all fixes"
+// returned FUNCTION_INVOCATION_TIMEOUT for exactly this reason (Diana 1B).
+export const maxDuration = 300;
 
 // Map the request's narrow content_type / template_key into the broader
 // content-type label that brand-voice directions are scoped by ("Blog Post",
@@ -627,10 +634,30 @@ ${readabilityPromptBlock(
         : null;
 
     const draftFormat = contentType === "social" ? "social" : "blog";
-    // The one readability fix applied silently (Diana item 3): break any
-    // paragraph still past rule 02's limit. Long-form only — a social caption's
-    // shape is deliberate. Only inserts breaks at sentence boundaries, leaving
-    // wording and structure untouched (scripts/check-readability-autobreak.ts).
+    // Self-correction before the draft exists (Diana item 3). The loop has run
+    // on the KM wizard path since the rules engine shipped; this path, which
+    // generates most of the library, never had it. A pass is kept only when it
+    // measurably improves, so it can make the draft better or leave it alone.
+    if (draftFormat === "blog") {
+      const remediated = await remediateReadability({
+        body,
+        contentType: readabilityContentType(contentType),
+        useRules: readabilityRulesEngineEnabled(),
+        system,
+      });
+      if (remediated.passes > 0) {
+        logEvent("readability_remediated", {
+          path: "content/draft",
+          passes: remediated.passes,
+          from: remediated.scoreBefore,
+          to: remediated.scoreAfter,
+        });
+      }
+      body = remediated.body;
+    }
+    // Then the one fix applied silently: break any paragraph still past rule
+    // 02's limit. Only inserts breaks at sentence boundaries, leaving wording
+    // and structure untouched (scripts/check-readability-autobreak.ts).
     if (draftFormat === "blog") body = autoBreakLongParagraphs(body).body;
     const draftId = await autosave(
       draftFormat,

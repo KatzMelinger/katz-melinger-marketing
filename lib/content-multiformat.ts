@@ -28,6 +28,8 @@ import { getFirmContext } from "./firm-context";
 import { buildSkillsContext } from "./content-skills";
 import { approvedLinkPlanBlock, buildLinkPlan } from "./internal-links";
 import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "./readability-rules";
+import { remediateReadability } from "./readability-remediate";
+import { logEvent } from "./telemetry";
 import { readabilityRulesEngineEnabled } from "./feature-flags";
 import { MIN_CONFIRMED_INTERNAL_LINKS } from "./internal-links-check";
 import {
@@ -396,9 +398,34 @@ ${readabilityPromptBlock("social", readabilityRulesEngineEnabled())}`,
     // caption's shape is deliberate. Wording is untouched; this only inserts
     // breaks at sentence boundaries, and structure (headings, lists, code) is
     // left byte-identical. See scripts/check-readability-autobreak.ts.
-    const cleanBody = LONG_FORM_FORMATS.includes(format)
-      ? autoBreakLongParagraphs(stripEmDashes(data.body)).body
-      : stripEmDashes(data.body);
+    let cleanBody = stripEmDashes(data.body);
+    // BLOG ONLY, not every long-form format. Remediation is up to two extra
+    // model calls, and email/podcast/video_long would multiply that across a
+    // batch for formats whose readability findings are not what Diana's item 3
+    // is about. It also keeps the 60-second content-production/email and
+    // /social routes out of the loop entirely — they generate no blog.
+    if (format === "blog") {
+      // Self-correction before the draft exists (Diana item 3), the same loop
+      // the KM wizard has used since the rules engine shipped. A pass is kept
+      // only when it measurably improves, so this can make a draft better or
+      // leave it alone, never worse.
+      const remediated = await remediateReadability({
+        body: cleanBody,
+        contentType: readabilityContentType(format),
+        useRules: readabilityRulesEngineEnabled(),
+        system,
+      });
+      if (remediated.passes > 0) {
+        logEvent("readability_remediated", {
+          path: "multiformat",
+          format,
+          passes: remediated.passes,
+          from: remediated.scoreBefore,
+          to: remediated.scoreAfter,
+        });
+      }
+      cleanBody = autoBreakLongParagraphs(remediated.body).body;
+    }
     const cleanTitle = data.title ? stripEmDashes(data.title) : data.title;
     const metadata: Record<string, unknown> = {};
     if (data.subject) metadata.subject = stripEmDashes(data.subject);
