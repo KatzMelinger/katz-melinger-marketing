@@ -363,15 +363,24 @@ async function refreshTrackedKeywords(tenantId: string) {
     // snapshot from seconds ago. Best-effort: an unreadable timestamp just
     // skips that one check rather than failing the refresh.
     let lastSnapshotAt: string | null = null;
+    // Whether we could READ the previous snapshot at all. A null timestamp is
+    // ambiguous on its own — it means either "no snapshot has ever been taken"
+    // (true on a fresh tenant, and not a problem) or "the read failed" (a
+    // monitoring blind spot). The freshness check needs to tell those apart,
+    // because treating the second as healthy is how a dead tracker stays quiet.
+    let lastSnapshotReadable = true;
     try {
-      const { data: lastRow } = await db
+      const { data: lastRow, error: lastErr } = await db
         .select("seo_rank_snapshots", "created_at")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      lastSnapshotAt = ((lastRow as { created_at?: string } | null)?.created_at) ?? null;
+      // The wrapper resolves rather than throws on a query error, so this has
+      // to be checked explicitly — it used to be dropped on the floor.
+      if (lastErr) lastSnapshotReadable = false;
+      else lastSnapshotAt = ((lastRow as { created_at?: string } | null)?.created_at) ?? null;
     } catch {
-      // Table unreachable — treated as "unknown", not "stale forever".
+      lastSnapshotReadable = false;
     }
 
     // Append today's rank snapshot for the firm domain AND every tracked
@@ -405,7 +414,10 @@ async function refreshTrackedKeywords(tenantId: string) {
     // never be the thing that makes a refresh report as failed.
     try {
       const balance = await getAccountBalance();
-      await evaluateSeoTrackerFreshness({ lastSnapshotAt, snapshotRowsThisRun: snapshotRows, balance }, tenantId);
+      await evaluateSeoTrackerFreshness(
+        { lastSnapshotAt, lastSnapshotReadable, snapshotRowsThisRun: snapshotRows, balance },
+        tenantId,
+      );
     } catch (err) {
       console.error(
         "[seo/keywords/refresh] freshness alert check failed:",

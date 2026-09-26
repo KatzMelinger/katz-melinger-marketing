@@ -353,6 +353,13 @@ export type SeoFreshnessInputs = {
   /** ISO timestamp of the most recent snapshot row written BEFORE this run,
    *  or null if the table has never had one for this tenant. */
   lastSnapshotAt: string | null;
+  /**
+   * Whether the previous-snapshot timestamp could be READ. False means we do
+   * not know how stale the tracker is, which is a finding in itself — distinct
+   * from lastSnapshotAt being null because no snapshot exists yet.
+   * Defaults to true so existing callers keep their behaviour.
+   */
+  lastSnapshotReadable?: boolean;
   /** Rows written by THIS run's snapshot step; null if that step threw. */
   snapshotRowsThisRun: number | null;
   /** Current DataForSEO account balance in USD, or null if unreadable. */
@@ -380,6 +387,23 @@ export async function evaluateSeoTrackerFreshness(
     return wrote;
   };
   let written = 0;
+
+  // FAIL CLOSED. An unreadable timestamp used to skip the staleness check
+  // entirely, so "the tracker stopped AND we cannot tell" produced silence —
+  // the worst possible response to that combination. Low severity because it is
+  // a blind spot rather than a confirmed outage.
+  if (inputs.lastSnapshotReadable === false) {
+    const ok = await write({
+      type: "seo_tracker_stale",
+      severity: "low",
+      source: "seo",
+      title: "Could not read the keyword tracker's last snapshot time",
+      body: "The staleness check could not run, so the tracker is unmonitored rather than confirmed healthy. Check Supabase reachability and the seo_rank_snapshots table.",
+      payload: { last_snapshot_readable: false },
+      dedupeKey: `seo_stale_unknown::${today}`,
+    });
+    if (ok) written++;
+  }
 
   if (inputs.lastSnapshotAt) {
     const ageMs = Date.now() - new Date(inputs.lastSnapshotAt).getTime();
@@ -420,6 +444,22 @@ export async function evaluateSeoTrackerFreshness(
     0,
     Number(process.env.DATAFORSEO_BALANCE_ALERT_THRESHOLD ?? DEFAULT_BALANCE_ALERT_THRESHOLD),
   );
+  // FAIL CLOSED here too. A null balance skipped the check, so a broken balance
+  // read meant no funding warning at all — precisely the state that precedes
+  // running dry, reported as nothing.
+  if (inputs.balance === null) {
+    const ok = await write({
+      type: "seo_tracker_stale",
+      severity: "low",
+      source: "seo",
+      title: "Could not read the DataForSEO balance",
+      body: `The balance check could not run, so a low balance would not be caught. Rankings stop updating when funds run out. Verify the DataForSEO credentials and that appendix/user_data is reachable.`,
+      payload: { balance: null, threshold },
+      dedupeKey: `seo_balance_unknown::${today}`,
+    });
+    if (ok) written++;
+  }
+
   if (inputs.balance !== null && inputs.balance < threshold) {
     const ok = await write({
       type: "seo_tracker_stale",
