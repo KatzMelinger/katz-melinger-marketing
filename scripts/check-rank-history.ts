@@ -81,6 +81,23 @@ async function main() {
   check(rows.length > PAGE_SIZE, `paging worked: ${rows.length} rows, past the ${PAGE_SIZE}-row cap`);
   check(ownKeywords.size > 100, `${ownKeywords.size} of the firm's own keywords present (not 0)`);
 
+  console.log("");
+  console.log("-- no fake zeros in the trend -----------------------------------");
+  // A funding outage used to write a null rank for every keyword, and the
+  // visibility aggregate scores null as zero CTR. So a day where the firm's own
+  // visibility is 0 across the whole list is that signature: real data never
+  // has all 194 keywords outside the top 100 at once.
+  const ownVis = vis.filter((r) => r.domain === OWN);
+  const zeroDays = ownVis.filter((r) => Number(r.visibility) === 0 && r.sampled > 50);
+  check(
+    zeroDays.length === 0,
+    zeroDays.length === 0
+      ? "no day records zero visibility across the whole tracked list"
+      : `${zeroDays.length} day(s) at 0 visibility over ${zeroDays[0]?.sampled} keywords - ` +
+        `likely nulls written during an outage (${zeroDays.map((d) => d.captured_on).join(", ")})`,
+  );
+  console.log("");
+
   console.log("\n-- the tracked list -------------------------------------------");
   const { count } = await db.from("seo_keywords").select("*", { count: "exact", head: true });
   check((count ?? 0) > 100, `seo_keywords holds ${count} rows`);

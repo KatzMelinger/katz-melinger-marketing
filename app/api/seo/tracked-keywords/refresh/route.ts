@@ -29,7 +29,7 @@ import {
   getAIOverviewForKeyword,
   getDomainKeywords,
   getKeywordDifficulty,
-  getLiveRank,
+  getLiveRankResult,
   getPhraseMetrics,
   type DataForSeoKeywordRow,
 } from "@/lib/dataforseo";
@@ -165,7 +165,11 @@ async function refreshTrackedKeywords(tenantId: string) {
     // bounded set of real-time SERP lookups so the rank column is accurate —
     // this makes us MORE accurate than a snapshot-only refresh.
     const LIVE_RANK_CAP = 50;
+    // Only keywords we actually CHECKED land here. A keyword absent from this
+    // map was either never looked up (over the cap) or the lookup failed, and
+    // in both cases we do not know its rank — see the skip below.
     const liveRankMap = new Map<string, number | null>();
+    const lookupFailed = new Set<string>();
     const toLookup = unmatchedPhrases.slice(0, LIVE_RANK_CAP);
     if (unmatchedPhrases.length > LIVE_RANK_CAP) {
       console.warn(
@@ -175,10 +179,19 @@ async function refreshTrackedKeywords(tenantId: string) {
     }
     await Promise.all(
       toLookup.map(async (kw) => {
-        const rank = await getLiveRank(kw, seoDomain).catch(() => null);
-        liveRankMap.set(kw.toLowerCase().trim(), rank);
+        const key = kw.toLowerCase().trim();
+        const res = await getLiveRankResult(kw, seoDomain);
+        if (res.ok) liveRankMap.set(key, res.rank);
+        else lookupFailed.add(key);
       }),
     );
+    if (lookupFailed.size > 0) {
+      console.warn(
+        `[seo/keywords/refresh] ${lookupFailed.size} live-rank lookups FAILED ` +
+          `(DataForSEO error or funds); those keywords are left untouched rather ` +
+          `than recorded as unranked.`,
+      );
+    }
 
     // AI Overview check (C) — does this keyword trigger a Google AI Overview,
     // and is our domain cited in it? Each is a live SERP-advanced call, so this
@@ -212,9 +225,17 @@ async function refreshTrackedKeywords(tenantId: string) {
     const capturedOn = now.slice(0, 10);
     // Per-keyword final rank for OUR domain, fed into the history snapshot below.
     const ourSnapshot: Array<{ keyword: string; rank: number | null; url: string | null }> = [];
+    // Keywords with no rank data this run. Reported rather than silently
+    // absorbed: a run that skips most of the list is an outage, not a refresh.
+    let noRankData = 0;
     for (const item of items) {
       const match = matchByKeyword.get(item.id);
       const target = item.keyword.toLowerCase().trim();
+      // AI Overview columns only for keywords we checked this run (conditional
+      // spread so capped keywords keep their prior values rather than reset).
+      // Read before the rank branches because the no-rank-data path below still
+      // saves this when it has it.
+      const ao = aiOverviewMap.get(item.id);
 
       let newRank: number | null;
       let searchVolume: number | null;
@@ -230,21 +251,62 @@ async function refreshTrackedKeywords(tenantId: string) {
           item.difficulty ??
           null;
         url = match.url;
-      } else {
-        // Not in the snapshot — use the live-SERP rank if we found one, and
-        // surface volume/difficulty from phrase-level data.
+      } else if (liveRankMap.has(target)) {
+        // Not in the snapshot, but we checked the live SERP. A null here is a
+        // real answer: we looked and the domain is not in the top 100.
         const metrics = metricsMap.get(target);
         newRank = liveRankMap.get(target) ?? null;
         searchVolume = metrics ? metrics.volume : item.search_volume ?? null;
         difficulty = kdMap.get(target) ?? item.difficulty ?? null;
         url = null;
+      } else {
+        // NO RANK DATA for this keyword this run — either the live lookup
+        // failed (DataForSEO error or out of funds) or it fell past
+        // LIVE_RANK_CAP and was never attempted.
+        //
+        // This used to write null, which the tracker cannot tell apart from
+        // "not ranking": an outage read as all 194 keywords dropping out on the
+        // same day, the visibility trend scored the nulls as zero CTR, and the
+        // history you would compare against afterwards was overwritten with
+        // the same fiction. A gap is honest; a zero is not.
+        //
+        // So the rank columns and last_checked_at are left alone — the row
+        // keeps its last known rank and the timestamp keeps saying when that
+        // was actually measured — and no snapshot row is written, which leaves
+        // a visible gap in the trend instead of a floor.
+        noRankData++;
+        const metrics = metricsMap.get(target);
+        const kd = kdMap.get(target) ?? null;
+        // Non-rank metrics are still worth saving when we happen to have them.
+        if (metrics || kd !== null || ao) {
+          const { error: partialErr } = await db.raw
+            .from("seo_keywords")
+            .update({
+              ...(metrics ? { search_volume: metrics.volume } : {}),
+              ...(kd !== null ? { difficulty: kd } : {}),
+              ...(ao
+                ? {
+                    ai_overview_present: ao.present,
+                    ai_overview_cited: ao.cited,
+                    ai_overview_sources: ao.sources,
+                    ai_overview_checked_at: now,
+                  }
+                : {}),
+            })
+            .eq("id", item.id)
+            .eq("tenant_id", tenantId);
+          if (partialErr) {
+            console.error(
+              "[seo/keywords/refresh] partial update error for",
+              item.keyword,
+              partialErr.message,
+            );
+          }
+        }
+        continue;
       }
 
       ourSnapshot.push({ keyword: item.keyword, rank: newRank, url });
-
-      // AI Overview columns only for keywords we checked this run (conditional
-      // spread so capped keywords keep their prior values rather than reset).
-      const ao = aiOverviewMap.get(item.id);
 
       const { error: updateErr } = await db.raw
         .from("seo_keywords")
@@ -372,6 +434,10 @@ async function refreshTrackedKeywords(tenantId: string) {
 
     return {
       updated,
+      // How many keywords this run had NO rank data for and deliberately left
+      // alone. Reported so a caller can tell a real refresh from an outage —
+      // `updated: 12, noRankData: 182` is an outage wearing a success response.
+      noRankData,
       keywords: refreshed ?? [],
       cannibalizationIssues,
       snapshotRows,

@@ -295,6 +295,66 @@ export async function getKeywordTrend(
  * top `depth` results. ~$0.002 per call — use only for the bounded set of
  * tracked keywords missing from the snapshot, not for bulk discovery.
  */
+/**
+ * A rank lookup that says whether it actually ran.
+ *
+ * `null` alone cannot carry this: it has to mean "not in the top 100", and a
+ * failed call returning the same `null` is how a funding outage came to look
+ * like every keyword losing its ranking on the same day. The refresh wrote
+ * current_rank = null for all 194 keywords and null-rank snapshot rows, the
+ * visibility trend scored those as zero CTR, and the result was
+ * indistinguishable from a catastrophe — while also overwriting the history you
+ * would want to compare against afterwards.
+ *
+ * So: `ok: false` means we do not know and the caller must record nothing.
+ * `ok: true` with `rank: null` means we looked and the domain is not there.
+ */
+export type LiveRankResult =
+  | { ok: true; rank: number | null }
+  | { ok: false; reason: string };
+
+/**
+ * Rank for one keyword, distinguishing "not ranking" from "could not check".
+ * Prefer this over getLiveRank anywhere the answer is persisted.
+ */
+export async function getLiveRankResult(
+  keyword: string,
+  domain: string = DATAFORSEO_DOMAIN,
+  depth: number = 100,
+): Promise<LiveRankResult> {
+  const target = domain
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase();
+  try {
+    const json = await cachedDataForSeoPost("serp/google/organic/live/regular", {
+      keyword,
+      location_code: DATAFORSEO_LOCATION_CODE,
+      language_code: DATAFORSEO_LANGUAGE_CODE,
+      depth: Math.min(Math.max(depth, 10), 100),
+    });
+    for (const item of extractItems(json)) {
+      const d = String(item?.domain ?? "").toLowerCase();
+      if (d === target || d.endsWith(`.${target}`)) {
+        return { ok: true, rank: toNum(item?.rank_group) };
+      }
+    }
+    // The call succeeded and the domain is not in the results. That is a real
+    // answer, and the only case where writing null is correct.
+    return { ok: true, rank: null };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Rank for one keyword, collapsing "could not check" into null.
+ *
+ * Kept for read-only/display callers that have nowhere to put an error. Do NOT
+ * use it to write a rank — use getLiveRankResult, or an outage is recorded as a
+ * ranking loss.
+ */
 export async function getLiveRank(
   keyword: string,
   domain: string = DATAFORSEO_DOMAIN,
