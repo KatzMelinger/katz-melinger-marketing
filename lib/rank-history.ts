@@ -214,3 +214,88 @@ export function shapeRankHistory(
 
   return { ownDomain: own, domains, dates, visibility, keywords };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Reading the history without being truncated                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * PostgREST answers at most this many rows unless you page.
+ *
+ * This constant exists because forgetting it caused the bug Diana reported as
+ * "the keyword tracker is broken, stuck on June 13". The route asked for 180
+ * days of raw snapshots ordered oldest-first with no pagination; at 1,164 rows
+ * a day the whole response was one day's data — the oldest day there was. The
+ * tracker's own data was complete the entire time.
+ */
+export const PAGE_SIZE = 1000;
+
+/**
+ * Page through a query until it stops returning full pages.
+ *
+ * Takes a callback that has ALREADY awaited its query and returns plain rows,
+ * rather than a Supabase builder. That keeps the generic away from Supabase's
+ * builder types, which are deep enough to trip TS2589 when unified with one.
+ */
+export async function loadPaged<T>(
+  page: (from: number, to: number) => Promise<{ rows: T[]; error: string | null }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { rows, error } = await page(offset, offset + PAGE_SIZE - 1);
+    if (error) throw new Error(error);
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) return out;
+  }
+}
+
+export type VisibilityRow = {
+  domain: string;
+  captured_on: string;
+  visibility: number;
+  sampled: number;
+};
+
+/**
+ * The response, assembled from the aggregate trend plus the two compared dates.
+ *
+ * `dates` and `domains` come from the VISIBILITY rows, which cover every day and
+ * every domain by construction — so the From/To selectors list the whole history
+ * even though only two days of per-keyword detail travel with it.
+ */
+export function buildRankHistory(args: {
+  visibilityRows: VisibilityRow[];
+  keywordRows: RankSnapshotRow[];
+  ownDomain: string;
+}): RankHistoryResponse {
+  const own = normalizeDomain(args.ownDomain);
+
+  const dateSet = new Set<string>();
+  const domainSet = new Set<string>();
+  const visibility: Record<string, Record<string, number>> = {};
+
+  for (const r of args.visibilityRows) {
+    dateSet.add(r.captured_on);
+    domainSet.add(r.domain);
+    (visibility[r.domain] ??= {})[r.captured_on] = Number(r.visibility) || 0;
+  }
+
+  const byKeyword = new Map<string, Record<string, Record<string, number | null>>>();
+  for (const r of args.keywordRows) {
+    const ranks = byKeyword.get(r.keyword) ?? {};
+    (ranks[r.domain] ??= {})[r.captured_on] = r.rank;
+    byKeyword.set(r.keyword, ranks);
+  }
+
+  const dates = [...dateSet].sort();
+  const domains = [...domainSet].sort((a, b) => {
+    if (a === own) return -1;
+    if (b === own) return 1;
+    return a.localeCompare(b);
+  });
+  const keywords = [...byKeyword.entries()]
+    .map(([keyword, ranks]) => ({ keyword, ranks }))
+    .sort((a, b) => a.keyword.localeCompare(b.keyword));
+
+  return { ownDomain: own, domains, dates, visibility, keywords };
+}

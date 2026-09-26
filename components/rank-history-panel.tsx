@@ -159,10 +159,25 @@ export function RankHistoryPanel() {
     }
   };
 
+  // Per-keyword ranks are fetched for the two compared dates only, so changing
+  // either selector refetches. The API used to return every date for every
+  // keyword, which is the ~210k-row matrix that got truncated at 1,000 rows and
+  // left the whole panel showing one day in June with no keywords in it.
+  //
+  // dateA/dateB are unset on the first pass; the API then defaults to the ends
+  // of the window and tells us the dates it used, which is what fills the
+  // selectors.
   useEffect(() => {
-    fetch("/api/seo/rank-history", { cache: "no-store" })
+    const params = new URLSearchParams();
+    if (dateA) params.set("from", dateA);
+    if (dateB) params.set("to", dateB);
+    const qs = params.toString();
+
+    let cancelled = false;
+    fetch(`/api/seo/rank-history${qs ? `?${qs}` : ""}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d: RankHistory) => {
+        if (cancelled) return;
         // Guard against error / partial payloads (e.g. before the migration is
         // applied) — only accept a fully well-formed response so every
         // downstream .filter/.map (domains, dates, keywords, visibility) is safe.
@@ -178,14 +193,24 @@ export function RankHistoryPanel() {
           return;
         }
         setData(d);
-        if (d.dates.length > 0) {
+        // Only seed the selectors from the response on the first load. After
+        // that they are the user's, and writing them back here would re-trigger
+        // this effect.
+        if (d.dates.length > 0 && (!dateA || !dateB)) {
           setDateA(d.dates[0]);
           setDateB(d.dates[d.dates.length - 1]);
         }
       })
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch(() => {
+        if (!cancelled) setData(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dateA, dateB]);
 
   const competitors = useMemo(
     () => (data ? data.domains.filter((d) => d !== data.ownDomain) : []),

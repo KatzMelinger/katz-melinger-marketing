@@ -36,6 +36,9 @@ export async function getTenantDb() {
     tenantId,
     /** RLS-scoped query builder — reads return ONLY this tenant's rows. */
     from: (table: string) => supabase.from(table),
+    /** RLS-scoped RPC. A `security invoker` function sees exactly the rows this
+     *  caller would, so an aggregate computed in SQL stays tenant-scoped. */
+    rpc: (name: string, args?: Record<string, unknown>) => supabase.rpc(name, args),
     /** Insert, tenant_id stamped on every row. */
     insert: (table: string, rows: Row | Row[]) =>
       supabase.from(table).insert(Array.isArray(rows) ? rows.map(stamp) : stamp(rows)),
