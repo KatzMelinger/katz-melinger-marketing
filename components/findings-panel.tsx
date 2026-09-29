@@ -33,6 +33,7 @@ import {
 import {
   countBlockers,
   groupByRule,
+  hasKnownFix,
   isOpen,
   publishSeverity,
   summarizeByEngine,
@@ -91,7 +92,7 @@ export function FindingsPanel({
    *  re-fetching findings itself. Fires on every load, independent of which
    *  tab (if any) is actually visible — this component is meant to stay
    *  mounted so the count is right before a reviewer ever clicks in. */
-  onCounts?: (counts: { total: number; legal: number }) => void;
+  onCounts?: (counts: { total: number; legal: number; critical: number }) => void;
 }) {
   const [findings, setFindings] = useState<StoredFinding[]>([]);
   const [overrides, setOverrides] = useState<SeverityOverrides>({});
@@ -187,7 +188,9 @@ export function FindingsPanel({
   // what avoids an infinite-update loop from new array identities each render.
   const legalOpenCount = open.filter((f) => f.source === "legal").length;
   useEffect(() => {
-    onCounts?.({ total: open.length, legal: legalOpenCount });
+    // `critical` is the blocker count, not raw severity: engines that never
+    // block approval (readability, SEO…) are capped below blocker already.
+    onCounts?.({ total: open.length, legal: legalOpenCount, critical: blockers });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findings]);
 
@@ -333,8 +336,9 @@ export function FindingsPanel({
         <ul className="space-y-1.5">
           {groups.map((g) => {
             const isExpanded = expanded.has(g.key);
-            // Only findings that carry a suggested fix can be handed to Apply.
-            const fixable = g.findings.filter((f) => isOpen(f) && f.fix);
+            // Only findings with a known correct answer can be handed to Apply;
+            // a legal question with no known value goes to an attorney instead.
+            const fixable = g.findings.filter((f) => isOpen(f) && hasKnownFix(f));
             return (
               <li key={g.key} className={`rounded-md border ${SEVERITY_STYLE[g.severity]}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
@@ -388,7 +392,7 @@ export function FindingsPanel({
                                     this one had to resolve it by hand. Only
                                     drawn when there is a suggested fix to send
                                     and somewhere to send it. */}
-                                {onFixAll && f.fix && (
+                                {onFixAll && hasKnownFix(f) && (
                                   <button
                                     type="button"
                                     onClick={() => onFixAll([fixText(f)])}

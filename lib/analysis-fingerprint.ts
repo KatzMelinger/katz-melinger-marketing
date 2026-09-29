@@ -36,8 +36,10 @@ import { readabilityRulesEngineEnabled } from "./feature-flags";
  *     (RULE_TOLERANCE_RATE), and READABILITY_FLOOR/TARGET were recalibrated to
  *     70/85. A stored "53" from revision 1 and a "53" from revision 2 are not
  *     the same claim, so every prior score is invalidated and must be re-run.
+ * 3 — readability rule 10 (first person) retired for firm content (Sept 28
+ *     spec 10.3); a blog score now covers 14 rules, not 15.
  */
-const ENGINE_REVISION = 2;
+const ENGINE_REVISION = 3;
 
 export type AnalysisFingerprint = {
   /** sha256 of the exact body text that was scored. */

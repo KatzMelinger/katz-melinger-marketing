@@ -28,14 +28,35 @@ const EMPLOYER_ADDRESS_RE =
 /** Collections content wrongly addressing the debtor as the reader — the
  *  firm's collections practice represents the creditor/business trying to
  *  collect, never the person or business who owes the debt. */
-const DEBTOR_ADDRESS_RE =
-  /\bfor debtors[:,]|\battention debtors\b|\bif you owe (money|a debt)\b|\bas a debtor,|\bstruggling (with|to pay) (your )?debt\b|\bbeing sued for a debt you owe\b|\bcan'?t pay your bills\b/i;
+// The second line of alternatives came from the three blogs in Diana's Sept 28
+// audit ("What Debtors Need to Know", "When a Debt Collection Law Firm
+// Contacts You", "...Residents Need to Know"), none of which the first line
+// caught: they address the debtor as "you" without ever saying "debtor,".
+const DEBTOR_ADDRESS_RE = new RegExp(
+  [
+    /\bfor debtors[:,]|\battention debtors\b|\bif you owe (money|a debt)\b|\bas a debtor,|\bstruggling (with|to pay) (your )?debt\b|\bbeing sued for a debt you owe\b|\bcan'?t pay your bills\b/
+      .source,
+    /\bdebtors need to know\b|\b(debt collect(or|ion)( law firm| agency)?|collection (agency|law firm)|law office debt collector)s? (contacts|calls|sues|writes to) you\b|\byour rights (as a (debtor|consumer)|under the (FDCPA|Fair Debt Collection Practices Act))\b|\byou (can|may|should|have the right to) dispute (the|a|your) debt\b|\bhow to dispute (a|the|your) debt\b|\bhow to (respond|stop|deal with) (a )?(debt collect|collection)/
+      .source,
+  ].join("|"),
+  "i",
+);
+
+/** Map the stored practice_area (free text in places) to the two angles. */
+export function normalizePracticeArea(v: string | null | undefined): "employment" | "collections" | null {
+  const t = (v ?? "").toLowerCase();
+  if (!t) return null;
+  if (/collect|judgment|creditor|debt/.test(t)) return "collections";
+  if (/employ|wage|discrimin|harass|retaliat|fmla|termination|severance/.test(t)) return "employment";
+  return null;
+}
 
 export function checkAudienceAngle(
   body: string,
   practiceArea: string | null | undefined,
 ): AudienceAngleHit | null {
   if (!body) return null;
+  practiceArea = normalizePracticeArea(practiceArea) ?? practiceArea;
   if (practiceArea === "employment") {
     const m = body.match(EMPLOYER_ADDRESS_RE);
     return m ? { matched: m[0] } : null;

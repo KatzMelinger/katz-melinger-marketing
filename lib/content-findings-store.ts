@@ -75,6 +75,41 @@ export async function listFindings(draftId: string): Promise<StoredFinding[]> {
 }
 
 /**
+ * Open critical findings per draft, for the gates that must refuse a draft
+ * with one (approve, the WordPress pull, certification).
+ *
+ * Returns `null` when the read FAILED — callers must treat that as "blocked",
+ * never as "none": a gate that could not look is not a clean bill of health.
+ * An unmigrated table returns an empty map (nothing can be open in it).
+ */
+export async function openCriticalFindings(
+  draftIds: readonly string[],
+): Promise<Map<string, StoredFinding[]> | null> {
+  const out = new Map<string, StoredFinding[]>();
+  if (draftIds.length === 0) return out;
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("content_findings")
+    .select("*")
+    .in("draft_id", draftIds as string[])
+    .eq("severity", "critical")
+    .in("status", ["open", "in_progress"])
+    .range(0, 4999);
+  if (error) {
+    if (isMissingTable(error.message)) return out;
+    console.warn("[findings] open-critical read failed:", error.message);
+    return null;
+  }
+  for (const r of data ?? []) {
+    const f = rowToFinding(r as Row);
+    const list = out.get(f.draftId) ?? [];
+    list.push(f);
+    out.set(f.draftId, list);
+  }
+  return out;
+}
+
+/**
  * Sync a fresh set of findings onto a draft.
  *
  * Called after every analysis. Existing rows keep their id and their status;

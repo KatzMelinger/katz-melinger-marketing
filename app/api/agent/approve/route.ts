@@ -36,6 +36,11 @@ import { checkSocialCompliance } from "@/lib/social-compliance";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
 import { syncFindings } from "@/lib/content-findings-store";
 import { getCurrentUser } from "@/lib/supabase-route";
+import { normalizePracticeArea } from "@/lib/audience-angle";
+import { checkRequiredElements } from "@/lib/required-elements";
+import { closingCtaFor } from "@/lib/closing-cta";
+import { hasWebPage } from "@/lib/draft-metadata";
+import { dequeueWp } from "@/lib/draft-certifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -114,6 +119,32 @@ async function approveContent(
       { error: `Only items awaiting review can be approved (status: ${draft.status}).` },
       { status: 409 },
     );
+  }
+
+  // Sept 28 spec, sections 6, 7 and 10.2: a blog or web page must carry its
+  // title, H1, label, CTA, disclaimer and three internal links, and no
+  // placeholder or pasted schema code, before it can be approved. Checked
+  // here, server-side, because the drawer's QA list could be skipped with
+  // "Approve despite QA". Not a hold (nothing is wrong with the law); the draft
+  // stays in review with the list of what is missing.
+  if (hasWebPage((draft.format as string | null) ?? "blog")) {
+    const missing = checkRequiredElements({
+      body: typeof draft.body === "string" ? draft.body : "",
+      title: (draft.title as string | null) ?? null,
+      cta: await closingCtaFor(tenantId),
+    });
+    if (missing.length > 0) {
+      logEvent("approve_blocked_required_elements", { draftId: id, missing: missing.map((m) => m.code) });
+      return NextResponse.json(
+        {
+          error: `Missing required element${missing.length === 1 ? "" : "s"}: ${missing
+            .map((m) => m.label)
+            .join("; ")}.`,
+          missing,
+        },
+        { status: 422 },
+      );
+    }
   }
 
   // A stale analysis cannot satisfy the QA gate. Recomputing is asynchronous
@@ -250,7 +281,15 @@ async function approveContent(
   const copyBrief = await getOperatingBrief(tenantId);
   const copyFlags = checkSocialCompliance(
     typeof draft.body === "string" ? draft.body : "",
-    { assetType: "document", documentPhone: copyBrief.documentPhone },
+    {
+      assetType: "document",
+      documentPhone: copyBrief.documentPhone,
+      // Without this the audience check (employer / debtor addressed as the
+      // reader) never ran on blogs — the three debtor-side collections blogs
+      // in the Sept 28 audit passed it.
+      practiceArea: normalizePracticeArea(draft.practice_area as string | null) ??
+        normalizePracticeArea(`${draft.title ?? ""} ${draft.topic ?? ""}`),
+    },
   ).filter((f) => f.severity === "block");
 
   if (copyFlags.length > 0) {
@@ -619,6 +658,21 @@ async function approveContent(
   }
 
   await setDraftStatus(supabase, tenantId, id, "approved");
+  // A queued flag left over from an earlier approval must not publish THIS
+  // version without someone clicking Publish again (spec 11.9).
+  {
+    const dq = dequeueWp(
+      (draft.metadata as Record<string, unknown> | null) ?? {},
+      "Re-approved; Publish must be clicked again",
+    );
+    if (dq.changed) {
+      await supabase
+        .from("content_drafts")
+        .update({ metadata: dq.meta })
+        .eq("id", id)
+        .eq("tenant_id", tenantId);
+    }
+  }
   // Who approved this, and what the checks said at the time. Approval was the
   // one action with no durable record of either.
   const approver = await getCurrentUser();

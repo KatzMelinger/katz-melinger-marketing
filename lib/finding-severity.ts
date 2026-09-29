@@ -77,11 +77,18 @@ export const ENGINE_ORDER: readonly FindingSource[] = [
   "linkability",
 ];
 
-/** Engines that may never produce a blocker, however severe they think it is. */
+/**
+ * Engines that may never produce a blocker, however severe they think it is.
+ * Sept 28 spec, section 7: readability, SEO, CASH, brand voice and
+ * linkability never block approval.
+ */
 export const CAPPED_ENGINES: ReadonlySet<FindingSource> = new Set<FindingSource>([
   "cash",
   "aeo",
   "readability",
+  "seo",
+  "brand_voice",
+  "linkability",
 ]);
 
 const BASE: Record<FindingSeverity, PublishSeverity> = {
@@ -134,6 +141,21 @@ export function publishSeverity(
 /** Is this finding still outstanding? */
 export function isOpen(f: Pick<StoredFinding, "status">): boolean {
   return f.status === "open" || f.status === "in_progress";
+}
+
+/**
+ * Legal rules whose finding carries ONE known correct value (a knowledge base
+ * constant, a dated figure, a statute table description), so "Apply fix" can
+ * write it in. Every other legal finding is a question for an attorney: it gets
+ * Dismiss (with a reason), never an automatic rewrite (Sept 28 spec, 1.4).
+ */
+const LEGAL_KNOWN_VALUE_RULES = new Set(["constant_mismatch", "value_date_mismatch", "statute_subject_mismatch"]);
+
+/** May this finding be handed to Apply fix / Fix all? */
+export function hasKnownFix(f: Pick<StoredFinding, "source" | "ruleId" | "fix">): boolean {
+  if (!f.fix) return false;
+  if (f.source !== "legal") return true;
+  return !!f.ruleId && LEGAL_KNOWN_VALUE_RULES.has(f.ruleId);
 }
 
 /**

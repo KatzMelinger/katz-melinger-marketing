@@ -453,9 +453,10 @@ export function DraftDrawer({
   const [activeTab, setActiveTab] = useState<"content" | "seo" | "qa" | "legal" | "findings" | "assets">(
     "content",
   );
-  const [findingsCounts, setFindingsCounts] = useState<{ total: number; legal: number }>({
+  const [findingsCounts, setFindingsCounts] = useState<{ total: number; legal: number; critical: number }>({
     total: 0,
     legal: 0,
+    critical: 0,
   });
   // Reviewer certifications, persisted on the draft with who and when. These
   // were session-only useState booleans: nothing was stored, no name was
@@ -1760,11 +1761,33 @@ export function DraftDrawer({
                       </div>
                     )
                   ) : (
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                      <div className="text-sm font-semibold text-emerald-900">Ready to approve</div>
-                      <p className="mt-0.5 text-xs text-emerald-700">
-                        {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
-                      </p>
+                    <div
+                      className={`rounded-lg border p-3 ${
+                        findingsCounts.critical > 0
+                          ? "border-rose-200 bg-rose-50"
+                          : "border-emerald-200 bg-emerald-50"
+                      }`}
+                    >
+                      {/* Sept 28 spec, section 7: "Ready to approve" must never
+                          show while a Critical finding is open. */}
+                      {findingsCounts.critical > 0 ? (
+                        <>
+                          <div className="text-sm font-semibold text-rose-900">
+                            On hold · {findingsCounts.critical} critical finding
+                            {findingsCounts.critical === 1 ? "" : "s"} open
+                          </div>
+                          <p className="mt-0.5 text-xs text-rose-700">
+                            Fix or dismiss them (Legal and Findings tabs) before approving.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm font-semibold text-emerald-900">Ready to approve</div>
+                          <p className="mt-0.5 text-xs text-emerald-700">
+                            {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
+                          </p>
+                        </>
+                      )}
                       {!qaGatePassed && (
                         <div className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-800">
                           <span className="font-medium">QA checklist incomplete — fix before approving:</span>
@@ -1795,7 +1818,12 @@ export function DraftDrawer({
                       )}
                       <button
                         onClick={approve}
-                        disabled={!canPublish || approving || (!qaGatePassed && !qaOverride)}
+                        disabled={
+                          !canPublish ||
+                          approving ||
+                          findingsCounts.critical > 0 ||
+                          (!qaGatePassed && !qaOverride)
+                        }
                         className="mt-2 w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                         title={
                           !canPublish
