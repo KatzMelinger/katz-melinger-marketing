@@ -74,11 +74,30 @@ ${AD_TERMS_RULE}
 
 ${FIRM_FACTS_RULE}`;
 
-export const SCORE_GUIDE = `Score guide:
-- 90-100: ready to publish, only minor warnings
-- 70-89: publishable with the listed disclaimers added
+// Sept 28 spec 11.4: this check reads for ATTORNEY ADVERTISING rules only. It
+// does not verify the law, and it said "provides accurate legal information"
+// and "ready to publish" on drafts with wrong deadlines, which a reviewer
+// reasonably read as a legal sign-off. The legal layer (traps, knowledge base,
+// statute table, authority loop) is the only thing that speaks to accuracy.
+export const SCOPE_NOTE = `SCOPE: You judge attorney advertising and firm rules ONLY. You do NOT check whether the law stated is correct.
+Never write that the content is legally accurate, correct, or contains accurate legal information, and never say it is "ready to publish" —
+other checks and an attorney decide that. Describe only the advertising findings.`;
+
+export const SCORE_GUIDE = `${SCOPE_NOTE}
+
+Score guide (attorney advertising compliance only):
+- 90-100: no advertising issues beyond minor warnings
+- 70-89: acceptable once the listed disclaimers are added
 - 40-69: needs material rewrites
-- 0-39: non-compliant — must be rewritten before any publication`;
+- 0-39: non-compliant — must be rewritten`;
+
+/** Strip a model-written claim of legal accuracy from a compliance summary. */
+export function scrubAccuracyClaims(summary: string): string {
+  return summary
+    .replace(/[^.]*\b(?:accurate|correct)\s+legal\s+(?:information|content|statements?)[^.]*\.\s*/gi, "")
+    .replace(/[^.]*\bready\s+(?:to|for)\s+publish(?:ing|ed)?\b[^.]*\.\s*/gi, "")
+    .trim();
+}
 
 /**
  * Build the jurisdiction-specific rules + disclaimers blocks from the database
@@ -172,6 +191,8 @@ export function normalizeComplianceResult(
     requiredDisclaimers: Array.isArray(raw?.requiredDisclaimers)
       ? raw!.requiredDisclaimers
       : [],
-    summary: typeof raw?.summary === "string" ? raw.summary : "",
+    // Belt and braces with SCOPE_NOTE: the prompt says not to claim legal
+    // accuracy, and this removes the sentence if the model does anyway.
+    summary: typeof raw?.summary === "string" ? scrubAccuracyClaims(raw.summary) : "",
   };
 }

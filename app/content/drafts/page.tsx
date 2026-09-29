@@ -11,12 +11,13 @@
  *   - mark approved / archive
  */
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   AnalysisCard,
   ApplySuggestionModal,
   type Analysis,
 } from "@/components/analysis-card";
+import { FindingsPanel } from "@/components/findings-panel";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import { DRAFT_STATUSES, type DraftStatus } from "@/lib/content-status";
@@ -300,6 +301,24 @@ export default function DraftsPage() {
   );
   const [approveMsg, setApproveMsg] = useState<string | null>(null);
   const [bodyView, setBodyView] = useState<"write" | "preview">("write");
+  // Sept 28 spec 11.1/11.3 — legal findings (traps, knowledge base, authority
+  // loop) live in content_findings and were only visible in the Production
+  // Board drawer. Same FindingsPanel here. The nonce is bumped whenever an
+  // analysis completes (that is when findings are synced) so the panel re-reads.
+  const [findingsNonce, setFindingsNonce] = useState(0);
+  const [findingsCounts, setFindingsCounts] = useState<{
+    total: number;
+    legal: number;
+    critical: number;
+  }>({ total: 0, legal: 0, critical: 0 });
+  const [findingsTab, setFindingsTab] = useState<"legal" | "all">("legal");
+  // 11.8 — the list is searched and paged on the server, so all drafts are
+  // reachable (the old unpaged fetch capped the studio at the newest 50).
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [totalDrafts, setTotalDrafts] = useState<number | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const listQueryRef = useRef("");
+  const listSeqRef = useRef(0);
 
   // Format filter buttons are restricted to the active type's formats.
   // "all" means all formats for the current type, not literally every draft.
@@ -319,20 +338,60 @@ export default function DraftsPage() {
     setFilter("all");
   }, [contentType]);
 
+  /**
+   * Load every draft matching the current search, paging through the list
+   * route in 200-row chunks until `total` is reached. A sequence number drops
+   * responses from superseded searches so a slow early query can't overwrite
+   * the results of a later one.
+   */
   const refresh = async () => {
+    const seq = ++listSeqRef.current;
+    const query = listQueryRef.current;
+    const PAGE = 200;
+    const MAX_ROWS = 5000; // hard stop against a runaway loop
     setLoading(true);
+    setListError(null);
     try {
-      const res = await fetch("/api/content/drafts");
-      const data = await res.json();
-      setDrafts(data.drafts ?? []);
+      const all: Draft[] = [];
+      let total = 0;
+      for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+        const params = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+        if (query) params.set("q", query);
+        const res = await fetch(`/api/content/drafts?${params.toString()}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (seq !== listSeqRef.current) return;
+        if (!res.ok) {
+          setListError(data?.error ?? `Couldn't load drafts (${res.status}).`);
+          break;
+        }
+        const page: Draft[] = data.drafts ?? [];
+        all.push(...page);
+        total = typeof data.total === "number" ? data.total : all.length;
+        if (page.length < PAGE || all.length >= total) break;
+      }
+      if (seq !== listSeqRef.current) return;
+      setDrafts(all);
+      setTotalDrafts(total);
+    } catch (e) {
+      if (seq === listSeqRef.current) {
+        setListError(e instanceof Error ? e.message : "Couldn't load drafts.");
+      }
     } finally {
-      setLoading(false);
+      if (seq === listSeqRef.current) setLoading(false);
     }
   };
 
+  // Debounce the search box, then re-query the server with it.
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    listQueryRef.current = debouncedSearch;
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
 
   // Read ?id= or ?batch= from URL on mount.
   useEffect(() => {
@@ -344,6 +403,8 @@ export default function DraftsPage() {
   useEffect(() => {
     setApproveMsg(null);
     setSaveMsg(null);
+    // Counts belong to the previous draft until the panel reloads for this one.
+    setFindingsCounts({ total: 0, legal: 0, critical: 0 });
     if (!selectedId) {
       setSelectedDraft(null);
       setAnalysis(null);
@@ -368,21 +429,14 @@ export default function DraftsPage() {
       contentType === "website"
         ? drafts.filter((d) => d.format === "blog" || d.format.startsWith("km_"))
         : drafts.filter((d) => (typeFormats as readonly string[]).includes(d.format));
-    const byFilter =
-      filter === "all"
-        ? byType
-        : contentType === "website"
-          ? byType.filter((d) => websiteKind(d) === filter)
-          : byType.filter((d) => d.format === filter);
-    if (!search.trim()) return byFilter;
-    const lc = search.toLowerCase();
-    return byFilter.filter(
-      (d) =>
-        d.topic.toLowerCase().includes(lc) ||
-        (d.title ?? "").toLowerCase().includes(lc) ||
-        d.body.toLowerCase().includes(lc),
-    );
-  }, [drafts, search, filter, typeFormats, contentType]);
+    // Text search already ran on the server (?q=), across every draft rather
+    // than only the rows loaded — so no client-side text filter here.
+    return filter === "all"
+      ? byType
+      : contentType === "website"
+        ? byType.filter((d) => websiteKind(d) === filter)
+        : byType.filter((d) => d.format === filter);
+  }, [drafts, filter, typeFormats, contentType]);
 
   // Rendered HTML for the Body "Preview" tab. marked.parse is sync here (no
   // async extensions configured), matching the Content Studio preview.
@@ -450,6 +504,9 @@ export default function DraftsPage() {
       }
     } finally {
       setAnalyzing(false);
+      // Analysis is when findings are synced — re-read them even if the
+      // analysis call failed partway (legal runs may have written some).
+      setFindingsNonce((n) => n + 1);
     }
   };
 
@@ -546,8 +603,26 @@ export default function DraftsPage() {
           setAnalysis(data);
           setStaleness(null);
         }
+        setFindingsNonce((n) => n + 1);
       })
       .catch(() => {});
+  };
+
+  /**
+   * Hand finding texts to the same Apply-suggestion flow the analysis card
+   * uses (ApplySuggestionModal → acceptApply). Apply rewrites the SAVED body,
+   * so unsaved editor changes would be silently overwritten — block instead.
+   */
+  const applyFindingTexts = (texts: string[]) => {
+    if (!selectedDraft || texts.length === 0) return;
+    if (editBody !== (selectedDraft.body ?? "")) {
+      setSaveMsg({
+        ok: false,
+        text: "Save or discard your edits first. Apply works on the saved draft.",
+      });
+      return;
+    }
+    setApplyingFindings(texts);
   };
 
   return (
@@ -581,9 +656,19 @@ export default function DraftsPage() {
             <DashInput
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search drafts…"
+              placeholder="Search all drafts (title, topic, text)…"
               className="w-full"
             />
+            {totalDrafts !== null && (
+              <p className="mt-1 text-[11px] text-slate-500">
+                {debouncedSearch
+                  ? `${totalDrafts} draft${totalDrafts === 1 ? "" : "s"} match “${debouncedSearch}”`
+                  : `${totalDrafts} draft${totalDrafts === 1 ? "" : "s"} in total`}
+                {filtered.length !== drafts.length &&
+                  ` · ${filtered.length} in this view`}
+              </p>
+            )}
+            {listError && <p className="mt-1 text-[11px] text-red-600">{listError}</p>}
             <div className="flex flex-wrap gap-1 mt-2">
               {formatFilters.map((f) => (
                 <button
@@ -698,6 +783,30 @@ export default function DraftsPage() {
                     </button>
                   </div>
                 </div>
+                {findingsCounts.critical > 0 && (
+                  <div className="mt-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2">
+                    <div className="text-sm font-semibold text-rose-900">
+                      On hold: {findingsCounts.critical} critical finding
+                      {findingsCounts.critical === 1 ? "" : "s"} open
+                    </div>
+                    <p className="mt-0.5 text-xs text-rose-700">
+                      Fix or dismiss {findingsCounts.critical === 1 ? "it" : "them"} in the
+                      Legal and Findings panel below before approving.{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFindingsTab(findingsCounts.legal > 0 ? "legal" : "all");
+                          document
+                            .getElementById("draft-findings-panel")
+                            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }}
+                        className="font-medium underline hover:text-rose-900"
+                      >
+                        Show findings
+                      </button>
+                    </p>
+                  </div>
+                )}
                 {approveMsg && (
                   <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
                     {approveMsg}
@@ -773,6 +882,52 @@ export default function DraftsPage() {
                 </div>
               </DashCard>
 
+              {/* Sept 28 spec 11.1/11.3 — Legal findings (traps, knowledge
+                  base, authority loop) and the full findings list, the same
+                  FindingsPanel the Production Board drawer mounts. One mount,
+                  pinned to "legal" or open to all sources, so counts stay
+                  live whichever tab is showing. */}
+              <DashCard>
+                <div id="draft-findings-panel" className="scroll-mt-4">
+                  <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
+                    {(
+                      [
+                        { id: "legal", label: "Legal", count: findingsCounts.legal },
+                        { id: "all", label: "All findings", count: findingsCounts.total },
+                      ] as const
+                    ).map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setFindingsTab(t.id)}
+                        className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium ${
+                          findingsTab === t.id
+                            ? "border-brand text-brand"
+                            : "border-transparent text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        {t.label} ({t.count})
+                      </button>
+                    ))}
+                    {findingsCounts.critical > 0 && (
+                      <span className="ml-auto">
+                        <DashPill tone="red">{findingsCounts.critical} critical</DashPill>
+                      </span>
+                    )}
+                  </div>
+                  <FindingsPanel
+                    draftId={selectedDraft.id}
+                    nonce={findingsNonce}
+                    sourceFilter={findingsTab === "legal" ? "legal" : undefined}
+                    onCounts={setFindingsCounts}
+                    // Same Apply flow as the analysis card's Apply: one
+                    // review-and-accept step, never a second divergent path.
+                    onFixAll={applyFindingTexts}
+                    onApplyFindings={applyFindingTexts}
+                  />
+                </div>
+              </DashCard>
+
               <LinkVerificationCard
                 draftId={selectedDraft.id}
                 onBodyChange={(b) => {
@@ -806,7 +961,7 @@ export default function DraftsPage() {
                   stale={staleness?.stale ?? false}
                   onRerun={analyze}
                   rerunning={analyzing}
-                  onApplyFindings={(fs) => setApplyingFindings(fs)}
+                  onApplyFindings={applyFindingTexts}
                   onApplyTitle={applyTitle}
                   currentTitle={selectedDraft.title}
                   format={selectedDraft.format}

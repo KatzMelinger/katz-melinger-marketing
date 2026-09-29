@@ -49,6 +49,20 @@ import { classifyFreshness } from "./freshness-classify";
 import { getCurrentFacts } from "./current-facts-store";
 import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
 import { runTrapCheck } from "./trap-gate";
+import { runKbChecks } from "./legal-kb";
+import { runStatuteCheck } from "./legal-statute-check";
+import { firmFactFindings } from "./firm-fact-findings";
+
+/**
+ * Legal findings produced by the authority loop (runLegalCheck), as opposed to
+ * the deterministic producers, which namespace their rule ids. Used to carry
+ * the loop's findings across a Run analysis that did not run it.
+ */
+function isAuthorityLoopRule(ruleId: string | null): boolean {
+  if (!ruleId) return true;
+  if (/^(trap:|kb:|statute_|firm_|value_)/.test(ruleId)) return false;
+  return ruleId !== "constant_mismatch" && ruleId !== "named_act_unverified";
+}
 import { notifyNewFindings } from "./content-notifications";
 import { ensureDraftMetadata, hasWebPage } from "./draft-metadata";
 import { checkInternalLinks } from "./internal-links-check";
@@ -963,6 +977,9 @@ export async function analyzeDraft(args: {
     legalResult,
     trapResult,
     factResult,
+    kbResult,
+    statuteResult,
+    firmResult,
     internalLinks,
   ] = await Promise.all([
     brandVoiceMatch(body, tid),
@@ -1063,6 +1080,21 @@ export async function analyzeDraft(args: {
     runLegalFactChecks(body, { tenantId: tid })
       .then((findings) => ({ ran: true, findings }))
       .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
+    // The rest of the deterministic legal floor, so Run analysis shows what
+    // Approve will hold on. runKbChecks ran ONLY at approve before, and the
+    // next full analysis then auto-resolved its findings as "fixed in the text"
+    // though nothing had changed. The statute-subject check (Sept 28 spec,
+    // section 3) and the firm-facts rules (section 4) are new.
+    runKbChecks(body, { tenantId: tid })
+      .then((r) => ({ ran: !r.failed, findings: r.findings }))
+      .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
+    runStatuteCheck(body, { tenantId: tid })
+      .then((r) => ({ ran: !r.failed, findings: r.findings }))
+      .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
+    Promise.resolve({
+      ran: true,
+      findings: firmFactFindings(body, { title, topic, practiceArea: args.practiceArea ?? null }),
+    }),
     // D3 (spec 2.9) — confirm internal links against the Cluster Map. Only
     // formats with a real page need this (a social caption has nothing to
     // link a reader onward to within the same review).
@@ -1312,7 +1344,12 @@ export async function analyzeDraft(args: {
       ...normalizeStringFindings("linkability", analysis.linkability_findings),
       ...normalizeComplianceFindings(analysis.compliance_violations),
       ...freshnessResult.findings,
-      ...legalResult.findings,
+      // The authority loop only runs with LEGAL_ACCURACY on (and always at
+      // approve). When it did not run here, keep what approve found — its
+      // silence is not a fix.
+      ...(legalResult.ran
+        ? legalResult.findings
+        : priorFindings.filter((f) => f.source === "legal" && isAuthorityLoopRule(f.ruleId))),
       // Traps: this run's hits when the check ran, otherwise the ones a
       // previous run found. syncFindings auto-resolves anything it is not
       // handed, so dropping them on a failed check would silently clear a
@@ -1328,6 +1365,11 @@ export async function analyzeDraft(args: {
         : priorFindings.filter(
             (f) => f.ruleId === "constant_mismatch" || f.ruleId === "named_act_unverified",
           )),
+      ...(kbResult.ran ? kbResult.findings : priorFindings.filter((f) => f.ruleId?.startsWith("kb:"))),
+      ...(statuteResult.ran
+        ? statuteResult.findings
+        : priorFindings.filter((f) => f.ruleId?.startsWith("statute_"))),
+      ...firmResult.findings,
     ];
 
     // Item 19 — one concern, one engine. The style engines overlap heavily, so

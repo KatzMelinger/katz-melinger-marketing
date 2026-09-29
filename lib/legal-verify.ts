@@ -236,6 +236,13 @@ export function toFinding(v: ClaimVerdict): NormalizedFinding | null {
   // duplication the known-traps gate already had.
   if (claim.claimType === "firm_claim") return null;
   if (!contradicted && !isAnchored(claim.sentence)) return null;
+  // Sept 28 spec, section 1: "No draft shows an Unclassified legal claim
+  // finding." The classifier failing to place a sentence is not evidence of
+  // anything; it filed ~80 of these on one correct draft. A cited section the
+  // statute table does not know is raised separately as "unverified citation"
+  // (lib/legal-statute-check.ts), which is the useful half of what this was
+  // trying to say.
+  if (!contradicted && claim.claimType === "unclassified") return null;
   const needsHumanOnly = v.verdict === "supported" && njBulkOnly;
   const title = contradicted
     ? `Contradicted by ${
