@@ -24,6 +24,7 @@ import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import { closingCtaFor } from "@/lib/closing-cta";
+import { groundAndFix } from "@/lib/generation-grounding";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -329,6 +330,18 @@ export async function POST(req: Request) {
   // refreshed a second time doesn't grow a second label or disclaimer.
   updatedBody = applyRequiredDisclaimers(updatedBody, { cta: await closingCtaFor(tenantId) }).body;
 
+  // Sept 28 spec section 5: correct what has one known answer before saving,
+  // with every change logged in Changes made.
+  const grounded = await groundAndFix({
+    tenantId,
+    body: updatedBody,
+    title: title || url,
+    topic: title || url,
+    practiceArea,
+    format: "km_page_update",
+  });
+  updatedBody = grounded.body;
+
   // Heading changes: compare the live page's headings against the redraft's, so
   // the reviewer can see the H1/section changes at a glance (kept vs improved vs
   // added) rather than diffing by eye.
@@ -381,6 +394,7 @@ export async function POST(req: Request) {
       metadata: {
         origin_source: "page_update",
         source_url: url,
+        ...(grounded.fixLog ? { legal_fix_log: grounded.fixLog } : {}),
         update_keywords: keywords,
         pillar_id: resolvedPillar,
         // Section-structure check (H1/H2/H3 scaffold) so the drawer's QA gate

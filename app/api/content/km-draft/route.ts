@@ -67,6 +67,7 @@ import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import { closingCtaFor } from "@/lib/closing-cta";
+import { groundAndFix, groundingBlock } from "@/lib/generation-grounding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -334,6 +335,15 @@ export async function POST(req: Request) {
   const contentAuthor = authorForContent({ practiceArea: brief.practiceArea, pillarId: brief.pillarId });
   userPrompt += `\n\n---\n${renderAuthorDirective(contentAuthor)}`;
 
+  // Sept 28 spec section 5 / Appendix I: the knowledge base, the statute
+  // table, the firm rules and the link map, so the draft is born clean.
+  userPrompt += `\n\n---\n${await groundingBlock({
+    tenantId: knownInfoTenantId,
+    title: brief.h1,
+    topic: brief.primaryKeyword,
+    practiceArea: brief.practiceArea,
+  })}`;
+
   // Sensitive topics (harassment, retaliation, discrimination, wrongful
   // termination) get a tone override that leads with calm, human language before
   // any legal reference. Prepended so it outranks the default brand voice for
@@ -460,6 +470,19 @@ ${renderFirmFactsBlock()}`),
     // generates non-legal formats (social, email) through the same route.
     text = applyRequiredDisclaimers(text, { cta: await closingCtaFor() }).body;
 
+    // Sept 28 spec section 5: run the legal and firm checks on the generated
+    // text and correct what has one known answer BEFORE saving. Every change
+    // is logged in Changes made, the same as a rewrite of an existing draft.
+    const grounded = await groundAndFix({
+      tenantId: knownInfoTenantId,
+      body: text,
+      title: brief.h1,
+      topic: brief.primaryKeyword,
+      practiceArea: brief.practiceArea,
+      format: `km_${brief.contentType}`,
+    });
+    text = grounded.body;
+
     // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
     // deadlines) so the reviewer verifies them before approval. Attach the
     // authoritative current value where one is known. Hard QA gate in the drawer.
@@ -468,6 +491,7 @@ ${renderFirmFactsBlock()}`),
     const draftId = await autosave(brief, text, language, {
       structure_check: { missing: structureCheck.missing, passed: structureCheck.passed },
       freshness: { flags: freshnessFlags },
+      ...(grounded.fixLog ? { legal_fix_log: grounded.fixLog } : {}),
     });
 
     // Connection: advance the Production Board row this draft belongs to.

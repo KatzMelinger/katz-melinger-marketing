@@ -31,6 +31,7 @@ import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import { closingCtaFor } from "@/lib/closing-cta";
+import { groundAndFix, groundingBlock } from "@/lib/generation-grounding";
 import {
   CONTENT_TYPE_TO_INTENT,
   isCompoundKeyword,
@@ -324,7 +325,11 @@ export async function POST(req: Request) {
 ${firmContext}
 
 ${renderFirmFactsBlock()}
-
+${
+  isWebContent
+    ? `\n${await groundingBlock({ tenantId: await resolveTenantId(), title: topic, topic, practiceArea })}\n`
+    : ""
+}
 ${ANTI_AI_VOICE_RULES}
 
 ${skillsContext ? `${skillsContext}\n` : ""}
@@ -671,11 +676,27 @@ ${readabilityPromptBlock(
     // 02's limit. Only inserts breaks at sentence boundaries, leaving wording
     // and structure untouched (scripts/check-readability-autobreak.ts).
     if (draftFormat === "blog") body = autoBreakLongParagraphs(body).body;
+
+    // Sept 28 spec section 5: correct what has one known answer before the
+    // draft is saved, with every change logged in Changes made.
+    let fixLog: Record<string, unknown> | null = null;
+    if (isWebContent) {
+      const grounded = await groundAndFix({
+        tenantId: await resolveTenantId(),
+        body,
+        title,
+        topic,
+        practiceArea,
+        format: draftFormat,
+      });
+      body = grounded.body;
+      fixLog = grounded.fixLog;
+    }
     const draftId = await autosave(
       draftFormat,
       body,
       title,
-      kmBrief ? { km_brief: kmBrief } : {},
+      { ...(kmBrief ? { km_brief: kmBrief } : {}), ...(fixLog ? { legal_fix_log: fixLog } : {}) },
       kmBrief
         ? {
             primaryKeyword: kmBrief.primaryKeyword,

@@ -27,6 +27,7 @@ import { analyzeDraft } from "@/lib/content-analysis";
 import { runComplianceGate, surfaceForFormat } from "@/lib/agent/compliance-filter";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import { closingCtaFor } from "@/lib/closing-cta";
+import { groundAndFix } from "@/lib/generation-grounding";
 
 export type ComplianceSummary = {
   pass: boolean;
@@ -128,8 +129,21 @@ export async function draftTopicToReview(args: {
   // format; the other FormatKeys generated through this same function
   // (social, email, video) are checked by their own separate compliance path.
   let body = draft.body;
+  let fixLog: Record<string, unknown> | null = null;
   if (format === "blog") {
     body = applyRequiredDisclaimers(body, { cta: await closingCtaFor(tenantId) }).body;
+    // Sept 28 spec section 5: correct what has one known answer before the
+    // draft reaches review, logged in Changes made.
+    const grounded = await groundAndFix({
+      tenantId,
+      body,
+      title: draft.title ?? null,
+      topic: args.topic ?? null,
+      practiceArea: args.practiceArea ?? null,
+      format,
+    });
+    body = grounded.body;
+    fixLog = grounded.fixLog;
   }
 
   // 2. Analyze — full scorecard (persists to content_analyses internally).
@@ -189,6 +203,7 @@ export async function draftTopicToReview(args: {
     run_id: args.runId ?? null,
     legal_review_required: legalReviewRequired,
     compliance: complianceSummary,
+    ...(fixLog ? { legal_fix_log: fixLog } : {}),
   };
 
   const { error: updErr } = await db.raw
