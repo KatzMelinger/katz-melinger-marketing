@@ -36,7 +36,7 @@ const DEBTOR_ADDRESS_RE = new RegExp(
   [
     /\bfor debtors[:,]|\battention debtors\b|\bif you owe (money|a debt)\b|\bas a debtor,|\bstruggling (with|to pay) (your )?debt\b|\bbeing sued for a debt you owe\b|\bcan'?t pay your bills\b/
       .source,
-    /\bdebtors need to know\b|\b(debt collect(or|ion)( law firm| agency)?|collection (agency|law firm)|law office debt collector)s? (contacts|calls|sues|writes to) you\b|\byour rights (as a (debtor|consumer)|under the (FDCPA|Fair Debt Collection Practices Act))\b|\byou (can|may|should|have the right to) dispute (the|a|your) debt\b|\bhow to dispute (a|the|your) debt\b|\bhow to (respond|stop|deal with) (a )?(debt collect|collection)/
+    /\b(?:debtors|residents|consumers) need to know\b|\b(debt collect(or|ion)( law firm| agency)?|collection (agency|law firm)|law office debt collector)s? (contacts|calls|sues|writes to) you\b|\byour rights (as a (debtor|consumer)|under the (FDCPA|Fair Debt Collection Practices Act))\b|\byou (can|may|should|have the right to) dispute (the|a|your) debt\b|\bhow to dispute (a|the|your) debt\b|\bhow to (respond|stop|deal with) (a )?(debt collect|collection)/
       .source,
   ].join("|"),
   "i",
@@ -49,6 +49,19 @@ export function normalizePracticeArea(v: string | null | undefined): "employment
   if (/collect|judgment|creditor|debt/.test(t)) return "collections";
   if (/employ|wage|discrimin|harass|retaliat|fmla|termination|severance/.test(t)) return "employment";
   return null;
+}
+
+/** Every wrong-audience address in the text (checkAudienceAngle stops at the first). */
+export function audienceAngleHits(
+  text: string,
+  practiceArea: string | null | undefined,
+): AudienceAngleHit[] {
+  if (!text) return [];
+  const area = normalizePracticeArea(practiceArea) ?? practiceArea;
+  const re = area === "employment" ? EMPLOYER_ADDRESS_RE : area === "collections" ? DEBTOR_ADDRESS_RE : null;
+  if (!re) return [];
+  const g = new RegExp(re.source, "gi");
+  return [...text.matchAll(g)].map((m) => ({ matched: m[0] }));
 }
 
 export function checkAudienceAngle(

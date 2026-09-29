@@ -35,7 +35,7 @@ import {
   GENERAL_LEGAL_DISCLAIMER,
   RESULTS_DISCLAIMER,
 } from "./legal-disclaimers";
-import { internalLinks, MIN_INTERNAL_LINKS } from "./required-elements";
+import { BAD_SLUGS, internalLinks, MIN_INTERNAL_LINKS } from "./required-elements";
 import { linkRowFor } from "./link-map";
 import { bylineFor, expectedAuthor, firmFactFindings } from "./firm-fact-findings";
 import { statuteFindings } from "./legal-statute-check";
@@ -134,6 +134,9 @@ function protectedAt(body: string, index: number): boolean {
   const lineStart = body.lastIndexOf("\n", index - 1) + 1;
   const line = body.slice(lineStart, body.indexOf("\n", index) === -1 ? body.length : body.indexOf("\n", index));
   if (/^\s*#/.test(line)) return true;
+  // Keyword and metadata lines pasted into a body: "NYC"/"NY" are allowed in
+  // keywords and titles (Appendix C), and these are not reader-facing prose.
+  if (/^\s*[*_]*\s*(?:Target Keywords?|Keywords?|Primary Keyword|Secondary Keywords|Meta (?:Title|Description)|URL|Slug|Title)\s*:/i.test(line)) return true;
   const before = body.slice(Math.max(0, index - 200), index);
   if (/\]\([^)]*$/.test(before)) return true; // inside (url)
   if (/https?:\/\/\S*$/.test(before)) return true;
@@ -172,11 +175,22 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
   // 2. Fee language: delete the sentence, or the whole FAQ entry when the
   //    question itself is about fees. Never replaced with another fee statement.
   removeFeeSections(ed);
+  const feeClauseEdits: { sentence: string; match: string }[] = [];
   for (let guard = 0; guard < 50; guard++) {
-    const hit = findFeeLanguage(ed.body)[0];
+    const hit = findFeeLanguage(ed.body).find((h) => !feeClauseEdits.some((e) => e.sentence.includes(h.match)));
     if (!hit) break;
     const s = sentenceAt(ed.body, hit.index);
-    if (!s.text || !ed.remove(s.text, `Fee language is never published (Kenneth, 2026-09-29): "${hit.match}".`, "firm fact", "fee_language")) break;
+    if (!s.text) break;
+    // A sentence that is ABOUT fees is deleted. A long sentence that lists
+    // several remedies and ends with "and attorneys' fees" keeps its other
+    // remedies: only the fee clause goes, which needs a sentence rewrite.
+    const rest = s.text.replace(hit.match, "").replace(/[^A-Za-z]+/g, " ").trim();
+    const mixed = rest.length > 90 && /,|\band\b/.test(s.text) && !/\bcontingen|\bhourly\b|\bflat\s+fee/i.test(s.text);
+    if (mixed) {
+      feeClauseEdits.push({ sentence: s.text, match: hit.match });
+      continue;
+    }
+    if (!ed.remove(s.text, `Fee language is never published (Kenneth, 2026-09-29): "${hit.match}".`, "firm fact", "fee_language")) break;
   }
 
   // 3. Old offer phrases -> the locked one.
@@ -213,6 +227,15 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
 
   // 5. Knowledge base constants with a literal replacement.
   const modelEdits: { sentence: string; instruction: string; source: ChangeSource; ref: string; reason: string }[] = [];
+  for (const e of feeClauseEdits) {
+    modelEdits.push({
+      sentence: e.sentence,
+      instruction: `Remove only the part about attorney fees or fees ("${e.match}") and keep every other point in the sentence. Do not mention fees in any other way. Change nothing else.`,
+      source: "firm fact",
+      ref: "fee_language",
+      reason: `Fee language is never published (Kenneth, 2026-09-29): "${e.match}".`,
+    });
+  }
   for (const f of input.kbFindings ?? []) {
     if (!f.excerpt || !f.fix) continue;
     if (f.ruleId === "constant_mismatch") {
@@ -269,6 +292,15 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
 
   // 8. Brand rules (deterministic).
   brandRules(ed);
+
+  // 9a. Made-up short slugs -> the real page (Appendix E).
+  for (const m of [...ed.body.matchAll(/https?:\/\/(?:www\.)?katzmelinger\.com(\/[a-z0-9-]+\/?)(?=[)\s"'>\]]|$)/gi)]) {
+    const path = m[1].toLowerCase().replace(/\/?$/, "/");
+    const real = BAD_SLUGS[path];
+    if (real) {
+      ed.replace(m[0], real, `${path} is not a page on the site; the link now points to the real page (Appendix E).`, "required element", "internal_links");
+    }
+  }
 
   // 9. Internal links: top up to three from the link map.
   if (internalLinks(ed.body).length < MIN_INTERNAL_LINKS) {
@@ -330,12 +362,18 @@ function capitalize(s: string) {
 
 /** Delete FAQ entries / sections whose heading is a question about fees. */
 function removeFeeSections(ed: Editor) {
-  const re = /^(#{2,4})\s+([^\n]*\b(?:charge|fees?|cost|pay (?:for|a lawyer)|contingen|hourly|how much)\b[^\n]*)$/gim;
+  // "charge" alone is NOT a fee word here: "file a charge with the EEOC" is
+  // the commonest FAQ in the library. Only the billing senses count.
+  // Nor is "how much" ("How Much Money Can You Recover?" is about damages) or
+  // "pay lawyer" ("Overtime Pay Lawyer" is a keyword). The heading must be
+  // about what representation costs.
+  const re =
+    /^(#{2,4})\s+([^\n]*(?:\b(?:legal|attorney['’]?s?|lawyer['’]?s?)\s+fees?\b|\bfee\s+(?:structures?|arrangements?)\b|\bcontingen\w*|\bhourly\s+(?:rate|fee|billing)s?\b|\bhow\s+much\s+(?:does|do|will|would)\s+(?:it|a|an|the|your)?\s*(?:\w+\s+){0,3}(?:lawyer|attorney|law firm)s?\s+cost\b|\bcost\s+(?:of|to)\s+(?:hire|hiring|retain)\b|\b(?:do|does|will|would)\s+(?:you|we|the firm|a lawyer|an attorney|lawyers|attorneys)\s+charge\b|\bcharge\s+for\b|\bto\s+pay\s+(?:for\s+)?(?:a|an|your)\s+(?:lawyer|attorney))[^\n]*)$/gim;
   for (let guard = 0; guard < 10; guard++) {
     re.lastIndex = 0;
     const m = re.exec(ed.body);
     if (!m) break;
-    if (!/\b(lawyer|attorney|firm|you|we|charge|fee)\b/i.test(m[2])) break;
+    if (!/\b(lawyer|attorney|firm|you|we|legal)\b/i.test(m[2])) break;
     const level = m[1].length;
     const start = m.index;
     const rest = ed.body.slice(start + m[0].length);
@@ -351,8 +389,9 @@ function brandRules(ed: Editor) {
   const abbrev: [RegExp, string][] = [
     [/\bN\.Y\.(?!\s?(?:\d|S\.|App|Misc|Civ|Crim))/g, "New York"],
     [/\bN\.J\.(?!\s?(?:S\.A|Super|\d|Admin))/g, "New Jersey"],
-    [/\bNY\b(?!C)/g, "New York"],
-    [/\bNJ\b/g, "New Jersey"],
+    // Not in a postal address ("New York, NY 10017" is the office address).
+    [/\bNY\b(?!C)(?!\s+\d{5})/g, "New York"],
+    [/\bNJ\b(?!\s+\d{5})/g, "New Jersey"],
   ];
   for (const [re, full] of abbrev) {
     for (let guard = 0; guard < 200; guard++) {

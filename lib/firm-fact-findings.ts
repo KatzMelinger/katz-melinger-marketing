@@ -19,7 +19,7 @@
  * are a known trap — each concern has one owner so nothing is filed twice.
  */
 import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
-import { checkAudienceAngle, normalizePracticeArea } from "./audience-angle";
+import { audienceAngleHits, checkAudienceAngle, normalizePracticeArea } from "./audience-angle";
 import { ADAM_SACKOWITZ, KENNETH_KATZ, NICOLE_GRUNFELD, type Author } from "./authors";
 
 type Ctx = { title?: string | null; topic?: string | null; practiceArea?: string | null };
@@ -157,9 +157,14 @@ export function firmFactFindings(body: string, ctx: Ctx = {}): NormalizedFinding
   }
 
   // Off practice: the wrong audience, or a fee-topic article.
+  // A draft is WRITTEN FOR the wrong side when its title addresses that side,
+  // or the body does so repeatedly. One "Employers should..." sentence in an
+  // employee-side article is a sentence to look at, not a draft to throw away
+  // (the gender draft has exactly one, and the spec says to patch it).
   const area = normalizePracticeArea(ctx.practiceArea) ?? normalizePracticeArea(`${ctx.title ?? ""} ${ctx.topic ?? ""}`);
-  const angle = checkAudienceAngle(`${ctx.title ?? ""}\n${body}`, area);
-  if (angle) {
+  const titleHit = checkAudienceAngle(`${ctx.title ?? ""}\n${ctx.topic ?? ""}`, area);
+  const bodyHits = audienceAngleHits(body, area);
+  if (titleHit || bodyHits.length >= 3) {
     out.push(
       finding(
         "firm_off_practice",
@@ -167,11 +172,25 @@ export function firmFactFindings(body: string, ctx: Ctx = {}): NormalizedFinding
         area === "collections"
           ? "Full redraft needed: written to debtors (the firm represents creditors)"
           : "Full redraft needed: written to employers (the firm represents employees)",
-        angle.matched,
+        (titleHit ?? bodyHits[0]).matched,
         "Sept 28 spec section 4: employment content is employee side only; collections content is creditor side only. A draft for the wrong audience is regenerated, not patched sentence by sentence.",
         null,
       ),
     );
+  } else {
+    for (const h of bodyHits) {
+      const s = sentences(body).find((x) => x.includes(h.matched)) ?? h.matched;
+      out.push(
+        finding(
+          "firm_audience",
+          "important",
+          area === "collections" ? "This sentence speaks to debtors" : "This sentence speaks to employers",
+          s,
+          "The firm's reader is the employee (employment) or the creditor (collections). Check this sentence is written to that reader.",
+          null,
+        ),
+      );
+    }
   }
   const title = ctx.title ?? ctx.topic ?? "";
   if (FEE_TOPIC_RE.test(title) && /\b(lawyer|attorney|law firm)s?\b/i.test(title)) {

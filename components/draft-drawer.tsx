@@ -35,6 +35,7 @@ import {
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
+import { ArchiveBanner } from "@/components/archive-banner";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 import {
   CANNIBALIZATION_LABEL,
@@ -2136,6 +2137,17 @@ export function DraftDrawer({
                 {/* Section 9: automatic changes, each undoable; Approve waits
                     for "Mark reviewed". Kept mounted so the count is known
                     before anyone opens the tab. */}
+                <div className="mb-2">
+                  <ArchiveBanner
+                    draftId={draft.id}
+                    status={(draft as { status?: string }).status}
+                    metadata={(draft as { metadata?: Record<string, unknown> }).metadata ?? null}
+                    onChanged={() => {
+                      void reloadDraft(draft.id);
+                      onChanged();
+                    }}
+                  />
+                </div>
                 <ChangesMadePanel
                   draftId={draft.id}
                   body={editBody}

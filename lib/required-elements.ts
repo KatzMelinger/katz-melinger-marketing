@@ -38,12 +38,38 @@ export const MIN_INTERNAL_LINKS = 3;
 
 const SITE_LINK_RE = /https?:\/\/(?:www\.)?katzmelinger\.com(\/[^\s)"'<>\]]*)?/gi;
 
-/** Distinct katzmelinger.com pages linked from the body, excluding the disclaimer. */
+/**
+ * Short root-level slugs drafts invent that are NOT pages on the site
+ * (Appendix E: "never use short internal slugs such as /wage-theft-overtime/
+ * or /hostile-work-environment/"), mapped to the real page for each.
+ */
+export const BAD_SLUGS: Record<string, string> = {
+  "/wage-theft-overtime/": "https://katzmelinger.com/practice-areas/employment-law/wage-hour-claims-employees/",
+  "/unpaid-wages/": "https://katzmelinger.com/practice-areas/employment-law/wage-hour-claims-employees/",
+  "/hostile-work-environment/": "https://katzmelinger.com/new-york-hostile-work-environment-lawyer/",
+  "/workplace-discrimination/": "https://katzmelinger.com/practice-areas/employment-law/discrimination/",
+  "/employment-discrimination/": "https://katzmelinger.com/practice-areas/employment-law/discrimination/",
+  "/discrimination/": "https://katzmelinger.com/practice-areas/employment-law/discrimination/",
+  "/retaliation/": "https://katzmelinger.com/practice-areas/employment-law/retaliation/",
+  "/sexual-harassment/": "https://katzmelinger.com/practice-areas/employment-law/sexual-harassment/",
+  "/wrongful-termination/": "https://katzmelinger.com/practice-areas/employment-law/wrongful-termination/",
+  "/fmla-violations/": "https://katzmelinger.com/practice-areas/employment-law/fmla-violations/",
+  "/leave-accommodations/": "https://katzmelinger.com/new-york-leave-and-accommodation-violations-lawyer/",
+  "/nyc-employment-lawyer/": "https://katzmelinger.com/practice-areas/employment-law/",
+  "/employment-law/": "https://katzmelinger.com/practice-areas/employment-law/",
+  "/severance/": "https://katzmelinger.com/practice-areas/employment-law/wrongful-termination/when-shouldnt-you-sign-a-ny-severance-agreement/",
+};
+
+/**
+ * Distinct katzmelinger.com pages linked from the body, excluding the
+ * disclaimer. A made-up short slug (BAD_SLUGS) does not count: it is a link
+ * to a page that does not exist.
+ */
 export function internalLinks(body: string): string[] {
   const seen = new Set<string>();
   for (const m of body.matchAll(SITE_LINK_RE)) {
     const path = (m[1] ?? "/").replace(/[.,;:]+$/, "").replace(/\/?$/, "/").toLowerCase();
-    if (path === "/disclaimer/") continue;
+    if (path === "/disclaimer/" || path === "/" || BAD_SLUGS[path]) continue;
     seen.add(path);
   }
   return [...seen];

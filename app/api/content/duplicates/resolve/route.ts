@@ -25,6 +25,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
+import { archiveDrafts } from "@/lib/draft-archive";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,6 +99,23 @@ export async function POST(req: NextRequest) {
     : archiveIds;
   if (ids.length === 0) {
     return NextResponse.json({ error: "No valid ids to archive." }, { status: 400 });
+  }
+
+  // Drafts carry who archived them and what they duplicate, and the keeper
+  // records what it absorbed (Sept 28 spec, Appendix F), so the draft screens
+  // can say "Archived as a duplicate of ..." and offer Restore.
+  if (body.table === "draft") {
+    const res = await archiveDrafts({
+      supabase,
+      ids: ids as string[],
+      keeperId: keepId,
+      reason: "Duplicate",
+      archivedBy: user.email,
+    });
+    if (res.errors.length && res.archived.length === 0) {
+      return NextResponse.json({ error: res.errors.join("; ") }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, archived: res.archived.length, keptId: keepId });
   }
 
   // The RLS-scoped client is what confines this to the caller's tenant — ids

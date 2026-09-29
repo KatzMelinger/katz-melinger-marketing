@@ -19,6 +19,7 @@ import {
 } from "@/components/analysis-card";
 import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
+import { ArchiveBanner } from "@/components/archive-banner";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import { DRAFT_STATUSES, type DraftStatus } from "@/lib/content-status";
@@ -783,6 +784,19 @@ export default function DraftsPage() {
                       Delete
                     </button>
                   </div>
+                </div>
+                <div className="mt-2">
+                  <ArchiveBanner
+                    draftId={selectedDraft.id}
+                    status={selectedDraft.status}
+                    metadata={selectedDraft.metadata as Record<string, unknown> | null}
+                    onChanged={() => {
+                      fetch(`/api/content/drafts/${selectedDraft.id}`, { cache: "no-store" })
+                        .then((r) => r.json())
+                        .then((data) => setSelectedDraft(data.draft))
+                        .catch(() => {});
+                    }}
+                  />
                 </div>
                 {findingsCounts.critical > 0 && (
                   <div className="mt-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2">

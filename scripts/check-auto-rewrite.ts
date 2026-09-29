@@ -116,6 +116,37 @@ async function main() {
   });
   expect(!/How do you charge/.test(faq.body) && faq.body.includes("## What should I bring?"), "fee FAQ removed, next section kept");
 
+  // 4b. Found by the library dry run: an EEOC "charge" FAQ is not a fee
+  //     section; the office address keeps "NY 10017"; keyword lines keep "NY";
+  //     a made-up short slug is pointed at the real page.
+  const real = await autoRewrite({
+    body: [
+      "# Gender Discrimination",
+      "",
+      "**Target Keywords:** gender discrimination NY, NYC lawyer",
+      "",
+      "### Do I have to file a charge with an agency before I can sue?",
+      "",
+      "It depends on the law.",
+      "",
+      "See [retaliation](https://www.katzmelinger.com/retaliation/).",
+      "",
+      "370 Lexington Avenue, Suite 1512, New York, NY 10017",
+    ].join("\n"),
+    title: "Gender Discrimination",
+    practiceArea: "employment",
+    cta,
+    noModel: true,
+  });
+  expect(real.body.includes("### Do I have to file a charge with an agency"), "EEOC charge FAQ kept");
+  expect(real.body.includes("New York, NY 10017"), "postal address untouched");
+  expect(real.body.includes("gender discrimination NY, NYC lawyer"), "keyword line untouched");
+  expect(
+    real.body.includes("https://katzmelinger.com/practice-areas/employment-law/retaliation/") &&
+      !real.body.includes("katzmelinger.com/retaliation/)"),
+    "short slug replaced with the real page",
+  );
+
   // 5. Statute mismatch without a model is routed, not silently passed.
   const st = await autoRewrite({
     body: "# Tips\n\nSection 196 d, which governs tip credit rules, protects workers under the Labor Law.",
