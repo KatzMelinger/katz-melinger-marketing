@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 import { DRAFT_CERTIFICATION_KEYS } from "@/lib/draft-certifications";
+import { readFixLog, unreviewedChanges } from "@/lib/legal-fix-log";
 import { openCriticalFindings, recordAuditEvent } from "@/lib/content-findings-store";
 
 export const runtime = "nodejs";
@@ -125,6 +126,20 @@ export async function POST(
   }
 
   const metadata = (draft.metadata as Record<string, unknown> | null) ?? {};
+
+  // Section 9 / acceptance test 6: legal review cannot be certified while
+  // automatic changes are waiting in "Changes made".
+  if (value && COMPLIANCE_GATED.has(key)) {
+    const pending = unreviewedChanges(readFixLog(metadata));
+    if (pending.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Review the ${pending.length} automatic change${pending.length === 1 ? "" : "s"} in "Changes made" before certifying legal review.`,
+        },
+        { status: 409 },
+      );
+    }
+  }
   const existing = (metadata.certifications as Record<string, Certification> | undefined) ?? {};
   const certifications = { ...existing };
   if (value) {

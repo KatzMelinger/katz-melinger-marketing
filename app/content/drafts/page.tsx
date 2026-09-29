@@ -18,6 +18,7 @@ import {
   type Analysis,
 } from "@/components/analysis-card";
 import { FindingsPanel } from "@/components/findings-panel";
+import { ChangesMadePanel } from "@/components/changes-made-panel";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import { DRAFT_STATUSES, type DraftStatus } from "@/lib/content-status";
@@ -926,6 +927,29 @@ export default function DraftsPage() {
                     onApplyFindings={applyFindingTexts}
                   />
                 </div>
+              </DashCard>
+
+              {/* Section 9 — automatic rewrites of errors with a known answer,
+                  each listed with its source and undoable on its own. */}
+              <DashCard>
+                <ChangesMadePanel
+                  draftId={selectedDraft.id}
+                  body={editBody}
+                  nonce={findingsNonce}
+                  onDraftChanged={() => {
+                    fetch(`/api/content/drafts/${selectedDraft.id}`, { cache: "no-store" })
+                      .then((r) => r.json())
+                      .then((data) => {
+                        setSelectedDraft(data.draft);
+                        setAnalysis(data.latest_analysis);
+                        setStaleness(data.analysis_staleness ?? null);
+                        setEditTitle(data.draft?.title ?? "");
+                        setEditBody(data.draft?.body ?? "");
+                        setFindingsNonce((n) => n + 1);
+                      })
+                      .catch(() => {});
+                  }}
+                />
               </DashCard>
 
               <LinkVerificationCard

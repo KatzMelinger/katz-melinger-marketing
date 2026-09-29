@@ -42,6 +42,7 @@ import { closingCtaFor } from "@/lib/closing-cta";
 import { hasWebPage } from "@/lib/draft-metadata";
 import { dequeueWp } from "@/lib/draft-certifications";
 import { runStatuteCheck } from "@/lib/legal-statute-check";
+import { readFixLog, unreviewedChanges } from "@/lib/legal-fix-log";
 import { firmFactFindings } from "@/lib/firm-fact-findings";
 
 export const runtime = "nodejs";
@@ -129,6 +130,30 @@ async function approveContent(
   // here, server-side, because the drawer's QA list could be skipped with
   // "Approve despite QA". Not a hold (nothing is wrong with the law); the draft
   // stays in review with the list of what is missing.
+  // Section 9: automatic changes must be read before approval, and a draft
+  // flagged for a full redraft cannot be approved as it stands.
+  {
+    const log = readFixLog((draft.metadata as Record<string, unknown> | null) ?? {});
+    if (log.full_redraft_needed) {
+      return NextResponse.json(
+        { error: `Full redraft needed: ${log.full_redraft_needed}. Regenerate it for the right audience, or archive it.` },
+        { status: 422 },
+      );
+    }
+    const pending = unreviewedChanges(log);
+    if (pending.length > 0) {
+      return NextResponse.json(
+        {
+          error: `${pending.length} automatic change${pending.length === 1 ? "" : "s"} in "Changes made" ${
+            pending.length === 1 ? "has" : "have"
+          } not been reviewed. Read them, undo any you disagree with, and mark the panel Reviewed.`,
+          unreviewed: pending.length,
+        },
+        { status: 422 },
+      );
+    }
+  }
+
   if (hasWebPage((draft.format as string | null) ?? "blog")) {
     const missing = checkRequiredElements({
       body: typeof draft.body === "string" ? draft.body : "",
