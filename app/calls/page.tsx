@@ -2,9 +2,22 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
+import {
+  bySource,
+  callStatus,
+  computeCallStats,
+  isIsoDate,
+  monthToDate,
+  needsCallback,
+  sourceLabel,
+  type CallStatsRow,
+  type CallStatus,
+  type RecoveryRow,
+  type RecoveryStatus,
+} from "@/lib/calls-stats";
 
 type ScoreRow = {
   overall_score: number | null;
@@ -13,29 +26,18 @@ type ScoreRow = {
   scored_at: string | null;
 };
 
-type CallRow = {
-  id: string;
+type CallRow = CallStatsRow & {
   customer_name: string | null;
   customer_phone_number: string | null;
   source_name: string | null;
   duration: number | null;
-  answered: boolean;
-  voicemail?: boolean;
-  direction?: string | null;
-  start_time: string;
   lead_status: string | null;
   agent_email?: string | null;
   transcription_language?: string | null;
   score?: ScoreRow | null;
 };
 
-type CallStatus = "Answered" | "Voicemail" | "Missed";
-
-function callStatus(row: Pick<CallRow, "answered" | "voicemail">): CallStatus {
-  if (row.voicemail === true) return "Voicemail";
-  if (row.answered === true) return "Answered";
-  return "Missed";
-}
+type CallsResponse = { calls?: CallRow[]; error?: string; source?: string; hint?: string };
 
 function formatDurationSeconds(total: number): string {
   if (!Number.isFinite(total) || total < 0) return "—";
@@ -56,6 +58,7 @@ function formatStartTime(iso: string): string {
 
 const STATUS_BADGE: Record<CallStatus, { bg: string; ring: string; fg: string; label: string }> = {
   Answered: { bg: "bg-emerald-500/20", ring: "ring-emerald-500/30", fg: "text-emerald-300", label: "Answered" },
+  "In progress": { bg: "bg-sky-500/20", ring: "ring-sky-500/30", fg: "text-sky-700", label: "Ringing/in progress" },
   Voicemail: { bg: "bg-amber-500/20", ring: "ring-amber-500/30", fg: "text-amber-700", label: "Voicemail" },
   Missed: { bg: "bg-rose-500/20", ring: "ring-rose-500/30", fg: "text-rose-300", label: "Missed" },
 };
@@ -68,40 +71,99 @@ function scoreBadgeClass(score: number | null | undefined): { color: string; lab
   return { color: "bg-rose-500/20 text-rose-300 ring-rose-500/30", label: `${score}` };
 }
 
+const RECOVERY_LABEL: Record<RecoveryStatus, string> = {
+  new: "New",
+  called_back: "Called back",
+  reached: "Reached",
+  dead: "Dead",
+};
+
+async function fetchRange(f: string, t: string): Promise<CallsResponse & { ok: boolean }> {
+  const params = new URLSearchParams();
+  if (f) params.set("from", f);
+  if (t) params.set("to", t);
+  const res = await fetch(`/api/calls?${params.toString()}`, { cache: "no-store" });
+  const data = (await res.json()) as CallsResponse;
+  return { ...data, ok: res.ok };
+}
+
 export default function CallsPage() {
   const router = useRouter();
+  const [initialRange] = useState(() => monthToDate(Date.now()));
   const [calls, setCalls] = useState<CallRow[]>([]);
+  const [monthCalls, setMonthCalls] = useState<CallRow[] | null>(null);
+  const [recovery, setRecovery] = useState<Map<string, RecoveryRow>>(new Map());
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
   const [src, setSrc] = useState("all");
-  const [status, setStatus] = useState<"all" | "answered" | "voicemail" | "missed">("all");
+  const [status, setStatus] = useState<"all" | "answered" | "voicemail" | "missed" | "in_progress">("all");
   const [language, setLanguage] = useState<"all" | "en" | "es" | "mixed" | "unknown">("all");
 
-  async function load() {
+  const load = useCallback(async (f: string, t: string) => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/calls", { cache: "no-store" });
-      const data = (await res.json()) as { calls?: CallRow[]; error?: string; source?: string; hint?: string };
-      if (!res.ok) {
+      const data = await fetchRange(f, t);
+      setNowMs(Date.now());
+      if (!data.ok) {
         setError(data.error ?? "Failed to load calls");
         return;
       }
+      setError(data.error ?? null);
       setCalls(Array.isArray(data.calls) ? data.calls : []);
       setSource(data.source ?? null);
       setHint(data.hint ?? null);
-      if (data.error) setError(data.error);
     } catch {
       setError("Network error");
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
+
+  // The callback list always covers the current month to date, whatever the
+  // date pickers say (spec 8.4).
+  const loadMonth = useCallback(async () => {
+    try {
+      const mtd = monthToDate(Date.now());
+      const data = await fetchRange(mtd.from, mtd.to);
+      if (data.ok) setMonthCalls(Array.isArray(data.calls) ? data.calls : []);
+    } catch {
+      /* callback list is best-effort */
+    }
+  }, []);
+
+  const loadRecovery = useCallback(async () => {
+    try {
+      const res = await fetch("/api/leads/recovery", { cache: "no-store" });
+      const j = (await res.json()) as { rows?: RecoveryRow[] };
+      const m = new Map<string, RecoveryRow>();
+      for (const r of j.rows ?? []) m.set(r.phone, r);
+      setRecovery(m);
+    } catch {
+      /* recovery overlay is best-effort */
+    }
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, []);
+    // A half-typed date input: wait for a full date (an empty one means "default").
+    if ((from && !isIsoDate(from)) || (to && !isIsoDate(to))) return;
+    void load(from, to);
+  }, [from, to, load]);
+
+  useEffect(() => {
+    void loadMonth();
+    void loadRecovery();
+  }, [loadMonth, loadRecovery]);
+
+  async function reloadAll() {
+    await Promise.all([load(from, to), loadMonth(), loadRecovery()]);
+  }
 
   async function runSync() {
     setBusy(true);
@@ -110,7 +172,7 @@ export default function CallsPage() {
       const res = await fetch("/api/calls/sync", { method: "POST" });
       const data = (await res.json()) as { synced?: number; error?: string };
       if (!res.ok) setError(data.error ?? "Sync failed");
-      await load();
+      await reloadAll();
     } finally {
       setBusy(false);
     }
@@ -127,57 +189,74 @@ export default function CallsPage() {
       });
       const data = (await res.json()) as { scored?: number; error?: string };
       if (!res.ok) setError(data.error ?? "Scoring failed");
-      await load();
+      await load(from, to);
     } finally {
       setBusy(false);
     }
   }
 
-  const sources = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const c of calls) {
-      const s = c.source_name?.trim() || "Unknown";
-      m.set(s, (m.get(s) ?? 0) + 1);
+  /** Same mechanism as the /lead-response worklist: POST /api/leads/recovery. */
+  async function markWorked(phone: string, next: RecoveryStatus, lastTry: string) {
+    const hadRow = recovery.has(phone);
+    const actedAt = new Date().toISOString();
+    setRecovery((prev) => {
+      const m = new Map(prev);
+      m.set(phone, { ...(m.get(phone) ?? {}), phone, status: next, last_action_at: actedAt });
+      return m;
+    });
+    try {
+      const res = await fetch("/api/leads/recovery", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone, status: next, ...(hadRow ? {} : { first_lost_at: lastTry }) }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      setError("Couldn’t save callback status — check connection");
+      void loadRecovery();
     }
-    return [...m.keys()].sort((a, b) => a.localeCompare(b));
+  }
+
+  const sources = useMemo(() => {
+    const m = new Set<string>();
+    for (const c of calls) m.add(sourceLabel(c));
+    return [...m].sort((a, b) => a.localeCompare(b));
   }, [calls]);
 
+  // Table filters only. The stat cards use `calls` — every call in the range —
+  // so switching the status filter never moves the answered rate (spec 8.1).
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
-    const fromD = from ? new Date(`${from}T00:00:00`) : null;
-    const toD = to ? new Date(`${to}T23:59:59`) : null;
     return calls.filter((c) => {
-      const st = callStatus(c);
+      const st = callStatus(c, nowMs);
       if (status === "answered" && st !== "Answered") return false;
       if (status === "voicemail" && st !== "Voicemail") return false;
       if (status === "missed" && st !== "Missed") return false;
+      if (status === "in_progress" && st !== "In progress") return false;
       if (language !== "all" && (c.transcription_language ?? "unknown") !== language) return false;
-      if (src !== "all") {
-        const s = c.source_name?.trim() || "Unknown";
-        if (s !== src) return false;
-      }
-      const t = new Date(c.start_time);
-      if (fromD && !Number.isNaN(fromD.getTime()) && t < fromD) return false;
-      if (toD && !Number.isNaN(toD.getTime()) && t > toD) return false;
+      if (src !== "all" && sourceLabel(c) !== src) return false;
       if (!qq) return true;
       const name = (c.customer_name ?? "").toLowerCase();
       const phone = (c.customer_phone_number ?? "").toLowerCase();
       const agent = (c.agent_email ?? "").toLowerCase();
       return name.includes(qq) || phone.includes(qq) || agent.includes(qq);
     });
-  }, [calls, q, from, to, src, status, language]);
+  }, [calls, q, src, status, language, nowMs]);
 
-  const totalCalls = filtered.length;
-  const answered = filtered.filter((c) => callStatus(c) === "Answered").length;
-  const voicemails = filtered.filter((c) => callStatus(c) === "Voicemail").length;
-  const missed = filtered.filter((c) => callStatus(c) === "Missed").length;
-  const answeredRate = totalCalls ? Math.round((answered / totalCalls) * 1000) / 10 : 0;
-  const durSum = filtered.reduce((s, c) => s + (c.duration ?? 0), 0);
-  const avgDuration = totalCalls ? durSum / totalCalls : 0;
-  const scored = filtered.filter((c) => c.score?.overall_score != null);
-  const avgScore = scored.length
-    ? Math.round(scored.reduce((s, c) => s + (c.score?.overall_score ?? 0), 0) / scored.length)
-    : null;
+  const stats = useMemo(() => computeCallStats(calls, nowMs), [calls, nowMs]);
+  const sourceTable = useMemo(() => bySource(calls, nowMs), [calls, nowMs]);
+  const callbacks = useMemo(
+    () => (monthCalls ? needsCallback(monthCalls, recovery, nowMs) : []),
+    [monthCalls, recovery, nowMs],
+  );
+
+  const totalCalls = stats.total;
+  const answered = stats.answered;
+  const voicemails = stats.voicemail;
+  const missed = stats.missed;
+  const answeredRate = stats.answeredRatePct;
+  const avgDuration = stats.avgDurationSeconds;
+  const avgScore = stats.avgScore;
 
   return (
     <div
@@ -225,14 +304,18 @@ export default function CallsPage() {
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#116AB2" }}>
-            <p className="text-sm font-medium text-white/90">Total (filtered)</p>
-            <p className="mt-3 text-3xl font-semibold tabular-nums">{totalCalls}</p>
+            <p className="text-sm font-medium text-white/90">Total calls</p>
+            <p className="mt-3 text-3xl font-semibold tabular-nums">{loading ? "…" : totalCalls}</p>
+            <p className="mt-1 text-xs text-white/70">
+              {from || "month start"} to {to || "today"} · all statuses
+            </p>
           </article>
           <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#166534" }}>
             <p className="text-sm font-medium text-white/90">Answered rate</p>
             <p className="mt-3 text-3xl font-semibold tabular-nums">{answeredRate}%</p>
             <p className="mt-1 text-xs text-white/70">
               {answered} answered · {voicemails} VM · {missed} missed
+              {stats.inProgress ? ` · ${stats.inProgress} ringing` : ""}
             </p>
           </article>
           <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#475569" }}>
@@ -242,7 +325,7 @@ export default function CallsPage() {
           <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#7c3aed" }}>
             <p className="text-sm font-medium text-white/90">Avg coach score</p>
             <p className="mt-3 text-3xl font-semibold tabular-nums">{avgScore != null ? avgScore : "—"}</p>
-            <p className="mt-1 text-xs text-white/70">{scored.length} of {totalCalls} scored</p>
+            <p className="mt-1 text-xs text-white/70">{stats.scored} of {totalCalls} scored</p>
           </article>
           <article className="rounded-xl border border-white/5 p-5 shadow-sm" style={{ backgroundColor: "#0f4c75" }}>
             <p className="text-sm font-medium text-white/90">Voicemails</p>
@@ -263,12 +346,16 @@ export default function CallsPage() {
             />
             <input
               type="date"
+              aria-label="From date"
+              title="From (drives the stat cards and the table)"
               className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
             />
             <input
               type="date"
+              aria-label="To date"
+              title="To (drives the stat cards and the table)"
               className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
               value={to}
               onChange={(e) => setTo(e.target.value)}
@@ -294,6 +381,7 @@ export default function CallsPage() {
               <option value="answered">Answered</option>
               <option value="voicemail">Voicemail</option>
               <option value="missed">Missed</option>
+              <option value="in_progress">Ringing/in progress</option>
             </select>
             <select
               className="rounded-lg border border-[#e2e8f0] bg-[#ffffff] px-3 py-2 text-sm text-slate-900"
@@ -313,6 +401,125 @@ export default function CallsPage() {
           className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
           style={{ backgroundColor: "#ffffff" }}
         >
+          <h2 className="text-base font-semibold text-slate-900">Needs callback</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Callers this month whose latest missed or voicemail call was not followed by an answered call.
+            Always covers the current month to date, whatever the dates above say. Marking someone called
+            back, reached or dead removes them (same status as the{" "}
+            <Link href="/lead-response" className="text-brand hover:underline">
+              lead-response
+            </Link>{" "}
+            worklist).
+          </p>
+          {monthCalls == null ? (
+            <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          ) : callbacks.length === 0 ? (
+            <p className="mt-4 text-sm text-emerald-700">Nobody is waiting on a callback.</p>
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#e2e8f0] text-slate-500">
+                    <th className="pb-3 pr-4 font-medium">Name</th>
+                    <th className="pb-3 pr-4 font-medium">Phone</th>
+                    <th className="pb-3 pr-4 font-medium">Last try</th>
+                    <th className="pb-3 pr-4 font-medium">Tries</th>
+                    <th className="pb-3 pr-4 font-medium">Source</th>
+                    <th className="pb-3 pr-4 font-medium">Caller</th>
+                    <th className="pb-3 font-medium">Mark as worked</th>
+                  </tr>
+                </thead>
+                <tbody className="text-slate-700">
+                  {callbacks.map((cb) => {
+                    const current = recovery.get(cb.phone)?.status;
+                    return (
+                      <tr key={cb.phone} className="border-b border-[#e2e8f0]/60 last:border-0">
+                        <td className="py-3 pr-4 font-medium text-slate-900">{cb.name}</td>
+                        <td className="py-3 pr-4 tabular-nums text-slate-600">
+                          <a href={`tel:${cb.phone}`} className="hover:underline">
+                            {cb.displayPhone}
+                          </a>
+                        </td>
+                        <td className="py-3 pr-4 text-slate-500">
+                          {formatStartTime(cb.lastTry)}
+                          <span className="ml-1 text-xs text-slate-400">({cb.lastStatus})</span>
+                        </td>
+                        <td className="py-3 pr-4 tabular-nums">{cb.tries}</td>
+                        <td className="py-3 pr-4">{cb.source}</td>
+                        <td className="py-3 pr-4">{cb.firstTime ? "First-time" : "Repeat"}</td>
+                        <td className="py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {(["called_back", "reached", "dead"] as const).map((st) => (
+                              <button
+                                key={st}
+                                onClick={() => void markWorked(cb.phone, st, cb.lastTry)}
+                                className="rounded-md border border-[#e2e8f0] px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                              >
+                                {RECOVERY_LABEL[st]}
+                              </button>
+                            ))}
+                          </div>
+                          {current && current !== "new" ? (
+                            <p className="mt-1 text-xs text-slate-400">
+                              Was {RECOVERY_LABEL[current].toLowerCase()} before this call
+                            </p>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section
+          className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+          style={{ backgroundColor: "#ffffff" }}
+        >
+          <h2 className="text-base font-semibold text-slate-900">Calls and share unanswered by source</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Inbound calls in the selected date range, by CallRail marketing source. Unanswered = missed or
+            voicemail. &quot;(tracking line)&quot; rows have no marketing source on record yet.
+          </p>
+          {sourceTable.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">No inbound calls in this range.</p>
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#e2e8f0] text-slate-500">
+                    <th className="pb-3 pr-4 font-medium">Source</th>
+                    <th className="pb-3 pr-4 text-right font-medium">Calls</th>
+                    <th className="pb-3 pr-4 text-right font-medium">Answered</th>
+                    <th className="pb-3 pr-4 text-right font-medium">Unanswered</th>
+                    <th className="pb-3 text-right font-medium">Share unanswered</th>
+                  </tr>
+                </thead>
+                <tbody className="text-slate-700">
+                  {sourceTable.map((r) => (
+                    <tr key={r.source} className="border-b border-[#e2e8f0]/60 last:border-0">
+                      <td className="py-2 pr-4">{r.source}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums">{r.calls}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums">{r.answered}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums">{r.unanswered}</td>
+                      <td className="py-2 text-right tabular-nums">{r.unansweredPct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section
+          className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
+          style={{ backgroundColor: "#ffffff" }}
+        >
+          <p className="mb-3 text-xs text-slate-500">
+            Showing {filtered.length} of {totalCalls} calls in range
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] border-collapse text-left text-sm">
               <thead>
@@ -332,10 +539,10 @@ export default function CallsPage() {
                 {filtered.map((row) => {
                   const callerName = row.customer_name?.trim() || "Unknown caller";
                   const callerNumber = row.customer_phone_number?.trim() || "—";
-                  const sourceLabel = row.source_name?.trim() || "—";
+                  const srcLabel = sourceLabel(row);
                   const duration =
                     row.duration == null || row.duration < 0 ? "—" : formatDurationSeconds(row.duration);
-                  const st = callStatus(row);
+                  const st = callStatus(row, nowMs);
                   const stBadge = STATUS_BADGE[st];
                   const score = row.score?.overall_score ?? null;
                   const sb = scoreBadgeClass(score);
@@ -356,7 +563,7 @@ export default function CallsPage() {
                         </Link>
                       </td>
                       <td className="py-3 pr-4 tabular-nums text-slate-600">{callerNumber}</td>
-                      <td className="py-3 pr-4">{sourceLabel}</td>
+                      <td className="py-3 pr-4">{srcLabel}</td>
                       <td className="py-3 pr-4 tabular-nums">{duration}</td>
                       <td className="py-3 pr-4">
                         <span

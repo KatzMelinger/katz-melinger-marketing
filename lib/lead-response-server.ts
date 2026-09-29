@@ -5,6 +5,7 @@
  */
 
 import { DEFAULT_TZ, analyzeLeadResponse, type LeadCall, type LeadResponseReport } from "@/lib/lead-response";
+import { loadPaged } from "@/lib/rank-history";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DEFAULT_AVG_CASE_VALUE = 7500;
@@ -89,19 +90,22 @@ export async function computeLeadResponse(
   tenantId: string,
   opts: ComputeOptions,
 ): Promise<LeadResponseReport> {
-  let q = supabase
-    .from("calls")
-    .select("id, customer_phone_number, source_name, duration, answered, voicemail, first_call, direction, start_time")
-    .eq("tenant_id", tenantId)
-    .gte("start_time", opts.sinceISO)
-    .order("start_time", { ascending: true })
-    .limit(10000);
-  if (opts.untilDate) {
-    q = q.lt("start_time", firmLocalDayEndExclusiveUTC(opts.untilDate, DEFAULT_TZ));
-  }
-
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
+  // Paged: a single .limit(10000) is silently capped at 1,000 rows by
+  // PostgREST, which dropped every lead after the first ~1,000 calls.
+  const untilUTC = opts.untilDate ? firmLocalDayEndExclusiveUTC(opts.untilDate, DEFAULT_TZ) : null;
+  const data = await loadPaged<LeadCall>(async (lo, hi) => {
+    let q = supabase
+      .from("calls")
+      .select("id, customer_phone_number, source_name, duration, answered, voicemail, first_call, direction, start_time")
+      .eq("tenant_id", tenantId)
+      .gte("start_time", opts.sinceISO);
+    if (untilUTC) q = q.lt("start_time", untilUTC);
+    const { data: rows, error } = await q
+      .order("start_time", { ascending: true })
+      .order("id", { ascending: true })
+      .range(lo, hi);
+    return { rows: (rows ?? []) as LeadCall[], error: error?.message ?? null };
+  });
 
   const { avgCaseValue, expectedSignRate } = await resolveEconomics(
     supabase,
@@ -110,5 +114,5 @@ export async function computeLeadResponse(
     opts.signRateOverride,
   );
 
-  return analyzeLeadResponse((data ?? []) as LeadCall[], { avgCaseValue, expectedSignRate });
+  return analyzeLeadResponse(data, { avgCaseValue, expectedSignRate });
 }
