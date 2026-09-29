@@ -2,10 +2,18 @@
  * Fee and contingency language — a hard firm rule, checked deterministically.
  *
  * The rule (Kenneth, 2026-09-29, replacing the 2026-08-26 three-way split):
- * content carries NO fee language of any kind — not about the firm, not about
- * other lawyers, not about who pays attorney fees. The one exception is the
- * free consultation offer. The firm is flat-fee and has never worked on
- * contingency.
+ * content never says how the firm or lawyers CHARGE, or what the reader will or
+ * will not PAY for representation — not about the firm and not about other
+ * lawyers. The one exception is the free consultation offer. The firm is
+ * flat-fee and has never worked on contingency.
+ *
+ * NOT fee language, and allowed (Kenneth, same day): attorney fee RECOVERY as a
+ * legal remedy. "Attorneys' fees and costs are recoverable under the FLSA and
+ * NYLL" and "the employer may have to pay your attorneys' fees" describe what
+ * the statute awards, not what representation costs. Deleting them removed a
+ * real remedy from ~25 drafts. What stays banned is the cost framing that
+ * often rides along: "without paying legal fees out of pocket", "you pay
+ * nothing unless", "fees come out of your recovery".
  *
  * Every hit still carries a subject (firm / general / ambiguous) because the
  * reviewer reading the finding wants to know whether the sentence was a false
@@ -83,11 +91,8 @@ const BANNED: { rule: string; re: RegExp }[] = [
   },
   { rule: "No upfront cost", re: /\bno\s+(?:up[-\s]?front|upfront|out[-\s]?of[-\s]?pocket)\s+(?:cost|costs|fee|fees|payment)\b/gi },
   // Added 2026-09-29 from the Sept 28 audit — each of these got through.
-  // Fee shifting: "the employer must pay your legal fees", "attorneys' fees and costs".
-  {
-    rule: "Fee shifting",
-    re: /\bpays?\s+(?:for\s+)?(?:your|the\s+employee['’]?s?)\s+(?:legal|attorneys?['’]?|lawyers?['’]?)\s+fees\b|\battorneys?['’]?\s+fees\s+and\s+costs\b|\bfee[-\s]shifting\b|\brecover\s+(?:your\s+)?(?:reasonable\s+)?(?:attorneys?['’]?|legal)\s+fees\b/gi,
-  },
+  // (Fee SHIFTING — the statute making the employer pay — is a remedy and is
+  // deliberately not here; see the header.)
   { rule: "Free or low cost", re: /\bfree\s+or\s+low[-\s]cost\b|\blow[-\s]cost\s+(?:initial\s+)?consultations?\b/gi },
   { rule: "At no cost", re: /\bat\s+no\s+(?:cost|charge)\b|\bwithout\s+(?:having\s+to\s+)?pay(?:ing)?\s+(?:any\s+)?(?:legal|attorneys?['’]?)\s+fees\b/gi },
   // Billing models. "hourly" alone is NOT a fee word in wage content ("hourly
@@ -201,16 +206,18 @@ export function blockingFeeHits(hits: readonly FeeLanguageHit[]): FeeLanguageHit
  * Hits a human should look at without failing the draft. Empty since the
  * 2026-09-29 rule: every fee statement blocks. Kept so callers need not change.
  */
-export function reviewableFeeHits(_hits: readonly FeeLanguageHit[]): FeeLanguageHit[] {
-  return [];
+export function reviewableFeeHits(hits: readonly FeeLanguageHit[]): FeeLanguageHit[] {
+  return hits.filter(() => false);
 }
 
 /** The rule as prose, for the compliance prompt and for reviewer-facing text. */
 export const FEE_LANGUAGE_RULE =
-  "FEE LANGUAGE (firm rule): content must contain NO fee language of any kind, about this firm " +
-  "or about lawyers in general. Flag: contingency, hourly or flat fees, retainers, \"no fee " +
-  "unless you win\", \"you do not pay unless you recover\", percentage-of-recovery figures, " +
-  "\"no upfront cost\", \"at no cost\", \"free or low cost\", and any statement about who pays " +
-  "attorney fees (fee shifting, \"the employer must pay your legal fees\"). The ONLY permitted " +
-  "statement is that a consultation or case evaluation is free. When removing fee language, " +
-  "delete the sentence; never replace it with another fee statement.";
+  "FEE LANGUAGE (firm rule): content must never say how this firm or lawyers in general charge, " +
+  "or what the reader will or will not pay for representation. Flag: contingency, hourly or " +
+  "flat fees, retainers, \"no fee unless you win\", \"you do not pay unless you recover\", " +
+  "percentage-of-recovery figures, \"no upfront cost\", \"at no cost\", \"free or low cost\", " +
+  "\"without paying legal fees out of pocket\". The only permitted cost statement is that a " +
+  "consultation or case evaluation is free. Do NOT flag attorney fee recovery as a legal remedy " +
+  "(\"attorneys' fees and costs are recoverable under the FLSA\", \"the employer may have to pay " +
+  "your attorneys' fees\"): that is what the statute awards, and it stays. When removing fee " +
+  "language, delete only that language; never replace it with another fee statement.";

@@ -160,16 +160,18 @@ values
     'critical',
     'The deadline to file with the NYC Commission on Human Rights is generally ONE year; it is three years only for gender-based harassment claims. Three years is the deadline to sue in court under the NYCHRL. Do not state a flat three years for the Commission.'
   ),
-  -- 11.6 #2 — fee shifting and free / low-cost language. Per Kenneth
-  -- (2026-09-29) "free consultation" IS allowed and is deliberately absent.
-  -- Apostrophe forms (attorney's / attorneys' / attorneys) all match.
+  -- 11.6 #2 — what the reader pays, and free / low-cost language. Narrowed
+  -- by Kenneth (2026-09-29): attorney fee RECOVERY is a legal remedy and is
+  -- allowed ("attorneys' fees and costs are recoverable", "the employer may
+  -- have to pay your attorneys' fees", "fee-shifting provision"), so those
+  -- phrasings are deliberately absent. "Free consultation" is allowed too.
   (
-    'Fee shifting or free / low-cost language',
+    'Cost of representation or free / low-cost language',
     'regex',
-    '\bpays?\s+(?:all\s+of\s+)?your\s+(?:legal|attorney(?:[\x27’]s|s[\x27’]?)?)\s+fees\b|\battorney(?:[\x27’]s|s[\x27’]?)?\s+fees\s+and\s+costs\b|\bfee[\s-]+shifting\b|\bfree\s+or\s+low[\s-]+cost\b|\bat\s+no\s+cost\b',
+    '\bwithout\s+(?:having\s+to\s+)?pay(?:ing)?\s+(?:any\s+)?(?:legal|attorney(?:[\x27’]s|s[\x27’]?)?)\s+fees\b|\bpay(?:ing)?\s+(?:legal|attorney(?:[\x27’]s|s[\x27’]?)?)\s+fees\s+out\s+of\s+pocket\b|\bfree\s+or\s+low[\s-]+cost\b|\bat\s+no\s+cost\b',
     '{}',
     'critical',
-    'Content must not state or imply who pays for legal representation: no "the employer pays your legal fees", "attorneys'' fees and costs", "fee-shifting", "free or low cost" or "at no cost". "Free consultation" is allowed (Kenneth, 2026-09-29).'
+    'Content must not say what the reader will or will not pay for representation: no "without paying legal fees out of pocket", "free or low cost" or "at no cost". Attorney fee recovery as a statutory remedy is allowed, and so is "free consultation" (Kenneth, 2026-09-29).'
   ),
   -- 11.6 #3 — outcome figures.
   (

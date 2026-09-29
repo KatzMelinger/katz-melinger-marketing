@@ -15,9 +15,8 @@ const MUST_BLOCK: Array<[string, string]> = [
   ["We work on a contingency basis in most wage cases.", "90e667a2"],
   ["You pay no attorney's fees unless we recover money for you, at no upfront cost.", "90e667a2"],
   ["Many firms offer free or low cost initial consultations.", "9b01853e"],
-  ["If you win, the employer must pay your legal fees.", "5d68332e"],
   ["You can pursue the claim without having to pay legal fees out of pocket.", "fb684e7e"],
-  ["The FLSA lets you recover attorneys' fees and costs.", "fee shifting"],
+  ["This means the employee does not pay legal fees out of the recovery.", "df5337ad"],
   ["Most employment lawyers handle overtime cases on contingency.", "market statement, now blocked"],
   ["Some firms charge a flat fee for severance review.", "eb5d488b"],
   ["Collection firms often bill hourly or take a percentage of the recovery.", "48d5e3f7"],
@@ -34,6 +33,12 @@ const MUST_PASS: Array<[string, string]> = [
   ["Employers may not make you pay out of pocket for uniforms.", "out of pocket, wage sense"],
   ["Keep receipts for your out-of-pocket medical costs.", "costs, not fees"],
   ["An offer contingent on your start date is not a contract.", "contingent, not a fee"],
+  // Attorney fee recovery is a remedy, not fee language (Kenneth, 2026-09-29).
+  ["The FLSA lets you recover attorneys' fees and costs.", "fee recovery remedy"],
+  ["Attorneys' fees and costs are recoverable under both the FLSA and NYLL.", "fee recovery remedy"],
+  ["If you win, the employer may have to pay your legal fees.", "fee shifting remedy"],
+  ["Employees who prevail may recover reasonable attorneys' fees and costs.", "fee recovery remedy"],
+  ["This fee-shifting provision helps employees enforce their rights.", "fee shifting remedy"],
 ];
 
 let failed = 0;

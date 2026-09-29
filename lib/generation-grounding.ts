@@ -76,7 +76,7 @@ export async function groundingBlock(args: {
     "",
     "FIRM RULES:",
     "- In employment law the firm represents employees only. In commercial collections and judgment enforcement it represents creditors and businesses only. Write for that reader, never the other side.",
-    "- No fee language of any kind (contingency, hourly, flat fee, retainers, \"no upfront cost\", who pays attorney fees). The only permitted fee statement is the free consultation offer.",
+    "- Never say how the firm or lawyers charge or what the reader will pay for representation (contingency, hourly, flat fee, retainers, \"no upfront cost\", \"without paying legal fees out of pocket\"). The only permitted cost statement is the free consultation offer. Attorney fee recovery as a statutory remedy may be stated.",
     "- Never promise or predict results; never use \"guarantee\", \"best\", \"expert\", \"specialize\", \"aggressive\" or \"maximum compensation\"; no outcome figures. If results are mentioned add \"Prior results do not guarantee a similar outcome.\"",
     "- No placeholders or bracketed notes. No schema code, JSON or scripts in the body.",
     "- Spell out New York and New Jersey (NYC is allowed in titles and keywords). No dashes of any kind. \"We\" and \"our firm\" are allowed.",

@@ -210,7 +210,7 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
     reason:
       h.subject === "firm"
         ? "This states how Katz Melinger charges. The firm is flat-fee and has never worked on contingency, so the claim is also inaccurate."
-        : "Firm content carries no fee language of any kind, including statements about other lawyers or who pays attorney fees.",
+        : "Firm content never says how lawyers charge or what the reader will pay for representation, including statements about other lawyers.",
     fix: "Delete the sentence. Do not replace it with another fee statement. Only the free consultation offer is permitted.",
   }));
 

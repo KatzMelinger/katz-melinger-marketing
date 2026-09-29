@@ -116,6 +116,19 @@ async function main() {
   });
   expect(!/How do you charge/.test(faq.body) && faq.body.includes("## What should I bring?"), "fee FAQ removed, next section kept");
 
+  // 4a. Attorney fee recovery is a remedy and stays (Kenneth, 2026-09-29).
+  const remedy = await autoRewrite({
+    body: "# Unpaid Wages\n\n## Can I recover attorney fees?\n\nYes. Attorneys' fees and costs are recoverable under the FLSA and NYLL, and the employer may have to pay your legal fees.",
+    title: "Unpaid Wages",
+    practiceArea: "employment",
+    cta,
+    noModel: true,
+  });
+  expect(
+    remedy.body.includes("## Can I recover attorney fees?") && remedy.body.includes("Attorneys' fees and costs are recoverable"),
+    "fee recovery remedy kept",
+  );
+
   // 4b. Found by the library dry run: an EEOC "charge" FAQ is not a fee
   //     section; the office address keeps "NY 10017"; keyword lines keep "NY";
   //     a made-up short slug is pointed at the real page.

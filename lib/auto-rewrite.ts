@@ -370,10 +370,12 @@ function removeFeeSections(ed: Editor) {
   const re =
     /^(#{2,4})\s+([^\n]*(?:\b(?:legal|attorney['’]?s?|lawyer['’]?s?)\s+fees?\b|\bfee\s+(?:structures?|arrangements?)\b|\bcontingen\w*|\bhourly\s+(?:rate|fee|billing)s?\b|\bhow\s+much\s+(?:does|do|will|would)\s+(?:it|a|an|the|your)?\s*(?:\w+\s+){0,3}(?:lawyer|attorney|law firm)s?\s+cost\b|\bcost\s+(?:of|to)\s+(?:hire|hiring|retain)\b|\b(?:do|does|will|would)\s+(?:you|we|the firm|a lawyer|an attorney|lawyers|attorneys)\s+charge\b|\bcharge\s+for\b|\bto\s+pay\s+(?:for\s+)?(?:a|an|your)\s+(?:lawyer|attorney))[^\n]*)$/gim;
   for (let guard = 0; guard < 10; guard++) {
-    re.lastIndex = 0;
-    const m = re.exec(ed.body);
-    if (!m) break;
-    if (!/\b(lawyer|attorney|firm|you|we|legal)\b/i.test(m[2])) break;
+    // Recovering attorney fees is a remedy, not a fee arrangement (Kenneth,
+    // 2026-09-29): a heading like "Can I recover attorney fees?" stays.
+    const m = [...ed.body.matchAll(re)].find(
+      (x) => /\b(lawyer|attorney|firm|you|we|legal)\b/i.test(x[2]) && !/\brecover|\baward|\bshift/i.test(x[2]),
+    );
+    if (!m || m.index === undefined) break;
     const level = m[1].length;
     const start = m.index;
     const rest = ed.body.slice(start + m[0].length);

@@ -59,10 +59,10 @@ const T = {
   ),
   // 11.6 #2
   fees: trap(
-    "Fee shifting or free / low-cost language",
+    "Cost of representation or free / low-cost language",
     "critical",
     "regex",
-    String.raw`\bpays?\s+(?:all\s+of\s+)?your\s+(?:legal|attorney(?:[\x27’]s|s[\x27’]?)?)\s+fees\b|\battorney(?:[\x27’]s|s[\x27’]?)?\s+fees\s+and\s+costs\b|\bfee[\s-]+shifting\b|\bfree\s+or\s+low[\s-]+cost\b|\bat\s+no\s+cost\b`,
+    String.raw`\bwithout\s+(?:having\s+to\s+)?pay(?:ing)?\s+(?:any\s+)?(?:legal|attorney(?:[\x27’]s|s[\x27’]?)?)\s+fees\b|\bpay(?:ing)?\s+(?:legal|attorney(?:[\x27’]s|s[\x27’]?)?)\s+fees\s+out\s+of\s+pocket\b|\bfree\s+or\s+low[\s-]+cost\b|\bat\s+no\s+cost\b`,
   ),
   // 11.6 #3
   figures: trap(
@@ -254,10 +254,13 @@ const cases: [Key, string, boolean][] = [
   ["cchr", "File with the NYC Commission on Human Rights within one year. The NYSDHR deadline is three years.", PASS],
 
   // 2. Fee shifting, free / low cost (free consultation is ALLOWED, Kenneth 2026-09-29)
-  ["fees", "If you win, the employer must pay your legal fees.", FIRE],
-  ["fees", "Your employer may have to pay your attorneys’ fees and costs.", FIRE],
-  ["fees", "You may also recover attorney's fees and costs.", FIRE],
-  ["fees", "This fee-shifting provision helps level the playing field.", FIRE],
+  // Attorney fee recovery is a remedy, allowed (Kenneth 2026-09-29).
+  ["fees", "If you win, the employer must pay your legal fees.", PASS],
+  ["fees", "Your employer may have to pay your attorneys’ fees and costs.", PASS],
+  ["fees", "You may also recover attorney's fees and costs.", PASS],
+  ["fees", "This fee-shifting provision helps level the playing field.", PASS],
+  ["fees", "You can pursue the claim without having to pay legal fees out of pocket.", FIRE],
+  ["fees", "Employees can sue without paying attorneys' fees.", FIRE],
   ["fees", "Legal aid groups offer free or low cost help.", FIRE],
   ["fees", "We review your case at no cost.", FIRE],
   ["fees", "Call today for a free consultation.", PASS],

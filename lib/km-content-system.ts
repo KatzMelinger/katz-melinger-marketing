@@ -562,9 +562,9 @@ Geographic reach: All five NYC boroughs, Westchester, Long Island, northern New 
 Practice areas: Employment Law + Commercial Collections and Judgment Enforcement
 Employment clients: Employees only. Never employers on employment matters.
 Collections clients: Businesses, creditors, CFOs, controllers, AR managers, attorneys
-Fees: Never describe how the firm or any lawyer charges. No contingency, hourly, flat fee,
-fee shifting, "no upfront cost", "you pay nothing unless", or who pays attorney fees. The only
-permitted statement is the free consultation offer.
+Fees: Never describe how the firm or any lawyer charges, or what the client will pay. No
+contingency, hourly, flat fee, "no upfront cost", "you pay nothing unless". The only permitted
+cost statement is the free consultation offer. Attorney fee recovery may be stated as a remedy.
 Licensed in: New York and New Jersey
 Key employment statutes: FLSA, NYLL, NYSHRL, NYCHRL, Title VII, ADA, FMLA, NJLAD, NJWHL
 Key collections statutes: NY CPLR Article 52, FDCPA, UCC, NY Debtor and Creditor Law, NJ Court Rules
@@ -671,7 +671,7 @@ WHY: The correct version gives specific, verifiable facts.
 05 Which Parties Must Comply? — Employment: employer thresholds by statute. Collections: debtor types, entity structures.
 06 Specific Protections or Remedies — What the law provides or prohibits. Scenario-grounded.
 07 Federal vs. State Law — How federal law, NYSHRL or CPLR interact. Name the specific difference.
-08 Legal Remedies or Enforcement Tools — AEO opener. Bullet list of remedy or tool types. Do not mention attorney fees or who pays them.
+08 Legal Remedies or Enforcement Tools — AEO opener. Bullet list of remedy or tool types. Attorney fee recovery may be listed as a statutory remedy; never say what the client pays.
 09 How to File or Initiate — Name the relevant agency or court. Steps in prose, not numbered list. CTA #2 follows.
 10 Evidence and Documentation — Practice-area-specific bullet list. Close with preservation warning.
 11 Statute of Limitations or Enforcement Window — Own H2 section. Specific timeframes by statute. Do not bury in FAQ.
