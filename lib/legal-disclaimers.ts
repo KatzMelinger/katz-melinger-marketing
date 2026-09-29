@@ -213,8 +213,26 @@ export function hasAwardsNotice(pageText: string): boolean {
  */
 export const ATTORNEY_ADVERTISING_LABEL = "Attorney Advertising";
 
+/**
+ * The closing disclaimer on every blog and web page. Kenneth's wording as
+ * counsel, 2026-09-29 — reproduce verbatim, never edit. "Disclaimer" links to
+ * the firm's full disclaimer page. (He wrote "attorney client" unhyphenated;
+ * that is deliberate house style — no dashes.)
+ */
+export const DISCLAIMER_URL = "https://katzmelinger.com/disclaimer/";
+export const GENERAL_LEGAL_DISCLAIMER_TEXT =
+  "This article is for general informational purposes only, is not legal advice and does not create an attorney client relationship. For more information see our full Disclaimer.";
 export const GENERAL_LEGAL_DISCLAIMER =
-  "This article provides general information and is not legal advice. Consult with an attorney about your specific situation.";
+  "This article is for general informational purposes only, is not legal advice and does not create an attorney client relationship. For more information see our full " +
+  `[Disclaimer](${DISCLAIMER_URL}).`;
+
+/**
+ * Closing disclaimers used before 2026-09-29. A draft carrying one of these is
+ * rewritten to the current wording rather than getting a second disclaimer.
+ */
+const LEGACY_GENERAL_DISCLAIMERS = [
+  "This article provides general information and is not legal advice. Consult with an attorney about your specific situation.",
+];
 
 export const RESULTS_DISCLAIMER =
   "Prior results do not guarantee a similar outcome. Results vary depending on your particular facts and legal circumstances.";
@@ -223,9 +241,53 @@ export function hasAttorneyAdvertisingLabel(body: string): boolean {
   return body.toLowerCase().includes("attorney advertising");
 }
 
+/** Markdown emphasis and link syntax removed, whitespace collapsed, lowercased. */
+function plain(s: string): string {
+  return s
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/[*_]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** True only for the CURRENT wording — a legacy disclaimer does not count. */
 export function hasGeneralLegalDisclaimer(body: string): boolean {
-  const t = body.toLowerCase();
-  return t.includes("general information") && t.includes("not legal advice");
+  return plain(body).includes(plain(GENERAL_LEGAL_DISCLAIMER_TEXT));
+}
+
+/** Does the body link the word "Disclaimer" to the disclaimer page? */
+export function hasDisclaimerLink(body: string): boolean {
+  return body.includes(DISCLAIMER_URL) || /href=["']https?:\/\/(?:www\.)?katzmelinger\.com\/disclaimer\/?["']/i.test(body);
+}
+
+/**
+ * The closing call to action. The offer phrase is Kenneth's (2026-09-29); the
+ * phone number comes from the operating brief (brand_voice_settings) so the
+ * number can change without a code change.
+ */
+export function closingCta(phone: string, offerPhrase: string): string {
+  return `Call today at ${phone} for a ${offerPhrase}.`;
+}
+
+export function hasClosingCta(body: string, phone: string, offerPhrase: string): boolean {
+  const t = plain(body);
+  return t.includes(offerPhrase.toLowerCase()) && t.includes(phone.toLowerCase());
+}
+
+const CLOSING_PARAGRAPHS = [
+  GENERAL_LEGAL_DISCLAIMER_TEXT,
+  ...LEGACY_GENERAL_DISCLAIMERS,
+  RESULTS_DISCLAIMER,
+].map(plain);
+
+/** Split off the closing disclaimer paragraphs so the ending can be rebuilt in order. */
+function stripClosingParagraphs(body: string): string {
+  return body
+    .split(/\n{2,}/)
+    .filter((p) => !CLOSING_PARAGRAPHS.includes(plain(p)))
+    .join("\n\n");
 }
 
 export function hasResultsDisclaimer(body: string): boolean {
@@ -257,12 +319,19 @@ export function looksLikeCaseResult(body: string): boolean {
  * twice (generation, then a later redraft of the same content) never
  * duplicates anything.
  *
- * Scope boundary (2.12's own): this only ever ADDS these three fixed
- * elements. It never touches, removes, or judges anything else — an
- * interpretive legal problem still routes to a human via the legal-accuracy
- * layer (Section 3), same as always.
+ * Scope boundary (2.12's own): this only ever touches these fixed
+ * elements. It never removes or judges anything else — an interpretive legal
+ * problem still routes to a human via the legal-accuracy layer, same as always.
+ *
+ * The ending is rebuilt in a fixed order — CTA, then the closing disclaimer,
+ * then the results line — so a later call never lands the CTA below the
+ * disclaimer. A legacy (pre 2026-09-29) disclaimer is replaced, not doubled.
+ * Pass `cta` to insert the locked closing CTA (Sept 28 spec, section 6).
  */
-export function applyRequiredDisclaimers(body: string): { body: string; inserted: string[] } {
+export function applyRequiredDisclaimers(
+  body: string,
+  opts: { cta?: { phone: string; offerPhrase: string } } = {},
+): { body: string; inserted: string[] } {
   if (!body?.trim()) return { body, inserted: [] };
   const inserted: string[] = [];
   let next = body;
@@ -271,13 +340,25 @@ export function applyRequiredDisclaimers(body: string): { body: string; inserted
     next = `*${ATTORNEY_ADVERTISING_LABEL}*\n\n${next}`;
     inserted.push("label");
   }
-  if (!hasGeneralLegalDisclaimer(next)) {
-    next = `${next.trimEnd()}\n\n*${GENERAL_LEGAL_DISCLAIMER}*`;
-    inserted.push("general_disclaimer");
+
+  const hadCurrentDisclaimer = hasGeneralLegalDisclaimer(next);
+  const needsResults = looksLikeCaseResult(next);
+  const hadResults = hasResultsDisclaimer(next);
+  next = stripClosingParagraphs(next).trimEnd();
+
+  if (opts.cta && !hasClosingCta(next, opts.cta.phone, opts.cta.offerPhrase)) {
+    next = `${next}\n\n**${closingCta(opts.cta.phone, opts.cta.offerPhrase)}**`;
+    inserted.push("cta");
   }
-  if (looksLikeCaseResult(next) && !hasResultsDisclaimer(next)) {
-    next = `${next.trimEnd()}\n\n*${RESULTS_DISCLAIMER}*`;
-    inserted.push("results_disclaimer");
+  next = `${next}\n\n*${GENERAL_LEGAL_DISCLAIMER}*`;
+  if (!hadCurrentDisclaimer) inserted.push("general_disclaimer");
+  if (needsResults || hadResults) {
+    next = `${next}\n\n*${RESULTS_DISCLAIMER}*`;
+    if (!hadResults) inserted.push("results_disclaimer");
   }
+
+  // Nothing new to add: hand back the body untouched rather than a
+  // reformatted copy, so an idempotent call never shows up as an edit.
+  if (inserted.length === 0) return { body, inserted };
   return { body: next, inserted };
 }

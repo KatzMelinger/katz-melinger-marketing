@@ -42,6 +42,8 @@ import {
   logCacheUsage,
 } from "./anthropic";
 import { AD_TERMS_RULE } from "@/lib/ad-terms";
+import { renderFirmFactsBlock } from "@/lib/firm-facts";
+import { groundingBlock } from "@/lib/generation-grounding";
 
 export type FormatKey =
   | "blog"
@@ -250,12 +252,21 @@ export async function generateMultiFormat(args: {
     ),
   ]);
 
-  const system = buildSystemPrompt({
-    firm,
-    skillsContext,
-    tone: args.tone,
-    language: args.language,
-  });
+  // This path (the agent and Peggy) never carried the firm facts block, so a
+  // blog generated here had no fee rule and no audience rule at all. With a
+  // blog in the batch it also gets the Sept 28 grounding (knowledge base,
+  // statute table, link map, Appendix I rules).
+  const system =
+    buildSystemPrompt({
+      firm,
+      skillsContext,
+      tone: args.tone,
+      language: args.language,
+    }) +
+    `\n\n${renderFirmFactsBlock()}` +
+    (args.formats.includes("blog")
+      ? `\n\n${await groundingBlock({ tenantId: tid, title: args.topic, topic: args.topic, practiceArea: args.practiceArea ?? null })}`
+      : "");
 
   const longForm = args.formats.filter((f) => LONG_FORM_FORMATS.includes(f));
   const shortForm = args.formats.filter((f) => !LONG_FORM_FORMATS.includes(f));

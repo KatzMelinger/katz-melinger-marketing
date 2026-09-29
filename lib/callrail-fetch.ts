@@ -12,8 +12,27 @@
  * three statuses: Answered / Voicemail / Missed.
  */
 
-const LIST_FIELDS =
-  "id,customer_name,customer_phone_number,tracking_phone_number,duration,answered,voicemail,direction,source_name,start_time,first_call,lead_status,agent_email";
+/**
+ * Marketing attribution + live call state. `source_name` is only the TRACKER
+ * name ("Website pool"); `source` is CallRail's marketing source ("Google
+ * Organic", "SearchGPT", "Direct"). `call_type` is one of answered, missed,
+ * abandoned (CallRail's docs spell it "abandonded"), in_progress, outbound,
+ * voicemail, voicemail_transcription. landing_page_url / referrer_domain are
+ * only populated for Website (Session) trackers.
+ */
+const ATTRIBUTION_FIELDS = [
+  "source",
+  "medium",
+  "campaign",
+  "landing_page_url",
+  "referrer_domain",
+  "call_type",
+];
+
+const LIST_FIELDS = [
+  "id,customer_name,customer_phone_number,tracking_phone_number,duration,answered,voicemail,direction,source_name,start_time,first_call,lead_status,agent_email",
+  ...ATTRIBUTION_FIELDS,
+].join(",");
 
 const DETAIL_FIELDS = [
   "id",
@@ -40,6 +59,7 @@ const DETAIL_FIELDS = [
   "recording_player",
   "recording_duration",
   "transcription",
+  ...ATTRIBUTION_FIELDS,
 ].join(",");
 
 export type CallRailCall = {
@@ -67,6 +87,12 @@ export type CallRailCall = {
   recording_player?: string | null;     // hosted player URL
   recording_duration?: number | null;
   transcription?: string | null;        // CallRail-provided transcript
+  source?: string | null;               // marketing source ("Google Organic")
+  medium?: string | null;
+  campaign?: string | null;
+  landing_page_url?: string | null;
+  referrer_domain?: string | null;
+  call_type?: string | null;            // answered | missed | in_progress | ...
 };
 
 type CallRailCallsResponse = {

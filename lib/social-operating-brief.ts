@@ -39,11 +39,7 @@ export type OperatingBrief = {
    * translating, so every Spanish consultation post would be held for a
    * missing offer it could not have carried.
    *
-   * "Consulta Gratuita" is deliberately NOT the wording. It trips the `fee`
-   * rule in lib/social-compliance.ts, which blocks consultation-price language
-   * in both languages — the same reason the English phrase says "Case Review"
-   * rather than "Free Consultation". "Revisión" keeps the parallel and stays
-   * clear of it.
+   * "Evaluación" keeps the parallel with the English "Case Evaluation".
    */
   offerPhraseEs: string;
   hashtagRule: string;
@@ -53,15 +49,16 @@ export type OperatingBrief = {
 
 // The offer phrase is a LOCKED string, not a paraphrase target: generation and
 // the CTA engine insert it verbatim, capitals included, and the compliance
-// check below is case-sensitive against it. Confirmed by Kenneth 2026-09-10.
-// Changing the capitalisation here changes what every consultation CTA must
+// check below is case-sensitive against it. Confirmed by Kenneth 2026-09-10,
+// changed by him 2026-09-29 from "...Case Review" to "...Case Evaluation" for
+// every surface (blogs and web pages use the same phrase). Changing the capitalisation here changes what every consultation CTA must
 // read, so a tenant row in brand_voice_settings.socialOfferPhrase overrides it
 // and must be updated (or cleared) alongside.
 const DEFAULTS: OperatingBrief = {
   socialPhone: "646-466-6267",
   documentPhone: "646-849-3352",
-  offerPhrase: "Free Confidential Case Review",
-  offerPhraseEs: "Revisión Gratuita y Confidencial de su Caso",
+  offerPhrase: "Free Confidential Case Evaluation",
+  offerPhraseEs: "Evaluación Gratuita y Confidencial de su Caso",
   // Four to five, and the firm tag, because the S3 rule now CHECKS this.
   // It said "3 to 5" while the rule Diana specified requires four — generation
   // would have produced three and the gate would have held it every time.

@@ -266,6 +266,6 @@ export const AD_TERMS_RULE = [
   "  be factually substantiated.",
   '- NEVER predict or guarantee an outcome ("guaranteed results", "risk-free", "we win").',
   "  Saying that outcomes CANNOT be guaranteed is correct and encouraged.",
-  "- Do not state or imply how the firm charges. You may say an initial consultation is",
-  "  free; say nothing else about fees.",
+  "- Never say how the firm or lawyers charge, or what the reader will pay for representation.",
+  "  You may say a consultation is free. Attorney fee recovery as a legal remedy is fine.",
 ].join("\n");

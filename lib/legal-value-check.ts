@@ -383,6 +383,7 @@ function formatConstant(value: number, unit: ConstantMention["unit"]): string {
 function checkConstantAgainstKnowledgeBase(
   mention: ConstantMention,
   thresholds: KbThresholdEntry[],
+  sameUnitInSentence = 1,
 ): NormalizedFinding | null {
   // Only entries in the same unit whose keywords the sentence actually carries.
   // Most specific wins when several qualify, so a sentence naming both the
@@ -392,6 +393,19 @@ function checkConstantAgainstKnowledgeBase(
     .sort((a, b) => b.matchKeywords.length - a.matchKeywords.length)[0];
   if (!entry) return null; // nothing in the knowledge base speaks to this sentence
   if (mention.value === entry.currentValue) return null; // correct
+  // A sentence can state two correct values for one topic: "two years, or
+  // three years if willful", "four or more employees, and all employers for
+  // gender based harassment". When it states more than one value in this unit,
+  // every entry the sentence matches contributes a correct value, and a mention
+  // equal to any of them is not an error. A sentence with ONE value is still
+  // held to the most specific entry, so "gender based harassment: one year"
+  // is caught even though one year is right for other Commission complaints.
+  if (sameUnitInSentence > 1) {
+    const valid = thresholds
+      .filter((t) => t.unit === mention.unit && keywordsMatch(t, mention.sentence))
+      .map((t) => t.currentValue);
+    if (valid.includes(mention.value)) return null;
+  }
 
   const current = formatConstant(entry.currentValue, mention.unit);
   const stated = formatConstant(mention.value, mention.unit);
@@ -435,11 +449,16 @@ export function checkValuesAgainst(
   thresholds: KbThresholdEntry[],
 ): NormalizedFinding[] {
   const mentions = extractValueMentions(body);
-  const constants = thresholds.length
-    ? extractConstantMentions(body)
-        .map((m) => checkConstantAgainstKnowledgeBase(m, thresholds))
-        .filter((f): f is NormalizedFinding => f !== null)
-    : [];
+  const constantMentions = thresholds.length ? extractConstantMentions(body) : [];
+  const constants = constantMentions
+    .map((m) =>
+      checkConstantAgainstKnowledgeBase(
+        m,
+        thresholds,
+        constantMentions.filter((o) => o.sentence === m.sentence && o.unit === m.unit).length,
+      ),
+    )
+    .filter((f): f is NormalizedFinding => f !== null);
   if (mentions.length === 0) return dedupe(constants);
 
   const kbFindings = thresholds.length

@@ -562,24 +562,31 @@ Geographic reach: All five NYC boroughs, Westchester, Long Island, northern New 
 Practice areas: Employment Law + Commercial Collections and Judgment Enforcement
 Employment clients: Employees only. Never employers on employment matters.
 Collections clients: Businesses, creditors, CFOs, controllers, AR managers, attorneys
-Fee structure: Contingency fee where applicable. Free initial consultation.
+Fees: Never describe how the firm or any lawyer charges, or what the client will pay. No
+contingency, hourly, flat fee, "no upfront cost", "you pay nothing unless". The only permitted
+cost statement is the free consultation offer. Attorney fee recovery may be stated as a remedy.
 Licensed in: New York and New Jersey
 Key employment statutes: FLSA, NYLL, NYSHRL, NYCHRL, Title VII, ADA, FMLA, NJLAD, NJWHL
 Key collections statutes: NY CPLR Article 52, FDCPA, UCC, NY Debtor and Creditor Law, NJ Court Rules
 Key courts: SDNY, EDNY, NY State Supreme Court, Civil Court of the City of New York, NJ Superior Court
 
-Employment Law Pillar Pages (already exist — do not duplicate; link up from blogs and case results):
-- Wage Theft and Overtime: /wage-theft-overtime/
-- Wrongful Termination: /wrongful-termination/
-- Workplace Discrimination: /workplace-discrimination/
-- Sexual Harassment: /sexual-harassment/
-- Leave and Accommodations: /leave-accommodations/
-- Hostile Work Environment: /hostile-work-environment/
-- Hub Page: /nyc-employment-lawyer/
+Employment Law Pillar Pages (already exist — do not duplicate; link up from blogs and case results).
+Use these full URLs exactly. Never shorten them to a slug and never invent a URL.
+- Wage and Hour: https://katzmelinger.com/practice-areas/employment-law/wage-hour-claims-employees/
+- Overtime: https://katzmelinger.com/practice-areas/employment-law/wage-hour-claims-employees/wage-and-hour-laws-ny-ensuring-fair-overtime-compensation/
+- Wrongful Termination: https://katzmelinger.com/practice-areas/employment-law/wrongful-termination/
+- Discrimination: https://katzmelinger.com/practice-areas/employment-law/discrimination/
+- Retaliation: https://katzmelinger.com/practice-areas/employment-law/retaliation/
+- Sexual Harassment: https://katzmelinger.com/practice-areas/employment-law/sexual-harassment/
+- FMLA and Leave: https://katzmelinger.com/practice-areas/employment-law/fmla-violations/
+- Leave and Accommodations: https://katzmelinger.com/new-york-leave-and-accommodation-violations-lawyer/
+- Hostile Work Environment: https://katzmelinger.com/new-york-hostile-work-environment-lawyer/
+- Non Compete: https://katzmelinger.com/practice-areas/employment-law/what-is-a-non-compete-agreement/
+- Hub Page: https://katzmelinger.com/practice-areas/employment-law/
 
 Commercial Collections Pillar Pages (already exist — do not duplicate; link up from blogs and case results):
-- Collections Hub: /civil-litigation/collections-judgment-enforcement/
-- Judgment Enforcement: /practice-areas/civil-litigation/judgment-collection/
+- Commercial Collections: https://katzmelinger.com/practice-areas/civil-litigation/new-york-commercial-collections-attorney/
+- Judgment Enforcement: https://katzmelinger.com/practice-areas/civil-litigation/judgment-collection/
 - Domestication of Judgments: /practice-areas/civil-litigation/domesticating-judgments-in-ny-step-by-step-guide/
 
 Existing Collections Supporting Pages (do not duplicate topics):
@@ -587,7 +594,6 @@ Existing Collections Supporting Pages (do not duplicate topics):
 - Judgment Enforcement FAQ: /practice-areas/civil-litigation/collections-judgment-enforcement/judgment-enforcement-faq/
 - Restraining Notices and Asset Levies: /practice-areas/civil-litigation/restraining-notices-asset-levies-ny/
 - Assets Levied in NY Business Judgments: /practice-areas/assets-levied-business-judgment-ny/
-- Can I Recover Attorney Fees in Debt Collection?: /practice-areas/civil-litigation/judgment-collection/recover-attorney-fees-debt-collection/
 - Oral vs Written Contracts in NY Collections: /resources/oral-vs-written-contracts-ny-collections/
 - Enforcing Out-of-State Judgments in NY: /enforce-out-of-state-judgment-new-york/
 
@@ -616,7 +622,7 @@ WHY: The correct version defines the term directly and can be extracted by an AI
 Commercial Collections Voice: Direct, structured, and outcome-oriented. Collections clients are businesses. They are pragmatic, results-focused, and often impatient. They want strategy, process, and measurable progress. Do not use the warm, reassuring tone used for employment law. Lead with the legal situation and what can be done. Skip the empathy framing entirely.
 
 The Two Collections Audiences:
-- Jordan Patel (Business Owner / CEO): Runs a company with 5–150 employees. B2B claim of $50K+. Direct, impatient, action-oriented. Needs a plan, a timeline, and fee clarity. Lead with strategy and speed.
+- Jordan Patel (Business Owner / CEO): Runs a company with 5–150 employees. B2B claim of $50K+. Direct, impatient, action-oriented. Needs a plan and a timeline. Lead with strategy and speed.
 - Samantha Lee (Controller / A/R Manager): Internal finance lead, 10–250 person company. Owns an uncollected judgment. Process-driven, documentation-focused. Needs milestones and written updates she can report upward. Lead with process and predictability.
 
 COLLECTIONS — INTRODUCTION OPENER
@@ -665,12 +671,12 @@ WHY: The correct version gives specific, verifiable facts.
 05 Which Parties Must Comply? — Employment: employer thresholds by statute. Collections: debtor types, entity structures.
 06 Specific Protections or Remedies — What the law provides or prohibits. Scenario-grounded.
 07 Federal vs. State Law — How federal law, NYSHRL or CPLR interact. Name the specific difference.
-08 Legal Remedies or Enforcement Tools — AEO opener. Bullet list of remedy or tool types. Close with attorneys' fees note.
+08 Legal Remedies or Enforcement Tools — AEO opener. Bullet list of remedy or tool types. Attorney fee recovery may be listed as a statutory remedy; never say what the client pays.
 09 How to File or Initiate — Name the relevant agency or court. Steps in prose, not numbered list. CTA #2 follows.
 10 Evidence and Documentation — Practice-area-specific bullet list. Close with preservation warning.
 11 Statute of Limitations or Enforcement Window — Own H2 section. Specific timeframes by statute. Do not bury in FAQ.
 12 How Your Case or Matter Gets Handled — Three H3 subheadings: Negotiated Settlement, Agency or Court Proceedings, Litigation or Enforcement.
-13 Why Katz Melinger — Employment: four paragraphs (employee-side only, NY+NJ licensed, plain language, contingency fee). Collections: four paragraphs (creditor representation, NY+NJ licensed with statutes, direct court representation vs agency, fee structure).
+13 Why Katz Melinger — Employment: four paragraphs (employee-side only, NY+NJ licensed, plain language, free consultation). Collections: four paragraphs (creditor representation, NY+NJ licensed with statutes, direct court representation vs agency, written updates at each stage). Never describe fees.
 14 FAQ — 6 to 8 questions. H3 format. Core legal service questions. Answers open with direct sentence.
 15 Closing CTA — H2 + 2 to 3 sentences + CTA button + trust line. CTA #3.
 

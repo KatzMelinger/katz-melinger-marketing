@@ -34,6 +34,8 @@ import {
 } from "@/components/analysis-card";
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { FindingsPanel } from "@/components/findings-panel";
+import { ChangesMadePanel } from "@/components/changes-made-panel";
+import { ArchiveBanner } from "@/components/archive-banner";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 import {
   CANNIBALIZATION_LABEL,
@@ -453,10 +455,14 @@ export function DraftDrawer({
   const [activeTab, setActiveTab] = useState<"content" | "seo" | "qa" | "legal" | "findings" | "assets">(
     "content",
   );
-  const [findingsCounts, setFindingsCounts] = useState<{ total: number; legal: number }>({
+  const [findingsCounts, setFindingsCounts] = useState<{ total: number; legal: number; critical: number }>({
     total: 0,
     legal: 0,
+    critical: 0,
   });
+  // Automatic changes not yet marked reviewed (Changes made panel). Approve
+  // is held while this is above zero, the same as the server gate.
+  const [unreviewedChanges, setUnreviewedChanges] = useState(0);
   // Reviewer certifications, persisted on the draft with who and when. These
   // were session-only useState booleans: nothing was stored, no name was
   // attached, and a refresh cleared them — so the two boxes certified nothing
@@ -712,6 +718,19 @@ export function DraftDrawer({
       setAnalyzing(false);
     }
   }
+
+  // The server changed the draft (a rewrite or an undo in Changes made):
+  // pull the current row so the editor and scores show what is stored.
+  const reloadDraft = async (id: string) => {
+    const r = await fetch(`/api/content/drafts/${id}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const dj = await r.json();
+    setDraft(dj.draft ?? null);
+    setEditBody(dj.draft?.body ?? "");
+    setAnalysis(dj.latest_analysis ?? null);
+    setStaleness(dj.analysis_staleness ?? null);
+    setFindingsNonce((n) => n + 1);
+  };
 
   // Generate the draft from the linked brief (brief-stage rows that have no
   // draft yet). On success the new draft is pulled straight into the drawer.
@@ -1760,11 +1779,42 @@ export function DraftDrawer({
                       </div>
                     )
                   ) : (
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                      <div className="text-sm font-semibold text-emerald-900">Ready to approve</div>
-                      <p className="mt-0.5 text-xs text-emerald-700">
-                        {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
-                      </p>
+                    <div
+                      className={`rounded-lg border p-3 ${
+                        findingsCounts.critical > 0
+                          ? "border-rose-200 bg-rose-50"
+                          : "border-emerald-200 bg-emerald-50"
+                      }`}
+                    >
+                      {/* Sept 28 spec, section 7: "Ready to approve" must never
+                          show while a Critical finding is open. */}
+                      {unreviewedChanges > 0 && findingsCounts.critical === 0 ? (
+                        <>
+                          <div className="text-sm font-semibold text-amber-900">
+                            On hold · {unreviewedChanges} automatic change{unreviewedChanges === 1 ? "" : "s"} to review
+                          </div>
+                          <p className="mt-0.5 text-xs text-amber-800">
+                            Open the Legal tab, read Changes made, undo anything you disagree with, and mark it reviewed.
+                          </p>
+                        </>
+                      ) : findingsCounts.critical > 0 ? (
+                        <>
+                          <div className="text-sm font-semibold text-rose-900">
+                            On hold · {findingsCounts.critical} critical finding
+                            {findingsCounts.critical === 1 ? "" : "s"} open
+                          </div>
+                          <p className="mt-0.5 text-xs text-rose-700">
+                            Fix or dismiss them (Legal and Findings tabs) before approving.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm font-semibold text-emerald-900">Ready to approve</div>
+                          <p className="mt-0.5 text-xs text-emerald-700">
+                            {canPublish ? "Manual checks complete." : "Complete 2 manual checks then approve."}
+                          </p>
+                        </>
+                      )}
                       {!qaGatePassed && (
                         <div className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-800">
                           <span className="font-medium">QA checklist incomplete — fix before approving:</span>
@@ -1795,7 +1845,13 @@ export function DraftDrawer({
                       )}
                       <button
                         onClick={approve}
-                        disabled={!canPublish || approving || (!qaGatePassed && !qaOverride)}
+                        disabled={
+                          !canPublish ||
+                          approving ||
+                          findingsCounts.critical > 0 ||
+                          unreviewedChanges > 0 ||
+                          (!qaGatePassed && !qaOverride)
+                        }
                         className="mt-2 w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                         title={
                           !canPublish
@@ -2076,6 +2132,31 @@ export function DraftDrawer({
                 for the tab badges before a reviewer ever clicks either tab;
                 only its visibility toggles. Legal locks it to the legal
                 source via sourceFilter, per 2.15. */}
+            {draft && (
+              <div className={`mt-4 ${activeTab === "legal" ? "" : "hidden"}`}>
+                {/* Section 9: automatic changes, each undoable; Approve waits
+                    for "Mark reviewed". Kept mounted so the count is known
+                    before anyone opens the tab. */}
+                <div className="mb-2">
+                  <ArchiveBanner
+                    draftId={draft.id}
+                    status={(draft as { status?: string }).status}
+                    metadata={(draft as { metadata?: Record<string, unknown> }).metadata ?? null}
+                    onChanged={() => {
+                      void reloadDraft(draft.id);
+                      onChanged();
+                    }}
+                  />
+                </div>
+                <ChangesMadePanel
+                  draftId={draft.id}
+                  body={editBody}
+                  nonce={findingsNonce}
+                  onUnreviewed={setUnreviewedChanges}
+                  onDraftChanged={() => void reloadDraft(draft.id)}
+                />
+              </div>
+            )}
             {draft && (
               <div className={`mt-4 ${activeTab === "findings" || activeTab === "legal" ? "" : "hidden"}`}>
                 <FindingsPanel

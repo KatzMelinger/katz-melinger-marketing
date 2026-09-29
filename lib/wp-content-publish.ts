@@ -19,6 +19,7 @@ import { marked } from "marked";
 import { surfaceForFormat } from "@/lib/agent/compliance-filter";
 import { getSupabaseAdmin } from "./supabase-server";
 import { authorForContent } from "./authors";
+import { openCriticalFindings } from "./content-findings-store";
 
 export type WpContentItem = {
   /** content_drafts.id — echoed back on confirm. */
@@ -110,13 +111,32 @@ export async function listApprovedWpContent(args: {
     .limit(args.limit ?? 50);
   if (error) throw new Error(error.message);
 
-  const out: WpContentItem[] = [];
-  for (const d of data ?? []) {
+  const queuedRows = (data ?? []).filter((d) => {
     const metadata = (d.metadata as Record<string, unknown> | null) ?? null;
-    const queued = Boolean(
-      (metadata?.wp_publish as { queued?: unknown } | undefined)?.queued === true,
-    );
-    if (!queued || !isWordPressFormat(d.format as string | null)) continue;
+    const queued = (metadata?.wp_publish as { queued?: unknown } | undefined)?.queued === true;
+    return queued && isWordPressFormat(d.format as string | null);
+  });
+
+  // Sept 28 spec 11.9: the queue refuses anything with an open Critical
+  // finding AT THE MOMENT OF PUBLISHING, not just at approval — an approved
+  // draft can still be edited or re-analysed afterwards. If the findings read
+  // fails, nothing is served: an unverifiable draft does not go live.
+  const critical = await openCriticalFindings(queuedRows.map((d) => d.id as string));
+  if (critical === null) {
+    console.warn("[wp-publish] could not read open findings; serving nothing this pull.");
+    return [];
+  }
+
+  const out: WpContentItem[] = [];
+  for (const d of queuedRows) {
+    const metadata = (d.metadata as Record<string, unknown> | null) ?? null;
+    const held = critical.get(d.id as string);
+    if (held && held.length > 0) {
+      console.warn(
+        `[wp-publish] ${d.id} is queued but has ${held.length} open critical finding(s); not served.`,
+      );
+      continue;
+    }
 
     const seoBrief = (d.seo_brief as Record<string, unknown> | null) ?? null;
     const title = (d.title as string | null) ?? (d.topic as string | null) ?? "Untitled";

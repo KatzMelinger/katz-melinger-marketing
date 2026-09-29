@@ -26,19 +26,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
-import { recordAuditEvent } from "@/lib/content-findings-store";
+import { DRAFT_CERTIFICATION_KEYS } from "@/lib/draft-certifications";
+import { readFixLog, unreviewedChanges } from "@/lib/legal-fix-log";
+import { openCriticalFindings, recordAuditEvent } from "@/lib/content-findings-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Certification keys, and which of them the compliance check gates. */
-const CERTIFICATION_KEYS = [
-  "legal_review",
-  "proofread",
-  "schema",
-  "internal_links",
-  "citations",
-] as const;
+const CERTIFICATION_KEYS = DRAFT_CERTIFICATION_KEYS;
 
 type CertificationKey = (typeof CERTIFICATION_KEYS)[number];
 
@@ -108,9 +104,42 @@ export async function POST(
         { status: 409 },
       );
     }
+
+    // Sept 28 spec 11.5: legal review cannot be certified while the Legal
+    // panel (or any other check) has an open Critical finding. A read failure
+    // refuses too — certifying past a check that could not run is the exact
+    // failure this box exists to prevent.
+    const critical = await openCriticalFindings([id]);
+    const open = critical === null ? null : (critical.get(id) ?? []);
+    if (open === null || open.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            open === null
+              ? "Could not confirm the draft has no open Critical findings, so legal review was not certified. Try again."
+              : `${open.length} Critical finding${open.length === 1 ? " is" : "s are"} still open — fix or dismiss ${open.length === 1 ? "it" : "them"} before certifying legal review.`,
+          critical: open?.map((f) => f.title) ?? [],
+        },
+        { status: 409 },
+      );
+    }
   }
 
   const metadata = (draft.metadata as Record<string, unknown> | null) ?? {};
+
+  // Section 9 / acceptance test 6: legal review cannot be certified while
+  // automatic changes are waiting in "Changes made".
+  if (value && COMPLIANCE_GATED.has(key)) {
+    const pending = unreviewedChanges(readFixLog(metadata));
+    if (pending.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Review the ${pending.length} automatic change${pending.length === 1 ? "" : "s"} in "Changes made" before certifying legal review.`,
+        },
+        { status: 409 },
+      );
+    }
+  }
   const existing = (metadata.certifications as Record<string, Certification> | undefined) ?? {};
   const certifications = { ...existing };
   if (value) {

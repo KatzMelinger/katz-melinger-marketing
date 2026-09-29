@@ -204,12 +204,14 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
   // the closing CTA of a long page is exactly the one worth catching.
   const feeHits = findFeeLanguage(content);
   const feeViolations = blockingFeeHits(feeHits).map((h) => ({
-    rule: "Firm rule — fee arrangements",
+    rule: "Firm rule — fee language",
     severity: "high" as const,
     excerpt: h.match,
     reason:
-      "This states how Katz Melinger charges. The firm is flat-fee and has never worked on contingency, so the claim is also inaccurate.",
-    fix: "Delete the fee reference. Do not replace it with \"flat fee\" — that still tells the reader how the firm charges. A free initial consultation may be offered instead.",
+      h.subject === "firm"
+        ? "This states how Katz Melinger charges. The firm is flat-fee and has never worked on contingency, so the claim is also inaccurate."
+        : "Firm content never says how lawyers charge or what the reader will pay for representation, including statements about other lawyers.",
+    fix: "Delete the sentence. Do not replace it with another fee statement. Only the free consultation offer is permitted.",
   }));
 
   // Borderline hits (usually a passive construction with no clear subject) go

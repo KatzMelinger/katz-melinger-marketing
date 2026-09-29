@@ -111,7 +111,6 @@ export function ruleTolerance(unit: RuleUnit, opportunities: number): number {
  *  check can never disagree about what "too long" means. */
 export const MAX_PARAGRAPH_SENTENCES = 4;
 
-const WEB_BLOG: ReadabilityContentType[] = ["web", "blog"];
 const WEB_ONLY: ReadabilityContentType[] = ["web"];
 const ALL: ReadabilityContentType[] = ["web", "blog", "social"];
 
@@ -129,7 +128,10 @@ export const READABILITY_RULES: ReadabilityRule[] = [
   { id: "07", type: "deterministic", description: "Weak qualifier (very, really, quite, somewhat…)", fix: "Remove it or replace with a specific term.", scope: ALL , unit: "sentence" },
   { id: "08", type: "ai", description: "Vague instead of specific ('significant', 'many')", fix: "Name the specific fact or number.", scope: ALL , unit: "sentence" },
   { id: "09", type: "deterministic", description: "'There is' / 'There are' opener", fix: "Rewrite the sentence directly.", scope: ALL , unit: "sentence" },
-  { id: "10", type: "deterministic", description: "First person (we/our/us) on a web or blog page", fix: "Replace with 'Katz Melinger' or 'the firm'.", scope: WEB_BLOG , unit: "sentence" },
+  // Off for firm content (Diana, Sept 28 spec 10.3): the brand voice allows
+  // "we" and "our firm", so this rule contradicted the voice it was checking.
+  // Empty scope = never runs, never scored, never put in a generation prompt.
+  { id: "10", type: "deterministic", description: "First person (we/our/us) on a web or blog page", fix: "Replace with 'Katz Melinger' or 'the firm'.", scope: [] , unit: "sentence" },
   { id: "11", type: "ai", description: "An H2's first sentence isn't a factual, extractable answer", fix: "Lead the section with a direct answer.", scope: ALL , unit: "paragraph" },
   { id: "12", type: "ai", description: "A legal claim without a specific law or authority", fix: "Name the statute or source.", scope: ALL , unit: "sentence" },
   { id: "13", type: "ai", description: "An H2 that isn't a question with a direct answer", fix: "Convert the heading to a question and answer it.", scope: ALL , unit: "paragraph" },

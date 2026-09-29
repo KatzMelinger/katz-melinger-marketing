@@ -6,7 +6,10 @@
  *   Body (optional): { since: "YYYY-MM-DD" } — only sync calls on/after this date.
  *
  * GET /api/calls/sync — Vercel Cron trigger. Requires
- *   `Authorization: Bearer ${CRON_SECRET}`. Reads ?since=YYYY-MM-DD from query.
+ *   `Authorization: Bearer ${CRON_SECRET}`. Reads ?since=YYYY-MM-DD from query;
+ *   without it the cron re-syncs only the last CRON_LOOKBACK_DAYS (2) days,
+ *   which is enough to settle calls that were still in progress on the last
+ *   run. A full-history resync is the POST without `since`.
  *   Registered in vercel.json (hourly) so the call log stays fresh without a
  *   human clicking the button — everything downstream (scoring, lead-response
  *   leakage) is only as current as the last sync.
@@ -27,6 +30,30 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 type Json = Record<string, unknown>;
+
+const CRON_LOOKBACK_DAYS = 2;
+
+/**
+ * Attribution columns added by supabase/calls_marketing_source.sql. Until that
+ * SQL has been run the upsert would fail on them, so a "column not found"
+ * error drops them and retries — the same values are in `raw`, which is what
+ * /api/calls reads from anyway.
+ */
+const ATTRIBUTION_COLUMNS = [
+  "marketing_source",
+  "medium",
+  "campaign",
+  "landing_page_url",
+  "referrer_domain",
+  "call_type",
+] as const;
+
+function isMissingColumnError(message: string): boolean {
+  return (
+    ATTRIBUTION_COLUMNS.some((c) => message.includes(`'${c}'`) || message.includes(`"${c}"`)) &&
+    /column|schema cache/i.test(message)
+  );
+}
 
 /**
  * Vercel injects `Authorization: Bearer ${CRON_SECRET}` on scheduled
@@ -73,6 +100,7 @@ async function runCallsSync(
   // Upsert in batches of 250 to keep payload size reasonable.
   let synced = 0;
   const errors: string[] = [];
+  let attributionColumns = true;
   const BATCH = 250;
   for (let i = 0; i < result.calls.length; i += BATCH) {
     const slice = result.calls.slice(i, i + BATCH);
@@ -105,13 +133,26 @@ async function runCallsSync(
         recording_duration: c.recording_duration ?? null,
         transcription: c.transcription ?? null,
         transcription_language: detectLanguage(c.transcription ?? null),
+        marketing_source: c.source ?? null,
+        medium: c.medium ?? null,
+        campaign: c.campaign ?? null,
+        landing_page_url: c.landing_page_url ?? null,
+        referrer_domain: c.referrer_domain ?? null,
+        call_type: c.call_type ?? null,
         raw: c as unknown as Json,
         synced_at: new Date().toISOString(),
         tenant_id: tenantId,
       };
     });
 
-    const { error } = await supabase.from("calls").upsert(rows, { onConflict: "id" });
+    let { error } = await supabase
+      .from("calls")
+      .upsert(attributionColumns ? rows : rows.map(withoutAttribution), { onConflict: "id" });
+    if (error && attributionColumns && isMissingColumnError(error.message)) {
+      // Migration not run yet: keep syncing into `raw` only.
+      attributionColumns = false;
+      ({ error } = await supabase.from("calls").upsert(rows.map(withoutAttribution), { onConflict: "id" }));
+    }
     if (error) {
       errors.push(error.message);
     } else {
@@ -119,7 +160,19 @@ async function runCallsSync(
     }
   }
 
-  return NextResponse.json({ synced, total: result.calls.length, errors: errors.length ? errors : undefined });
+  return NextResponse.json({
+    synced,
+    total: result.calls.length,
+    since: since ?? null,
+    attributionColumns,
+    errors: errors.length ? errors : undefined,
+  });
+}
+
+function withoutAttribution<T extends Json>(row: T): Json {
+  const copy: Json = { ...row };
+  for (const c of ATTRIBUTION_COLUMNS) delete copy[c];
+  return copy;
 }
 
 export async function POST(req: Request) {
@@ -148,7 +201,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
   }
   const sinceParam = req.nextUrl.searchParams.get("since");
-  const since = sinceParam && sinceParam.trim() ? sinceParam.trim() : undefined;
+  const since =
+    sinceParam && sinceParam.trim()
+      ? sinceParam.trim()
+      : new Date(Date.now() - CRON_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   // Cron has no user session — stamp the default tenant.
   return runCallsSync(supabase, DEFAULT_TENANT_ID, since);
 }

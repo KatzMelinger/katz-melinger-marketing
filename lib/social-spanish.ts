@@ -65,7 +65,7 @@ DO NOT TRANSLATE THESE. They are checked character for character after you write
 The same prohibitions apply in Spanish as in English: no guarantee of a result
 ("garantizamos", "ganaremos"), no superlatives ("el mejor bufete", "nos especializamos en"),
 no fear-based urgency ("actúe ahora", "no espere"), no fee or price language
-("consulta gratis"). Write "Nueva York" and "Nueva Jersey" in full.
+("sin costo", "honorarios de contingencia"). A free consultation may be offered. Write "Nueva York" and "Nueva Jersey" in full.
 
 ${ANTI_AI_VOICE_RULES}
 
