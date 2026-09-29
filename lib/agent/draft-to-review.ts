@@ -26,6 +26,7 @@ import { generateMultiFormat, type FormatKey } from "@/lib/content-multiformat";
 import { analyzeDraft } from "@/lib/content-analysis";
 import { runComplianceGate, surfaceForFormat } from "@/lib/agent/compliance-filter";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
+import { closingCtaFor } from "@/lib/closing-cta";
 
 export type ComplianceSummary = {
   pass: boolean;
@@ -128,7 +129,7 @@ export async function draftTopicToReview(args: {
   // (social, email, video) are checked by their own separate compliance path.
   let body = draft.body;
   if (format === "blog") {
-    body = applyRequiredDisclaimers(body).body;
+    body = applyRequiredDisclaimers(body, { cta: await closingCtaFor(tenantId) }).body;
   }
 
   // 2. Analyze — full scorecard (persists to content_analyses internally).

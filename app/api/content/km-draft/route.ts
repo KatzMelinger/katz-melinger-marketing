@@ -66,6 +66,7 @@ import { getTenantConfig } from "@/lib/tenant-config";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
+import { closingCtaFor } from "@/lib/closing-cta";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -457,7 +458,7 @@ ${renderFirmFactsBlock()}`),
     // post, case result) is legal advertising for this firm, so this is
     // unconditional here, unlike app/api/content/draft/route.ts which also
     // generates non-legal formats (social, email) through the same route.
-    text = applyRequiredDisclaimers(text).body;
+    text = applyRequiredDisclaimers(text, { cta: await closingCtaFor() }).body;
 
     // Freshness: flag time-sensitive figures (wage rates, thresholds, years,
     // deadlines) so the reviewer verifies them before approval. Attach the

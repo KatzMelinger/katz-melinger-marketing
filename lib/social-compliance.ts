@@ -148,7 +148,9 @@ const RULES: Rule[] = [
     scope: "all",
     label: "Fee or price language — off-brand",
     severity: "block",
-    re: /\bfree consultation\b|\bno fee\b|\bcontingency\b|\$\s?\d|\bconsulta\s+(gratis|gratuita)\b|\bsin\s+costo\b|\bhonorarios\s+de\s+contingencia\b|\bsin\s+(cargo|honorarios)\b|\bcuota\s+de\s+contingencia\b/i,
+    // A free consultation is allowed (Kenneth, 2026-09-29) in both languages;
+    // every other fee or price statement is not.
+    re: /\bno fee\b|\bcontingency\b|\$\s?\d|\bsin\s+costo\b|\bhonorarios\s+de\s+contingencia\b|\bsin\s+(cargo|honorarios)\b|\bcuota\s+de\s+contingencia\b/i,
   },
   {
     code: "state_abbrev",

@@ -1,23 +1,15 @@
 /**
  * Fee and contingency language — a hard firm rule, checked deterministically.
  *
- * The rule (Diana, 2026-08-25 §6, refined 2026-08-26): no content may state or
- * imply how KATZ MELINGER charges. The firm is flat-fee and has never worked on
- * contingency, so "we work on contingency" is not merely off-policy, it is
- * false.
+ * The rule (Kenneth, 2026-09-29, replacing the 2026-08-26 three-way split):
+ * content carries NO fee language of any kind — not about the firm, not about
+ * other lawyers, not about who pays attorney fees. The one exception is the
+ * free consultation offer. The firm is flat-fee and has never worked on
+ * contingency.
  *
- * But the rule is about the FIRM, not about the word. "Most employment lawyers
- * handle overtime cases on contingency" describes the market, is accurate, and
- * stays — blocking it would gut legitimate legal education, which is most of
- * what the library is for. So every hit is classified by who the sentence is
- * about:
- *
- *   firm       the sentence names the firm or uses we/our/us   -> BLOCKS
- *   general    the sentence is about other lawyers or the market -> allowed
- *   ambiguous  no clear subject (usually a passive construction) -> REVIEW
- *
- * Ambiguous goes to a human rather than to either extreme. Diana's instruction
- * is explicit: borderline cases go to review, never auto-block.
+ * Every hit still carries a subject (firm / general / ambiguous) because the
+ * reviewer reading the finding wants to know whether the sentence was a false
+ * claim about the firm or market commentary — but all three block now.
  *
  * A free initial consultation MAY be mentioned; fee arrangements may not. When
  * removing fee language, DELETE the reference — do not substitute "flat fee",
@@ -90,6 +82,20 @@ const BANNED: { rule: string; re: RegExp }[] = [
     re: /\b(?:fee|fees)\b[^.]{0,30}?\b(?:from|out\s+of)\s+(?:your|the|any)\s+(?:recovery|settlement|award|verdict)\b/gi,
   },
   { rule: "No upfront cost", re: /\bno\s+(?:up[-\s]?front|upfront|out[-\s]?of[-\s]?pocket)\s+(?:cost|costs|fee|fees|payment)\b/gi },
+  // Added 2026-09-29 from the Sept 28 audit — each of these got through.
+  // Fee shifting: "the employer must pay your legal fees", "attorneys' fees and costs".
+  {
+    rule: "Fee shifting",
+    re: /\bpays?\s+(?:for\s+)?(?:your|the\s+employee['’]?s?)\s+(?:legal|attorneys?['’]?|lawyers?['’]?)\s+fees\b|\battorneys?['’]?\s+fees\s+and\s+costs\b|\bfee[-\s]shifting\b|\brecover\s+(?:your\s+)?(?:reasonable\s+)?(?:attorneys?['’]?|legal)\s+fees\b/gi,
+  },
+  { rule: "Free or low cost", re: /\bfree\s+or\s+low[-\s]cost\b|\blow[-\s]cost\s+(?:initial\s+)?consultations?\b/gi },
+  { rule: "At no cost", re: /\bat\s+no\s+(?:cost|charge)\b|\bwithout\s+(?:having\s+to\s+)?pay(?:ing)?\s+(?:any\s+)?(?:legal|attorneys?['’]?)\s+fees\b/gi },
+  // Billing models. "hourly" alone is NOT a fee word in wage content ("hourly
+  // employees", "your hourly rate"), so only the billing senses match.
+  {
+    rule: "Billing model",
+    re: /\bflat[-\s]fees?\b|\bbill(?:s|ed|ing)?\s+(?:by\s+the\s+hour|hourly)\b|\bhourly\s+(?:billing|fees?|basis)\b|\bretainer\b/gi,
+  },
 ];
 
 /**
@@ -186,25 +192,25 @@ export function findFeeLanguage(body: string): FeeLanguageHit[] {
   return hits.sort((a, b) => a.index - b.index);
 }
 
-/** Hits that must block: the firm's own fee arrangements. */
+/** Hits that must block: all of them (no fee language of any kind, 2026-09-29). */
 export function blockingFeeHits(hits: readonly FeeLanguageHit[]): FeeLanguageHit[] {
-  return hits.filter((h) => h.subject === "firm");
+  return [...hits];
 }
 
-/** Hits a human should look at, without failing the draft. */
-export function reviewableFeeHits(hits: readonly FeeLanguageHit[]): FeeLanguageHit[] {
-  return hits.filter((h) => h.subject === "ambiguous");
+/**
+ * Hits a human should look at without failing the draft. Empty since the
+ * 2026-09-29 rule: every fee statement blocks. Kept so callers need not change.
+ */
+export function reviewableFeeHits(_hits: readonly FeeLanguageHit[]): FeeLanguageHit[] {
+  return [];
 }
 
 /** The rule as prose, for the compliance prompt and for reviewer-facing text. */
 export const FEE_LANGUAGE_RULE =
-  "FEE ARRANGEMENTS (firm rule): content must never state or imply how KATZ MELINGER charges. " +
-  "The firm is flat-fee and has never worked on contingency, so any claim that it does is false. " +
-  "Flag: contingency, \"no fee unless you win\", \"you do not pay unless you recover\", " +
-  "percentage-of-recovery figures, \"no upfront cost\" — WHEN the sentence is about this firm " +
-  "(we/our/the firm/Katz Melinger). " +
-  "Do NOT flag accurate general statements about other lawyers or the market, e.g. \"most " +
-  "employment lawyers handle overtime cases on contingency\" — those are legitimate legal " +
-  "education and stay. A free initial consultation MAY be mentioned. When removing fee language, " +
-  "delete the reference; do not substitute \"flat fee\", which still tells the reader how the " +
-  "firm charges.";
+  "FEE LANGUAGE (firm rule): content must contain NO fee language of any kind, about this firm " +
+  "or about lawyers in general. Flag: contingency, hourly or flat fees, retainers, \"no fee " +
+  "unless you win\", \"you do not pay unless you recover\", percentage-of-recovery figures, " +
+  "\"no upfront cost\", \"at no cost\", \"free or low cost\", and any statement about who pays " +
+  "attorney fees (fee shifting, \"the employer must pay your legal fees\"). The ONLY permitted " +
+  "statement is that a consultation or case evaluation is free. When removing fee language, " +
+  "delete the sentence; never replace it with another fee statement.";

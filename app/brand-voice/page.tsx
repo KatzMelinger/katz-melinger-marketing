@@ -192,15 +192,15 @@ const SETTING_FIELDS: {
   },
   {
     key: "socialOfferPhrase",
-    label: "Social media offer phrase",
-    placeholder: "Free Confidential Case Review",
-    help: "Reproduced exactly, capitals included, in any CTA that invites a consultation. A reworded or lowercased version is flagged.",
+    label: "Offer phrase",
+    placeholder: "Free Confidential Case Evaluation",
+    help: "Reproduced exactly, capitals included, in any CTA that invites a consultation (social, blogs and web pages). A reworded or lowercased version is flagged.",
   },
   {
     key: "socialOfferPhraseEs",
-    label: "Social media offer phrase (Spanish)",
-    placeholder: "Revisión Gratuita y Confidencial de su Caso",
-    help: "Reproduced exactly on Spanish companion posts, the same way the English phrase is. Avoid “Consulta Gratuita” — consultation-price wording is blocked in both languages.",
+    label: "Offer phrase (Spanish)",
+    placeholder: "Evaluación Gratuita y Confidencial de su Caso",
+    help: "Reproduced exactly on Spanish companion posts, the same way the English phrase is.",
   },
   {
     key: "socialHashtagRule",
