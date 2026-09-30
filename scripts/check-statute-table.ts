@@ -22,6 +22,11 @@ const MUST_FLAG: Array<[string, string]> = [
   ["Wage statement violations carry $250 per violation under Labor Law § 198(1-d).", "nyll-198"],
   ["Under 42 U.S.C. § 1981a, the NYSHRL caps damages the same way.", "usc42-1981a"],
   ["NYC Admin. Code § 8-109 gives you three years to file with the Commission.", "nycadmin-8-109"],
+  // Attorney review 2026-09-30.
+  ["Under Executive Law § 300, harassment must be severe or pervasive to be actionable.", "exec-300"],
+  ["Under Executive Law § 300, as under federal protections, it must be severe or pervasive.", "exec-300"],
+  ["You can sue your employer in court under OSHA section 11(c).", "usc29-660c"],
+  ["Under 29 U.S.C. § 660(c), you can file a lawsuit for retaliation.", "usc29-660c"],
 ];
 
 const MUST_PASS: string[] = [
@@ -35,6 +40,17 @@ const MUST_PASS: string[] = [
   "Under 42 U.S.C. § 1981a, Title VII damages are capped, but there is no cap under the NYSHRL.",
   "Section 3 below explains your options.",
   "The firm has handled cases under Section 215 and Section 740 of the Labor Law.",
+  // Attorney review 2026-09-30: correct federal comparisons are not errors.
+  "Under Executive Law § 300, harassment no longer needs to be severe or pervasive.",
+  "Unlike Title VII, which requires harassment to be severe or pervasive, Executive Law § 300 sets a lower bar.",
+  "Under federal law harassment must be severe or pervasive, but Executive Law § 300 only excludes petty slights.",
+  // OSHA 11(c): the complaint route is correct; "pursue" is not "sue".
+  "Under OSHA section 11(c), you must file a complaint with OSHA within 30 days.",
+  "You may pursue an OSHA section 11(c) complaint; only the Secretary of Labor can sue.",
+  "Under 29 U.S.C. § 660(c), the Secretary of Labor may bring a lawsuit on your behalf.",
+  "OSHA section 11(c) has no private right to sue, so New York workers often use Labor Law § 740.",
+  // Bare 11(c) elsewhere is not OSHA.
+  "Rule 11(c) sanctions can be imposed on a party who files a frivolous lawsuit.",
 ];
 
 let failed = 0;

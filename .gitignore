@@ -52,3 +52,6 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# Local reports written by maintenance scripts (--out)
+backfill-report*.md

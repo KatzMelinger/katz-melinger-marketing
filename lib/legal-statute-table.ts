@@ -66,7 +66,7 @@ export type StatuteRow = {
 export const CODE_CONTEXT: Record<StatuteCode, RegExp> = {
   NYLL: /\blabor\s+law\b|\bNYLL\b|\bLab\.?\s+Law\b/i,
   NYCRR: /\bNYCRR\b|\bwage\s+order\b|\bN\.Y\.C\.R\.R\b/i,
-  USC29: /\b29\s+U\.?S\.?C\b|\bFLSA\b|\bFair\s+Labor\s+Standards\b|\bFMLA\b|\bFamily\s+and\s+Medical\s+Leave\b|\bADEA\b/i,
+  USC29: /\b29\s+U\.?S\.?C\b|\bFLSA\b|\bFair\s+Labor\s+Standards\b|\bFMLA\b|\bFamily\s+and\s+Medical\s+Leave\b|\bADEA\b|\bOSHA?\b|\bOSH\s+Act\b|\bOccupational\s+Safety\b/i,
   USC42: /\b42\s+U\.?S\.?C\b|\bTitle\s+VII\b|\bADA\b|\bAmericans\s+with\s+Disabilities\b/i,
   USC9: /\b9\s+U\.?S\.?C\b|\bEFAA\b|\bEnding\s+Forced\s+Arbitration\b/i,
   EXEC: /\bExecutive\s+Law\b|\bExec\.?\s+Law\b|\bNYSHRL\b|\bState\s+Human\s+Rights\s+Law\b/i,
@@ -354,6 +354,26 @@ export const STATUTE_TABLE: StatuteRow[] = [
     unless: ["not", "rather than"],
     sourceUrl: CORNELL("29/2617"),
   },
+  // Added at attorney review, 2026-09-30. The knowledge base already checks the
+  // 30-day OSHA deadline; this row catches the claim the number check cannot:
+  // that an employee can sue. There is no private right of action under 11(c)
+  // (case law; e.g. Taylor v. Brighton Corp., 616 F.2d 256 (6th Cir. 1980)) —
+  // only the Secretary of Labor sues. Bare "11(c)" is NOT an alias: it is a
+  // common subsection number elsewhere (Rule 11(c) sanctions), so every 11(c)
+  // form names OSHA or the OSH Act.
+  {
+    key: "usc29-660c", code: "USC29", citation: "29 U.S.C. § 660(c) (OSH Act section 11(c))",
+    aliases: [
+      "660(c)", "660(c)(1)", "660(c)(2)",
+      "OSHA 11(c)", "OSHA section 11(c)", "OSH Act 11(c)", "OSH Act section 11(c)",
+      "section 11(c) of the OSH Act", "section 11(c) of the Occupational Safety and Health Act",
+    ],
+    covers: "Bars retaliation for safety complaints. The employee files a complaint with OSHA within 30 days; only the Secretary of Labor may sue. No private lawsuit.",
+    notCovers: "A lawsuit filed by the employee. (For a private suit, private-sector workers in New York use Labor Law § 740.)",
+    mismatch: ["sue", "lawsuit", "in court", "file a claim in court"],
+    unless: ["Secretary", "Department of Labor", "no private", "cannot sue", "740"],
+    sourceUrl: CORNELL("29/660"),
+  },
   {
     key: "cfr29-825.307", code: "CFR29", citation: "29 CFR § 825.307",
     aliases: ["825.307"],
@@ -397,9 +417,14 @@ export const STATUTE_TABLE: StatuteRow[] = [
   {
     key: "exec-300", code: "EXEC", citation: "NY Executive Law § 300",
     aliases: ["300"],
-    covers: "Liberal construction; harassment is unlawful regardless of whether it is severe or pervasive, unless it is no more than petty slights or trivial inconveniences.",
+    covers: "Liberal construction of NYSHRL which means harassment is unlawful regardless of whether it is severe or pervasive, unless it is no more than petty slights or trivial inconveniences.",
     notCovers: "A \"severe or pervasive\" requirement under New York State law.",
-    mismatch: ["severe or pervasive"], unless: ["no longer", "does not require", "not required", "need not", "regardless"],
+    // "Title VII", "federal law", "unlike", "lower": attorney review 2026-09-30,
+    // so a correct federal-versus-New-York comparison is not flagged. Plain
+    // "federal" is deliberately NOT here ("under § 300, as under federal law,
+    // it must be severe or pervasive" is wrong and must still be caught).
+    mismatch: ["severe or pervasive"],
+    unless: ["no longer", "does not require", "not required", "need not", "regardless", "Title VII", "federal law", "unlike", "lower"],
     sourceUrl: NYS("EXC/300"),
   },
   {
@@ -611,9 +636,18 @@ export function statuteSentences(body: string): string[] {
 /** Any "§ X" / "Section X" citation, for the unverified check. */
 const ANY_CITATION = new RegExp(`${PREFIX}(\\d[\\w.:]*(?:[-\\s]?\\(?[\\w]{1,4}\\)?)*)`, "g");
 
+/**
+ * First term found at the START of a word. A term still matches as a prefix
+ * ("waive" finds "waived", "averag" finds "averaging"), but never from inside
+ * a word: "sue" must not fire on "pursue" or "issue", and "not" must not
+ * clear a sentence because it says "notice".
+ */
 function containsAny(hay: string, terms: readonly string[]): string | null {
-  const h = hay.toLowerCase();
-  for (const t of terms) if (t && h.includes(t.toLowerCase())) return t;
+  for (const t of terms) {
+    if (!t) continue;
+    const src = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    if (new RegExp(`(?<![A-Za-z0-9])${src}`, "i").test(hay)) return t;
+  }
   return null;
 }
 
