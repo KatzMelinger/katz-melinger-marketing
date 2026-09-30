@@ -11,7 +11,14 @@
  * API routes, the backfill and the generators.
  */
 
-export type ChangeSource = "knowledge base" | "statute table" | "firm fact" | "brand rule" | "required element";
+export type ChangeSource =
+  | "knowledge base"
+  | "statute table"
+  | "firm fact"
+  | "brand rule"
+  | "required element"
+  /** Sections copied in from a duplicate before it was archived (Appendix F). */
+  | "duplicate merge";
 
 export type FixChange = {
   id: string;

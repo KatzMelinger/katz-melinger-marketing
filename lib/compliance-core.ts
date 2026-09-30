@@ -81,7 +81,11 @@ ${FIRM_FACTS_RULE}`;
 // statute table, authority loop) is the only thing that speaks to accuracy.
 export const SCOPE_NOTE = `SCOPE: You judge attorney advertising and firm rules ONLY. You do NOT check whether the law stated is correct.
 Never write that the content is legally accurate, correct, or contains accurate legal information, and never say it is "ready to publish" —
-other checks and an attorney decide that. Describe only the advertising findings.`;
+other checks and an attorney decide that. Describe only the advertising findings.
+Describing the remedies a STATUTE provides (back pay, reinstatement, liquidated damages, attorney fee recovery) is legal
+information, not a claim about the firm's past results, and does not require a prior results disclaimer. Require that
+disclaimer only where the firm's own results, settlements, verdicts or client outcomes are mentioned.
+Only list real violations. If something is permitted, do not list it at all.`;
 
 export const SCORE_GUIDE = `${SCOPE_NOTE}
 
@@ -167,10 +171,21 @@ export async function loadComplianceRuleBlocks(
  * Normalize a raw model result into a safe BaseComplianceResult (clamps the
  * score, defaults arrays, derives a status if the model omitted one).
  */
+/**
+ * A "violation" the model itself says is fine. Seen live 2026-09-30: "This
+ * language correctly describes attorney fee recovery as a legal remedy... This
+ * is permitted and should remain. No violation." filed at high severity, which
+ * held a correct draft. A note that clears the text is not a violation.
+ */
+function isSelfClearingNote(v: { reason?: unknown; rule?: unknown }): boolean {
+  const t = `${typeof v.rule === "string" ? v.rule : ""} ${typeof v.reason === "string" ? v.reason : ""}`;
+  return /\bno violation\b|\bis permitted and should remain\b|\bnot a violation\b|\bno (?:change|action) (?:is )?(?:needed|required)\b|\bthis is (?:compliant|acceptable|fine)\b/i.test(t);
+}
+
 export function normalizeComplianceResult(
   raw: Partial<BaseComplianceResult> | null | undefined,
 ): BaseComplianceResult {
-  const violations = Array.isArray(raw?.violations) ? raw!.violations : [];
+  const violations = (Array.isArray(raw?.violations) ? raw!.violations : []).filter((v) => !isSelfClearingNote(v));
   const score = Math.max(0, Math.min(100, Math.round(Number(raw?.score ?? 0))));
   const status: BaseComplianceResult["status"] =
     raw?.status === "compliant" ||
