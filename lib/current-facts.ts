@@ -98,7 +98,10 @@ export const CURRENT_FACTS: CurrentFact[] = [
     jurisdiction: "New York City, Long Island, Westchester",
     effectiveDate: "2026-01-01",
     unit: "hour",
-    reVerifyBy: "2027-01-01",
+    reVerifyBy: "2028-01-01",
+    // Confirmed UNCHANGED for 2027 by NY DOL (published 2026-10-01).
+    verifiedBy: "Kenneth Katz (NY DOL table)",
+    verifiedAt: "2026-10-01",
     keywords: [
       "minimum wage", "min wage", "hourly wage", "wage rate",
       "new york city", "nyc", "long island", "westchester",
@@ -111,7 +114,10 @@ export const CURRENT_FACTS: CurrentFact[] = [
     jurisdiction: "Rest of New York State (outside NYC, Long Island, Westchester)",
     effectiveDate: "2026-01-01",
     unit: "hour",
-    reVerifyBy: "2027-01-01",
+    reVerifyBy: "2028-01-01",
+    // Confirmed UNCHANGED for 2027 by NY DOL (published 2026-10-01).
+    verifiedBy: "Kenneth Katz (NY DOL table)",
+    verifiedAt: "2026-10-01",
     keywords: [
       "minimum wage", "min wage", "hourly wage", "wage rate",
       "upstate", "rest of new york", "rest of state",
@@ -184,7 +190,15 @@ export const CURRENT_FACTS: CurrentFact[] = [
       "outside new york city", "remainder of the state",
     ],
   },
-  // NJ keywords deliberately omit the bare "nj" abbreviation: keyword matching is
+  // NJ CHANGES ON 2027-01-01 (NJDOL poster MW-570, 9/26): most employers $16.48,
+// seasonal and small employers $16.25, agricultural $15.00, tipped cash wage
+// $6.61, long-term care direct care staff $19.48. Today's 2026 figures stay
+// below until then (a 2027 value here would mark today's correct figure stale);
+// reVerifyBy 2027-01-01 forces the switch. The knowledge base already holds
+// $16.48 from 2027-01-01 with $15.92 as the prior value. The damages
+// calculator (katz-melinger-cms app/lib/damages-rates.ts) needs the same update.
+//
+// NJ keywords deliberately omit the bare "nj" abbreviation: keyword matching is
   // substring-based, and "nj" is inside "injury", "injunction" and "conjunction",
   // which would pull New Jersey wage figures into unrelated drafts.
   {

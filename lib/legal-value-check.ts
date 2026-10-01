@@ -33,6 +33,9 @@ type ValueMention = {
   region: string | null;
   /** A year named in the sentence ("as of 2025", "effective 2026"), or null. */
   statedYear: number | null;
+  /** The sentence names BOTH regions ("$17.00 in NYC and $16.00 in the rest of
+   *  the state"), so two different figures in it are expected, not a conflict. */
+  multiRegion?: boolean;
 };
 
 // Both English and Spanish unit/date patterns are tested unconditionally on
@@ -70,9 +73,22 @@ function detectJurisdiction(sentence: string): LegalJurisdiction | null {
   return null;
 }
 
+/** "Outside New York City", "outside of NYC, Long Island and Westchester". */
+const OUTSIDE_DOWNSTATE_RE =
+  /\b(?:outside|beyond|excluding)\s+(?:of\s+)?(?:the\s+)?(?:New York City|NYC|Long Island|Westchester|downstate)\b|\bfuera de la ciudad de Nueva York\b/i;
+
 function detectRegion(sentence: string): string | null {
+  // The remainder cues are checked FIRST: "Outside New York City, the rest of
+  // the state is $16.00" names New York City only to exclude it, and reading
+  // it as downstate flagged a correct figure (2026-10-01).
+  if (REMAINDER_RE.test(sentence) || OUTSIDE_DOWNSTATE_RE.test(sentence)) {
+    // A sentence giving BOTH rates ("$17.00 in New York City and $16.00 in
+    // the rest of the state") has no single region; leave it unscoped so each
+    // figure is compared against every NY entry rather than the wrong one.
+    if (DOWNSTATE_RE.test(sentence.replace(OUTSIDE_DOWNSTATE_RE, ""))) return null;
+    return "remainder_of_state";
+  }
   if (DOWNSTATE_RE.test(sentence)) return "downstate";
-  if (REMAINDER_RE.test(sentence)) return "remainder_of_state";
   return null;
 }
 
@@ -112,6 +128,9 @@ export function extractValueMentions(body: string): ValueMention[] {
         jurisdiction: detectJurisdiction(s.text),
         region: detectRegion(s.text),
         statedYear: yearMatch ? Number(yearMatch[1]) : null,
+        multiRegion:
+          (REMAINDER_RE.test(s.text) || OUTSIDE_DOWNSTATE_RE.test(s.text)) &&
+          DOWNSTATE_RE.test(s.text.replace(OUTSIDE_DOWNSTATE_RE, "")),
       });
     }
   }
@@ -219,7 +238,7 @@ function checkAgainstKnowledgeBase(
 function findInternalConflicts(mentions: ValueMention[]): NormalizedFinding[] {
   const byKey = new Map<string, ValueMention[]>();
   for (const m of mentions) {
-    if (!m.jurisdiction) continue;
+    if (!m.jurisdiction || m.multiRegion) continue;
     const key = `${m.jurisdiction}|${m.unit}|${m.region ?? "unspecified"}`;
     const list = byKey.get(key) ?? [];
     list.push(m);
