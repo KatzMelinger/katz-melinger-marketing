@@ -32,6 +32,8 @@ const KB: KbThresholdEntry[] = [
   e("ny_tipped_food_credit_downstate", "NY", "downstate", 5.65, "2026-01-01"),
   e("ny_tipped_food_cash_remainder", "NY", "remainder_of_state", 10.7, "2026-01-01"),
   e("ny_home_care_aide_downstate", "NY", "downstate", 20, "2027-01-01"),
+  e("ny_overtime_at_min_wage_downstate", "NY", "downstate", 25.5, "2026-01-01", 24.75),
+  e("ny_overtime_at_min_wage_remainder", "NY", "remainder_of_state", 24, "2026-01-01", 23.25),
   e("nj_min_wage", "NJ", null, 16.48, "2027-01-01", 15.92),
   e("federal_min_wage", "federal", null, 7.25, "2009-07-24"),
 ];
@@ -46,6 +48,8 @@ const PASS = [
   "The minimum wage is $17.00 per hour in New York City and $16.00 per hour in the rest of the state.",
   "Home care aides in New York City earn at least $20.00 per hour starting in 2027.",
   "The federal minimum wage is $7.25 per hour.",
+  "A minimum-wage worker in New York City earns $25.50 per hour for overtime.",
+  "In the rest of the state, overtime at the minimum wage is $24.00 per hour.",
 ];
 const FLAG = [
   "In 2026, the New Jersey minimum wage is $16.48 per hour.",
