@@ -11,6 +11,8 @@ import { resolve } from "node:path";
 import { STATUTE_TABLE } from "../lib/legal-statute-table";
 
 const TENANT = "00000000-0000-0000-0000-000000000001";
+/** The last attorney review of this table. */
+const REVIEWED = { by: "Kenneth Katz", at: "2026-09-30T00:00:00Z" };
 const q = (s: string | null) => (s === null ? "null" : `'${s.replace(/'/g, "''")}'`);
 const arr = (xs: string[]) => (xs.length ? `array[${xs.map(q).join(", ")}]` : "'{}'::text[]");
 
@@ -31,7 +33,8 @@ const header = `-- =============================================================
 --
 -- ATTORNEY SIGN-OFF REQUIRED BEFORE RUNNING. Appendix A: "Before loading, an
 -- attorney at the firm should initial this table."
---   Reviewed by: ____________   Date: ____________
+--   Reviewed by: Kenneth Katz   Date: September 30, 2026 (all rows approved;
+--   § 300 unless words and the OSHA 11(c) row added at review).
 --
 -- Until this runs, the statute check (lib/legal-statute-check.ts) does nothing.
 -- Once it runs, a section cited for something it does not cover is a Critical
@@ -91,6 +94,12 @@ on conflict (tenant_id, key) do update set
   unless_terms = excluded.unless_terms,
   source_url = excluded.source_url,
   updated_at = now();
+
+-- Attorney sign-off (Kenneth Katz, 2026-09-30). Rows added or changed after
+-- that date need a new review: update REVIEWED below when they get one.
+update public.legal_statute_table
+   set reviewed_by = ${q(REVIEWED.by)}, reviewed_at = ${q(REVIEWED.at)}
+ where tenant_id = ${q(TENANT)} and reviewed_at is null;
 `;
 
 const out = resolve(process.cwd(), "supabase/legal_statute_table.sql");
