@@ -113,6 +113,11 @@ function callsListUrl(accountId: string, page: number, fields: string, since?: s
   if (since) {
     // ISO 8601 — CallRail accepts a `start_date` filter.
     url.searchParams.set("start_date", since);
+  } else {
+    // With no date filter CallRail returns only RECENT calls (seen live
+    // 2026-10-01: the "full history" sync came back with one week), so the
+    // full sync silently never reached older calls. Ask for all of it.
+    url.searchParams.set("date_range", "all_time");
   }
   return url.toString();
 }
