@@ -310,7 +310,9 @@ async function approveContent(
     typeof draft.body === "string" ? draft.body : "",
     {
       assetType: "document",
-      documentPhone: copyBrief.documentPhone,
+      // Blogs and pages carry the web number (CallRail swap target), not
+      // the fixed Documents number, which would bypass the swap.
+      documentPhone: copyBrief.webPhone,
       // Without this the audience check (employer / debtor addressed as the
       // reader) never ran on blogs — the three debtor-side collections blogs
       // in the Sept 28 audit passed it.

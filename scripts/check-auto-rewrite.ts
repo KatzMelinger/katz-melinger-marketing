@@ -14,7 +14,7 @@ import { undoChange } from "../lib/legal-fix-log";
 import { STATUTE_TABLE } from "../lib/legal-statute-table";
 import type { NormalizedFinding } from "../lib/content-findings";
 
-const cta = { phone: "646-849-3352", offerPhrase: "Free Confidential Case Evaluation" };
+const cta = { phone: "212-460-0047", offerPhrase: "Free Confidential Case Evaluation" };
 let failed = 0;
 const expect = (ok: boolean, msg: string) => {
   if (!ok) {
@@ -70,7 +70,7 @@ async function main() {
   expect(!/#EmploymentLaw/.test(r.body), "hashtag removed");
   expect(r.body.includes("about New York law"), "NY spelled out in body text");
   expect(r.body.startsWith("*Attorney Advertising*"), "label inserted");
-  expect(r.body.includes("Call today at 646-849-3352 for a Free Confidential Case Evaluation."), "CTA inserted");
+  expect(r.body.includes("Call today at 212-460-0047 for a Free Confidential Case Evaluation."), "CTA inserted");
   expect(r.body.includes("general informational purposes only"), "disclaimer inserted");
   expect(r.body.includes("## Related Resources"), "internal links topped up");
   expect(r.body.includes("# Is Gender a Protected Class in NY?"), "H1 keyword left alone");

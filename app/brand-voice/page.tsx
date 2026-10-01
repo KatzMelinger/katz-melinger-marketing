@@ -185,10 +185,16 @@ const SETTING_FIELDS: {
     help: "Used only in generated social posts — always the dedicated social line, never the main office number above.",
   },
   {
+    key: "webPhone",
+    label: "Blog and web page phone number",
+    placeholder: "212-460-0047",
+    help: "The CallRail Website pool's swap target: pages print it and CallRail swaps it per visitor. Used in every blog and page CTA. A blog carrying any other number is held at approval.",
+  },
+  {
     key: "documentPhone",
-    label: "Blog and document phone number",
-    placeholder: "646-849-3352",
-    help: "Used in blogs, practice pages and documents. A blog carrying any other number is held at approval.",
+    label: "PDF and document phone number",
+    placeholder: "646-692-0511",
+    help: "The fixed CallRail \"Documents\" number, never swapped. For PDFs and printed documents only, never web pages.",
   },
   {
     key: "socialOfferPhrase",

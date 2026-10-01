@@ -15,18 +15,21 @@ import { resolveTenantId } from "./tenant-context";
 export type OperatingBrief = {
   socialPhone: string;
   /**
-   * The number blogs, pages and documents carry — NOT the social line.
+   * The number blogs and web pages print (CTA and body copy).
    *
-   * Diana's item 6: "social must contain 646-466-6267 ... documents use
-   * 646-849-3352", and the same check now runs on blog and page bodies.
-   *
-   * Confirmed by Kenneth 2026-09-10, which also settled the conflict with
-   * lib/km-content-system.ts — its Firm Context block said 212-460-0047, the
-   * number that reached the Unpaid Wages blog four times, and now says this
-   * one. Three numbers are in play and they are not interchangeable: this for
-   * body copy, socialPhone for captions, and firmPhone in lib/firm-context.ts
-   * (212-460-0047) for schema.org and directory NAP, which is checked for
-   * consistency against the Google Business Profile and must not move.
+   * Diana confirmed 2026-10-01 that 212-460-0047 is the SWAP TARGET of the
+   * CallRail Website pool: the page prints it and CallRail's script replaces
+   * it per visitor with a tracking number, so each call is credited to its
+   * marketing source. It is also the firm's NAP number (lib/firm-context.ts),
+   * so schema, directories and the page agree. It replaced 646-849-3352,
+   * which turned out to be one of the ROTATING pool numbers: printed on a
+   * page, it credited calls to whichever visitor last had it.
+   */
+  webPhone: string;
+  /**
+   * The number PDFs and other documents carry: a FIXED CallRail number named
+   * "Documents" (Diana, 2026-10-01), never swapped, so document calls get
+   * their own source. Not for web pages: on a page it would bypass the swap.
    */
   documentPhone: string;
   offerPhrase: string;
@@ -56,7 +59,8 @@ export type OperatingBrief = {
 // and must be updated (or cleared) alongside.
 const DEFAULTS: OperatingBrief = {
   socialPhone: "646-466-6267",
-  documentPhone: "646-849-3352",
+  webPhone: "212-460-0047",
+  documentPhone: "646-692-0511",
   offerPhrase: "Free Confidential Case Evaluation",
   offerPhraseEs: "Evaluación Gratuita y Confidencial de su Caso",
   // Four to five, and the firm tag, because the S3 rule now CHECKS this.
@@ -76,6 +80,7 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
       .eq("tenant_id", tid)
       .in("key", [
         "socialPhone",
+        "webPhone",
         "documentPhone",
         "socialOfferPhrase",
         "socialOfferPhraseEs",
@@ -90,6 +95,7 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
     }
     return {
       socialPhone: settings.socialPhone || DEFAULTS.socialPhone,
+      webPhone: settings.webPhone || DEFAULTS.webPhone,
       documentPhone: settings.documentPhone || DEFAULTS.documentPhone,
       offerPhrase: settings.socialOfferPhrase || DEFAULTS.offerPhrase,
       offerPhraseEs: settings.socialOfferPhraseEs || DEFAULTS.offerPhraseEs,

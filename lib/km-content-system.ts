@@ -525,19 +525,17 @@ Output: full content in Markdown unless the request specifies another format.`;
  * marketing team updates the doc, paste the new version here verbatim
  * (only adjust formatting to keep it as a TypeScript template literal).
  *
- * ONE DELIBERATE DEPARTURE FROM THE PASTED DOC, 2026-09-10.
+ * PHONE NUMBER, settled 2026-10-01 (Diana, from CallRail).
  *
- * The Firm Context block said "Phone: 212-460-0047". That is the number that
- * reached the Unpaid Wages blog four times, and Diana's item 6 calls it wrong
- * for documents: blogs and pages use 646-849-3352, social uses 646-466-6267.
- * Kenneth confirmed 646-849-3352 on 2026-09-10, so the line is changed here
- * rather than left to generate copy the approval gate now holds.
+ * Blogs and pages print 212-460-0047, the swap target of the CallRail Website
+ * pool: CallRail's script replaces it per visitor with a tracking number, so
+ * each call is credited to its marketing source. It is also the firm's NAP
+ * number (lib/firm-context.ts), so page, schema and directories agree.
  *
- * This is NOT the same field as firmPhone in lib/firm-context.ts, which stays
- * 212-460-0047 on purpose. That one is the firm's identity for schema.org and
- * directory listings, and lib/seo-citations.ts checks it for NAP consistency
- * against the Google Business Profile — changing it would report every correct
- * listing as inconsistent. Body copy and NAP are different numbers by design.
+ * 646-849-3352 (used from 2026-09-10 to 2026-10-01) turned out to be one of
+ * the ROTATING pool numbers: printed on a page, it credited calls to whichever
+ * visitor last held it. PDFs and documents use the fixed "Documents" number
+ * 646-692-0511, never on a web page. Social uses 646-466-6267.
  */
 export const KM_SYSTEM_PROMPT = `AI System Prompt
 Katz Melinger PLLC | Content Writing Instructions
@@ -555,8 +553,8 @@ You write exclusively for the employee side of employment law. Katz Melinger doe
 
 Firm name: Katz Melinger PLLC
 Website: www.katzmelinger.com
-Phone: 646-849-3352 — use this exact number in body copy. Never 212-460-0047 and never the
-social line 646-466-6267. A draft carrying any other number is held at approval.
+Phone: 212-460-0047 — use this exact number in body copy and CTAs. Never 646-849-3352,
+646-692-0511 or the social line 646-466-6267. A draft carrying any other number is held at approval.
 Location: New York City
 Geographic reach: All five NYC boroughs, Westchester, Long Island, northern New Jersey
 Practice areas: Employment Law + Commercial Collections and Judgment Enforcement
