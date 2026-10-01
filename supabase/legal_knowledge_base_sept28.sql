@@ -11,7 +11,7 @@
 -- ##  ATTORNEY SIGN-OFF REQUIRED BEFORE RUNNING: Diana's spec says an       ##
 -- ##  attorney must initial Appendices A and B before loading.              ##
 -- ##                                                                        ##
--- ##  Reviewed by: ______________________   Date: ______________            ##
+-- ##  Reviewed by: Kenneth Katz   Date: September 30, 2026 (all approved)   ##
 -- ##                                                                        ##
 -- ############################################################################
 
