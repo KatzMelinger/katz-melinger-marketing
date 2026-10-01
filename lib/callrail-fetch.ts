@@ -103,7 +103,13 @@ type CallRailCallsResponse = {
   calls?: CallRailCall[];
 };
 
-function callsListUrl(accountId: string, page: number, fields: string, since?: string): string {
+function callsListUrl(
+  accountId: string,
+  page: number,
+  fields: string,
+  since?: string,
+  allTime = false,
+): string {
   const url = new URL(
     `https://api.callrail.com/v3/a/${encodeURIComponent(accountId)}/calls.json`
   );
@@ -113,10 +119,12 @@ function callsListUrl(accountId: string, page: number, fields: string, since?: s
   if (since) {
     // ISO 8601 — CallRail accepts a `start_date` filter.
     url.searchParams.set("start_date", since);
-  } else {
+  } else if (allTime) {
     // With no date filter CallRail returns only RECENT calls (seen live
     // 2026-10-01: the "full history" sync came back with one week), so the
-    // full sync silently never reached older calls. Ask for all of it.
+    // full sync silently never reached older calls. Only the sync asks for
+    // all time: the summary and attribution callers are built around the
+    // recent window and keep it.
     url.searchParams.set("date_range", "all_time");
   }
   return url.toString();
@@ -131,10 +139,11 @@ async function fetchPage(
   accountId: string,
   page: number,
   fields: string,
-  since?: string
+  since?: string,
+  allTime = false,
 ): Promise<FetchCallsResult> {
   try {
-    const res = await fetch(callsListUrl(accountId, page, fields, since), {
+    const res = await fetch(callsListUrl(accountId, page, fields, since, allTime), {
       headers: {
         Authorization: `Token token=${apiKey}`,
         Accept: "application/json",
@@ -198,7 +207,8 @@ export async function fetchAllCallRailCallsDetailed(
   let page = 1;
   let totalPages = 1;
   while (page <= totalPages) {
-    const result = await fetchPage(apiKey, accountId, page, DETAIL_FIELDS, since);
+    // No `since` = the full-history sync: every call, not CallRail's recent default.
+    const result = await fetchPage(apiKey, accountId, page, DETAIL_FIELDS, since, !since);
     if (!result.ok) return result;
     all.push(...result.calls);
     totalPages = result.totalPages;
