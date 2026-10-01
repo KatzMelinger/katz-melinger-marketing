@@ -165,15 +165,45 @@ export default function CallsPage() {
     await Promise.all([load(from, to), loadMonth(), loadRecovery()]);
   }
 
+  // A full-history sync is longer than one request may run, so the route
+  // saves as it goes and returns { done: false, nextPage } when it stops;
+  // keep calling from that page until it reports done.
+  const [syncProgress, setSyncProgress] = useState<string | null>(null);
   async function runSync() {
     setBusy(true);
     setError(null);
+    let page = 1;
+    let synced = 0;
     try {
-      const res = await fetch("/api/calls/sync", { method: "POST" });
-      const data = (await res.json()) as { synced?: number; error?: string };
-      if (!res.ok) setError(data.error ?? "Sync failed");
+      for (let round = 0; round < 20; round++) {
+        const res = await fetch("/api/calls/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ page }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          synced?: number;
+          error?: string;
+          done?: boolean;
+          nextPage?: number;
+          totalPages?: number;
+        };
+        if (!res.ok) {
+          setError(
+            res.status === 504
+              ? "The sync ran out of time. Calls saved so far are kept; click Sync again to continue."
+              : (data.error ?? "Sync failed"),
+          );
+          break;
+        }
+        synced += data.synced ?? 0;
+        if (data.done !== false || !data.nextPage) break;
+        page = data.nextPage;
+        setSyncProgress(`Synced ${synced} calls (page ${page - 1} of ${data.totalPages ?? "?"})…`);
+      }
       await reloadAll();
     } finally {
+      setSyncProgress(null);
       setBusy(false);
     }
   }
@@ -279,7 +309,7 @@ export default function CallsPage() {
               disabled={busy}
               className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-[#1369c4] disabled:opacity-50"
             >
-              {busy ? "Working…" : "Sync from CallRail"}
+              {syncProgress ?? (busy ? "Working…" : "Sync from CallRail")}
             </button>
             <button
               onClick={() => void runScorePending()}

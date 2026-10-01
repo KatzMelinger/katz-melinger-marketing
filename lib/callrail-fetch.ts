@@ -218,6 +218,21 @@ export async function fetchAllCallRailCallsDetailed(
   return { ok: true, calls: all, totalPages };
 }
 
+/**
+ * One page of the detailed list, for a sync that saves as it goes. A full
+ * history can take longer than one serverless request allows, and a sync
+ * that fetches everything before saving anything loses all of it on a
+ * timeout (seen live 2026-10-01: a 504 with nothing written).
+ */
+export async function fetchCallRailCallsDetailedPage(
+  apiKey: string,
+  accountId: string,
+  page: number,
+  since?: string,
+): Promise<FetchCallsResult> {
+  return fetchPage(apiKey, accountId, page, DETAIL_FIELDS, since, !since);
+}
+
 /** Fetch one call with full detail. */
 export async function fetchCallRailCall(
   apiKey: string,

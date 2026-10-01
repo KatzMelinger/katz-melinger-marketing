@@ -19,7 +19,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { fetchAllCallRailCallsDetailed } from "@/lib/callrail-fetch";
+import { fetchCallRailCallsDetailedPage } from "@/lib/callrail-fetch";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
@@ -78,10 +78,16 @@ function detectLanguage(text: string | null | undefined): "en" | "es" | "mixed" 
   return "unknown";
 }
 
+/** Stop starting new pages after this long; leaves room under maxDuration (300s). */
+const TIME_BUDGET_MS = 200_000;
+/** 250 calls a page; the same 12,500-call ceiling the old fetch had. */
+const MAX_PAGES = 50;
+
 async function runCallsSync(
   supabase: SupabaseClient,
   tenantId: string,
   since: string | undefined,
+  startPage = 1,
 ): Promise<NextResponse> {
   const apiKey = process.env.CALLRAIL_API_KEY;
   const accountId = process.env.CALLRAIL_ACCOUNT_ID;
@@ -89,21 +95,34 @@ async function runCallsSync(
     return NextResponse.json({ error: "Missing CALLRAIL_API_KEY or CALLRAIL_ACCOUNT_ID" }, { status: 503 });
   }
 
-  const result = await fetchAllCallRailCallsDetailed(apiKey, accountId, since);
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 502 });
-  }
-  if (result.calls.length === 0) {
-    return NextResponse.json({ synced: 0, total: 0 });
-  }
-
-  // Upsert in batches of 250 to keep payload size reasonable.
+  // Page by page, SAVING EACH PAGE before fetching the next, and stopping
+  // well inside the function's time limit. The full history did not fit in
+  // one request (504, nothing saved, 2026-10-01); now a run that stops early
+  // returns { done: false, nextPage } and the button calls again from there.
+  const started = Date.now();
   let synced = 0;
+  let total = 0;
+  let page = Math.max(1, startPage);
+  let totalPages = page;
   const errors: string[] = [];
   let attributionColumns = true;
-  const BATCH = 250;
-  for (let i = 0; i < result.calls.length; i += BATCH) {
-    const slice = result.calls.slice(i, i + BATCH);
+  while (page <= totalPages) {
+    if (Date.now() - started > TIME_BUDGET_MS) {
+      return NextResponse.json({
+        synced, total, since: since ?? null, attributionColumns,
+        done: false, nextPage: page, totalPages,
+        errors: errors.length ? errors : undefined,
+      });
+    }
+    const result = await fetchCallRailCallsDetailedPage(apiKey, accountId, page, since);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, synced, nextPage: page }, { status: 502 });
+    }
+    totalPages = Math.min(result.totalPages, MAX_PAGES);
+    total += result.calls.length;
+    page += 1;
+    if (result.calls.length === 0) continue;
+    const slice = result.calls;
     const rows = slice.map((c) => {
       const valueNum =
         c.value == null ? null : typeof c.value === "number" ? c.value : Number(c.value);
@@ -162,9 +181,11 @@ async function runCallsSync(
 
   return NextResponse.json({
     synced,
-    total: result.calls.length,
+    total,
     since: since ?? null,
     attributionColumns,
+    done: true,
+    totalPages,
     errors: errors.length ? errors : undefined,
   });
 }
@@ -183,13 +204,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
   }
   let since: string | undefined;
+  let page = 1;
   try {
     const body = (await req.json().catch(() => ({}))) as Json;
     if (typeof body.since === "string" && body.since.trim()) since = body.since.trim();
+    if (typeof body.page === "number" && Number.isFinite(body.page)) page = Math.max(1, Math.floor(body.page));
   } catch {
     // No body — that's fine.
   }
-  return runCallsSync(supabase, await resolveTenantId(), since);
+  return runCallsSync(supabase, await resolveTenantId(), since, page);
 }
 
 export async function GET(req: NextRequest) {
