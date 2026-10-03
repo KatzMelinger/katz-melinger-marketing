@@ -18,6 +18,10 @@
       "schedule": "40 * * * *"
     },
     {
+      "path": "/api/sales-dashboard/snapshot",
+      "schedule": "50 * * * *"
+    },
+    {
       "path": "/api/forms/sync",
       "schedule": "15 * * * *"
     },
