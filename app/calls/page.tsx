@@ -215,10 +215,22 @@ export default function CallsPage() {
       const res = await fetch("/api/calls/score-pending", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ limit: 25, min_duration_seconds: 60 }),
       });
-      const data = (await res.json()) as { scored?: number; error?: string };
-      if (!res.ok) setError(data.error ?? "Scoring failed");
+      const data = (await res.json()) as {
+        error?: string;
+        collected?: { collected: { scored: number }[] };
+        submitted?: { batches: { calls: number }[] };
+      };
+      if (!res.ok) {
+        setError(data.error ?? "Scoring failed");
+      } else {
+        const saved = (data.collected?.collected ?? []).reduce((n, b) => n + b.scored, 0);
+        const queued = (data.submitted?.batches ?? []).reduce((n, b) => n + b.calls, 0);
+        setHint(
+          `${saved ? `Saved ${saved} new scores. ` : ""}` +
+            (queued ? `Queued ${queued} calls for scoring; results usually arrive within the hour.` : "Nothing new to queue."),
+        );
+      }
       await load(from, to);
     } finally {
       setBusy(false);

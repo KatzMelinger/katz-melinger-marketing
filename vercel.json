@@ -10,6 +10,14 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/calls/score-pending?mode=submit",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/calls/score-pending?mode=collect",
+      "schedule": "40 * * * *"
+    },
+    {
       "path": "/api/forms/sync",
       "schedule": "15 * * * *"
     },
@@ -28,10 +36,6 @@
     {
       "path": "/api/content/site-inventory/crawl",
       "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/calls/score-pending",
-      "schedule": "20 * * * *"
     },
     {
       "path": "/api/aeo/runs/start",

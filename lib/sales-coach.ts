@@ -92,7 +92,6 @@ export type ScoreResult = {
   prompt_version: number;
 };
 
-type RubricSet = Record<RubricType, RubricDimension[]>;
 
 /* -------------------------------------------------------------------------- */
 /* Prompt construction                                                        */
@@ -214,47 +213,27 @@ export type ScoreCallOutcome =
   | { ok: true; result: ScoreResult }
   | { ok: false; error: string };
 
-export async function scoreCall(params: ScoreCallParams): Promise<ScoreCallOutcome> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) return { ok: false, error: "ANTHROPIC_API_KEY is not configured" };
-  const transcript = params.transcript?.trim() ?? "";
-  if (!transcript) return { ok: false, error: "Transcript is empty" };
+export type RubricSet = Record<RubricType, RubricDimension[]>;
 
-  // All three rubrics go into the (cached) system prompt and the model picks
-  // one. The system blocks are identical for every call, so the ~50 KB of
-  // SOPs + rubrics is cached across the whole scoring run.
-  const rubrics = Object.fromEntries(
-    await Promise.all(
-      RUBRIC_TYPES.map(async (t) => [t, await loadRubric(params.supabase, t, params.tenantId)] as const),
-    ),
+/** All three rubrics, with this tenant's overrides applied. */
+export async function loadRubricSet(supabase: SupabaseClient | null, tenantId?: string): Promise<RubricSet> {
+  return Object.fromEntries(
+    await Promise.all(RUBRIC_TYPES.map(async (t) => [t, await loadRubric(supabase, t, tenantId)] as const)),
   ) as RubricSet;
-
-  const client = new Anthropic({ apiKey });
-  const system = buildSystemBlocks(rubrics);
-
-  const first = await runScoring(client, system, rubrics, params, transcript, params.rubricType);
-  if (!first.ok || first.complete) return first.ok ? { ok: true, result: first.result } : first;
-
-  // The model mixed rubrics or skipped dimensions. Re-run once with the rubric
-  // it chose enforced; if that is still incomplete, keep the better attempt.
-  const retry = await runScoring(client, system, rubrics, params, transcript, first.result.rubric_type);
-  if (retry.ok) return { ok: true, result: retry.result };
-  return { ok: true, result: first.result };
 }
 
-type Attempt =
-  | { ok: true; result: ScoreResult; complete: boolean }
-  | { ok: false; error: string };
-
-async function runScoring(
-  client: Anthropic,
-  system: Anthropic.MessageCreateParamsNonStreaming["system"],
+/**
+ * The Messages API request for one call. All three rubrics go into the
+ * (cached) system prompt and the model picks one, so the ~50 KB of SOPs +
+ * rubrics is identical, and cached, across every call in a run. Used as-is
+ * by the nightly batch and by scoreCall() for one-off rescoring.
+ */
+export function buildScoringParams(
   rubrics: RubricSet,
-  params: ScoreCallParams,
+  meta: CallMetadataForScoring,
   transcript: string,
-  forced: RubricType | undefined,
-): Promise<Attempt> {
-  const meta = params.callMetadata;
+  forced?: RubricType,
+): Anthropic.MessageCreateParamsNonStreaming {
   const userText = [
     "CALL METADATA",
     `call_id: ${meta.callId}`,
@@ -270,37 +249,40 @@ async function runScoring(
     "",
     "TASK: Produce the JSON object now. No markdown. No commentary outside the JSON.",
   ].join("\n");
+  return {
+    model: DEFAULT_MODEL,
+    max_tokens: 16000,
+    output_config: { effort: EFFORT },
+    system: buildSystemBlocks(rubrics),
+    messages: [{ role: "user", content: userText }],
+  };
+}
 
-  let raw: string;
-  try {
-    // fallbacks: "default" (server-side refusal fallback) isn't in this SDK
-    // version's types yet, so it rides along on the body with its beta header.
-    const body = {
-      model: DEFAULT_MODEL,
-      max_tokens: 16000,
-      output_config: { effort: EFFORT },
-      system,
-      messages: [{ role: "user", content: userText }],
-      fallbacks: "default",
-    } as Anthropic.MessageCreateParamsNonStreaming;
-    const message = await client.messages.create(body, {
-      headers: { "anthropic-beta": "server-side-fallback-2026-07-01" },
-    });
-    const u = message.usage;
-    console.log(
-      `[sales-coach] ${meta.callId} in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} ` +
-        `cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
-    );
-    if (message.stop_reason === "refusal") return { ok: false, error: "Model declined to score this call" };
-    if (message.stop_reason === "max_tokens") return { ok: false, error: "Scoring output was cut off (max_tokens)" };
-    const block = message.content.find((b) => b.type === "text") as { type: "text"; text: string } | undefined;
-    raw = block?.text ?? "";
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Anthropic call failed" };
-  }
+export type ScoringAttempt =
+  | { ok: true; result: ScoreResult; complete: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Turn a scoring response into a ScoreResult. `complete` is false when the
+ * model mixed rubrics or skipped dimensions of the one it chose.
+ */
+export function parseScoringMessage(
+  message: Anthropic.Message,
+  rubrics: RubricSet,
+  callId: string,
+  forced?: RubricType,
+): ScoringAttempt {
+  const u = message.usage;
+  console.log(
+    `[sales-coach] ${callId} in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} ` +
+      `cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
+  );
+  if (message.stop_reason === "refusal") return { ok: false, error: "Model declined to score this call" };
+  if (message.stop_reason === "max_tokens") return { ok: false, error: "Scoring output was cut off (max_tokens)" };
+  const block = message.content.find((b) => b.type === "text") as { type: "text"; text: string } | undefined;
 
   // Extract JSON (defensively — the model might wrap it in ```json fences)
-  const jsonText = extractJson(raw);
+  const jsonText = extractJson(block?.text ?? "");
   if (!jsonText) return { ok: false, error: "Model returned no JSON" };
 
   let parsed: unknown;
@@ -314,7 +296,7 @@ async function runScoring(
   const reported = RUBRIC_TYPES.find((t) => t === o.rubric_type);
   const rubricType: RubricType = forced ?? reported ?? "intake";
   const rubric = rubrics[rubricType];
-  const result = normalizeScore(parsed, rubricType, rubric, DEFAULT_MODEL);
+  const result = normalizeScore(parsed, rubricType, rubric, message.model || DEFAULT_MODEL);
 
   const expected = new Set(rubric.map((d) => d.dimensionKey));
   const got = new Set(result.dimensions.map((d) => d.dimension_key));
@@ -322,6 +304,44 @@ async function runScoring(
     result.overall_score === 0 || // empty / unintelligible call: nothing to score
     (got.size === expected.size && [...got].every((k) => expected.has(k)));
   return { ok: true, result, complete };
+}
+
+/** Score one call right now (the call page's Rescore buttons). */
+export async function scoreCall(params: ScoreCallParams): Promise<ScoreCallOutcome> {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) return { ok: false, error: "ANTHROPIC_API_KEY is not configured" };
+  const transcript = params.transcript?.trim() ?? "";
+  if (!transcript) return { ok: false, error: "Transcript is empty" };
+
+  const rubrics = await loadRubricSet(params.supabase, params.tenantId);
+  const client = new Anthropic({ apiKey });
+
+  async function attempt(forced?: RubricType): Promise<ScoringAttempt> {
+    try {
+      // fallbacks: "default" (server-side refusal fallback) isn't in this SDK
+      // version's types yet, so it rides along on the body with its beta header.
+      // The Batches API rejects it, so only this live path sends it.
+      const body = {
+        ...buildScoringParams(rubrics, params.callMetadata, transcript, forced),
+        fallbacks: "default",
+      } as Anthropic.MessageCreateParamsNonStreaming;
+      const message = await client.messages.create(body, {
+        headers: { "anthropic-beta": "server-side-fallback-2026-07-01" },
+      });
+      return parseScoringMessage(message, rubrics, params.callMetadata.callId, forced);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Anthropic call failed" };
+    }
+  }
+
+  const first = await attempt(params.rubricType);
+  if (!first.ok || first.complete) return first.ok ? { ok: true, result: first.result } : first;
+
+  // The model mixed rubrics or skipped dimensions. Re-run once with the rubric
+  // it chose enforced; if that is still incomplete, keep the better attempt.
+  const retry = await attempt(first.result.rubric_type);
+  if (retry.ok) return { ok: true, result: retry.result };
+  return { ok: true, result: first.result };
 }
 
 /* -------------------------------------------------------------------------- */
