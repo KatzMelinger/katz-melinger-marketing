@@ -7,7 +7,7 @@
  *
  * GET /api/calls/sync — Vercel Cron trigger. Requires
  *   `Authorization: Bearer ${CRON_SECRET}`. Reads ?since=YYYY-MM-DD from query;
- *   without it the cron re-syncs only the last CRON_LOOKBACK_DAYS (2) days,
+ *   without it the cron re-syncs only the last CRON_LOOKBACK_DAYS (7) days,
  *   which is enough to settle calls that were still in progress on the last
  *   run. A full-history resync is the POST without `since`.
  *   Registered in vercel.json (hourly) so the call log stays fresh without a
@@ -31,7 +31,9 @@ export const maxDuration = 300;
 
 type Json = Record<string, unknown>;
 
-const CRON_LOOKBACK_DAYS = 2;
+// CallRail can attach a transcript days after the call; re-syncing a week
+// back picks those up so they become scoreable.
+const CRON_LOOKBACK_DAYS = 7;
 
 /**
  * Attribution columns added by supabase/calls_marketing_source.sql. Until that

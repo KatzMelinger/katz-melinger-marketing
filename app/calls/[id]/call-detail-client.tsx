@@ -18,6 +18,8 @@ type Call = {
   transcription: string | null;
   transcription_language: string | null;
   lead_status: string | null;
+  staff_id: string | null;
+  staff_source: string | null;
 };
 
 type DimensionScore = {
@@ -53,10 +55,20 @@ type Score = {
   script_recommendations: string[];
   summary_screener: string | null;
   summary_manager: string | null;
+  agent_name_detected: string | null;
   scored_at: string;
 };
 
-type ApiResponse = { call: Call; score: Score | null };
+type StaffOption = { id: string; full_name: string };
+
+type ApiResponse = { call: Call; score: Score | null; staff: StaffOption[] };
+
+const STAFF_SOURCE_LABEL: Record<string, string> = {
+  transcript: "from transcript",
+  airtable: "from transcript + Airtable intake",
+  vonage: "from Vonage call log",
+  manual: "set by hand",
+};
 
 function fmtDuration(s: number | null): string {
   if (!s || s < 0) return "—";
@@ -134,7 +146,21 @@ export function CallDetailClient({ callId }: { callId: string }) {
     void load();
   }, [load]);
 
-  async function runScore(rubricType?: "intake" | "consultation") {
+  async function setStaff(staffId: string) {
+    setError(null);
+    const res = await fetch(`/api/calls/${encodeURIComponent(callId)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staff_id: staffId || null }),
+    });
+    if (!res.ok) {
+      const e = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(e.error ?? `Could not save (${res.status})`);
+    }
+    await load();
+  }
+
+  async function runScore(rubricType?: "intake" | "consultation" | "callback") {
     setScoring(true);
     setError(null);
     try {
@@ -177,8 +203,26 @@ export function CallDetailClient({ callId }: { callId: string }) {
             <h1 className="text-2xl font-semibold text-slate-900">{c.customer_name?.trim() || "Unknown caller"}</h1>
             <p className="mt-1 text-sm text-slate-500">
               {c.customer_phone_number ?? "—"} · {fmtDate(c.start_time)} · {fmtDuration(c.duration)} · {c.source_name ?? "—"}
-              {c.agent_email ? ` · agent: ${c.agent_email}` : ""}
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <label htmlFor="handled-by">Handled by</label>
+              <select
+                id="handled-by"
+                value={c.staff_id ?? ""}
+                onChange={(e) => void setStaff(e.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900"
+              >
+                <option value="">{score?.agent_name_detected ? `Unresolved (“${score.agent_name_detected}”)` : "Unknown"}</option>
+                {data.staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name}
+                  </option>
+                ))}
+              </select>
+              {c.staff_id && c.staff_source ? (
+                <span className="text-xs text-slate-400">{STAFF_SOURCE_LABEL[c.staff_source] ?? c.staff_source}</span>
+              ) : null}
+            </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${STATUS_COLOR[status]}`}>
                 {status}
@@ -235,6 +279,13 @@ export function CallDetailClient({ callId }: { callId: string }) {
                     className="rounded-lg border border-brand bg-transparent px-3 py-2 text-xs font-medium text-brand hover:bg-slate-50 disabled:opacity-50"
                   >
                     As consult
+                  </button>
+                  <button
+                    onClick={() => void runScore("callback")}
+                    disabled={scoring}
+                    className="rounded-lg border border-brand bg-transparent px-3 py-2 text-xs font-medium text-brand hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    As callback
                   </button>
                 </>
               ) : null}

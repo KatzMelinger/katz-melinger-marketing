@@ -1,26 +1,35 @@
 /**
- * Auto-score every answered call >= 60s that has a transcript but no current
- * score row. Skips voicemails (the "answered=true && voicemail=true" combo)
- * since those aren't conversations.
+ * Auto-score every answered call >= 60s that has a transcript but no score
+ * row yet. Skips voicemails (the "answered=true && voicemail=true" combo)
+ * since those aren't conversations. Newest calls first, so coaching stays
+ * current; the 2026 backlog is handled by scripts/score-calls-backfill.ts.
+ *
+ * Each call also records who handled it (see lib/sales-staff.ts).
  *
  * POST /api/calls/score-pending — UI trigger ("Score pending" button).
  *   Body (optional): { limit: number, min_duration_seconds: number, since: ISO }
  *
- * GET /api/calls/score-pending — Vercel Cron trigger. Requires
+ * GET /api/calls/score-pending — Vercel Cron trigger (hourly). Requires
  *   `Authorization: Bearer ${CRON_SECRET}`. Reads the same options from query
  *   params (?limit=&min_duration_seconds=&since=). Registered in vercel.json.
  */
 import { NextRequest, NextResponse } from "next/server";
 
-import { scoreCall } from "@/lib/sales-coach";
+import { CALL_SCORING_COLUMNS, scoreAndSave } from "@/lib/call-scoring";
+import { loadSalesStaff, type SalesStaff } from "@/lib/sales-staff";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
-import { resolveTenantId } from "@/lib/tenant-context";
+import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+/** Stop starting new calls after this, leaving room for in-flight ones. */
+const TIME_BUDGET_MS = 200_000;
+/** Calls scored at once. Each is one ~1-minute model request. */
+const CONCURRENCY = 3;
 
 type Json = Record<string, unknown>;
 
@@ -95,12 +104,13 @@ export async function GET(req: NextRequest) {
 }
 
 async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptions) {
+  const started = Date.now();
   const { limit, minDuration, since, tenantId } = opts;
 
   // Find candidates: answered, not VM, duration >= min, has transcript, no score yet.
   let q = supabase
     .from("calls")
-    .select("id, tenant_id, customer_name, agent_email, duration, start_time, direction, source_name, transcription")
+    .select(CALL_SCORING_COLUMNS)
     .eq("answered", true)
     .eq("voicemail", false)
     .gte("duration", minDuration)
@@ -123,65 +133,43 @@ async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptio
     alreadyScored = new Set((scored ?? []).map((r) => (r as Json).call_id as string));
   }
 
-  const toScore = (candidates ?? []).filter((c) => !alreadyScored.has((c as Json).id as string)).slice(0, limit);
+  const toScore = ((candidates ?? []) as Json[])
+    .filter((c) => !alreadyScored.has(c.id as string))
+    .slice(0, limit);
 
-  const results: { id: string; ok: boolean; overall_score?: number; error?: string }[] = [];
-  for (const row of toScore) {
-    const c = row as Json;
-    const id = c.id as string;
-    const transcript = typeof c.transcription === "string" ? c.transcription : "";
-    if (!transcript.trim()) {
-      results.push({ id, ok: false, error: "no transcript" });
-      continue;
-    }
-    const out = await scoreCall({
-      transcript,
-      callMetadata: {
-        callId: id,
-        customerName: typeof c.customer_name === "string" ? c.customer_name : null,
-        agentEmail: typeof c.agent_email === "string" ? c.agent_email : null,
-        duration: typeof c.duration === "number" ? c.duration : null,
-        startTime: typeof c.start_time === "string" ? c.start_time : null,
-        direction: typeof c.direction === "string" ? c.direction : null,
-        source: typeof c.source_name === "string" ? c.source_name : null,
-      },
-      supabase,
-      tenantId: (typeof c.tenant_id === "string" ? c.tenant_id : tenantId) ?? undefined,
-    });
-    if (!out.ok) {
-      results.push({ id, ok: false, error: out.error });
-      continue;
-    }
-    const r = out.result;
-    const { error: insErr } = await supabase.from("call_scores").insert({
-      call_id: id,
-      tenant_id: (c.tenant_id as string) ?? tenantId,
-      rubric_type: r.rubric_type,
-      language: r.language,
-      overall_score: r.overall_score,
-      case_quality_estimate: r.case_quality_estimate,
-      case_type_detected: r.case_type_detected,
-      dimension_scores: r.dimensions,
-      objections_log: r.objections_log,
-      compliance_flags: r.compliance_flags,
-      script_recommendations: r.script_recommendations,
-      summary_screener: r.summary_screener,
-      summary_manager: r.summary_manager,
-      model_id: r.model_id,
-      prompt_version: r.prompt_version,
-    });
-    if (insErr) {
-      results.push({ id, ok: false, error: insErr.message });
-    } else {
-      results.push({ id, ok: true, overall_score: r.overall_score });
+  const staffByTenant = new Map<string, SalesStaff[]>();
+  async function staffFor(tid: string) {
+    if (!staffByTenant.has(tid)) staffByTenant.set(tid, await loadSalesStaff(supabase, tid));
+    return staffByTenant.get(tid)!;
+  }
+
+  const results: { id: string; ok: boolean; overall_score?: number; staff?: string | null; error?: string }[] = [];
+  let next = 0;
+  async function worker() {
+    while (next < toScore.length && Date.now() - started < TIME_BUDGET_MS) {
+      const call = toScore[next++];
+      const tid = (typeof call.tenant_id === "string" ? call.tenant_id : tenantId) ?? DEFAULT_TENANT_ID;
+      const out = await scoreAndSave({ supabase, tenantId: tid, call, staff: await staffFor(tid) });
+      results.push(
+        out.ok
+          ? {
+              id: call.id as string,
+              ok: true,
+              overall_score: out.result.overall_score,
+              staff: out.attribution.staff?.full_name ?? null,
+            }
+          : { id: call.id as string, ok: false, error: out.error },
+      );
     }
   }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
   return NextResponse.json({
     candidates: candidates?.length ?? 0,
-    skipped_already_scored: ids.length - toScore.length,
+    skipped_already_scored: alreadyScored.size,
     scored: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok).length,
+    left_for_next_run: toScore.length - results.length,
     results,
   });
 }

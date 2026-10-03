@@ -31,7 +31,7 @@
     },
     {
       "path": "/api/calls/score-pending",
-      "schedule": "0 10 * * *"
+      "schedule": "20 * * * *"
     },
     {
       "path": "/api/aeo/runs/start",
