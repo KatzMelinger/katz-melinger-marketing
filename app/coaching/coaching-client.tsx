@@ -13,7 +13,7 @@ type DimensionRollup = {
 };
 
 type AgentRollup = {
-  agent_email: string;
+  agent: string;
   scored_count: number;
   avg_overall: number | null;
   trend_delta: number | null;
@@ -145,7 +145,7 @@ export function CoachingClient() {
       ) : (
         <div className="space-y-4">
           {data.agents.map((a) => (
-            <AgentCard key={a.agent_email} agent={a} />
+            <AgentCard key={a.agent} agent={a} />
           ))}
         </div>
       )}
@@ -163,7 +163,7 @@ function AgentCard({ agent }: { agent: AgentRollup }) {
     <article className="rounded-xl border border-[#e2e8f0] p-5" style={{ backgroundColor: "#ffffff" }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-900">{agent.agent_email}</h3>
+          <h3 className="text-base font-semibold text-slate-900">{agent.agent}</h3>
           <p className="mt-1 text-xs text-slate-500">
             {agent.scored_count} scored {agent.scored_count === 1 ? "call" : "calls"}
             {rubricParts ? ` · ${rubricParts}` : ""}

@@ -25,20 +25,21 @@ import {
 } from "@/lib/sales-coach-rubric";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Kept in step with CONTENT_LONG_FORM_MODEL / KEYWORD_RESEARCH_MODEL in
-// lib/anthropic.ts, which is what the comment above has always claimed this
-// tracked. It had drifted to claude-sonnet-4-20250514 — a generation behind the
-// rest of the app, and the only DEPRECATED model left in the codebase, so the
-// nightly /api/calls/score-pending cron would have started failing whenever
-// Anthropic retired it. Sonnet 4.5 is also in CACHE_MIN_TOKENS, so willCache()
-// can now actually answer for this call site instead of assuming yes.
-const DEFAULT_MODEL =
-  process.env.SALES_COACH_MODEL?.trim() || "claude-sonnet-4-5-20250929";
+const DEFAULT_MODEL = process.env.SALES_COACH_MODEL?.trim() || "claude-opus-5-5";
 
-// Bumped to 2 alongside the Sonnet 4 → 4.5 move above. Scores are stamped with
-// model_id + prompt_version, so this is what keeps pre- and post-bump scores
-// distinguishable in call_scores rather than silently comparable.
-export const PROMPT_VERSION = 2;
+// Opus 5.5 always thinks; effort is the depth control (its default is medium).
+const EFFORT = (["low", "medium", "high", "max"] as const).find(
+  (e) => e === process.env.SALES_COACH_EFFORT?.trim(),
+) ?? "medium";
+
+// v3: the model picks the rubric from all three (v2 always loaded the
+// consultation rubric unless a caller forced one, so auto-scored intake calls
+// were graded on sales dimensions), and reports the team member's name.
+// Scores are stamped with model_id + prompt_version so v2 and v3 rows are
+// never silently compared.
+export const PROMPT_VERSION = 3;
+
+const RUBRIC_TYPES: readonly RubricType[] = ["intake", "consultation", "callback"];
 
 export type CallMetadataForScoring = {
   callId: string;
@@ -85,9 +86,12 @@ export type ScoreResult = {
   script_recommendations: string[];
   summary_screener: string;
   summary_manager: string;
+  /** First name the Katz Melinger team member used on the call, if any. */
+  team_member_name: string | null;
   model_id: string;
   prompt_version: number;
 };
+
 
 /* -------------------------------------------------------------------------- */
 /* Prompt construction                                                        */
@@ -116,7 +120,7 @@ function sopsBlockText(): string {
   }).join("\n\n");
 }
 
-function buildSystemBlocks(rubric: RubricDimension[]): Anthropic.MessageCreateParamsNonStreaming["system"] {
+function buildSystemBlocks(rubrics: RubricSet): Anthropic.MessageCreateParamsNonStreaming["system"] {
   // The order matters for caching: put the largest, most stable content first
   // and mark it cacheable. Per-call inputs (transcript + rubric metadata) go
   // in the user message.
@@ -144,11 +148,21 @@ function buildSystemBlocks(rubric: RubricDimension[]): Anthropic.MessageCreatePa
     {
       type: "text",
       text:
-        "RUBRIC FOR THIS CALL TYPE\n" +
+        "RUBRICS\n" +
+        "First decide which kind of call this is, then score it against that rubric only:\n" +
+        "- intake: a first conversation with a potential client to gather the facts of their " +
+        "situation (incoming intake script 5.1.2-a, or an outgoing intake call per 5.1.2-b).\n" +
+        "- consultation: a sales / case-evaluator call that presents the firm's fee, handles " +
+        "objections and asks for the engagement (5.2.3-a).\n" +
+        "- callback: a follow-up with someone already in the pipeline about a prior conversation, " +
+        "an engagement letter, documents or next steps.\n" +
+        "If the call metadata gives a forced_rubric_type, use that rubric regardless.\n\n" +
         "Score each dimension 0–max based on transcript evidence. " +
         "Provide one short evidence quote, what was missed (if anything), " +
         "and a one-sentence 'do better' suggestion grounded in the SOP.\n\n" +
-        rubricBlockText(rubric),
+        RUBRIC_TYPES.map(
+          (t) => `=== ${t.toUpperCase()} RUBRIC (rubric_type "${t}") ===\n${rubricBlockText(rubrics[t])}`,
+        ).join("\n\n"),
       cache_control: { type: "ephemeral" },
     },
     {
@@ -166,11 +180,14 @@ function buildSystemBlocks(rubric: RubricDimension[]): Anthropic.MessageCreatePa
         '  "compliance_flags": [ { "phrase": "<exact forbidden phrase>", "severity": "low"|"medium"|"high", "excerpt": "<sentence containing it>" } ],\n' +
         '  "script_recommendations": [ "<one concrete recommendation, in the call language, citing SOP section>" ],\n' +
         '  "summary_screener": "<2–3 sentence feedback for the screener, IN THE CALL LANGUAGE (Spanish if call was in Spanish)>",\n' +
-        '  "summary_manager": "<2–3 sentence feedback for the manager, ALWAYS IN ENGLISH, including overall score and 1 thing to coach>"\n' +
+        '  "summary_manager": "<2–3 sentence feedback for the manager, ALWAYS IN ENGLISH, naming the 1 thing to coach>",\n' +
+        '  "team_member_name": "<first name the Katz Melinger team member uses for themselves or is called by on this call>" | null\n' +
         "}\n\n" +
         "Rules:\n" +
         "- 'overall_score' must equal the rounded sum of all dimension scores normalized to 100.\n" +
-        "- If the rubric is 'intake', use only intake_* dimension keys; if 'consultation', use only consult_* keys; if 'callback', use only callback_* keys.\n" +
+        "- Do not state a numeric score in either summary; the app computes and displays the total.\n" +
+        "- Score every dimension of the chosen rubric and no others: intake_* keys for 'intake', consult_* keys for 'consultation', callback_* keys for 'callback'.\n" +
+        "- 'team_member_name' is the Katz Melinger side of the call, never the caller. Write it as said in the transcript (e.g. \"Alicia\", \"Andre\"); use null if they never give or hear their name.\n" +
         "- 'compliance_flags' lists every distinct occurrence of any of the 11 forbidden phrases from 5.2.3-a.\n" +
         "- Spanish summaries should use neutral South/Central American Spanish, default to 'usted'.\n" +
         "- If the transcript is missing or the call is < 60 seconds and unintelligible, return overall_score=0 and explain in summary_manager.\n" +
@@ -186,7 +203,7 @@ function buildSystemBlocks(rubric: RubricDimension[]): Anthropic.MessageCreatePa
 
 export type ScoreCallParams = {
   transcript: string;
-  rubricType?: RubricType; // if omitted, the model decides between intake/consultation
+  rubricType?: RubricType; // if omitted, the model picks intake / consultation / callback
   callMetadata: CallMetadataForScoring;
   supabase: SupabaseClient | null;
   tenantId?: string; // scope rubric overrides to this firm
@@ -196,54 +213,76 @@ export type ScoreCallOutcome =
   | { ok: true; result: ScoreResult }
   | { ok: false; error: string };
 
-export async function scoreCall(params: ScoreCallParams): Promise<ScoreCallOutcome> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) return { ok: false, error: "ANTHROPIC_API_KEY is not configured" };
-  const transcript = params.transcript?.trim() ?? "";
-  if (!transcript) return { ok: false, error: "Transcript is empty" };
+export type RubricSet = Record<RubricType, RubricDimension[]>;
 
-  // Decide rubric: if caller didn't tell us, default to consultation since
-  // it's the more demanding rubric; the model will still report rubric_type
-  // and we re-run with the right rubric if it disagrees.
-  const rubricType: RubricType = params.rubricType ?? "consultation";
-  const rubric = await loadRubric(params.supabase, rubricType, params.tenantId);
+/** All three rubrics, with this tenant's overrides applied. */
+export async function loadRubricSet(supabase: SupabaseClient | null, tenantId?: string): Promise<RubricSet> {
+  return Object.fromEntries(
+    await Promise.all(RUBRIC_TYPES.map(async (t) => [t, await loadRubric(supabase, t, tenantId)] as const)),
+  ) as RubricSet;
+}
 
-  const client = new Anthropic({ apiKey });
-  const system = buildSystemBlocks(rubric);
-
+/**
+ * The Messages API request for one call. All three rubrics go into the
+ * (cached) system prompt and the model picks one, so the ~50 KB of SOPs +
+ * rubrics is identical, and cached, across every call in a run. Used as-is
+ * by the nightly batch and by scoreCall() for one-off rescoring.
+ */
+export function buildScoringParams(
+  rubrics: RubricSet,
+  meta: CallMetadataForScoring,
+  transcript: string,
+  forced?: RubricType,
+): Anthropic.MessageCreateParamsNonStreaming {
   const userText = [
     "CALL METADATA",
-    `call_id: ${params.callMetadata.callId}`,
-    `customer_name: ${params.callMetadata.customerName ?? "Unknown"}`,
-    `agent_email: ${params.callMetadata.agentEmail ?? "Unknown"}`,
-    `direction: ${params.callMetadata.direction ?? "Unknown"}`,
-    `duration_seconds: ${params.callMetadata.duration ?? "Unknown"}`,
-    `start_time: ${params.callMetadata.startTime ?? "Unknown"}`,
-    `source: ${params.callMetadata.source ?? "Unknown"}`,
-    `default_rubric_type: ${rubricType}`,
+    `call_id: ${meta.callId}`,
+    `customer_name: ${meta.customerName ?? "Unknown"}`,
+    `direction: ${meta.direction ?? "Unknown"}`,
+    `duration_seconds: ${meta.duration ?? "Unknown"}`,
+    `start_time: ${meta.startTime ?? "Unknown"}`,
+    `source: ${meta.source ?? "Unknown"}`,
+    `forced_rubric_type: ${forced ?? "none"}`,
     "",
     "TRANSCRIPT",
     transcript,
     "",
     "TASK: Produce the JSON object now. No markdown. No commentary outside the JSON.",
   ].join("\n");
+  return {
+    model: DEFAULT_MODEL,
+    max_tokens: 16000,
+    output_config: { effort: EFFORT },
+    system: buildSystemBlocks(rubrics),
+    messages: [{ role: "user", content: userText }],
+  };
+}
 
-  let raw: string;
-  try {
-    const message = await client.messages.create({
-      model: DEFAULT_MODEL,
-      max_tokens: 4096,
-      system,
-      messages: [{ role: "user", content: userText }],
-    });
-    const block = message.content.find((b) => b.type === "text") as { type: "text"; text: string } | undefined;
-    raw = block?.text ?? "";
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Anthropic call failed" };
-  }
+export type ScoringAttempt =
+  | { ok: true; result: ScoreResult; complete: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Turn a scoring response into a ScoreResult. `complete` is false when the
+ * model mixed rubrics or skipped dimensions of the one it chose.
+ */
+export function parseScoringMessage(
+  message: Anthropic.Message,
+  rubrics: RubricSet,
+  callId: string,
+  forced?: RubricType,
+): ScoringAttempt {
+  const u = message.usage;
+  console.log(
+    `[sales-coach] ${callId} in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} ` +
+      `cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
+  );
+  if (message.stop_reason === "refusal") return { ok: false, error: "Model declined to score this call" };
+  if (message.stop_reason === "max_tokens") return { ok: false, error: "Scoring output was cut off (max_tokens)" };
+  const block = message.content.find((b) => b.type === "text") as { type: "text"; text: string } | undefined;
 
   // Extract JSON (defensively — the model might wrap it in ```json fences)
-  const jsonText = extractJson(raw);
+  const jsonText = extractJson(block?.text ?? "");
   if (!jsonText) return { ok: false, error: "Model returned no JSON" };
 
   let parsed: unknown;
@@ -253,8 +292,56 @@ export async function scoreCall(params: ScoreCallParams): Promise<ScoreCallOutco
     return { ok: false, error: `JSON parse failed: ${e instanceof Error ? e.message : String(e)}` };
   }
 
-  const result = normalizeScore(parsed, rubric, DEFAULT_MODEL);
-  return { ok: true, result };
+  const o = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  const reported = RUBRIC_TYPES.find((t) => t === o.rubric_type);
+  const rubricType: RubricType = forced ?? reported ?? "intake";
+  const rubric = rubrics[rubricType];
+  const result = normalizeScore(parsed, rubricType, rubric, message.model || DEFAULT_MODEL);
+
+  const expected = new Set(rubric.map((d) => d.dimensionKey));
+  const got = new Set(result.dimensions.map((d) => d.dimension_key));
+  const complete =
+    result.overall_score === 0 || // empty / unintelligible call: nothing to score
+    (got.size === expected.size && [...got].every((k) => expected.has(k)));
+  return { ok: true, result, complete };
+}
+
+/** Score one call right now (the call page's Rescore buttons). */
+export async function scoreCall(params: ScoreCallParams): Promise<ScoreCallOutcome> {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) return { ok: false, error: "ANTHROPIC_API_KEY is not configured" };
+  const transcript = params.transcript?.trim() ?? "";
+  if (!transcript) return { ok: false, error: "Transcript is empty" };
+
+  const rubrics = await loadRubricSet(params.supabase, params.tenantId);
+  const client = new Anthropic({ apiKey });
+
+  async function attempt(forced?: RubricType): Promise<ScoringAttempt> {
+    try {
+      // fallbacks: "default" (server-side refusal fallback) isn't in this SDK
+      // version's types yet, so it rides along on the body with its beta header.
+      // The Batches API rejects it, so only this live path sends it.
+      const body = {
+        ...buildScoringParams(rubrics, params.callMetadata, transcript, forced),
+        fallbacks: "default",
+      } as Anthropic.MessageCreateParamsNonStreaming;
+      const message = await client.messages.create(body, {
+        headers: { "anthropic-beta": "server-side-fallback-2026-07-01" },
+      });
+      return parseScoringMessage(message, rubrics, params.callMetadata.callId, forced);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Anthropic call failed" };
+    }
+  }
+
+  const first = await attempt(params.rubricType);
+  if (!first.ok || first.complete) return first.ok ? { ok: true, result: first.result } : first;
+
+  // The model mixed rubrics or skipped dimensions. Re-run once with the rubric
+  // it chose enforced; if that is still incomplete, keep the better attempt.
+  const retry = await attempt(first.result.rubric_type);
+  if (retry.ok) return { ok: true, result: retry.result };
+  return { ok: true, result: first.result };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -289,29 +376,37 @@ function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-function normalizeScore(parsed: unknown, rubric: RubricDimension[], modelId: string): ScoreResult {
+function normalizeScore(
+  parsed: unknown,
+  rubricType: RubricType,
+  rubric: RubricDimension[],
+  modelId: string,
+): ScoreResult {
   const o = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  const rubricType = (str(o.rubric_type) || "consultation") as RubricType;
   const language = (["en", "es", "mixed", "unknown"].includes(str(o.language))
     ? str(o.language)
     : "unknown") as ScoreResult["language"];
   const case_quality_estimate = (["High", "Medium", "Low", "N/A"].includes(str(o.case_quality_estimate))
     ? str(o.case_quality_estimate)
     : "N/A") as ScoreResult["case_quality_estimate"];
-  const dimensions = arr(o.dimensions).map((d) => {
+  // Keep only dimensions that belong to the chosen rubric, so a stray key
+  // from another rubric can't distort the total with a guessed max.
+  const dimensions = arr(o.dimensions).flatMap((d) => {
     const dd = d && typeof d === "object" ? (d as Record<string, unknown>) : {};
     const key = str(dd.dimension_key);
     const def = rubric.find((r) => r.dimensionKey === key);
-    const max = def?.maxScore ?? clampInt(dd.max, 0, 100, 10);
-    return {
-      dimension_key: key,
-      dimension_name: def?.dimensionName ?? str(dd.dimension_name),
-      score: clampInt(dd.score, 0, max),
-      max,
-      evidence: str(dd.evidence),
-      missed: str(dd.missed),
-      do_better: str(dd.do_better),
-    } as DimensionScore;
+    if (!def) return [];
+    return [
+      {
+        dimension_key: key,
+        dimension_name: def.dimensionName,
+        score: clampInt(dd.score, 0, def.maxScore),
+        max: def.maxScore,
+        evidence: str(dd.evidence),
+        missed: str(dd.missed),
+        do_better: str(dd.do_better),
+      } as DimensionScore,
+    ];
   });
 
   const objections_log = arr(o.objections_log).map((it) => {
@@ -359,6 +454,7 @@ function normalizeScore(parsed: unknown, rubric: RubricDimension[], modelId: str
     script_recommendations,
     summary_screener: str(o.summary_screener),
     summary_manager: str(o.summary_manager),
+    team_member_name: str(o.team_member_name).trim() || null,
     model_id: modelId,
     prompt_version: PROMPT_VERSION,
   };

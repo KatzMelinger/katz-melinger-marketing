@@ -2,7 +2,9 @@
  * GET /api/calls/coaching — per-agent sales-coaching rollup.
  *
  * call_scores has no agent column, so we join each score back to its call via
- * call_id -> calls.agent_email. For every intake rep we surface: how many calls
+ * call_id -> calls.staff_id -> sales_staff (see lib/sales-staff.ts; CallRail's
+ * own agent_email is always empty because calls forward to Vonage). For every
+ * team member we surface: how many calls
  * were scored, their average overall score, a recent-vs-prior trend delta, a
  * rubric-type breakdown, and the dimensions they most consistently lose points
  * on (recurring weaknesses) plus their strongest dimensions.
@@ -13,6 +15,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
+import { loadSalesStaff } from "@/lib/sales-staff";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
@@ -31,7 +34,7 @@ type DimensionRollup = {
 };
 
 type AgentRollup = {
-  agent_email: string;
+  agent: string; // staff member's full name, or "Unassigned"
   scored_count: number;
   avg_overall: number | null;
   trend_delta: number | null; // recent-half avg minus prior-half avg
@@ -61,18 +64,17 @@ export async function GET(req: NextRequest) {
   const since = sp.get("since");
   const minCalls = Math.max(1, Math.floor(Number(sp.get("min_calls") ?? "1")) || 1);
 
-  // 1. Map every call to its agent (calls is the only table with agent_email).
-  const { data: calls, error: callsErr } = await supabase
-    .from("calls")
-    .select("id, agent_email")
-    .eq("tenant_id", tid)
-    .limit(20000);
+  // 1. Map every attributed call to the staff member who handled it.
+  const [{ data: calls, error: callsErr }, staff] = await Promise.all([
+    supabase.from("calls").select("id, staff_id").eq("tenant_id", tid).not("staff_id", "is", null).limit(20000),
+    loadSalesStaff(supabase, tid),
+  ]);
   if (callsErr) return NextResponse.json({ error: callsErr.message }, { status: 500 });
+  const nameById = new Map(staff.map((s) => [s.id, s.full_name]));
   const agentByCall = new Map<string, string>();
   for (const c of (calls ?? []) as Json[]) {
-    const id = c.id as string;
-    const email = typeof c.agent_email === "string" && c.agent_email.trim() ? c.agent_email.trim() : "Unassigned";
-    agentByCall.set(id, email);
+    const name = nameById.get(c.staff_id as string);
+    if (name) agentByCall.set(c.id as string, name);
   }
 
   // 2. Pull scores (most recent first) within the optional window.
@@ -115,7 +117,7 @@ export async function GET(req: NextRequest) {
 
   // 4. Roll each agent up.
   const agents: AgentRollup[] = [];
-  for (const [agent_email, rows] of byAgent) {
+  for (const [agent, rows] of byAgent) {
     if (rows.length < minCalls) continue;
 
     const overalls = rows.map((r) => r.overall_score).filter((v): v is number => v != null);
@@ -174,7 +176,7 @@ export async function GET(req: NextRequest) {
     const strengths = [...dimList].sort((a, b) => b.pct - a.pct).slice(0, 2);
 
     agents.push({
-      agent_email,
+      agent,
       scored_count: rows.length,
       avg_overall,
       trend_delta,

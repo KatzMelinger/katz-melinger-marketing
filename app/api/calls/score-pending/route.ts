@@ -1,36 +1,32 @@
 /**
- * Auto-score every answered call >= 60s that has a transcript but no current
- * score row. Skips voicemails (the "answered=true && voicemail=true" combo)
- * since those aren't conversations.
+ * Call scoring runs through the Anthropic Message Batches API (half price).
+ * See lib/call-score-batch.ts.
  *
- * POST /api/calls/score-pending — UI trigger ("Score pending" button).
- *   Body (optional): { limit: number, min_duration_seconds: number, since: ISO }
+ * GET /api/calls/score-pending?mode=submit  — Vercel Cron, nightly: queue one
+ *   batch with every call that needs a (re)score since SCORING_SINCE.
+ * GET /api/calls/score-pending?mode=collect — Vercel Cron, hourly (no model
+ *   cost): save results from finished batches and attribute each call.
+ *   Both require `Authorization: Bearer ${CRON_SECRET}`.
  *
- * GET /api/calls/score-pending — Vercel Cron trigger. Requires
- *   `Authorization: Bearer ${CRON_SECRET}`. Reads the same options from query
- *   params (?limit=&min_duration_seconds=&since=). Registered in vercel.json.
+ * POST /api/calls/score-pending — the Calls page "Score pending" button:
+ *   collects anything finished, then queues the rest right away instead of
+ *   waiting for the night.
+ *
+ * One-off immediate scoring at full price is POST /api/calls/[id]/score.
  */
 import { NextRequest, NextResponse } from "next/server";
 
-import { scoreCall } from "@/lib/sales-coach";
+import { collectScoringBatches, submitScoringBatch } from "@/lib/call-score-batch";
 import { guardUser } from "@/lib/supabase-route";
-import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-type Json = Record<string, unknown>;
-
-type ScorePendingOptions = {
-  limit: number;
-  minDuration: number;
-  since: string | null;
-  // null = all tenants (cron); set = only this tenant (manual button).
-  tenantId: string | null;
-};
+/** Leave headroom under maxDuration; an unfinished collection resumes next hour. */
+const COLLECT_BUDGET_MS = 240_000;
 
 /**
  * Vercel injects `Authorization: Bearer ${CRON_SECRET}` on scheduled
@@ -43,36 +39,8 @@ function isAuthorizedCron(req: NextRequest): boolean {
   return (req.headers.get("authorization") ?? "") === `Bearer ${expected}`;
 }
 
-function clampLimit(raw: unknown): number {
-  return typeof raw === "number" && Number.isFinite(raw)
-    ? Math.max(1, Math.min(50, Math.floor(raw)))
-    : 25;
-}
-
-function clampDuration(raw: unknown): number {
-  return typeof raw === "number" && Number.isFinite(raw)
-    ? Math.max(0, Math.floor(raw))
-    : 60;
-}
-
-export async function POST(req: Request) {
-  const denied = await guardUser();
-  if (denied) return denied;
-  const supabase = getSupabaseServer();
-  if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
-
-  let body: Json = {};
-  try {
-    body = (await req.json().catch(() => ({}))) as Json;
-  } catch {
-    /* ignore */
-  }
-  return runScorePending(supabase, {
-    limit: clampLimit(body.limit),
-    minDuration: clampDuration(body.min_duration_seconds),
-    since: typeof body.since === "string" ? body.since : null,
-    tenantId: await resolveTenantId(),
-  });
+function errorResponse(e: unknown) {
+  return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
 }
 
 export async function GET(req: NextRequest) {
@@ -81,107 +49,25 @@ export async function GET(req: NextRequest) {
   }
   // Cron has no user session — use the admin client (service role).
   const supabase = getSupabaseAdmin();
-  if (!supabase) return NextResponse.json({ error: "supabase unavailable" }, { status: 503 });
-
-  const sp = req.nextUrl.searchParams;
-  const limitParam = sp.get("limit");
-  const minParam = sp.get("min_duration_seconds");
-  return runScorePending(supabase, {
-    limit: clampLimit(limitParam ? Number(limitParam) : undefined),
-    minDuration: clampDuration(minParam ? Number(minParam) : undefined),
-    since: sp.get("since"),
-    tenantId: null,
-  });
+  try {
+    if (req.nextUrl.searchParams.get("mode") === "submit") {
+      return NextResponse.json(await submitScoringBatch(supabase));
+    }
+    return NextResponse.json(await collectScoringBatches(supabase, COLLECT_BUDGET_MS));
+  } catch (e) {
+    return errorResponse(e);
+  }
 }
 
-async function runScorePending(supabase: SupabaseClient, opts: ScorePendingOptions) {
-  const { limit, minDuration, since, tenantId } = opts;
-
-  // Find candidates: answered, not VM, duration >= min, has transcript, no score yet.
-  let q = supabase
-    .from("calls")
-    .select("id, tenant_id, customer_name, agent_email, duration, start_time, direction, source_name, transcription")
-    .eq("answered", true)
-    .eq("voicemail", false)
-    .gte("duration", minDuration)
-    .not("transcription", "is", null)
-    .order("start_time", { ascending: false })
-    .limit(500); // overshoot then filter
-  if (since) q = q.gte("start_time", since);
-  if (tenantId) q = q.eq("tenant_id", tenantId);
-  const { data: candidates, error } = await q;
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const ids = (candidates ?? []).map((c) => (c as Json).id as string);
-  let alreadyScored = new Set<string>();
-  if (ids.length) {
-    const { data: scored } = await supabase
-      .from("call_scores")
-      .select("call_id")
-      .in("call_id", ids);
-    alreadyScored = new Set((scored ?? []).map((r) => (r as Json).call_id as string));
+export async function POST() {
+  const denied = await guardUser();
+  if (denied) return denied;
+  const supabase = getSupabaseAdmin();
+  try {
+    const collected = await collectScoringBatches(supabase, COLLECT_BUDGET_MS / 2);
+    const submitted = await submitScoringBatch(supabase, await resolveTenantId());
+    return NextResponse.json({ collected, submitted });
+  } catch (e) {
+    return errorResponse(e);
   }
-
-  const toScore = (candidates ?? []).filter((c) => !alreadyScored.has((c as Json).id as string)).slice(0, limit);
-
-  const results: { id: string; ok: boolean; overall_score?: number; error?: string }[] = [];
-  for (const row of toScore) {
-    const c = row as Json;
-    const id = c.id as string;
-    const transcript = typeof c.transcription === "string" ? c.transcription : "";
-    if (!transcript.trim()) {
-      results.push({ id, ok: false, error: "no transcript" });
-      continue;
-    }
-    const out = await scoreCall({
-      transcript,
-      callMetadata: {
-        callId: id,
-        customerName: typeof c.customer_name === "string" ? c.customer_name : null,
-        agentEmail: typeof c.agent_email === "string" ? c.agent_email : null,
-        duration: typeof c.duration === "number" ? c.duration : null,
-        startTime: typeof c.start_time === "string" ? c.start_time : null,
-        direction: typeof c.direction === "string" ? c.direction : null,
-        source: typeof c.source_name === "string" ? c.source_name : null,
-      },
-      supabase,
-      tenantId: (typeof c.tenant_id === "string" ? c.tenant_id : tenantId) ?? undefined,
-    });
-    if (!out.ok) {
-      results.push({ id, ok: false, error: out.error });
-      continue;
-    }
-    const r = out.result;
-    const { error: insErr } = await supabase.from("call_scores").insert({
-      call_id: id,
-      tenant_id: (c.tenant_id as string) ?? tenantId,
-      rubric_type: r.rubric_type,
-      language: r.language,
-      overall_score: r.overall_score,
-      case_quality_estimate: r.case_quality_estimate,
-      case_type_detected: r.case_type_detected,
-      dimension_scores: r.dimensions,
-      objections_log: r.objections_log,
-      compliance_flags: r.compliance_flags,
-      script_recommendations: r.script_recommendations,
-      summary_screener: r.summary_screener,
-      summary_manager: r.summary_manager,
-      model_id: r.model_id,
-      prompt_version: r.prompt_version,
-    });
-    if (insErr) {
-      results.push({ id, ok: false, error: insErr.message });
-    } else {
-      results.push({ id, ok: true, overall_score: r.overall_score });
-    }
-  }
-
-  return NextResponse.json({
-    candidates: candidates?.length ?? 0,
-    skipped_already_scored: ids.length - toScore.length,
-    scored: results.filter((r) => r.ok).length,
-    failed: results.filter((r) => !r.ok).length,
-    results,
-  });
 }
