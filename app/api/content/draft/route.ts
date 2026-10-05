@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { ANTI_AI_VOICE_RULES } from "@/lib/anti-ai-voice";
 import {
-  cachedSystemPrompt,
+  cachedSystemBlocks,
   CONTENT_LONG_FORM_MODEL,
   CONTENT_SHORT_FORM_MODEL,
   extractJSON,
@@ -31,7 +31,7 @@ import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import { closingCtaFor } from "@/lib/closing-cta";
-import { groundAndFix, groundingBlock } from "@/lib/generation-grounding";
+import { groundAndFix, groundingForTopic, groundingRules } from "@/lib/generation-grounding";
 import {
   CONTENT_TYPE_TO_INTENT,
   isCompoundKeyword,
@@ -320,30 +320,34 @@ export async function POST(req: Request) {
         ? "About 2000 words for blog."
         : "About 1000 words for blog.";
 
-  const system = `You are a marketing copywriter for a law firm. Use the firm's details, practice areas, and audience from the firm context below — never fabricate firm information. Voice: professional but approachable, focused on helping clients understand their rights, never corporate or cold.
+  // Two parts so the prompt cache can work: everything that is the same for
+  // every draft of this firm goes first and is cached; the per-draft details
+  // (skills for these platforms, topic byline/links, template, keywords,
+  // headings, gaps) follow uncached. Mixed together, every draft had its own
+  // prefix and nothing was ever reused.
+  const stableSystem = `You are a marketing copywriter for a law firm. Use the firm's details, practice areas, and audience from the firm context below — never fabricate firm information. Voice: professional but approachable, focused on helping clients understand their rights, never corporate or cold.
 
 ${firmContext}
 
 ${renderFirmFactsBlock()}
-${
-  isWebContent
-    ? `\n${await groundingBlock({ tenantId: await resolveTenantId(), title: topic, topic, practiceArea })}\n`
-    : ""
-}
+${isWebContent ? `\n${await groundingRules(await resolveTenantId())}\n` : ""}
 ${ANTI_AI_VOICE_RULES}
 
-${skillsContext ? `${skillsContext}\n` : ""}
 ${brandVoice ? `Brand voice notes from the firm:\n${brandVoice}\n` : ""}
 ${profile ? `Brand guidelines summary:\n${profile.guidelinesSummary}\n` : ""}
 ${profile?.legalTerms?.length ? `Prefer legal terminology:\n${profile.legalTerms.join(", ")}\n` : ""}
 ${profile?.disclaimers?.length ? `Use applicable disclaimer language:\n${profile.disclaimers.join(" | ")}\n` : ""}
 ${profile?.messagingPatterns?.length ? `Messaging patterns:\n${profile.messagingPatterns.join(" | ")}\n` : ""}
+Follow the user's output format instructions exactly. Do not fabricate case results or guarantees.`;
+
+  const perRequestSystem = `${isWebContent ? `${groundingForTopic({ title: topic, topic, practiceArea })}\n` : ""}
+${skillsContext ? `${skillsContext}\n` : ""}
 ${templateKey && TEMPLATE_INSTRUCTIONS[templateKey] ? `Template guidance:\n${TEMPLATE_INSTRUCTIONS[templateKey]}\n` : ""}
 ${targetKeywords.length ? `Target SEO keywords to include naturally:\n${targetKeywords.join(", ")}\n` : ""}
 ${seoBrief?.headings && Array.isArray(seoBrief.headings) ? `SEO heading suggestions:\n${seoBrief.headings.filter((item): item is string => typeof item === "string").join(" | ")}\n` : ""}
-${seoBrief?.competitorGaps && Array.isArray(seoBrief.competitorGaps) ? `Competitor content gaps to address:\n${seoBrief.competitorGaps.filter((item): item is string => typeof item === "string").join(" | ")}\n` : ""}
+${seoBrief?.competitorGaps && Array.isArray(seoBrief.competitorGaps) ? `Competitor content gaps to address:\n${seoBrief.competitorGaps.filter((item): item is string => typeof item === "string").join(" | ")}\n` : ""}`;
 
-Follow the user's output format instructions exactly. Do not fabricate case results or guarantees.`;
+  const system = cachedSystemBlocks(stableSystem, perRequestSystem);
 
   let userPrompt = "";
   if (contentType === "blog") {
@@ -479,7 +483,7 @@ ${readabilityPromptBlock(
     const msg = await getAnthropic().messages.create({
       model,
       max_tokens: contentType === "blog" && length === "long" ? 8192 : 4096,
-      system: cachedSystemPrompt(system),
+      system,
       messages: [{ role: "user", content: userPrompt }],
     });
 

@@ -333,7 +333,9 @@ export async function crawlSiteInventory(args?: {
   domain?: string;
   maxPages?: number;
   tenantId?: string;
-}): Promise<{ crawled: number; classified: number; skipped: number }> {
+  /** Re-classify every page, not just new or retitled ones. */
+  fullRefresh?: boolean;
+}): Promise<{ crawled: number; classified: number; skipped: number; reclassified: number }> {
   const tid = args?.tenantId ?? (await resolveTenantId());
   const domain = (args?.domain ?? (await getTenantConfig(tid)).seoDomain).trim();
   const base = `https://${domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
@@ -351,7 +353,7 @@ export async function crawlSiteInventory(args?: {
   );
   const urls = ordered.slice(0, args?.maxPages ?? MAX_PAGES);
   if (urls.length === 0) {
-    return { crawled: 0, classified: 0, skipped: 0 };
+    return { crawled: 0, classified: 0, skipped: 0, reclassified: 0 };
   }
 
   // Fetch titles/h1 concurrently.
@@ -366,17 +368,41 @@ export async function crawlSiteInventory(args?: {
   const pillarPaths = new Set(
     pillars.map((p) => p.url.replace(/\/$/, "").toLowerCase()),
   );
-  const classMap = await classifyPillars(usable, pillars);
-
-  // Load existing rows to preserve human pillar overrides.
+  // Load existing rows to preserve human pillar overrides and to reuse
+  // classifications. The crawl runs daily over ~300 pages; re-sending every
+  // page to Claude each day re-bought the same answers. Only new pages and
+  // pages whose title/H1 changed are classified, plus everything on the 1st
+  // of the month (or fullRefresh) so edits to the pillar list are picked up.
   const sb = getSupabaseAdmin();
   const { data: existing } = await sb
     .from("site_pages")
-    .select("url, pillar, pillar_locked")
+    .select("url, title, h1, pillar, practice_area, topics, pillar_locked")
     .eq("tenant_id", tid);
   const locked = new Map<string, string | null>();
+  const previous = new Map<string, Classification & { title: string | null; h1: string | null }>();
   for (const r of existing ?? []) {
     if (r.pillar_locked) locked.set(r.url as string, (r.pillar as string) ?? null);
+    previous.set(r.url as string, {
+      url: r.url as string,
+      title: (r.title as string | null) ?? null,
+      h1: (r.h1 as string | null) ?? null,
+      pillar: (r.pillar as string | null) ?? null,
+      practice_area: (r.practice_area as string | null) ?? null,
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+    });
+  }
+  const fullRefresh = args?.fullRefresh ?? new Date().getUTCDate() === 1;
+  const toClassify = fullRefresh
+    ? usable
+    : usable.filter((f) => {
+        const prev = previous.get(f.url);
+        // No topics means it was never classified successfully (a failed batch).
+        return !prev || prev.title !== f.title || prev.h1 !== f.h1 || prev.topics.length === 0;
+      });
+  const classMap = await classifyPillars(toClassify, pillars);
+  for (const f of usable) {
+    const prev = previous.get(f.url);
+    if (!classMap.has(f.url) && prev && !toClassify.includes(f)) classMap.set(f.url, prev);
   }
 
   const now = new Date().toISOString();
@@ -414,6 +440,7 @@ export async function crawlSiteInventory(args?: {
     crawled: rows.length,
     classified,
     skipped: urls.length - usable.length,
+    reclassified: toClassify.length,
   };
 }
 
