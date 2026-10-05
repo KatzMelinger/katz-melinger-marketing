@@ -20,13 +20,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { callMetadata, CALL_SCORING_COLUMNS, saveScore } from "@/lib/call-scoring";
-import {
-  buildScoringParams,
-  loadRubricSet,
-  parseScoringMessage,
-  PROMPT_VERSION,
-  warmScoringCache,
-} from "@/lib/sales-coach";
+import { buildScoringParams, loadRubricSet, parseScoringMessage, PROMPT_VERSION } from "@/lib/sales-coach";
 import { loadSalesStaff } from "@/lib/sales-staff";
 
 /** Calls before this are never scored (decision 2026-10-03: score from July 2026). */
@@ -112,20 +106,10 @@ export async function submitScoringBatch(
   const batches: { id: string; tenant_id: string; calls: number }[] = [];
   for (const [tenantId, calls] of byTenant) {
     const rubrics = await loadRubricSet(supabase, tenantId);
-    // Load the shared prefix into a 1h cache first so the batch can read it
-    // (see warmScoringCache). A failed warm-up only costs cache hits.
-    try {
-      const u = await warmScoringCache(anthropic, rubrics);
-      console.log(
-        `[call-score-batch] warmed cache: wrote=${u.cache_creation_input_tokens ?? 0} read=${u.cache_read_input_tokens ?? 0}`,
-      );
-    } catch (e) {
-      console.warn("[call-score-batch] cache warm-up failed:", e instanceof Error ? e.message : e);
-    }
     const batch = await anthropic.messages.batches.create({
       requests: calls.map((c) => ({
         custom_id: c.id as string,
-        params: buildScoringParams(rubrics, callMetadata(c), (c.transcription as string).trim(), undefined, "1h"),
+        params: buildScoringParams(rubrics, callMetadata(c), (c.transcription as string).trim()),
       })),
     });
     const { error } = await supabase.from("call_score_batches").insert({
