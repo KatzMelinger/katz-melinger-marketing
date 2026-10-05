@@ -362,14 +362,17 @@ export async function POST(req: Request) {
   // Per-tenant system prompt (Phase 2). Falls back to the code-defined
   // KM_SYSTEM_PROMPT for the default tenant via getTenantConfig.
   const tenantConfig = await getTenantConfig();
+  // One system prompt for the draft, repair and readability passes, so the
+  // later passes read the first call's cache entry.
+  const kmSystem = cachedSystemPrompt(`${tenantConfig.systemPrompt}
+
+${renderFirmFactsBlock()}`);
 
   try {
     const msg = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
       max_tokens: maxTokens,
-      system: cachedSystemPrompt(`${tenantConfig.systemPrompt}
-
-${renderFirmFactsBlock()}`),
+      system: kmSystem,
       messages: [{ role: "user", content: userPrompt }],
     });
 
@@ -401,7 +404,7 @@ ${renderFirmFactsBlock()}`),
         const repair = await getAnthropic().messages.create({
           model: CONTENT_LONG_FORM_MODEL,
           max_tokens: maxTokens,
-          system: cachedSystemPrompt(tenantConfig.systemPrompt),
+          system: kmSystem,
           messages: [{ role: "user", content: repairPrompt }],
         });
         const rb = repair.content.find((b) => b.type === "text");
@@ -438,7 +441,7 @@ ${renderFirmFactsBlock()}`),
         const rw = await getAnthropic().messages.create({
           model: CONTENT_LONG_FORM_MODEL,
           max_tokens: maxTokens,
-          system: cachedSystemPrompt(tenantConfig.systemPrompt),
+          system: kmSystem,
           messages: [{ role: "user", content: rwPrompt }],
         });
         const rwb = rw.content.find((b) => b.type === "text");

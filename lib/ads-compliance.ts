@@ -12,6 +12,7 @@
 
 import {
   KEYWORD_RESEARCH_MODEL,
+  cachedSystemPrompt,
   extractJSON,
   getAnthropic,
 } from "@/lib/anthropic";
@@ -103,7 +104,7 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
     max_tokens: 4096,
-    system: systemPrompt,
+    system: cachedSystemPrompt(systemPrompt, KEYWORD_RESEARCH_MODEL),
     messages: [{ role: "user", content: userPrompt }],
   });
 
