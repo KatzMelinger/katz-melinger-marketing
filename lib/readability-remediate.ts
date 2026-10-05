@@ -32,7 +32,7 @@
  * never self-corrected at all.
  */
 
-import { CONTENT_LONG_FORM_MODEL, getAnthropic, cachedSystemPrompt } from "./anthropic";
+import { CONTENT_LONG_FORM_MODEL, getAnthropic, cachedSystemBlocks, cachedSystemPrompt } from "./anthropic";
 import { stripEmDashes } from "./sanitize-content";
 import {
   readabilityForGenerator,
@@ -45,8 +45,9 @@ export type RemediateArgs = {
   contentType: ReadabilityContentType;
   /** Whether the KM rules engine is on (callers pass the flag; this stays pure). */
   useRules: boolean;
-  /** System prompt for the rewrite — the tenant's brand voice, normally. */
-  system?: string;
+  /** System prompt for the rewrite — the tenant's brand voice, normally. Pass
+   *  the generator's own blocks (cachedSystemBlocks) to reuse its cache entry. */
+  system?: string | ReturnType<typeof cachedSystemBlocks>;
   model?: string;
   maxTokens?: number;
   /** Cap on rewrite passes. Two is what the KM wizard has always used. */
@@ -92,7 +93,9 @@ export async function remediateReadability(args: RemediateArgs): Promise<Remedia
       const res = await getAnthropic().messages.create({
         model: args.model ?? CONTENT_LONG_FORM_MODEL,
         max_tokens: args.maxTokens ?? 8192,
-        ...(args.system ? { system: cachedSystemPrompt(args.system) } : {}),
+        ...(args.system
+          ? { system: typeof args.system === "string" ? cachedSystemPrompt(args.system) : args.system }
+          : {}),
         messages: [{ role: "user", content: prompt }],
       });
       const block = res.content.find((b) => b.type === "text");

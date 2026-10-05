@@ -34,7 +34,7 @@ import { keywordPlacementBlock } from "./keyword-placement";
 import { readabilityRulesEngineEnabled } from "./feature-flags";
 import { MIN_CONFIRMED_INTERNAL_LINKS } from "./internal-links-check";
 import {
-  cachedSystemPrompt,
+  cachedSystemBlocks,
   CONTENT_LONG_FORM_MODEL,
   CONTENT_SHORT_FORM_MODEL,
   extractJSON,
@@ -43,7 +43,7 @@ import {
 } from "./anthropic";
 import { AD_TERMS_RULE } from "@/lib/ad-terms";
 import { renderFirmFactsBlock } from "@/lib/firm-facts";
-import { groundingBlock } from "@/lib/generation-grounding";
+import { groundingForTopic, groundingRules } from "@/lib/generation-grounding";
 
 export type FormatKey =
   | "blog"
@@ -99,29 +99,37 @@ type ClaudeMultiOutput = {
   >;
 };
 
+/**
+ * System prompt in two parts so the prompt cache can work: the firm-wide part
+ * (firm context, voice rules, ad-terms rule, output shape) is the same for
+ * every batch and is cached; skills (vary by format set and practice area),
+ * tone and language follow it uncached. They used to sit in the middle, which
+ * gave every combination its own cache entry.
+ */
 function buildSystemPrompt(args: {
   firm: string;
   skillsContext: string;
   tone: string | undefined;
   language?: ContentLanguage;
-}): string {
+}): { stable: string; perRequest: string } {
   const langBlock = languageDirective(args.language ?? "en");
-  return `You are a marketing copywriter for a law firm. The firm's details are below — use them
+  const stable = `You are a marketing copywriter for a law firm. The firm's details are below — use them
 verbatim and never fabricate firm information.
 ${args.firm}
 
 ${ANTI_AI_VOICE_RULES}
-${args.skillsContext ? `\n${args.skillsContext}\n` : ""}
-Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.
+
 Avoid legalese. Never fabricate case results or guarantees. Stay compliant — recommend speaking with an attorney rather than asserting outcomes.
 
 ${AD_TERMS_RULE}
-${langBlock ? `\n${langBlock}\n` : ""}
+
 For each requested format, return:
 - title (or subject for email)
 - preview_text (email only)
 - hashtags (instagram only, as array of strings)
 - body (the full content in the format's natural style)`;
+  const perRequest = `${args.skillsContext ? `${args.skillsContext}\n\n` : ""}Tone: ${args.tone ?? "Professional, plain-spoken, accessible"}.${langBlock ? `\n\n${langBlock}` : ""}`;
+  return { stable, perRequest };
 }
 
 function buildUserPrompt(args: {
@@ -187,7 +195,7 @@ Return JSON only:
 
 async function callClaudeForFormats(args: {
   model: string;
-  system: string;
+  system: { stable: string; perRequest: string };
   user: string;
 }): Promise<ClaudeMultiOutput> {
   // Short-form batches run on Haiku, whose cache minimum is 4096 tokens — 4× the
@@ -196,7 +204,7 @@ async function callClaudeForFormats(args: {
   const resp = await getAnthropic().messages.create({
     model: args.model,
     max_tokens: 8192,
-    system: cachedSystemPrompt(args.system, args.model),
+    system: cachedSystemBlocks(args.system.stable, args.system.perRequest, args.model),
     messages: [{ role: "user", content: args.user }],
   });
   logCacheUsage(`content-multiformat:${args.model}`, resp.usage);
@@ -256,17 +264,21 @@ export async function generateMultiFormat(args: {
   // blog generated here had no fee rule and no audience rule at all. With a
   // blog in the batch it also gets the Sept 28 grounding (knowledge base,
   // statute table, link map, Appendix I rules).
-  const system =
-    buildSystemPrompt({
-      firm,
-      skillsContext,
-      tone: args.tone,
-      language: args.language,
-    }) +
-    `\n\n${renderFirmFactsBlock()}` +
-    (args.formats.includes("blog")
-      ? `\n\n${await groundingBlock({ tenantId: tid, title: args.topic, topic: args.topic, practiceArea: args.practiceArea ?? null })}`
-      : "");
+  const parts = buildSystemPrompt({
+    firm,
+    skillsContext,
+    tone: args.tone,
+    language: args.language,
+  });
+  const hasBlog = args.formats.includes("blog");
+  const system = {
+    stable: `${parts.stable}\n\n${renderFirmFactsBlock()}${hasBlog ? `\n\n${await groundingRules(tid)}` : ""}`,
+    perRequest: `${parts.perRequest}${
+      hasBlog
+        ? `\n\n${groundingForTopic({ title: args.topic, topic: args.topic, practiceArea: args.practiceArea ?? null })}`
+        : ""
+    }`,
+  };
 
   const longForm = args.formats.filter((f) => LONG_FORM_FORMATS.includes(f));
   const shortForm = args.formats.filter((f) => !LONG_FORM_FORMATS.includes(f));
@@ -435,7 +447,7 @@ ${readabilityPromptBlock("social", readabilityRulesEngineEnabled())}`,
         body: cleanBody,
         contentType: readabilityContentType(format),
         useRules: readabilityRulesEngineEnabled(),
-        system,
+        system: cachedSystemBlocks(system.stable, system.perRequest),
       });
       if (remediated.passes > 0) {
         logEvent("readability_remediated", {

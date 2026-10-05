@@ -7,6 +7,10 @@
  *                     the attorney-approved statute table, the author byline,
  *                     the link map row and the Appendix I rules — so it uses
  *                     only those values and cites only those sections.
+ *                     It is groundingRules() (the same for every draft of a
+ *                     firm, so callers put it in the cached system prefix)
+ *                     plus groundingForTopic() (byline and links for this
+ *                     topic, which goes after the cache breakpoint).
  *   groundAndFix()    what happens to its output before it is saved — the same
  *                     rewrite the Changes made panel runs (lib/auto-rewrite.ts),
  *                     logged the same way, so a reviewer sees what the checks
@@ -42,20 +46,36 @@ function formatValue(t: KbThresholdEntry): string {
   }
 }
 
-export async function groundingBlock(args: {
-  tenantId: string;
-  title?: string | null;
-  topic?: string | null;
-  practiceArea?: string | null;
-}): Promise<string> {
-  const [thresholds, statutes, cta] = await Promise.all([
-    getThresholds(args.tenantId).catch(() => [] as KbThresholdEntry[]),
-    loadStatuteTable(args.tenantId),
-    closingCtaFor(args.tenantId),
-  ]);
-  const text = `${args.title ?? ""} ${args.topic ?? ""}`;
+type TopicArgs = { title?: string | null; topic?: string | null; practiceArea?: string | null };
+
+export async function groundingBlock(args: { tenantId: string } & TopicArgs): Promise<string> {
+  return `${await groundingRules(args.tenantId)}\n\n${groundingForTopic(args)}`;
+}
+
+/** The byline and link plan for one topic: the per-draft half of the grounding. */
+export function groundingForTopic(args: TopicArgs): string {
   const author = expectedAuthor({ title: args.title, topic: args.topic, practiceArea: args.practiceArea });
-  const links = linkRowFor(text);
+  const links = linkRowFor(`${args.title ?? ""} ${args.topic ?? ""}`);
+  return [
+    "THIS DRAFT:",
+    author ? `- Byline: "${bylineFor(author)}"` : "- Byline: none",
+    links
+      ? `- Internal links: include the pillar page ${links.pillar.url} and choose the rest from: ${links.supporting.map((l) => l.url).join(", ")}.`
+      : "- Internal links: use katzmelinger.com pages you are given.",
+  ].join("\n");
+}
+
+/**
+ * The firm-wide half of the grounding: identical for every draft of a tenant
+ * (knowledge base, statute table, rules, structure, closing CTA), so it can
+ * sit in the cached system prefix.
+ */
+export async function groundingRules(tenantId: string): Promise<string> {
+  const [thresholds, statutes, cta] = await Promise.all([
+    getThresholds(tenantId).catch(() => [] as KbThresholdEntry[]),
+    loadStatuteTable(tenantId),
+    closingCtaFor(tenantId),
+  ]);
 
   const kb = thresholds.length
     ? thresholds
@@ -82,11 +102,9 @@ export async function groundingBlock(args: {
     "- Spell out New York and New Jersey (NYC is allowed in titles and keywords). No dashes of any kind. \"We\" and \"our firm\" are allowed.",
     "",
     "STRUCTURE:",
-    "- Start with the line \"Attorney Advertising\", then one H1 containing the primary keyword" + (author ? `, then the byline "${bylineFor(author)}"` : "") + ".",
+    "- Start with the line \"Attorney Advertising\", then one H1 containing the primary keyword, then the byline given under THIS DRAFT (if any).",
     "- Short paragraphs of four sentences or fewer, H2 headings that answer real questions, a practical \"what to do now\" section, and an FAQ of four to six questions.",
-    links
-      ? `- At least three internal links, written as full URLs with natural anchor text, including the pillar page ${links.pillar.url} and chosen from: ${links.supporting.map((l) => l.url).join(", ")}. Never make up a URL.`
-      : "- At least three internal links to katzmelinger.com pages you are given. Never make up a URL.",
+    "- At least three internal links, written as full URLs with natural anchor text, from the pages listed under THIS DRAFT. Never make up a URL.",
     `- End with "Call today at ${cta.phone} for a ${cta.offerPhrase}." and then exactly: "${GENERAL_LEGAL_DISCLAIMER_TEXT}" with "Disclaimer" linked to ${DISCLAIMER_URL}.`,
     "Before you finish, check your draft against every rule above and correct it.",
   ].join("\n");

@@ -88,6 +88,23 @@ export function cachedSystemPrompt(text: string, model?: string) {
   ];
 }
 
+/**
+ * Two-part system prompt: `stable` is identical across requests (firm context,
+ * rules, voice) and gets the cache marker; `perRequest` (topic, keywords,
+ * template, byline, links) follows it uncached, so it no longer breaks the
+ * cached prefix. Same model-minimum caveat as cachedSystemPrompt.
+ */
+export function cachedSystemBlocks(stable: string, perRequest: string, model?: string) {
+  if (model && process.env.NODE_ENV !== "production" && !willCache(model, stable)) {
+    warnUncacheable(model, approxTokens(stable));
+  }
+  const blocks: { type: "text"; text: string; cache_control?: { type: "ephemeral" } }[] = [
+    { type: "text", text: stable, cache_control: { type: "ephemeral" } },
+  ];
+  if (perRequest.trim()) blocks.push({ type: "text", text: perRequest });
+  return blocks;
+}
+
 const warned = new Set<string>();
 function warnUncacheable(model: string, tokens: number) {
   const key = `${model}:${tokens}`;
