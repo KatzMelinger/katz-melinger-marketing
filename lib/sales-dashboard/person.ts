@@ -111,13 +111,19 @@ export function buildPerson(ctx: DashboardContext, staffId: string, f: Filters, 
   const myIntake = leads.filter((l) => l.credit.intake?.id === staffId);
   const mySales = leads.filter((l) => l.credit.sales?.id === staffId);
   const teamIntake = leads.filter((l) => l.credit.intake);
-  const teamSales = leads.filter((l) => l.credit.sales);
+  const signedLeads = (ls: Lead[]) => ls.filter((l) => outcomeOf(l.status) === "signed");
+  // Sales calls follow the person on the call; close rate = signings after
+  // their call / leads they took a sales call on (credit.ts).
+  const myCallLeads = leads.filter((l) => l.callTakerIds.includes(staffId));
+  const myAfterCall = signedLeads(mySales).filter((l) => l.credit.salesSource === "call");
+  const teamCallLeads = leads.filter((l) => l.callTakerIds.length > 0);
+  const teamAfterCall = signedLeads(leads).filter((l) => l.credit.salesSource === "call");
 
   const intakeCalls = scored.filter((c) => !isSalesRubric(c.rubric_type));
   const salesCalls = scored.filter((c) => isSalesRubric(c.rubric_type));
 
   const doesIntake = person.roles.includes("intake") || myIntake.length > 0;
-  const doesSales = person.roles.includes("sales") || mySales.length > 0;
+  const doesSales = person.roles.includes("sales") || mySales.length > 0 || myCallLeads.length > 0;
 
   return {
     staff: { id: person.id, name: person.full_name, initials: person.initials, roles: person.roles },
@@ -140,18 +146,19 @@ export function buildPerson(ctx: DashboardContext, staffId: string, f: Filters, 
       : null,
     sales: doesSales
       ? {
-          sales_calls: worked(mySales).length,
-          signed: signed(mySales),
-          close_rate: pct(signed(mySales), worked(mySales).length),
-          team_close_rate: pct(signed(teamSales), worked(teamSales).length),
-          high_quality_signed: mySales.filter((l) => outcomeOf(l.status) === "signed" && l.quality === "High").length,
+          sales_calls: myCallLeads.length,
+          signed: myAfterCall.length,
+          close_rate: pct(myAfterCall.length, myCallLeads.length),
+          team_close_rate: pct(teamAfterCall.length, teamCallLeads.length),
+          signed_no_call: signedLeads(mySales).length - myAfterCall.length,
+          high_quality_signed: signedLeads(mySales).filter((l) => l.quality === "High").length,
           scores: scoreBlock(
             salesCalls.filter((c) => c.staff_id === staffId),
             salesCalls,
           ),
         }
       : null,
-    leads: [...myIntake, ...mySales]
+    leads: [...myIntake, ...mySales, ...myCallLeads]
       .filter((l, i, all) => all.findIndex((x) => x.id === l.id) === i)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, 25)

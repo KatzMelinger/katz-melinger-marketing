@@ -1,7 +1,13 @@
 /**
- * Who gets credit for a lead (rules agreed 2026-10-03):
+ * Who gets credit for a lead:
  *   - Intake credit: the lead's Legal Assistant # 1 *before* signing.
- *   - Sales credit:  the lead's Attorney/Reviewer *before* signing.
+ *   - Sales credit (changed 2026-10-05): whoever took the lead's last
+ *     Scheduled Call before signing — the initials that start its Call Topic
+ *     ("AM - Call w/ …"), else its KM invitee. The Attorney/Reviewer is often
+ *     not the person on the call (Kenneth reviews hundreds of leads but took 2
+ *     of 2026's ~300 sales calls). Leads with no scheduled call fall back to
+ *     the Attorney/Reviewer before signing, below. A choice made on the review
+ *     page always wins.
  *
  * Airtable overwrites both at signing ("Moved to Matters DB") with the matter's
  * legal assistant and supervising attorney, so for a signed lead we use, in
@@ -23,9 +29,9 @@
 
 import type { SalesStaff } from "@/lib/sales-staff";
 
-import { outcomeOf, type IntakeRecord } from "./intakes";
+import { outcomeOf, type IntakeRecord, type ScheduledCall } from "./intakes";
 
-export type CreditSource = "airtable" | "snapshot" | "manual" | "notes";
+export type CreditSource = "airtable" | "snapshot" | "manual" | "notes" | "call";
 
 export type LeadCredit = {
   intake: SalesStaff | null;
@@ -118,6 +124,31 @@ export function intakeGuessFromNotes(lead: IntakeRecord, staff: SalesStaff[]): S
 }
 
 /* -------------------------------------------------------------------------- */
+/* Sales calls                                                                */
+/* -------------------------------------------------------------------------- */
+
+/** The staff member who took a Scheduled Call: topic initials, else invitee email. */
+export function callTaker(call: ScheduledCall, staff: SalesStaff[]): SalesStaff | null {
+  if (call.takerInitials) {
+    const byInitials = staff.find((s) => s.initials?.toUpperCase() === call.takerInitials);
+    if (byInitials) return byInitials;
+  }
+  for (const email of call.inviteeEmails) {
+    const byEmail = staff.find((s) => s.email && s.email.toLowerCase() === email.toLowerCase());
+    if (byEmail) return byEmail;
+  }
+  return null;
+}
+
+/** Sales calls on or before signing (all of them for an unsigned lead), with who took each. */
+export function salesCallsBeforeSigning(lead: IntakeRecord, staff: SalesStaff[]) {
+  const cutoff = lead.retainedAt ? `${lead.retainedAt.slice(0, 10)}T23:59:59Z` : null;
+  return lead.salesCalls
+    .filter((c) => !cutoff || !c.at || c.at <= cutoff)
+    .map((c) => ({ call: c, taker: callTaker(c, staff) }));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Resolution                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -126,14 +157,19 @@ export function creditFor(
   snapshot: StaffSnapshot | undefined,
   staff: SalesStaff[],
 ): LeadCredit {
+  const lastTaker = salesCallsBeforeSigning(lead, staff)
+    .map((c) => c.taker)
+    .filter((s): s is SalesStaff => s != null)
+    .at(-1) ?? null;
+
   if (outcomeOf(lead.status) !== "signed") {
     const intake = staffByFullName(lead.legalAssistant, staff);
-    const sales = staffByFullName(lead.reviewer, staff);
+    const sales = lastTaker ?? staffByFullName(lead.reviewer, staff);
     return {
       intake,
       intakeSource: intake ? "airtable" : null,
       sales,
-      salesSource: sales ? "airtable" : null,
+      salesSource: lastTaker ? "call" : sales ? "airtable" : null,
     };
   }
 
@@ -145,7 +181,9 @@ export function creditFor(
   return {
     intake,
     intakeSource: snapIntake ? snapshot!.source : intake ? "notes" : null,
-    sales: snapSales,
-    salesSource: snapSales ? snapshot!.source : null,
+    // Review-page choice, then the person on the last sales call, then the
+    // reviewer the snapshot saw before signing.
+    sales: manual ? snapSales : (lastTaker ?? snapSales),
+    salesSource: manual ? (snapSales ? "manual" : null) : lastTaker ? "call" : snapSales ? snapshot!.source : null,
   };
 }

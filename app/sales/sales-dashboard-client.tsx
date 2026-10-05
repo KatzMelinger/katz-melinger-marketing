@@ -224,9 +224,10 @@ export function SalesDashboardClient() {
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
                       <th className="py-2 font-normal">Name</th>
-                      <th className="py-2 text-right font-normal">Sales calls</th>
-                      <th className="py-2 text-right font-normal">Signed</th>
+                      <th className="py-2 text-right font-normal" title="Leads this person took a scheduled sales call on">Sales calls</th>
+                      <th className="py-2 text-right font-normal" title="Signed after this person took the last sales call">Signed</th>
                       <th className="py-2 text-right font-normal">Close</th>
+                      <th className="py-2 text-right font-normal" title="Signed with no scheduled sales call; credited as the reviewer">No call</th>
                       <th className="py-2 pl-3 font-normal">Quality signed</th>
                       <th className="py-2 text-right font-normal">Call score</th>
                     </tr>
@@ -240,8 +241,9 @@ export function SalesDashboardClient() {
                           </Link>
                         </td>
                         <td className="py-2 text-right tabular-nums">{fmtNum(r.sales_calls)}</td>
-                        <td className="py-2 text-right tabular-nums">{fmtNum(r.signed)}</td>
+                        <td className="py-2 text-right tabular-nums">{fmtNum(r.signed_after_call)}</td>
                         <td className="py-2 text-right tabular-nums">{fmtPct(r.close_rate)}</td>
+                        <td className="py-2 text-right tabular-nums text-slate-500">{fmtNum(r.signed_no_call)}</td>
                         <td className="py-2 pl-3">
                           <QualityBar {...r.quality} />
                         </td>
@@ -254,7 +256,8 @@ export function SalesDashboardClient() {
                 </table>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                Credit: Attorney/Reviewer before signing.
+                Sales calls go to whoever took the scheduled call (Call Topic initials); a signing to whoever took
+                the last call before it. Signed leads with no sales call are credited to the reviewer (&quot;No call&quot;).
                 {data.sales_unattributed_signed > 0
                   ? ` ${data.sales_unattributed_signed} signed leads unattributed until reviewed.`
                   : ""}
