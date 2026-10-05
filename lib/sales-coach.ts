@@ -28,9 +28,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const DEFAULT_MODEL = process.env.SALES_COACH_MODEL?.trim() || "claude-opus-5-5";
 
 // Opus 5.5 always thinks; effort is the depth control (its default is medium).
+// Low, measured 2026-10-05 against medium on 19 scored calls: same rubric and
+// same team-member name on all 19, overall score within ~4 points (one
+// outlier), ~3.8 points lower on average, ~35% fewer output tokens. Sonnet 5.5
+// was half the price again but ~12 points harsher with a rubric and a name
+// miss, so the model stays Opus.
 const EFFORT = (["low", "medium", "high", "max"] as const).find(
   (e) => e === process.env.SALES_COACH_EFFORT?.trim(),
-) ?? "medium";
+) ?? "low";
 
 // v3: the model picks the rubric from all three (v2 always loaded the
 // consultation rubric unless a caller forced one, so auto-scored intake calls
