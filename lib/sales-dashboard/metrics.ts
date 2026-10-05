@@ -17,7 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizePhone } from "@/lib/lead-response";
 import { loadSalesStaff, type SalesStaff } from "@/lib/sales-staff";
 
-import { creditFor, parseNoteEntries, type LeadCredit, type StaffSnapshot } from "./credit";
+import { creditFor, parseNoteEntries, salesCallsBeforeSigning, type LeadCredit, type StaffSnapshot } from "./credit";
 import { DASHBOARD_SINCE, listDashboardIntakes, outcomeOf, type IntakeRecord } from "./intakes";
 
 export type Range = { from: string; to: string }; // YYYY-MM-DD, inclusive
@@ -26,7 +26,13 @@ export type Filters = Range & { category?: string | null; source?: string | null
 export type SpeedBucket = "live" | "same_day" | "next_day" | "later" | "none";
 export const SPEED_BUCKETS: SpeedBucket[] = ["live", "same_day", "next_day", "later", "none"];
 
-export type Lead = IntakeRecord & { credit: LeadCredit; hasSnapshot: boolean; speed: SpeedBucket };
+export type Lead = IntakeRecord & {
+  credit: LeadCredit;
+  hasSnapshot: boolean;
+  speed: SpeedBucket;
+  /** Staff ids of everyone who took one of this lead's sales calls (before signing). */
+  callTakerIds: string[];
+};
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -111,6 +117,13 @@ export async function loadDashboardContext(supabase: SupabaseClient, tenantId: s
     credit: creditFor(l, snapshots.get(l.id), staff),
     hasSnapshot: snapshots.has(l.id),
     speed: speedOf(l, answered),
+    callTakerIds: [
+      ...new Set(
+        salesCallsBeforeSigning(l, staff)
+          .map((c) => c.taker?.id)
+          .filter((id): id is string => id != null),
+      ),
+    ],
   }));
   return { leads, staff, tenantId };
 }
@@ -269,30 +282,35 @@ export function buildDashboard(ctx: DashboardContext, f: Filters, scored: Scored
     .filter((r) => r.leads > 0 || r.scored_calls > 0)
     .sort((a, b) => b.leads - a.leads);
 
+  // Sales calls are credited to whoever took them; a signing to whoever took
+  // the last call before it (see credit.ts). Signings with no sales call fall
+  // back to the reviewer and are counted separately so the close rate only
+  // reflects calls the person actually took.
   const salesTeam = ctx.staff
     .filter((s) => s.roles.includes("sales") || leads.some((l) => l.credit.sales?.id === s.id))
     .map((s) => {
-      const mine = leads.filter((l) => l.credit.sales?.id === s.id);
-      const worked = mine.filter((l) => l.hadSalesCall || outcomeOf(l.status) === "signed");
-      const won = signedOf(mine);
+      const callLeads = leads.filter((l) => l.callTakerIds.includes(s.id));
+      const credited = signedOf(leads.filter((l) => l.credit.sales?.id === s.id));
+      const afterCall = credited.filter((l) => l.credit.salesSource === "call");
       const scores = scoresBy(s.id, true);
       return {
         staff_id: s.id,
         name: s.full_name,
-        sales_calls: worked.length,
-        signed: won.length,
-        close_rate: pct(won.length, worked.length),
+        sales_calls: callLeads.length,
+        signed_after_call: afterCall.length,
+        close_rate: pct(afterCall.length, callLeads.length),
+        signed_no_call: credited.length - afterCall.length,
         quality: {
-          High: won.filter((l) => l.quality === "High").length,
-          Medium: won.filter((l) => l.quality === "Medium").length,
-          Low: won.filter((l) => l.quality === "Low").length,
+          High: credited.filter((l) => l.quality === "High").length,
+          Medium: credited.filter((l) => l.quality === "Medium").length,
+          Low: credited.filter((l) => l.quality === "Low").length,
         },
         avg_call_score: avg(scores),
         scored_calls: scores.length,
       };
     })
-    .filter((r) => r.sales_calls > 0 || r.scored_calls > 0)
-    .sort((a, b) => b.signed - a.signed);
+    .filter((r) => r.sales_calls > 0 || r.signed_no_call > 0 || r.scored_calls > 0)
+    .sort((a, b) => b.signed_after_call + b.signed_no_call - (a.signed_after_call + a.signed_no_call));
 
   /* ---- sources & declines ---- */
   const sourceMap = new Map<string, Lead[]>();

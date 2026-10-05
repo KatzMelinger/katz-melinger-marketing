@@ -108,13 +108,18 @@ export function PersonClient({ staffId }: { staffId: string }) {
 
           {current === "sales" && data.sales ? (
             <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <Tile label="Sales calls" value={fmtNum(data.sales.sales_calls)} />
-                <Tile label="Signed" value={fmtNum(data.sales.signed)} sub={`${data.sales.high_quality_signed} high quality`} />
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <Tile label="Sales calls taken" value={fmtNum(data.sales.sales_calls)} sub="leads" />
+                <Tile label="Signed after their call" value={fmtNum(data.sales.signed)} />
                 <Tile
                   label="Close rate"
                   value={fmtPct(data.sales.close_rate)}
                   sub={`team ${fmtPct(data.sales.team_close_rate)}`}
+                />
+                <Tile
+                  label="Signed, no sales call"
+                  value={fmtNum(data.sales.signed_no_call)}
+                  sub={`credited as reviewer · ${data.sales.high_quality_signed} high quality in all`}
                 />
                 <Tile
                   label="Avg sales call score"
