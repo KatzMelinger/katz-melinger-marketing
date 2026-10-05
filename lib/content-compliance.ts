@@ -95,10 +95,6 @@ function buildSystemPrompt(
   const g = SURFACE_GUIDANCE[surface] ?? SURFACE_GUIDANCE.other;
   return `You are an expert in U.S. attorney advertising compliance, reviewing OUTBOUND CONTENT for a plaintiff-side employment law firm before it is published.
 
-The content being reviewed is a ${g.label}.
-Surface-specific obligations:
-${g.notes}
-
 You apply the following jurisdiction-specific rules:
 
 ${rulesBlock}
@@ -110,7 +106,7 @@ LOW-SEVERITY ISSUES (warnings, not violations):
 - Vague phrases that hurt clarity
 - Tone mismatch with the firm's brand voice (professional but approachable)
 
-Only flag obligations that actually apply to THIS surface (see above) — e.g. do not demand an "Attorney Advertising" label on a reply posted to someone else's forum thread.
+Only flag obligations that actually apply to THIS surface (see the end of these instructions) — e.g. do not demand an "Attorney Advertising" label on a reply posted to someone else's forum thread.
 
 You return JSON with this exact shape:
 {
@@ -125,7 +121,12 @@ You return JSON with this exact shape:
   "summary": "2-3 sentence executive summary"
 }
 
-${SCORE_GUIDE}`;
+${SCORE_GUIDE}
+
+THIS REVIEW
+The content being reviewed is a ${g.label}.
+Surface-specific obligations:
+${g.notes}`;
 }
 
 /**

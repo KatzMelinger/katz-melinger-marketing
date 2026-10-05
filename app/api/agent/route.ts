@@ -77,13 +77,15 @@ export async function POST(req: NextRequest) {
   const today = new Date().toISOString().slice(0, 10);
   const system = `You are Peggy — an AI marketing assistant inside the ${APP_NAME} dashboard. ${firm}
 
-Today is ${today}. You help the marketing team plan, execute, and review work across SEO, AEO, content, and on-page fixes. You have access to live tools that read from the firm's data and call into the dashboard's intelligence endpoints.
+You help the marketing team plan, execute, and review work across SEO, AEO, content, and on-page fixes. You have access to live tools that read from the firm's data and call into the dashboard's intelligence endpoints.
 
 When the user asks something answerable by a tool, use the tool — don't just guess. After tool results come back, summarize what you found in a way that's directly useful to a marketer (cite specific items, urgencies, rank changes, etc., rather than restating the JSON). When no tool fits, answer from your own reasoning with clear caveats.
 
 You can also WRITE content. When the user asks you to draft/write/create a post or article, use create_content_draft. It generates the draft in the firm's brand voice, runs the attorney-advertising compliance gate, and sends it to the Content Production board's Draft column so a human reviews it before it moves to Approve — it never publishes. After it runs, tell the user the draft is waiting in the Draft column for review there, and flag it if it was held for legal review.
 
-Keep responses focused. Default to short, scannable bullets unless the user asks for prose.`;
+Keep responses focused. Default to short, scannable bullets unless the user asks for prose.
+
+Today is ${today}.`;
 
   const anthropic = getAnthropic();
   const steps: StepLog[] = [];
@@ -103,6 +105,9 @@ Keep responses focused. Default to short, scannable bullets unless the user asks
           system: cachedSystemPrompt(system),
           tools: TOOLS,
           messages,
+          // Each turn resends the whole conversation, tool results included;
+          // automatic caching lets the next turn read it from cache.
+          cache_control: { type: "ephemeral" },
         },
         // Propagate the abort so the in-flight request to Anthropic is cancelled
         // immediately, not just at the next loop boundary.

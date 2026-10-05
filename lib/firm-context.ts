@@ -98,7 +98,14 @@ export async function getFirmContext(tenantId?: string): Promise<string> {
     // service-role here (may run in background content-gen) → scope by tenant.
     const [{ data: settingsRows }, { data: avatarRows }, sampleRes] = await Promise.all([
       supabase.from("brand_voice_settings").select("key, value").eq("tenant_id", tid),
-      supabase.from("brand_voice_avatars").select("*").eq("tenant_id", tid),
+      supabase
+        .from("brand_voice_avatars")
+        .select("*")
+        .eq("tenant_id", tid)
+        // Stable order keeps the firm context byte-identical, so prompts that
+        // include it can hit the prompt cache.
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
       // brand_voice_samples may not exist on instances that haven't run the
       // v2 migration. Tolerate the failure.
       supabase

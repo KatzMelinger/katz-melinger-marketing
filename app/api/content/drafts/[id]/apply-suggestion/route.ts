@@ -29,6 +29,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   CONTENT_LONG_FORM_MODEL,
+  cachedSystemPrompt,
   getAnthropic,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
@@ -150,7 +151,7 @@ Call the apply_edit tool with the complete updated body, a short summary of what
     const resp = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
       max_tokens: 8000,
-      system,
+      system: cachedSystemPrompt(system, CONTENT_LONG_FORM_MODEL),
       tools: [
         {
           name: "apply_edit",
