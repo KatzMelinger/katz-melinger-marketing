@@ -67,6 +67,19 @@ function hasValidCronBearer(req: NextRequest): boolean {
 }
 
 /**
+ * The CMS owners section reads the Intake & Sales dashboard server-to-server
+ * with SALES_DASHBOARD_API_KEY. Only GETs of the dashboard data are let
+ * through; the review page's POST still needs an admin session, and the route
+ * handlers check the key again (lib/sales-dashboard/access.ts).
+ */
+function hasValidDashboardKey(req: NextRequest, pathname: string): boolean {
+  const key = process.env.SALES_DASHBOARD_API_KEY?.trim();
+  if (!key || req.method !== "GET") return false;
+  if (pathname !== "/api/sales-dashboard" && !pathname.startsWith("/api/sales-dashboard/person/")) return false;
+  return req.headers.get("authorization") === `Bearer ${key}`;
+}
+
+/**
  * Is this a deployed environment rather than someone's laptop?
  *
  * VERCEL is set in every Vercel environment — production, preview and their
@@ -137,7 +150,11 @@ export async function proxy(req: NextRequest) {
   // API allowlist + cron bearer bypass — checked BEFORE the session lookup so
   // background callers (no cookie) and OAuth callbacks aren't rejected.
   if (isApi) {
-    if (matchesPrefix(pathname, PUBLIC_API_PATHS) || hasValidCronBearer(req)) {
+    if (
+      matchesPrefix(pathname, PUBLIC_API_PATHS) ||
+      hasValidCronBearer(req) ||
+      hasValidDashboardKey(req, pathname)
+    ) {
       return res;
     }
   }
