@@ -120,7 +120,10 @@ function sopsBlockText(): string {
   }).join("\n\n");
 }
 
-function buildSystemBlocks(rubrics: RubricSet): Anthropic.MessageCreateParamsNonStreaming["system"] {
+/** Cache lifetime for the shared prefix: 5m for one-off rescoring, 1h for the nightly batch. */
+export type CacheTtl = "5m" | "1h";
+
+function buildSystemBlocks(rubrics: RubricSet, ttl: CacheTtl): Anthropic.MessageCreateParamsNonStreaming["system"] {
   // The order matters for caching: put the largest, most stable content first
   // and mark it cacheable. Per-call inputs (transcript + rubric metadata) go
   // in the user message.
@@ -143,7 +146,6 @@ function buildSystemBlocks(rubrics: RubricSet): Anthropic.MessageCreateParamsNon
         "These are the standards you score against. Treat any deviation as a coachable moment, " +
         "but only count clear deviations from the spirit of the SOP — minor paraphrasing is fine.\n\n" +
         sopsBlockText(),
-      cache_control: { type: "ephemeral" },
     },
     {
       type: "text",
@@ -163,7 +165,6 @@ function buildSystemBlocks(rubrics: RubricSet): Anthropic.MessageCreateParamsNon
         RUBRIC_TYPES.map(
           (t) => `=== ${t.toUpperCase()} RUBRIC (rubric_type "${t}") ===\n${rubricBlockText(rubrics[t])}`,
         ).join("\n\n"),
-      cache_control: { type: "ephemeral" },
     },
     {
       type: "text",
@@ -192,7 +193,9 @@ function buildSystemBlocks(rubrics: RubricSet): Anthropic.MessageCreateParamsNon
         "- Spanish summaries should use neutral South/Central American Spanish, default to 'usted'.\n" +
         "- If the transcript is missing or the call is < 60 seconds and unintelligible, return overall_score=0 and explain in summary_manager.\n" +
         "- NEVER fabricate evidence. If you can't find a quote, say so in 'evidence'.",
-      cache_control: { type: "ephemeral" },
+      // One breakpoint at the end of the static prefix: every block above is
+      // identical for every call, so the whole ~25k tokens is one cache entry.
+      cache_control: { type: "ephemeral", ttl },
     },
   ];
 }
@@ -233,6 +236,7 @@ export function buildScoringParams(
   meta: CallMetadataForScoring,
   transcript: string,
   forced?: RubricType,
+  cacheTtl: CacheTtl = "5m",
 ): Anthropic.MessageCreateParamsNonStreaming {
   const userText = [
     "CALL METADATA",
@@ -253,9 +257,28 @@ export function buildScoringParams(
     model: DEFAULT_MODEL,
     max_tokens: 16000,
     output_config: { effort: EFFORT },
-    system: buildSystemBlocks(rubrics),
+    system: buildSystemBlocks(rubrics, cacheTtl),
     messages: [{ role: "user", content: userText }],
   };
+}
+
+/**
+ * Write the shared SOP + rubric prefix to the cache (1h) right before a
+ * nightly batch is submitted. Requests inside a batch run concurrently, so on
+ * their own most of them miss the cache and each pays to write it (the first
+ * backlog batch spent ~$24 of ~$51 on cache writes); warmed first, they can
+ * read it instead. Cache hits inside a batch are still best-effort, so the
+ * batch's recorded usage is the measure of whether this works.
+ * max_tokens: 0 runs prefill only and bills no output.
+ */
+export async function warmScoringCache(client: Anthropic, rubrics: RubricSet): Promise<Anthropic.Usage> {
+  const params = buildScoringParams(rubrics, { callId: "cache-warm" }, "", undefined, "1h");
+  const message = await client.messages.create({
+    ...params,
+    max_tokens: 0,
+    messages: [{ role: "user", content: "Cache warm-up; no call to score." }],
+  });
+  return message.usage;
 }
 
 export type ScoringAttempt =
