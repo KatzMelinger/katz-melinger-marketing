@@ -613,7 +613,7 @@ ${readabilityPromptBlock(
     // Scoped to blog/web content only — social has its own compliance layer
     // (lib/social-compliance.ts) and email isn't public-facing advertising.
     if (isWebContent) {
-      body = applyRequiredDisclaimers(body, { cta: await closingCtaFor() }).body;
+      body = applyRequiredDisclaimers(body, { cta: await closingCtaFor(), language: normalizeLanguage(o.language) }).body;
     }
 
     // The Per-Page Brief this generation ran under. Written to metadata.km_brief

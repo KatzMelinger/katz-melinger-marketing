@@ -558,7 +558,16 @@ async function approveContent(
   {
     const body = typeof draft.body === "string" ? draft.body : "";
 
-    const traps = await runTrapCheck(body, { tenantId });
+    const meta = (draft.metadata as { primaryKeyword?: unknown; km_brief?: { primaryKeyword?: unknown } } | null) ?? {};
+    const traps = await runTrapCheck(body, {
+      tenantId,
+      ctx: {
+        title: (draft.title as string | null) ?? null,
+        topic: (draft.topic as string | null) ?? null,
+        primaryKeyword: String(meta.primaryKeyword ?? meta.km_brief?.primaryKeyword ?? ""),
+        isWebPage: hasWebPage((draft.format as string | null) ?? "blog"),
+      },
+    });
     if (traps.failed) {
       // Same rule as a failed authority check: a checker that could not run is
       // not a clean bill of health.

@@ -1072,7 +1072,10 @@ export async function analyzeDraft(args: {
     // `failed` is kept rather than swallowed: a check that could not run has no
     // opinion, and folding its silence into the sync below would auto-resolve
     // the traps a previous run legitimately found.
-    runTrapCheck(body, { tenantId: tid })
+    runTrapCheck(body, {
+      tenantId: tid,
+      ctx: { title, topic, primaryKeyword: targetKeywords[0] ?? null, isWebPage: hasWebPage(format) },
+    })
       .then((r) => ({ ran: !r.failed, findings: r.findings }))
       .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
     // The knowledge-base fact checks (Diana 2.2) and named-act validation.

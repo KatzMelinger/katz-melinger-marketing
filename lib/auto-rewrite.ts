@@ -66,6 +66,9 @@ export type RewriteResult = {
 
 const OLD_OFFER_PHRASES = ["Free Confidential Case Review", "Free Case Evaluation", "free case review", "Schedule a Consultation"];
 
+/** Trap 7's shape: the firm named as the subject of what it does. */
+const THIRD_PERSON_RE = /\b(?:The firm|Katz Melinger PLLC|Katz Melinger)\s+(?:represents|handles|offers|helps|works|provides|focuses)\b/gi;
+
 /* ------------------------------------------------------------------------- */
 
 class Editor {
@@ -125,7 +128,29 @@ function sentenceAt(body: string, index: number): { text: string; start: number 
   return { text: body.slice(start, end).trim(), start };
 }
 
-/** Is this index inside a markdown link target, a URL, or a heading line? */
+/**
+ * Case and statute citations, which brand rules must never touch (Oct 6 spec,
+ * Task 6): a case name through its "(year)" ("Sabetay v. Sterling Drug, Inc.,
+ * 69 N.Y.2d 329 (1987)"), a bare reporter cite ("58 N.Y.2d 293") and a
+ * code cite ("N.J.S.A. 10:5-12.8", "N.Y.C. Admin. Code § 8-107").
+ */
+const CITATION_RES = [
+  /[A-Z][^\n()]{0,80}?\sv\.\s[^\n()]{0,160}?\([^()\n]*?\d{4}\)/g,
+  /\b\d+\s+(?:N\.Y\.(?:2d|3d|S\.(?:2d|3d)?)?|A\.D\.(?:2d|3d)?|N\.J\.(?:\s?Super\.)?|Misc\.\s?(?:2d|3d)?|F\.(?:2d|3d|4th)|F\.\s?Supp\.(?:\s?(?:2d|3d))?)\s*\d+/g,
+  /\b(?:N\.J\.S\.A\.|N\.Y\.C\.\s?Admin\.\s?Code|N\.J\.A\.C\.)[^\n,;)]{0,30}/g,
+];
+
+function insideCitation(line: string, offset: number): boolean {
+  for (const re of CITATION_RES) {
+    for (const m of line.matchAll(re)) {
+      const start = m.index ?? 0;
+      if (offset >= start && offset < start + m[0].length) return true;
+    }
+  }
+  return false;
+}
+
+/** Is this index inside a markdown link target, a URL, a citation, or a heading line? */
 function protectedAt(body: string, index: number): boolean {
   const lineStart = body.lastIndexOf("\n", index - 1) + 1;
   const line = body.slice(lineStart, body.indexOf("\n", index) === -1 ? body.length : body.indexOf("\n", index));
@@ -133,6 +158,7 @@ function protectedAt(body: string, index: number): boolean {
   // Keyword and metadata lines pasted into a body: "NYC"/"NY" are allowed in
   // keywords and titles (Appendix C), and these are not reader-facing prose.
   if (/^\s*[*_]*\s*(?:Target Keywords?|Keywords?|Primary Keyword|Secondary Keywords|Meta (?:Title|Description)|URL|Slug|Title)\s*:/i.test(line)) return true;
+  if (insideCitation(line, index - lineStart)) return true;
   const before = body.slice(Math.max(0, index - 200), index);
   if (/\]\([^)]*$/.test(before)) return true; // inside (url)
   if (/https?:\/\/\S*$/.test(before)) return true;
@@ -267,6 +293,22 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
       attorneyReview.push(`Unsourced statistic: "${f.excerpt.slice(0, 100)}"`);
     }
   }
+  // The firm in the third person (Oct 6 spec, trap 7): blogs and service
+  // pages say "we" and "our firm" (Diana, 2026-10-06).
+  for (const m of ed.body.matchAll(THIRD_PERSON_RE)) {
+    if (protectedAt(ed.body, m.index ?? 0)) continue;
+    const s = sentenceAt(ed.body, m.index ?? 0);
+    if (s.text && !modelEdits.some((e) => e.sentence === s.text)) {
+      modelEdits.push({
+        sentence: s.text,
+        instruction:
+          'Rewrite in the first person plural: "we" or "our firm" instead of naming Katz Melinger or "the firm" as the subject (for example "We represent" instead of "The firm represents"). Change nothing else.',
+        source: "brand rule",
+        ref: "first_person",
+        reason: 'Blogs and service pages say "we" and "our firm" (Diana, 2026-10-06).',
+      });
+    }
+  }
   for (const h of blockingAdHits(findAdTerms(ed.body))) {
     const s = sentenceAt(ed.body, h.index);
     if (s.text && !modelEdits.some((e) => e.sentence === s.text)) {
@@ -373,8 +415,11 @@ function removeFeeSections(ed: Editor) {
 /** New York / New Jersey spelled out, no em or en dashes, no hashtags. */
 function brandRules(ed: Editor) {
   const abbrev: [RegExp, string][] = [
-    [/\bN\.Y\.(?!\s?(?:\d|S\.|App|Misc|Civ|Crim))/g, "New York"],
-    [/\bN\.J\.(?!\s?(?:S\.A|Super|\d|Admin))/g, "New Jersey"],
+    // Never inside a citation (Oct 6 spec, Task 6): "N.Y.C. Admin. Code" had
+    // become "New YorkC. Admin. Code". Reporters and codes keep their
+    // abbreviations; insideCitation() below covers the rest of a case cite.
+    [/\bN\.Y\.(?!\s?(?:\d|S\.|C\.|C\b|App|Misc|Civ|Crim|Jud|Gen|Lab|Exec|Comp))/g, "New York"],
+    [/\bN\.J\.(?!\s?(?:S\.A|A\.C|R\.|Super|\d|Admin|Ct))/g, "New Jersey"],
     // Not in a postal address ("New York, NY 10017" is the office address).
     [/\bNY\b(?!C)(?!\s+\d{5})/g, "New York"],
     [/\bNJ\b(?!\s+\d{5})/g, "New Jersey"],
@@ -407,6 +452,28 @@ function brandRules(ed: Editor) {
       .replace(/\s*[–—]\s*/g, ", ")
       .replace(/,\s*,/g, ",");
     if (fixed === s.text || !ed.replace(s.text, fixed, "No dashes (brand rule).", "brand rule", "dash", s.start)) break;
+  }
+  // Hyphenated compounds (Oct 6 spec, trap 8): "at-will" becomes "at will".
+  // Lowercase words only, so statute numbers ("5-336"), phone numbers and
+  // official names ("Sarbanes-Oxley") are untouched; URLs, link targets,
+  // citations and headings are protected.
+  const CLOSED: Record<string, string> = { "e-mail": "email", "co-worker": "coworker", "co-workers": "coworkers" };
+  for (let guard = 0; guard < 300; guard++) {
+    const re = /(?<![\w@/.-])[a-z]+(?:-[a-z]+)+(?![\w-]|\.[a-z])/g;
+    let hit: RegExpExecArray | null = null;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(ed.body))) {
+      if (!protectedAt(ed.body, m.index)) {
+        hit = m;
+        break;
+      }
+    }
+    if (!hit) break;
+    const s = sentenceAt(ed.body, hit.index);
+    const fixed = s.text.replace(re, (x, off: number) =>
+      protectedAt(s.text, off) ? x : (CLOSED[x] ?? x.replace(/-/g, " ")),
+    );
+    if (fixed === s.text || !ed.replace(s.text, fixed, "No hyphens (brand rule).", "brand rule", "hyphen", s.start)) break;
   }
   // Hashtags in blog body text (not headings, not URLs).
   for (let guard = 0; guard < 50; guard++) {

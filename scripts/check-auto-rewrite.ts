@@ -171,6 +171,39 @@ async function main() {
   });
   expect(st.attorneyReview.some((a) => /196/.test(a)), "statute mismatch routed when no model");
 
+  // 6. Oct 6 spec: citations survive the state name rule (Task 6), hyphens
+  //    go (trap 8) except in links, citations and statute numbers, and a
+  //    third-person firm sentence is queued for a first-person rewrite (trap 7).
+  const oct6 = await autoRewrite({
+    body: [
+      "# Severance in NY",
+      "",
+      "See N.Y.C. Admin. Code § 8-107 and *Murphy v. American Home Products Corp.*, 58 N.Y.2d 293 (1983), and N.J.S.A. 10:5-12.8.",
+      "",
+      "You are an at-will employee under N.Y. law. Your co-worker may sign a non-compete.",
+      "",
+      "Read [the guide](https://katzmelinger.com/practice-areas/employment-law/wage-hour-claims-employees/) and GOL § 5-336.",
+      "",
+      "The firm represents employees in New York.",
+    ].join("\n"),
+    title: "Severance",
+    practiceArea: "employment",
+    cta,
+    statuteRows: STATUTE_TABLE,
+    noModel: true,
+  });
+  expect(oct6.body.includes("N.Y.C. Admin. Code § 8-107"), "N.Y.C. citation untouched");
+  expect(oct6.body.includes("58 N.Y.2d 293 (1983)"), "reporter citation untouched");
+  expect(oct6.body.includes("N.J.S.A. 10:5-12.8"), "N.J.S.A. citation untouched");
+  expect(oct6.body.includes("under New York law"), "N.Y. in prose still spelled out");
+  expect(oct6.body.includes("an at will employee"), "hyphen removed");
+  expect(oct6.body.includes("Your coworker may sign a non compete"), "closed form and non compete");
+  expect(oct6.body.includes("wage-hour-claims-employees/"), "link target keeps its hyphens");
+  expect(oct6.body.includes("§ 5-336"), "statute number keeps its hyphen");
+  expect(oct6.attorneyReview.some((a) => /we.*our firm/i.test(a)), "third person queued for a rewrite");
+  const oct6Again = await autoRewrite({ body: oct6.body, title: oct6.title, practiceArea: "employment", cta, statuteRows: STATUTE_TABLE, noModel: true });
+  expect(oct6Again.changes.length === 0, "second run changes nothing");
+
   console.log(failed ? `${failed} failed` : "all passed");
   process.exit(failed ? 1 : 0);
 }
