@@ -48,6 +48,15 @@ export type OperatingBrief = {
   hashtagRule: string;
   /** Where the general-information disclaimer lives (S3, item 4). */
   disclaimerUrl: string;
+  /**
+   * Numbers that must never be printed in content (Oct 6 spec, Task 1):
+   * 646-849-3352 is a ROTATING CallRail pool number. Matched digits-only, so
+   * every formatting of it counts. A draft or a compliance recommendation
+   * carrying one is a blocker.
+   */
+  neverInContentPhones: string[];
+  /** People a draft may name as firm attorneys (Trap 23). */
+  approvedPeople: string[];
 };
 
 // The offer phrase is a LOCKED string, not a paraphrase target: generation and
@@ -68,7 +77,46 @@ const DEFAULTS: OperatingBrief = {
   // would have produced three and the gate would have held it every time.
   hashtagRule: "4 to 5 relevant hashtags, the last of them #KatzMelinger",
   disclaimerUrl: "/disclaimer/",
+  neverInContentPhones: ["646-849-3352"],
+  approvedPeople: ["Kenneth Katz", "Kenneth J. Katz", "Nicole Grunfeld", "Adam Sackowitz"],
 };
+
+/**
+ * The offer phrase is a PHRASE ("Free Confidential Case Evaluation"), which
+ * the generator and the auto-fixer drop into "Call today at <phone> for a
+ * <phrase>." On 2026-10-06 the live setting held the whole CTA sentence
+ * ("Call today at 212 460 0047 for a Free Case Evaluation."), so the
+ * old-phrase fix replaced "Free Case Evaluation" with that sentence and
+ * nested the CTA inside itself (Bug 1, drafts 2c33509b and 7a4bc5e3). A value
+ * carrying a phone number, "call" or sentence punctuation is not a phrase:
+ * it is ignored and the default used.
+ */
+export function usableOfferPhrase(value: string | undefined): string | null {
+  const v = (value ?? "").trim();
+  if (!v || v.length > 60 || /\d|\bcall\b|[.!?:]/i.test(v)) return null;
+  return v;
+}
+
+function listSetting(value: string | undefined): string[] | null {
+  if (!value?.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String).map((x) => x.trim()).filter(Boolean);
+  } catch {
+    /* comma list */
+  }
+  return value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
+}
+
+/** Digits only, so "646 849 3352", "(646) 849-3352" and "6468493352" all match. */
+export function findNeverInContentPhones(text: string, phones: string[]): string[] {
+  const hits: string[] = [];
+  for (const m of text.matchAll(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g)) {
+    const digits = m[0].replace(/\D/g, "");
+    if (phones.some((p) => p.replace(/\D/g, "") === digits)) hits.push(m[0]);
+  }
+  return hits;
+}
 
 export async function getOperatingBrief(tenantId?: string): Promise<OperatingBrief> {
   const tid = tenantId ?? (await resolveTenantId());
@@ -86,6 +134,8 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
         "socialOfferPhraseEs",
         "socialHashtagRule",
         "socialDisclaimerUrl",
+        "neverInContentPhones",
+        "approvedPeople",
       ]);
     const settings: Record<string, string> = {};
     for (const row of data ?? []) {
@@ -97,10 +147,12 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
       socialPhone: settings.socialPhone || DEFAULTS.socialPhone,
       webPhone: settings.webPhone || DEFAULTS.webPhone,
       documentPhone: settings.documentPhone || DEFAULTS.documentPhone,
-      offerPhrase: settings.socialOfferPhrase || DEFAULTS.offerPhrase,
+      offerPhrase: usableOfferPhrase(settings.socialOfferPhrase) ?? DEFAULTS.offerPhrase,
       offerPhraseEs: settings.socialOfferPhraseEs || DEFAULTS.offerPhraseEs,
       hashtagRule: settings.socialHashtagRule || DEFAULTS.hashtagRule,
       disclaimerUrl: settings.socialDisclaimerUrl || DEFAULTS.disclaimerUrl,
+      neverInContentPhones: listSetting(settings.neverInContentPhones) ?? DEFAULTS.neverInContentPhones,
+      approvedPeople: listSetting(settings.approvedPeople) ?? DEFAULTS.approvedPeople,
     };
   } catch {
     return DEFAULTS;

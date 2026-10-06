@@ -159,6 +159,7 @@ async function approveContent(
       body: typeof draft.body === "string" ? draft.body : "",
       title: (draft.title as string | null) ?? null,
       cta: await closingCtaFor(tenantId),
+      neverInContentPhones: (await getOperatingBrief(tenantId)).neverInContentPhones,
     });
     if (missing.length > 0) {
       logEvent("approve_blocked_required_elements", { draftId: id, missing: missing.map((m) => m.code) });

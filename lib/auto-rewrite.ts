@@ -28,13 +28,7 @@
 import { getAnthropic, CONTENT_LONG_FORM_MODEL } from "./anthropic";
 import { findFeeLanguage } from "./fee-language";
 import { blockingAdHits, findAdTerms } from "./ad-terms";
-import {
-  applyRequiredDisclaimers,
-  ATTORNEY_ADVERTISING_LABEL,
-  closingCta,
-  GENERAL_LEGAL_DISCLAIMER,
-  RESULTS_DISCLAIMER,
-} from "./legal-disclaimers";
+import { normalizeEnding } from "./legal-disclaimers";
 import { BAD_SLUGS, internalLinks, MIN_INTERNAL_LINKS } from "./required-elements";
 import { linkRowFor } from "./link-map";
 import { bylineFor, expectedAuthor, firmFactFindings } from "./firm-fact-findings";
@@ -49,6 +43,8 @@ export type RewriteInput = {
   topic?: string | null;
   practiceArea?: string | null;
   format?: string | null;
+  /** metadata.language; "es" leaves the ending alone (no approved Spanish CTA yet). */
+  language?: string | null;
   cta: { phone: string; offerPhrase: string };
   /** Knowledge base findings from runLegalFactChecks (constant_mismatch etc.). */
   kbFindings?: NormalizedFinding[];
@@ -321,34 +317,22 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
     }
   }
 
-  // 10. Required elements last, so the CTA and disclaimer close the page.
-  const before = ed.body;
-  const req = applyRequiredDisclaimers(ed.body, { cta: input.cta });
-  if (req.inserted.length > 0) {
-    ed.body = req.body;
-    const legacy = before.match(/\*?This article provides general information and is not legal advice\.[^\n]*/);
-    for (const what of req.inserted) {
-      // The exact text now in the body, so the panel can highlight it and
-      // Undo can find it.
-      const text =
-        what === "label"
-          ? `*${ATTORNEY_ADVERTISING_LABEL}*`
-          : what === "cta"
-            ? `**${closingCta(input.cta.phone, input.cta.offerPhrase)}**`
-            : what === "general_disclaimer"
-              ? `*${GENERAL_LEGAL_DISCLAIMER}*`
-              : `*${RESULTS_DISCLAIMER}*`;
-      const replacesLegacy = what === "general_disclaimer" && !!legacy;
+  // 10. The ending last, so the CTA and disclaimer close the page. The
+  //     normalizer removes every CTA, disclaimer and label wherever it sits
+  //     and adds back exactly one of each (Oct 6 spec, Task 2).
+  const ending = normalizeEnding(ed.body, { cta: input.cta, language: input.language });
+  if (ending.changes.length > 0) {
+    ed.body = ending.body;
+    for (const c of ending.changes) {
+      const at = c.to ? ed.body.indexOf(c.to) : -1;
       ed.record({
-        where: what === "label" ? "Top" : "End",
-        from: replacesLegacy ? legacy![0] : "",
-        to: text,
-        reason: replacesLegacy
-          ? "Closing disclaimer updated to the locked wording (Kenneth, 2026-09-29)."
-          : "Required on every blog and web page (Sept 28 spec, section 6).",
+        where: c.where,
+        from: c.from,
+        to: c.to,
+        reason: c.reason,
         source: "required element",
-        source_ref: what,
-        anchor_before: ed.body.slice(Math.max(0, ed.body.indexOf(text) - 40), Math.max(0, ed.body.indexOf(text))),
+        source_ref: c.ref,
+        anchor_before: c.anchor ?? (at > 0 ? ed.body.slice(Math.max(0, at - 40), at) : ""),
       });
     }
   }

@@ -82,6 +82,7 @@ export async function fixDraft(args: {
     topic: (draft.topic as string | null) ?? null,
     practiceArea: (draft.practice_area as string | null) ?? null,
     format,
+    language: ((draft.metadata as { language?: unknown } | null)?.language as string | undefined) ?? null,
     cta,
     kbFindings,
     statuteRows: statutes.ok ? statutes.rows : [],

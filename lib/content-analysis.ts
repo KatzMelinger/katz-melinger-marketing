@@ -52,6 +52,8 @@ import { runTrapCheck } from "./trap-gate";
 import { runKbChecks } from "./legal-kb";
 import { runStatuteCheck } from "./legal-statute-check";
 import { firmFactFindings } from "./firm-fact-findings";
+import { requiredElementFindings } from "./required-elements";
+import { getOperatingBrief } from "./social-operating-brief";
 
 /**
  * Legal findings produced by the authority loop (runLegalCheck), as opposed to
@@ -1091,10 +1093,22 @@ export async function analyzeDraft(args: {
     runStatuteCheck(body, { tenantId: tid })
       .then((r) => ({ ran: !r.failed, findings: r.findings }))
       .catch(() => ({ ran: false, findings: [] as NormalizedFinding[] })),
-    Promise.resolve({
-      ran: true,
-      findings: firmFactFindings(body, { title, topic, practiceArea: args.practiceArea ?? null }),
-    }),
+    // Firm facts, plus the required-elements check on web pages so the panel
+    // reads "Not ready to publish" for what Approve will refuse (Oct 6 spec,
+    // Task 2) instead of the two disagreeing.
+    (async () => {
+      const firm = firmFactFindings(body, { title, topic, practiceArea: args.practiceArea ?? null });
+      if (!hasWebPage(format)) return { ran: true, findings: firm };
+      const brief = await getOperatingBrief(tid).catch(() => null);
+      if (!brief) return { ran: true, findings: firm };
+      const required = requiredElementFindings({
+        body,
+        title,
+        cta: { phone: brief.webPhone, offerPhrase: brief.offerPhrase },
+        neverInContentPhones: brief.neverInContentPhones,
+      });
+      return { ran: true, findings: [...firm, ...required] };
+    })(),
     // D3 (spec 2.9) — confirm internal links against the Cluster Map. Only
     // formats with a real page need this (a social caption has nothing to
     // link a reader onward to within the same review).

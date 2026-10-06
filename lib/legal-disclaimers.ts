@@ -276,20 +276,6 @@ export function hasClosingCta(body: string, phone: string, offerPhrase: string):
   return t.includes(offerPhrase.toLowerCase()) && t.includes(phone.toLowerCase());
 }
 
-const CLOSING_PARAGRAPHS = [
-  GENERAL_LEGAL_DISCLAIMER_TEXT,
-  ...LEGACY_GENERAL_DISCLAIMERS,
-  RESULTS_DISCLAIMER,
-].map(plain);
-
-/** Split off the closing disclaimer paragraphs so the ending can be rebuilt in order. */
-function stripClosingParagraphs(body: string): string {
-  return body
-    .split(/\n{2,}/)
-    .filter((p) => !CLOSING_PARAGRAPHS.includes(plain(p)))
-    .join("\n\n");
-}
-
 export function hasResultsDisclaimer(body: string): boolean {
   const t = body.toLowerCase();
   return t.includes("prior results do not guarantee") && t.includes("results vary depending on your particular facts");
@@ -310,55 +296,222 @@ export function looksLikeCaseResult(body: string): boolean {
   return RESULT_SIGNAL.test(body);
 }
 
+
+/* ------------------------------------------------------------------------- */
+/* The ending normalizer (Oct 6 spec, Task 2)                                */
+/* ------------------------------------------------------------------------- */
+
+/** "Call today at" anywhere in a line. */
+const CTA_START = /\bcall\s+(?:us\s+)?today\s+at\b/i;
+/** A short line that is an older CTA: "Call (212) 460-0047 for a ...". */
+const OLD_CTA_LINE = /^call\b[^.]{0,40}\(?\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}/;
+
 /**
- * Auto-insert the fixed 1.4 elements into a freshly generated (or redrafted)
- * legal blog/service-page body — the label at the top, the general
- * disclaimer near the end always, and the results disclaimer additionally
- * when the content discusses a result. Idempotent: a body that already
- * carries an element is left untouched for that element, so calling this
- * twice (generation, then a later redraft of the same content) never
- * duplicates anything.
+ * Is this (plain-text) line a closing disclaimer? The locked one, Diana's
+ * reworded one, the site footer pasted into a body, or a short "not legal
+ * advice" paragraph. Long prose that merely mentions legal advice is not.
+ */
+function isDisclaimerLine(p: string): boolean {
+  if (!p) return false;
+  if (p.includes("general informational purposes only")) return true;
+  if (LEGACY_GENERAL_DISCLAIMERS.map(plain).includes(p)) return true;
+  return (
+    p.length < 400 &&
+    /\b(?:is not|does not constitute|not intended as|should not be construed (?:to be|as)) (?:formal )?legal advice\b/.test(p) &&
+    /\b(?:informational|general information|attorney client relationship)\b/.test(p)
+  );
+}
+
+/** An emphasised label glued anywhere in a line ("...PLLC*Attorney Advertising*"). */
+const LABEL_TOKEN = /\*{1,2}\s*Attorney Advertising\.?\s*\*{1,2}/gi;
+
+export type EndingChange = {
+  where: "Top" | "End" | "Body";
+  from: string;
+  to: string;
+  reason: string;
+  ref: "label" | "cta" | "general_disclaimer" | "results_disclaimer";
+  /** Text just before the change in the NEW body, so Undo can put a deletion back. */
+  anchor?: string;
+};
+
+/**
+ * Remove the CTA from one line and keep any other sentence on it. Returns ""
+ * when nothing else was on the line.
+ */
+function stripCtaFromLine(line: string): string {
+  const p = plain(line);
+  if (OLD_CTA_LINE.test(p) && p.length < 200) return "";
+  const first = line.search(CTA_START);
+  if (first === -1) return line;
+  // The CTA can be nested inside itself ("Call today at X for a Call today
+  // at Y for a ..."), so it runs from the first "Call today at" to the end of
+  // the sentence after the LAST one.
+  let last = first;
+  for (const m of line.matchAll(new RegExp(CTA_START.source, "gi"))) last = m.index ?? last;
+  const tail = line.slice(last);
+  const stop = tail.match(/[.!?]+(?=\s|\*|_|$)/);
+  const end = stop?.index === undefined ? line.length : last + stop.index + stop[0].length;
+  const kept = (line.slice(0, first).trimEnd() + line.slice(end))
+    .replace(/(\*\*|__)\s*\1/g, "")
+    .trimEnd();
+  return plain(kept) ? kept : "";
+}
+
+/**
+ * Rebuild a blog or web page so it carries exactly one of each fixed element:
  *
- * Scope boundary (2.12's own): this only ever touches these fixed
- * elements. It never removes or judges anything else — an interpretive legal
- * problem still routes to a human via the legal-accuracy layer, same as always.
+ *   *Attorney Advertising*          the first line
+ *   ...body...
+ *   **Call today at ... .**         the closing CTA (when `cta` is passed)
+ *   *<the locked disclaimer>*       Kenneth's 2026-09-29 wording, verbatim
+ *   *<results disclaimer>*          only when the page discusses a result
  *
- * The ending is rebuilt in a fixed order — CTA, then the closing disclaimer,
- * then the results line — so a later call never lands the CTA below the
- * disclaimer. A legacy (pre 2026-09-29) disclaimer is replaced, not doubled.
- * Pass `cta` to insert the locked closing CTA (Sept 28 spec, section 6).
+ * Idempotent: every CTA, disclaimer and label is removed wherever it sits and
+ * the canonical ones are added back, so a second run changes nothing. It
+ * replaced an insert-if-missing version that judged "missing" by whether the
+ * offer phrase and phone appeared anywhere, so a CTA in other wording
+ * survived and a second one was appended (8 drafts carried two CTAs and 6
+ * two disclaimers on 2026-10-02).
+ *
+ * It never deletes body prose: a paragraph that ends with a CTA keeps its
+ * other sentences, and only the CTA sentence goes. Spanish pages are left
+ * alone (`language: "es"`): there is no approved Spanish CTA or disclaimer
+ * yet, and an English one on a Spanish page is wrong.
+ *
+ * Returns the net changes, so callers that keep a "Changes made" log can
+ * record them; a canonical line that was already present is not a change.
+ */
+export function normalizeEnding(
+  body: string,
+  opts: { cta?: { phone: string; offerPhrase: string }; language?: string | null } = {},
+): { body: string; inserted: string[]; changes: EndingChange[] } {
+  if (!body?.trim() || (opts.language ?? "").toLowerCase().startsWith("es")) {
+    return { body, inserted: [], changes: [] };
+  }
+  const label = `*${ATTORNEY_ADVERTISING_LABEL}*`;
+  const ctaLine = opts.cta ? `**${closingCta(opts.cta.phone, opts.cta.offerPhrase)}**` : null;
+  const disclaimerLine = `*${GENERAL_LEGAL_DISCLAIMER}*`;
+  const resultsLine = `*${RESULTS_DISCLAIMER}*`;
+  const needsResults = looksLikeCaseResult(body) || hasResultsDisclaimer(body);
+
+  const removed: Omit<EndingChange, "reason">[] = [];
+  const kept: string[] = [];
+  const anchorNow = () => {
+    const k = kept.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+    return (k ? k : label).slice(-40) + "\n\n";
+  };
+  for (const raw of body.split("\n")) {
+    let line = raw;
+    const p = plain(line);
+    if (p === "attorney advertising" || p === "attorney advertising.") {
+      removed.push({ where: "Body", from: raw, to: "", ref: "label", anchor: anchorNow() });
+      continue;
+    }
+    if (new RegExp(LABEL_TOKEN.source, "i").test(line)) {
+      line = line.replace(LABEL_TOKEN, "").trimEnd();
+      removed.push({ where: "Body", from: raw, to: line, ref: "label" });
+      if (!plain(line)) continue;
+    }
+    if (isDisclaimerLine(plain(line))) {
+      removed.push({ where: "End", from: raw, to: "", ref: "general_disclaimer", anchor: anchorNow() });
+      continue;
+    }
+    if (plain(line) === plain(RESULTS_DISCLAIMER)) {
+      removed.push({ where: "End", from: raw, to: "", ref: "results_disclaimer", anchor: anchorNow() });
+      continue;
+    }
+    const noCta = stripCtaFromLine(line);
+    if (noCta !== line) {
+      removed.push({ where: "End", from: raw, to: noCta, ref: "cta", anchor: noCta ? undefined : anchorNow() });
+      if (!noCta) continue;
+      line = noCta;
+    }
+    kept.push(line);
+  }
+
+  const core = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  const parts = [label, core];
+  if (ctaLine) parts.push(ctaLine);
+  parts.push(disclaimerLine);
+  if (needsResults) parts.push(resultsLine);
+  const next = parts.join("\n\n") + (body.endsWith("\n") ? "\n" : "");
+
+  if (next === body) return { body, inserted: [], changes: [] };
+
+  const lines = body.split("\n").map((l) => l.trim());
+  const count = (line: string) => lines.filter((l) => l === line).length;
+  const canonical = new Set([label, ctaLine, disclaimerLine, resultsLine].filter(Boolean) as string[]);
+  const reasonFor: Record<EndingChange["ref"], string> = {
+    cta: "Only one closing CTA, in the locked wording, at the end (Oct 6 spec, Task 2).",
+    label: '"Attorney Advertising" appears once, as the first line.',
+    general_disclaimer: "Only the locked closing disclaimer, once, at the end (Kenneth, 2026-09-29).",
+    results_disclaimer: "The results disclaimer appears once, at the end.",
+  };
+  const changes: EndingChange[] = [];
+  const seenCanonical = new Set<string>();
+  for (const r of removed) {
+    // The first copy of a canonical line is moved, not changed; a second copy
+    // is a duplicate and is reported as removed.
+    const t = r.from.trim();
+    if (canonical.has(t) && !r.to && !seenCanonical.has(t)) {
+      seenCanonical.add(t);
+      continue;
+    }
+    changes.push({ ...r, reason: reasonFor[r.ref] });
+  }
+  const inserted: string[] = [];
+  const add = (ref: EndingChange["ref"], line: string | null, where: EndingChange["where"], reason: string) => {
+    if (!line || count(line) > 0) return;
+    inserted.push(ref);
+    changes.push({ where, from: "", to: line, reason, ref });
+  };
+  add("label", label, "Top", "Required on every blog and web page (Sept 28 spec, section 6).");
+  add("cta", ctaLine, "End", "Required on every blog and web page (Sept 28 spec, section 6).");
+  add("general_disclaimer", disclaimerLine, "End", "Required on every blog and web page (Kenneth, 2026-09-29).");
+  if (needsResults) add("results_disclaimer", resultsLine, "End", "The page discusses a result.");
+  return { body: next, inserted, changes };
+}
+
+/**
+ * The generation and edit callers' entry point: the same normalizer without
+ * the change list (a freshly generated body has nothing to review against).
  */
 export function applyRequiredDisclaimers(
   body: string,
-  opts: { cta?: { phone: string; offerPhrase: string } } = {},
+  opts: { cta?: { phone: string; offerPhrase: string }; language?: string | null } = {},
 ): { body: string; inserted: string[] } {
-  if (!body?.trim()) return { body, inserted: [] };
-  const inserted: string[] = [];
-  let next = body;
-
-  if (!hasAttorneyAdvertisingLabel(next)) {
-    next = `*${ATTORNEY_ADVERTISING_LABEL}*\n\n${next}`;
-    inserted.push("label");
-  }
-
-  const hadCurrentDisclaimer = hasGeneralLegalDisclaimer(next);
-  const needsResults = looksLikeCaseResult(next);
-  const hadResults = hasResultsDisclaimer(next);
-  next = stripClosingParagraphs(next).trimEnd();
-
-  if (opts.cta && !hasClosingCta(next, opts.cta.phone, opts.cta.offerPhrase)) {
-    next = `${next}\n\n**${closingCta(opts.cta.phone, opts.cta.offerPhrase)}**`;
-    inserted.push("cta");
-  }
-  next = `${next}\n\n*${GENERAL_LEGAL_DISCLAIMER}*`;
-  if (!hadCurrentDisclaimer) inserted.push("general_disclaimer");
-  if (needsResults || hadResults) {
-    next = `${next}\n\n*${RESULTS_DISCLAIMER}*`;
-    if (!hadResults) inserted.push("results_disclaimer");
-  }
-
-  // Nothing new to add: hand back the body untouched rather than a
-  // reformatted copy, so an idempotent call never shows up as an edit.
-  if (inserted.length === 0) return { body, inserted };
-  return { body: next, inserted };
+  const r = normalizeEnding(body, opts);
+  return { body: r.body, inserted: r.inserted };
 }
+
+/** How many closing CTAs the body carries (the required-elements check wants one). */
+export function countClosingCtas(body: string): number {
+  let n = 0;
+  for (const line of body.split("\n")) {
+    const p = plain(line);
+    if (OLD_CTA_LINE.test(p) && p.length < 200) n++;
+    else n += (line.match(new RegExp(CTA_START.source, "gi")) ?? []).length;
+  }
+  return n;
+}
+
+/** How many closing-disclaimer lines the body carries. */
+export function countDisclaimers(body: string): number {
+  return body.split("\n").filter((l) => isDisclaimerLine(plain(l))).length;
+}
+
+/** The last paragraph, skipping the results line that may follow the disclaimer. */
+export function closingParagraph(body: string): string {
+  const paras = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  while (paras.length && plain(paras[paras.length - 1]) === plain(RESULTS_DISCLAIMER)) paras.pop();
+  return paras[paras.length - 1] ?? "";
+}
+
+/** The first non-empty line. */
+export function firstLine(body: string): string {
+  return body.split("\n").find((l) => l.trim())?.trim() ?? "";
+}
+
+/** Markdown and link syntax removed, whitespace collapsed, lowercased. */
+export { plain as plainText };

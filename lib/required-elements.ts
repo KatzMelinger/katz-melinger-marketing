@@ -11,19 +11,34 @@
  * automatically.
  */
 import {
+  ATTORNEY_ADVERTISING_LABEL,
+  closingCta,
+  closingParagraph,
+  countClosingCtas,
+  countDisclaimers,
+  firstLine,
+  GENERAL_LEGAL_DISCLAIMER,
   hasAttorneyAdvertisingLabel,
   hasClosingCta,
   hasDisclaimerLink,
   hasGeneralLegalDisclaimer,
+  plainText,
 } from "./legal-disclaimers";
+import { findNeverInContentPhones } from "./social-operating-brief";
+import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
 
 export type MissingElement = {
   code:
     | "title"
     | "h1"
     | "label"
+    | "label_position"
     | "cta"
+    | "cta_count"
     | "disclaimer"
+    | "disclaimer_count"
+    | "disclaimer_position"
+    | "retired_phone"
     | "disclaimer_link"
     | "internal_links"
     | "placeholder"
@@ -86,6 +101,8 @@ export function checkRequiredElements(args: {
   body: string;
   title: string | null;
   cta: { phone: string; offerPhrase: string };
+  /** Numbers never printed in content (brand settings); any one is a blocker. */
+  neverInContentPhones?: string[];
 }): MissingElement[] {
   const { body, title, cta } = args;
   const missing: MissingElement[] = [];
@@ -95,20 +112,53 @@ export function checkRequiredElements(args: {
     missing.push({ code: "title", label: "The draft has no title", autoFixable: false });
   }
   if (!hasH1(body)) missing.push({ code: "h1", label: "The body has no H1 heading", autoFixable: false });
+  // Oct 6 spec, Task 2: present is not enough. One of each, in its place —
+  // drafts carried two CTAs and two disclaimers and still read "ready".
   if (!hasAttorneyAdvertisingLabel(body)) {
     missing.push({ code: "label", label: '"Attorney Advertising" label is missing', autoFixable: true });
+  } else if (plainText(firstLine(body)) !== ATTORNEY_ADVERTISING_LABEL.toLowerCase()) {
+    missing.push({ code: "label_position", label: '"Attorney Advertising" must be the first line', autoFixable: true });
   }
+  const ctaCount = countClosingCtas(body);
+  const ctaLine = `**${closingCta(cta.phone, cta.offerPhrase)}**`;
   if (!hasClosingCta(body, cta.phone, cta.offerPhrase)) {
     missing.push({
       code: "cta",
       label: `Closing CTA is missing ("Call today at ${cta.phone} for a ${cta.offerPhrase}.")`,
       autoFixable: true,
     });
+  } else if (ctaCount !== 1 || !body.split("\n").some((l) => l.trim() === ctaLine)) {
+    missing.push({
+      code: "cta_count",
+      label:
+        ctaCount > 1
+          ? `The body has ${ctaCount} closing CTAs; it must have exactly one, in the locked wording`
+          : "The closing CTA is not in the locked wording",
+      autoFixable: true,
+    });
   }
+  const disclaimers = countDisclaimers(body);
   if (!hasGeneralLegalDisclaimer(body)) {
     missing.push({ code: "disclaimer", label: "The closing disclaimer is missing or reworded", autoFixable: true });
   } else if (!hasDisclaimerLink(body)) {
     missing.push({ code: "disclaimer_link", label: '"Disclaimer" is not linked to /disclaimer/', autoFixable: true });
+  } else if (disclaimers > 1) {
+    missing.push({
+      code: "disclaimer_count",
+      label: `The body has ${disclaimers} disclaimers; only the locked one may appear, once`,
+      autoFixable: true,
+    });
+  } else if (closingParagraph(body) !== `*${GENERAL_LEGAL_DISCLAIMER}*`) {
+    missing.push({ code: "disclaimer_position", label: "The locked disclaimer must be the last paragraph", autoFixable: true });
+  }
+  const retired = findNeverInContentPhones(body, args.neverInContentPhones ?? []);
+  if (retired.length) {
+    missing.push({
+      code: "retired_phone",
+      label: `The body prints ${retired[0]}, a number that must never appear in content`,
+      autoFixable: false,
+      excerpt: retired[0],
+    });
   }
   const links = internalLinks(body);
   if (links.length < MIN_INTERNAL_LINKS) {
@@ -137,4 +187,29 @@ export function checkRequiredElements(args: {
     });
   }
   return missing;
+}
+
+/**
+ * The same check as findings, so Run analysis shows what Approve will hold on
+ * ("Not ready to publish" for a draft with two CTAs, Oct 6 spec Task 2).
+ * Every item is critical: each one fails the approve route. Placeholders and
+ * schema code are left to the traps that already report them.
+ */
+export function requiredElementFindings(args: Parameters<typeof checkRequiredElements>[0]): NormalizedFinding[] {
+  return checkRequiredElements(args)
+    .filter((m) => m.code !== "placeholder" && m.code !== "schema_in_body")
+    .map((m) => {
+      const ruleId = `required:${m.code}`;
+      const excerpt = m.excerpt ?? m.label;
+      return {
+        fingerprint: fingerprintFinding("compliance", ruleId, excerpt),
+        source: "compliance" as const,
+        ruleId,
+        severity: "critical" as const,
+        title: m.label,
+        detail: "Required on every blog and web page before it can be approved.",
+        excerpt,
+        fix: m.autoFixable ? 'Use "Fix known errors": it rebuilds the label, CTA and disclaimer.' : null,
+      };
+    });
 }
