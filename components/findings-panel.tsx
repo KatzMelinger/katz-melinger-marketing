@@ -31,6 +31,7 @@ import {
   type StoredFinding,
 } from "@/lib/content-findings";
 import {
+  CAPPED_ENGINES,
   countBlockers,
   groupByRule,
   hasKnownFix,
@@ -103,6 +104,8 @@ export function FindingsPanel({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // When the checks last ran, and whether the body changed since (Task 21).
+  const [checked, setChecked] = useState<{ at: string | null; stale: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,6 +115,7 @@ export function FindingsPanel({
       if (res.ok) {
         setFindings(data.findings ?? []);
         setOverrides(data.severityOverrides ?? {});
+        setChecked(data.checked ?? null);
       }
     } finally {
       setLoading(false);
@@ -153,7 +157,15 @@ export function FindingsPanel({
   };
 
   const open = useMemo(() => findings.filter(isOpen), [findings]);
-  const closed = useMemo(() => findings.filter((f) => !isOpen(f)), [findings]);
+  // Task 25: closed findings older than 30 days are history nobody reads;
+  // they stay in the table, they just are not loaded into the panel.
+  const closed = useMemo(() => {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return findings.filter((f) => !isOpen(f) && Date.parse(f.resolvedAt ?? f.lastSeenAt ?? "") >= cutoff);
+  }, [findings]);
+  // Task 25: the style engines (readability, SEO, AEO, CASH, brand voice,
+  // linkability) never block, so they are not counted as review items.
+  const reviewOpen = useMemo(() => open.filter((f) => !CAPPED_ENGINES.has(f.source)), [open]);
   const engines = useMemo(() => summarizeByEngine(findings, overrides), [findings, overrides]);
   const blockers = useMemo(() => countBlockers(findings, overrides), [findings, overrides]);
 
@@ -248,8 +260,16 @@ export function FindingsPanel({
             <>Ready to publish · no blockers</>
           )}
           <span className="ml-1.5 font-normal opacity-70">
-            {open.length} open finding{open.length === 1 ? "" : "s"} in total
+            {reviewOpen.length} to review
+            {open.length > reviewOpen.length ? ` · ${open.length - reviewOpen.length} style suggestions` : ""}
           </span>
+          {checked?.at && (
+            <div className="mt-0.5 text-[10px] font-normal opacity-70">
+              {checked.stale
+                ? `The draft changed after the checks ran (${new Date(checked.at).toLocaleString()}); they are re-running.`
+                : `Checked against the version saved at ${new Date(checked.at).toLocaleString()}.`}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2.5 text-[10px]">
           <label className="flex cursor-pointer items-center gap-1">

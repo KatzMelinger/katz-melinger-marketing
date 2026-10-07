@@ -4,14 +4,16 @@
  * DELETE /api/content/drafts/[id]   — remove
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getTenantClient } from "@/lib/tenant-db";
 import { findTimeSensitiveFacts } from "@/lib/freshness-check";
 import { classifyFreshness } from "@/lib/freshness-classify";
 import { getCurrentFacts } from "@/lib/current-facts-store";
 import { isDraftStatus, isPipelineStatus } from "@/lib/content-status";
 import { gatedStatusMessage, isGatedStatus } from "@/lib/content-transitions";
-import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
+import { analysisStaleness, fingerprintBody, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
+import { analyzeDraft } from "@/lib/content-analysis";
+import { getReadabilityConfig } from "@/lib/readability-config-store";
 import { clearTextCertifications, dequeueWp, mergeClientMetadata } from "@/lib/draft-certifications";
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { getCurrentUser } from "@/lib/supabase-route";
@@ -50,12 +52,48 @@ export async function GET(
       )
     : null;
 
+  // Oct 6 spec, Task 21: a draft whose text changed since its checks ran
+  // (a script, Fix known errors, Undo, another editor) is re-checked when it
+  // is opened, so nobody reviews findings about a version that is gone. Only
+  // for an EDITED body: an engine change or an unfingerprinted score would
+  // re-run the whole library on first open. One run per body version.
+  const draftBody = typeof (data as { body?: string }).body === "string" ? (data as { body: string }).body : "";
+  if (staleness?.reason === "edited" && draftBody.trim()) {
+    const key = `${id}:${fingerprintBody(draftBody)}`;
+    const last = REANALYSIS_REQUESTED.get(key) ?? 0;
+    if (Date.now() - last > 15 * 60_000) {
+      REANALYSIS_REQUESTED.set(key, Date.now());
+      const d = data as Record<string, unknown>;
+      after(async () => {
+        try {
+          await analyzeDraft({
+            draftId: id,
+            body: draftBody,
+            targetKeywords: (d.seo_brief as { targetKeywords?: string[] } | null)?.targetKeywords ?? [],
+            title: (d.title as string | null) ?? null,
+            topic: (d.topic as string | null) ?? null,
+            format: (d.format as string | null) ?? null,
+            template: (d.template as string | null) ?? null,
+            practiceArea: (d.practice_area as string | null) ?? null,
+            readabilityConfig: await getReadabilityConfig(tenantId),
+            notify: false,
+          });
+        } catch (e) {
+          console.warn("[drafts] re-check on open failed:", e);
+        }
+      });
+    }
+  }
+
   return NextResponse.json({
     draft: data,
     latest_analysis: latest,
     analysis_staleness: staleness,
   });
 }
+
+/** draftId:bodyHash -> when a re-check was last requested (per server instance). */
+const REANALYSIS_REQUESTED = new Map<string, number>();
 
 export async function PATCH(
   req: NextRequest,
