@@ -939,6 +939,19 @@ export default function DraftsPage() {
                     // review-and-accept step, never a second divergent path.
                     onFixAll={applyFindingTexts}
                     onApplyFindings={applyFindingTexts}
+                    onDraftChanged={() => {
+                      fetch(`/api/content/drafts/${selectedDraft.id}`, { cache: "no-store" })
+                        .then((r) => r.json())
+                        .then((data) => {
+                          setSelectedDraft(data.draft);
+                          setAnalysis(data.latest_analysis);
+                          setStaleness(data.analysis_staleness ?? null);
+                          setEditTitle(data.draft?.title ?? "");
+                          setEditBody(data.draft?.body ?? "");
+                          setFindingsNonce((n) => n + 1);
+                        })
+                        .catch(() => {});
+                    }}
                   />
                 </div>
               </DashCard>

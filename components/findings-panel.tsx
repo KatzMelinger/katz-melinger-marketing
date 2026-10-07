@@ -71,6 +71,7 @@ export function FindingsPanel({
   onApplyFindings,
   sourceFilter,
   onCounts,
+  onDraftChanged,
 }: {
   draftId: string;
   nonce?: number;
@@ -94,6 +95,8 @@ export function FindingsPanel({
    *  tab (if any) is actually visible — this component is meant to stay
    *  mounted so the count is right before a reviewer ever clicks in. */
   onCounts?: (counts: { total: number; legal: number; critical: number }) => void;
+  /** Called after Apply fix changes the stored body, so the editor reloads it. */
+  onDraftChanged?: () => void;
 }) {
   const [findings, setFindings] = useState<StoredFinding[]>([]);
   const [overrides, setOverrides] = useState<SeverityOverrides>({});
@@ -412,7 +415,17 @@ export function FindingsPanel({
                                     this one had to resolve it by hand. Only
                                     drawn when there is a suggested fix to send
                                     and somewhere to send it. */}
-                                {onFixAll && hasKnownFix(f) && (
+                                {f.source === "legal" && (
+                                  <LegalFixControls
+                                    draftId={draftId}
+                                    finding={f}
+                                    onDone={(changedBody) => {
+                                      void load();
+                                      if (changedBody) onDraftChanged?.();
+                                    }}
+                                  />
+                                )}
+                                {onFixAll && f.source !== "legal" && hasKnownFix(f) && (
                                   <button
                                     type="button"
                                     onClick={() => onFixAll([fixText(f)])}
@@ -525,4 +538,111 @@ function fixText(f: StoredFinding): string {
   const fix = f.fix ? ` ${f.fix}` : "";
   const excerpt = f.excerpt ? ` "${f.excerpt}"` : "";
   return `${head}${fix}${excerpt}`.trim();
+}
+
+/**
+ * Apply fix / Send to attorney on one legal flag (Oct 6 spec, Task 22).
+ * Apply fix previews the corrected sentence first; a rewrite that trips
+ * another rule is shown with the reasons and cannot be applied, which leaves
+ * Send to attorney as the way forward.
+ */
+function LegalFixControls({
+  draftId,
+  finding,
+  onDone,
+}: {
+  draftId: string;
+  finding: StoredFinding;
+  onDone: (changedBody: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<{ sentence: string; proposed: string | null; rejected: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const sentToAttorney = finding.status === "in_progress" && /^Sent to /.test(finding.resolutionNote ?? "");
+
+  const call = async (payload: Record<string, unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/content/drafts/${draftId}/legal-fix`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ findingId: finding.id, ...payload }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError([data.error, ...(data.rejected ?? [])].filter(Boolean).join(" · ") || "Failed.");
+        return null;
+      }
+      return data;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (sentToAttorney) {
+    return <span className="text-[10px] opacity-80">{finding.resolutionNote}</span>;
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex gap-1">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            const data = await call({ action: "preview" });
+            if (data) setPreview(data);
+          }}
+          className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
+        >
+          {busy && !preview ? "Working…" : "Apply fix"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            const reason = window.prompt("What should the attorney look at? (optional)") ?? null;
+            if (reason === null) return;
+            const data = await call({ action: "send_to_attorney", reason });
+            if (data) onDone(false);
+          }}
+          className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] hover:bg-white/60 disabled:opacity-50"
+        >
+          Send to attorney
+        </button>
+      </div>
+      {preview && (
+        <div className="w-full max-w-md rounded border border-current/20 bg-white/80 p-2 text-left text-[11px] text-slate-800">
+          <div className="text-slate-500 line-through">{preview.sentence}</div>
+          {preview.proposed && <div className="mt-1 font-medium">{preview.proposed}</div>}
+          {preview.rejected.length > 0 && (
+            <div className="mt-1 text-red-700">Not applied: {preview.rejected.join(" · ")}. Send it to the attorney.</div>
+          )}
+          <div className="mt-1.5 flex gap-1">
+            {preview.proposed && preview.rejected.length === 0 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  const data = await call({ action: "apply", proposed: preview.proposed });
+                  if (data) {
+                    setPreview(null);
+                    onDone(true);
+                  }
+                }}
+                className="rounded bg-slate-900 px-2 py-0.5 text-[10px] text-white disabled:opacity-50"
+              >
+                Accept
+              </button>
+            )}
+            <button type="button" onClick={() => setPreview(null)} className="rounded border px-2 py-0.5 text-[10px]">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {error && <span className="max-w-xs text-[10px] text-red-700">{error}</span>}
+    </div>
+  );
 }

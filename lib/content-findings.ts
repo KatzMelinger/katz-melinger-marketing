@@ -427,7 +427,15 @@ export function reconcileFindings(
     const prior = byFingerprint.get(finding.fingerprint);
     if (!prior) {
       result.insert.push(finding);
-    } else if (prior.status === "resolved" || prior.status === "resolved_by_edit") {
+    } else if (
+      (prior.status === "resolved" && prior.resolution !== "approved_as_is") ||
+      prior.status === "resolved_by_edit"
+    ) {
+      // An attorney's "approved as is" is a standing decision about THIS
+      // sentence, like a dismissal: the check will keep reporting the
+      // unchanged sentence, and re-opening it put the same question back in
+      // front of the attorney on every run (Oct 6 spec, Task 22). Edit the
+      // sentence and the fingerprint changes, so a new finding is raised.
       // Both closed-as-fixed states re-open: the check is reporting it again,
       // so whatever closed it did not hold. `dismissed` deliberately does not —
       // that is a standing decision to stop seeing this.
