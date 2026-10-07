@@ -29,6 +29,9 @@ import { getAnthropic, CONTENT_LONG_FORM_MODEL } from "./anthropic";
 import { findFeeLanguage } from "./fee-language";
 import { blockingAdHits, findAdTerms } from "./ad-terms";
 import { normalizeEnding } from "./legal-disclaimers";
+import { matchTrap, type KnownTrap, type TrapContext } from "./known-traps";
+import { locateSentence } from "./legal-sentence-fix";
+import { quoteText } from "./finding-currency";
 import { BAD_SLUGS, internalLinks, MIN_INTERNAL_LINKS } from "./required-elements";
 import { linkRowFor } from "./link-map";
 import { bylineFor, expectedAuthor, firmFactFindings } from "./firm-fact-findings";
@@ -48,6 +51,13 @@ export type RewriteInput = {
   cta: { phone: string; offerPhrase: string };
   /** Knowledge base findings from runLegalFactChecks (constant_mismatch etc.). */
   kbFindings?: NormalizedFinding[];
+  /**
+   * Enabled known traps (Oct 6 spec, Task 23): a critical legal trap that
+   * fires is rewritten here too, so a draft does not arrive with a fix still
+   * unapplied. Omit to skip (tests, callers without a database).
+   */
+  traps?: KnownTrap[];
+  trapCtx?: TrapContext;
   /** Attorney-approved statute rows (empty = skip the statute rewrites). */
   statuteRows?: StatuteRow[];
   /** Skip the model call (tests, dry runs that must cost nothing). */
@@ -65,6 +75,16 @@ export type RewriteResult = {
 };
 
 const OLD_OFFER_PHRASES = ["Free Confidential Case Review", "Free Case Evaluation", "free case review", "Schedule a Consultation"];
+
+type ModelEdit = {
+  sentence: string;
+  instruction: string;
+  source: ChangeSource;
+  ref: string;
+  reason: string;
+  /** For trap rewrites: true when the new body still trips the trap on the new sentence. */
+  stillWrong?: (body: string, next: string) => boolean;
+};
 
 /** Trap 7's shape: the firm named as the subject of what it does. */
 const THIRD_PERSON_RE = /\b(?:The firm|Katz Melinger PLLC|Katz Melinger)\s+(?:represents|handles|offers|helps|works|provides|focuses)\b/gi;
@@ -248,7 +268,7 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
   }
 
   // 5. Knowledge base constants with a literal replacement.
-  const modelEdits: { sentence: string; instruction: string; source: ChangeSource; ref: string; reason: string }[] = [];
+  const modelEdits: ModelEdit[] = [];
   for (const e of feeClauseEdits) {
     modelEdits.push({
       sentence: e.sentence,
@@ -318,6 +338,27 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
         source: "brand rule",
         ref: "ad_terms",
         reason: `"${h.match}" about the firm is not allowed (RPC 7.4).`,
+      });
+    }
+  }
+
+  // 7b. Critical legal traps (Oct 6 spec, Task 23). The trap note says what
+  //     is wrong and what is right; the rewrite must clear the trap, or it
+  //     is not applied and the sentence goes to an attorney.
+  for (const trap of input.traps ?? []) {
+    if (!trap.enabled || trap.severity !== "critical" || trap.appliesTo === "web") continue;
+    if (trap.matchType === "document_missing" || trap.matchOn === "raw_body") continue;
+    for (const hit of matchTrap(trap, ed.body, input.trapCtx)) {
+      const s = locateSentence(ed.body, hit.excerpt);
+      if (!s || modelEdits.some((e) => e.sentence === s.text)) continue;
+      modelEdits.push({
+        sentence: s.text,
+        instruction: `Correct this legal error: ${trap.label}. ${trap.note} Change nothing else.`,
+        source: "knowledge base",
+        ref: `trap:${trap.id}`,
+        reason: trap.label,
+        stillWrong: (body, next) =>
+          matchTrap(trap, body, input.trapCtx).some((h) => quoteText(h.excerpt).includes(quoteText(next).slice(0, 40))),
       });
     }
   }
@@ -496,7 +537,7 @@ function brandRules(ed: Editor) {
 /** One model call for every sentence rewrite, each result checked before use. */
 async function applyModelEdits(
   ed: Editor,
-  edits: { sentence: string; instruction: string; source: ChangeSource; ref: string; reason: string }[],
+  edits: ModelEdit[],
   attorneyReview: string[],
 ) {
   const items = edits.map((e, i) => ({ id: i, sentence: e.sentence, instruction: e.instruction }));
@@ -553,7 +594,9 @@ async function applyModelEdits(
       ratio < 2.2 &&
       findFeeLanguage(next).length === 0 &&
       blockingAdHits(findAdTerms(next)).length === 0 &&
-      !/[–—]/.test(next);
+      !/[–—]/.test(next) &&
+      // A trap rewrite must actually clear its trap.
+      !(e.stillWrong && e.stillWrong(ed.body.replace(e.sentence, next), next));
     if (!safe || !ed.replace(e.sentence, next, e.reason, e.source, e.ref)) {
       attorneyReview.push(`Needs a rewrite (automatic attempt rejected): ${e.reason}`);
     }

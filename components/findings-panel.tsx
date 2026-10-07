@@ -263,7 +263,7 @@ export function FindingsPanel({
             <>Ready to publish · no blockers</>
           )}
           <span className="ml-1.5 font-normal opacity-70">
-            {reviewOpen.length} to review
+            {reviewOpen.length} decision{reviewOpen.length === 1 ? "" : "s"}
             {open.length > reviewOpen.length ? ` · ${open.length - reviewOpen.length} style suggestions` : ""}
           </span>
           {checked?.at && (
