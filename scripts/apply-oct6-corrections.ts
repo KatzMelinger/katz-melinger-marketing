@@ -175,6 +175,11 @@ function applyOp(body: string, op: Op, changes: FixChange[], at: string): { body
   }
 
   const find = op.find ?? "";
+  // An insertion's replacement contains its find string, so without this a
+  // second run would insert again (a second byline, a second lien sentence).
+  if (op.replace && op.replace.includes(find) && body.includes(op.replace)) {
+    return { body, result: { op, status: "not found", detail: "already applied" } };
+  }
   const n = count(body, find);
   if (n === 0) return { body, result: { op, status: "not found" } };
   if (n > 1 && !op.replace_all) return { body, result: { op, status: "ambiguous", count: n } };
