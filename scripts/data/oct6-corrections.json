@@ -1,0 +1,322 @@
+[
+ {
+  "draft_id": "43fb024e-2cf3-4e9d-a4b0-aaae28a9d2fe",
+  "find": "For other discrimination claims, it applies to employers with one or more employees.",
+  "replace": "For other discrimination claims, it applies to employers with four or more employees.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "NYCHRL employment discrimination coverage is 4 or more employees"
+ },
+ {
+  "draft_id": "43fb024e-2cf3-4e9d-a4b0-aaae28a9d2fe",
+  "find": "**Call (212) 460-0047 for a free, confidential case review.**",
+  "replace": "",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Old CTA removed; normalizeEnding adds the approved CTA"
+ },
+ {
+  "draft_id": "43fb024e-2cf3-4e9d-a4b0-aaae28a9d2fe",
+  "find": "Many employment attorneys offer free initial consultations.",
+  "replace": "",
+  "replace_all": false,
+  "source": "firm fact",
+  "reason": "Fee rule"
+ },
+ {
+  "draft_id": "1c44ed5f-dcdb-42c8-8242-760274b4b997",
+  "find": "applies to employers with four or more employees. [New York City Human Rights Law](https://www.nyc.gov/site/cchr/about/law.page) applies to employers with four or more employees.",
+  "replace": "applies to all employers, regardless of size. The [New York City Human Rights Law](https://www.nyc.gov/site/cchr/about/law.page) covers sexual harassment claims against employers of any size.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "NYSHRL covers all employers; NYCHRL harassment covers any size"
+ },
+ {
+  "draft_id": "1c44ed5f-dcdb-42c8-8242-760274b4b997",
+  "find": "To file with the New York City Commission on Human Rights, the deadline is 1 year.",
+  "replace": "To file a gender based harassment complaint with the New York City Commission on Human Rights, the deadline is three years.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "NYC Commission deadline for gender based harassment is 3 years"
+ },
+ {
+  "draft_id": "1c44ed5f-dcdb-42c8-8242-760274b4b997",
+  "find": "Settlement agreements typically include confidentiality provisions and a release of claims in exchange for the agreed-upon terms.",
+  "replace": "Settlement agreements usually include a release of claims. In New York, a settlement of a discrimination or harassment claim may include confidentiality only if that is the employee's preference, and the employee must be given time to consider it and seven days to revoke (New York General Obligations Law § 5-336). New Jersey law bars settlement terms that conceal the details of discrimination, harassment or retaliation claims (N.J.S.A. 10:5-12.8).",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "Confidentiality limits in NY and NJ settlements"
+ },
+ {
+  "draft_id": "1c44ed5f-dcdb-42c8-8242-760274b4b997",
+  "find": "Yes. Quid pro quo harassment is unlawful when the demand is made, even if the employee refuses and the threatened consequence does not follow. The employee does not need to prove that they were actually demoted, fired, or denied a benefit. The unlawful conduct is the conditioning of the benefit on sexual conduct.",
+  "replace": "Yes. The demand can still be unlawful harassment even if the threat is never carried out, especially under New York and New Jersey law. Under federal law, an unfulfilled threat is usually analyzed as a hostile work environment claim.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "Federal caveat for unfulfilled threats"
+ },
+ {
+  "draft_id": "1c44ed5f-dcdb-42c8-8242-760274b4b997",
+  "find": "Speaking with an employment attorney early ensures that no deadline is missed",
+  "replace": "Speaking with an employment attorney early helps you avoid missing a deadline",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "No guarantee language"
+ },
+ {
+  "draft_id": "1c44ed5f-dcdb-42c8-8242-760274b4b997",
+  "find": "## About the Author\n\nThe employment attorneys at Katz Melinger PLLC represent workers in New York and New Jersey in matters involving sexual harassment, retaliation, discrimination, and wage violations. The firm is led by founding partners **Seth Katz** and **Craig Melinger**, both admitted to practice in New York and New Jersey, with extensive experience advocating for employee rights in state and federal court. The firm is located at 370 Lexington Avenue, Suite 1512, New York, NY 10017. For more information, visit www.KatzMelinger.com or email info@katzmelinger.com.\n\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "firm fact",
+  "reason": "Section named people who are not the firm's partners"
+ },
+ {
+  "draft_id": "1c44ed5f-dcdb-42c8-8242-760274b4b997",
+  "find": "**Contact Katz Melinger PLLC today:** \n📞 **(212) 460-0047** \n📧 **info@katzmelinger.com** \n🌐 **www.KatzMelinger.com** \n📍 **370 Lexington Avenue, Suite 1512, New York, NY 10017**\n\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Emoji contact block removed; normalizeEnding adds the approved CTA"
+ },
+ {
+  "draft_id": "e70f280e-9bbe-422b-ba6c-6f2325e1b823",
+  "find": "because New York requires real consideration for the promise, meaning you must receive something new (such as a job offer, a promotion, or additional compensation) at the time you sign.",
+  "replace": "that reaches further than its legitimate interest. In New York and New Jersey, continued employment is generally enough consideration for a non compete, even if you sign it after you start the job.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "Continued employment is sufficient consideration in NY and NJ"
+ },
+ {
+  "draft_id": "e70f280e-9bbe-422b-ba6c-6f2325e1b823",
+  "find": "- The lack of consideration, meaning you were not given anything of value (a new job, a raise, a bonus, or another benefit) when you signed the agreement\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "Lack of new consideration is not a reliable defense in NY or NJ"
+ },
+ {
+  "draft_id": "e70f280e-9bbe-422b-ba6c-6f2325e1b823",
+  "find": "The Federal Trade Commission (FTC) issued a national rule in April 2024 banning most non-competes, but federal courts blocked that rule before it took effect in *Ryan LLC v. FTC* (N.D. Tex. 2024).",
+  "replace": "The Federal Trade Commission issued a national rule in April 2024 banning most non competes, but a federal court set it aside in 2024, and in September 2025 the FTC dropped its appeals. There is no federal ban.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "FTC rule status updated"
+ },
+ {
+  "draft_id": "14f1c894-c2a0-499a-b9fc-500e6b930973",
+  "find": "the bank freezes the debtor's account up to the amount of the judgment plus statutory fees.",
+  "replace": "the bank must restrain the debtor's funds up to twice the amount of the judgment (CPLR 5222(b)).",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "Restraining notice covers twice the judgment"
+ },
+ {
+  "draft_id": "14f1c894-c2a0-499a-b9fc-500e6b930973",
+  "find": "=== SEO FIELDS, FOR DEVELOPER ===\nPrimary keyword: collect on a judgment in New York\nURL slug: /blog/how-to-collect-on-a-judgment-in-new-york/\nMeta title: How to Collect on a Judgment in New York | Katz Melinger PLLC\nMeta description: Winning a judgment is step one. Learn how to enforce and collect on a judgment in New York, including restraining notices, property liens, and enforcement strategies.\nPillar page: Commercial Collections and Judgment Enforcement\nSearch intent: Informational\nCannibalization check: No conflict\n=== END SEO FIELDS ===\n\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Developer block removed; move these values into metadata (primaryKeyword, slug, meta_title, meta_description)"
+ },
+ {
+  "draft_id": "14f1c894-c2a0-499a-b9fc-500e6b930973",
+  "find": "=== COMPLIANCE CHECKLIST, REMOVE BEFORE PUBLISHING ===\n[ ] Primary keyword in H1, meta title, meta description, intro, two subheadings\n[ ] No em dashes or en dashes anywhere\n[ ] No conditional openers\n[ ] No fee language\n[ ] No contractions on service pages (blog may use sparingly)\n[ ] No double hedging\n[ ] No we or our\n[ ] Conversational bridge present (blog exempt)\n[ ] Citable closing sentence present\n[ ] No date added\n[ ] Cannibalization check confirmed\n[ ] Internal links placed naturally in body\n=== END CHECKLIST ===\n\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Internal checklist removed"
+ },
+ {
+  "draft_id": "48d5e3f7-b5c8-4b19-b48b-d84bef78a214",
+  "find": "(which handles cases above the jurisdictional minimum, typically 6 years in New York County and other amounts depending on the county) or a local Civil Court for smaller claims",
+  "replace": "or in a local civil court for smaller claims",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "Corrupted value removed"
+ },
+ {
+  "draft_id": "48d5e3f7-b5c8-4b19-b48b-d84bef78a214",
+  "find": "In New Jersey, cases may be filed in the Superior Court (for claims above $15,000) or the Special Civil Part (for claims of $15,000 or less).",
+  "replace": "In New Jersey, cases may be filed in the Superior Court, Law Division, for claims above $20,000, or the Special Civil Part for claims of $20,000 or less.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "NJ Special Civil Part limit is $20,000"
+ },
+ {
+  "draft_id": "48d5e3f7-b5c8-4b19-b48b-d84bef78a214",
+  "find": "Unlike a traditional collection agency, which is regulated under the Fair Debt Collection Practices Act (FDCPA) but cannot provide legal representation, a collection agency law firm can represent you in court.",
+  "replace": "Collection agencies that pursue consumer debts are regulated under the Fair Debt Collection Practices Act (FDCPA). Neither kind of agency can represent you in court, but a collection agency law firm can.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "FDCPA covers consumer debts only"
+ },
+ {
+  "draft_id": "48d5e3f7-b5c8-4b19-b48b-d84bef78a214",
+  "find": "- What is the fee structure?  Understand what you will pay and when.\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "firm fact",
+  "reason": "Fee rule"
+ },
+ {
+  "draft_id": "48d5e3f7-b5c8-4b19-b48b-d84bef78a214",
+  "find": "This article contains general information and does not constitute legal advice. Every situation is different.\n\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Extra disclaimer removed"
+ },
+ {
+  "draft_id": "9b00932b-8164-4c43-ba7c-49b7f6364369",
+  "find": "New York does not require employers to give employees time to review severance agreements if the employee is under 40, but many employers provide a review period as a standard practice.",
+  "replace": "If you are under 40, federal law does not set a review period. But if the agreement settles a discrimination, harassment or retaliation claim and includes confidentiality, New York law gives you time to consider that term and seven days to revoke it (General Obligations Law § 5-336).",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "NY GOL 5-336 review period"
+ },
+ {
+  "draft_id": "9b00932b-8164-4c43-ba7c-49b7f6364369",
+  "find": "The employer cannot shorten these timeframes. Any attempt to pressure you to sign faster than the law allows makes the release unenforceable.",
+  "replace": "You may choose to sign sooner, but the employer cannot require it. If the employer does not provide these periods, the release of age discrimination claims is not valid.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "OWBPA consequence limited to age claims"
+ },
+ {
+  "draft_id": "9b00932b-8164-4c43-ba7c-49b7f6364369",
+  "find": "the Age Discrimination in Employment Act, and the Fair Labor Standards Act.",
+  "replace": "and the Age Discrimination in Employment Act. Wage claims under the federal Fair Labor Standards Act generally cannot be waived in a private agreement without approval from a court or the Department of Labor.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "FLSA claims need court or DOL approval to release"
+ },
+ {
+  "draft_id": "9b00932b-8164-4c43-ba7c-49b7f6364369",
+  "find": "## What New York Law Requires Employers to Tell You",
+  "replace": "## What the Law Requires If You Are 40 or Older",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Heading matched to content"
+ },
+ {
+  "draft_id": "eb5d488b-ccca-454f-b570-a91daaf9886c",
+  "find": "Severance law is not federal. State rules, local ordinances, and agency guidance shape it, and these vary widely.",
+  "replace": "No federal or New York law generally requires an employer to offer severance; severance usually comes from your contract, company policy or negotiation. New Jersey requires severance in certain mass layoffs. Federal and state laws also shape what a release can waive.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "Severance mandate statement corrected"
+ },
+ {
+  "draft_id": "eb5d488b-ccca-454f-b570-a91daaf9886c",
+  "find": "New YorkC. Admin. Code",
+  "replace": "N.Y.C. Admin. Code",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Citation restored"
+ },
+ {
+  "draft_id": "eb5d488b-ccca-454f-b570-a91daaf9886c",
+  "find": "For context, many Manhattan executives receive severance in the range of one to two weeks of pay per year of service. This varies widely by industry, seniority, and circumstances. ",
+  "replace": "",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "Unsourced statistic removed"
+ },
+ {
+  "draft_id": "eb5d488b-ccca-454f-b570-a91daaf9886c",
+  "find": "severance agreements are almost always negotiable",
+  "replace": "severance agreements are often negotiable",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "No absolute claims"
+ },
+ {
+  "draft_id": "eb5d488b-ccca-454f-b570-a91daaf9886c",
+  "find": "### Clear Communication About Process and Fees\n\n Before you hire anyone, you should know exactly what the attorney charges. You should know what that fee covers. You should also know what happens if the negotiation extends beyond the initial scope.\n\nAn attorney should explain the process clearly. They should tell you how long review typically takes and what kind of response to expect from your employer. They should also explain what realistic outcomes look like given your situation.\n\nIf an attorney cannot explain their fees or the process in plain terms during the initial call, that is a signal to keep looking.\n\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "firm fact",
+  "reason": "Fee rule"
+ },
+ {
+  "draft_id": "eb5d488b-ccca-454f-b570-a91daaf9886c",
+  "find": "**How much does a severance negotiation attorney cost?** \n Fees vary depending on complexity, but many attorneys offer an initial consultation to discuss your situation and provide a clear fee structure before you commit.\n\n",
+  "replace": "",
+  "replace_all": false,
+  "source": "firm fact",
+  "reason": "Fee rule"
+ },
+ {
+  "draft_id": "91446913-29a6-4c18-ac2c-5e5be5a38b74",
+  "find": " Call **(212) 460-0047** or [schedule a consultation with Katz Melinger](#).",
+  "replace": "",
+  "replace_all": true,
+  "source": "brand rule",
+  "reason": "Empty link and nonstandard CTA removed (occurs twice)"
+ },
+ {
+  "draft_id": "91446913-29a6-4c18-ac2c-5e5be5a38b74",
+  "find": "If any of this sounds familiar, a free consultation with our team can help you understand your options before you respond to a retirement push, a severance offer, or adjusted bonus terms.",
+  "replace": "",
+  "replace_all": false,
+  "source": "firm fact",
+  "reason": "Fee rule"
+ },
+ {
+  "draft_id": "91446913-29a6-4c18-ac2c-5e5be5a38b74",
+  "find": "If this sounds familiar, a free consultation with our team can help you understand where you stand and what a stronger exit might look like.",
+  "replace": "",
+  "replace_all": false,
+  "source": "firm fact",
+  "reason": "Fee rule"
+ },
+ {
+  "draft_id": "91446913-29a6-4c18-ac2c-5e5be5a38b74",
+  "find": "Learn more about [age discrimination protections available to New York workers](#).",
+  "replace": "Learn more about [age discrimination protections available to New York workers](https://katzmelinger.com/practice-areas/employment-law/discrimination/).",
+  "replace_all": false,
+  "source": "required element",
+  "reason": "Empty link fixed"
+ },
+ {
+  "draft_id": "91446913-29a6-4c18-ac2c-5e5be5a38b74",
+  "find": "See [when you should not sign a New York severance agreement](#) before making any decisions.",
+  "replace": "See [when you should not sign a New York severance agreement](https://katzmelinger.com/practice-areas/employment-law/wrongful-termination/when-shouldnt-you-sign-a-ny-severance-agreement/) before making any decisions.",
+  "replace_all": false,
+  "source": "required element",
+  "reason": "Empty link fixed"
+ },
+ {
+  "draft_id": "2c33509b-5fb0-4e45-80be-abe4060f9e63",
+  "find": "New York and New Jersey courts recognize a public policy exception to at will employment under common law (see, e.g., *Sabetay v. Sterling Drug, Inc.*, 69 N.Y.2d 329 (1987); *Pierce v. Ortho Pharmaceutical Corp.*, 84 N.J. 58 (1980)). Your employer cannot fire you for refusing to break the law, sometimes called the \"illegal acts\" exception under common law public policy doctrine (see *Wieder v. Skala*, 80 N.Y.2d 628 (1992)).",
+  "replace": "New Jersey courts recognize a public policy exception to at will employment, so an employer cannot fire you for refusing to break the law or for acting in line with a clear public policy (*Pierce v. Ortho Pharmaceutical Corp.*, 84 N.J. 58 (1980)). New York courts generally do not recognize this exception under common law (*Murphy v. American Home Products Corp.*, 58 N.Y.2d 293 (1983)). Instead, New York protects employees through specific statutes, such as Labor Law § 740, which covers employees who refuse to take part in conduct they reasonably believe is unlawful.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "New York does not recognize a common law public policy exception"
+ },
+ {
+  "draft_id": "2c33509b-5fb0-4e45-80be-abe4060f9e63",
+  "find": "Yes, if you are an at will employee. The employer must pay you the agreed rate for hours already worked.\n\nBut future pay and schedules can be changed at any time. The new terms must comply with minimum wage and overtime laws, including the Fair Labor Standards Act (FLSA) and state labor laws.",
+  "replace": "Generally, yes, for future pay and schedules. The employer must pay you the agreed rate for hours already worked.\n\nIn New York, an employer must give written notice of a change in your pay rate at least seven calendar days before it takes effect, unless the change appears on your wage statement (New York Labor Law § 195). Any new terms must also comply with minimum wage and overtime laws, including the Fair Labor Standards Act (FLSA) and state labor laws.",
+  "replace_all": false,
+  "source": "knowledge base",
+  "reason": "NY Labor Law 195 pay change notice"
+ },
+ {
+  "draft_id": "2c33509b-5fb0-4e45-80be-abe4060f9e63",
+  "find": "anti-discrimination and anti-retaliation laws",
+  "replace": "discrimination and retaliation laws",
+  "replace_all": false,
+  "source": "brand rule",
+  "reason": "No hyphens"
+ },
+ {
+  "draft_id": "5b710c12-bc81-4d19-81a8-798a86c897c8",
+  "find_block_start": "=== DEVELOPER NOTE ===",
+  "find_block_end": "=== END DEVELOPER NOTE ===\n\n",
+  "replace": "",
+  "source": "brand rule",
+  "reason": "Developer note removed (delete from start marker through end marker inclusive)"
+ }
+]

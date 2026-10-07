@@ -19,6 +19,7 @@ import Link from "next/link";
 
 import { ContentNav } from "@/components/content-nav";
 import { DashButton, DashCard, DashPill, DashSpinner } from "@/components/dashboard-ui";
+import { TrapEditor } from "@/components/trap-editor";
 import type { KnownTrap, TrapScanResult } from "@/lib/known-traps";
 
 const SEVERITY_TONE: Record<KnownTrap["severity"], "red" | "amber" | "neutral"> = {
@@ -35,13 +36,29 @@ export default function KnownTrapsPage() {
   const [note, setNote] = useState<string | null>(null);
   const [draftsScanned, setDraftsScanned] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<{ id: string; title: string; status: string }[]>([]);
+  // null: no editor; "new": the Add form; otherwise the trap being edited.
+  const [editing, setEditing] = useState<KnownTrap | "new" | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const loadTraps = useCallback(async () => {
-    const res = await fetch("/api/content/traps", { cache: "no-store" });
+    const res = await fetch("/api/content/traps?drafts=1", { cache: "no-store" });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) setTraps(data.traps ?? []);
-    else setError(data?.error ?? "Couldn't load traps.");
+    if (res.ok) {
+      setTraps(data.traps ?? []);
+      setDrafts(data.drafts ?? []);
+    } else setError(data?.error ?? "Couldn't load traps.");
   }, []);
+
+  const toggle = async (t: KnownTrap) => {
+    const res = await fetch("/api/content/traps", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: t.id, enabled: !t.enabled }),
+    });
+    if (!res.ok) setError((await res.json().catch(() => ({})))?.error ?? "Couldn't update the trap.");
+    await loadTraps();
+  };
 
   useEffect(() => {
     void loadTraps();
@@ -103,11 +120,54 @@ export default function KnownTrapsPage() {
         <DashButton onClick={scan} disabled={scanning}>
           {scanning ? <DashSpinner /> : results ? "Re-scan every draft" : "Scan every draft"}
         </DashButton>
-        <span className="text-xs text-slate-500">
-          {traps.length} trap{traps.length === 1 ? "" : "s"} configured
-          {results ? ` · ${draftsScanned} drafts scanned` : ""}
-        </span>
+        <DashButton variant="outline" onClick={() => setEditing("new")}>
+          Add trap
+        </DashButton>
+        <button type="button" onClick={() => setShowAll((v) => !v)} className="text-xs text-brand underline hover:opacity-80">
+          {traps.length} trap{traps.length === 1 ? "" : "s"} configured{showAll ? " (hide)" : " (edit)"}
+        </button>
+        {results && <span className="text-xs text-slate-500">{draftsScanned} drafts scanned</span>}
       </div>
+
+      {editing && (
+        <div className="mt-4">
+          <TrapEditor
+            key={editing === "new" ? "new" : editing.id}
+            initial={editing === "new" ? null : editing}
+            drafts={drafts}
+            onCancel={() => setEditing(null)}
+            onSaved={async () => {
+              setEditing(null);
+              await loadTraps();
+            }}
+          />
+        </div>
+      )}
+
+      {showAll && (
+        <DashCard className="mt-4 p-0">
+          <ul className="divide-y divide-slate-100">
+            {traps.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className={t.enabled ? "font-medium text-slate-900" : "text-slate-400 line-through"}>{t.label}</span>
+                  <DashPill tone={SEVERITY_TONE[t.severity]}>{t.severity}</DashPill>
+                  {t.appliesTo === "web" && <DashPill tone="neutral">web only</DashPill>}
+                  {t.scope && <DashPill tone="neutral">{t.scope.split(":")[1]}</DashPill>}
+                </div>
+                <div className="flex shrink-0 gap-3">
+                  <button type="button" className="text-brand underline hover:opacity-80" onClick={() => setEditing(t)}>
+                    Edit
+                  </button>
+                  <button type="button" className="text-slate-600 underline hover:opacity-80" onClick={() => void toggle(t)}>
+                    {t.enabled ? "Disable" : "Enable"}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </DashCard>
+      )}
 
       {error && (
         <DashCard className="mt-4 border-red-200 bg-red-50">

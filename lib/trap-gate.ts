@@ -41,9 +41,8 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
-import { matchTrap, type KnownTrap } from "./known-traps";
+import { matchTrap, rowToTrap, type KnownTrap, type TrapContext } from "./known-traps";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** True when the error means the traps migration has not been run. */
 function isMissingTable(message: string | undefined): boolean {
@@ -62,7 +61,7 @@ export async function loadEnabledTraps(
     const sb = getSupabaseAdmin();
     const { data, error } = await sb
       .from("content_known_traps")
-      .select("id, label, match_type, pattern, unless, severity, note, enabled")
+      .select("*")
       .eq("tenant_id", tenantId)
       .eq("enabled", true);
     if (error) {
@@ -72,16 +71,7 @@ export async function loadEnabledTraps(
     }
     return {
       ok: true,
-      traps: (data ?? []).map((r: any) => ({
-        id: r.id,
-        label: r.label,
-        matchType: r.match_type,
-        pattern: r.pattern,
-        unless: Array.isArray(r.unless) ? r.unless : [],
-        severity: r.severity,
-        note: r.note,
-        enabled: r.enabled !== false,
-      })),
+      traps: (data ?? []).map(rowToTrap),
     };
   } catch (e) {
     console.warn("[trap-gate] could not load traps:", e);
@@ -115,7 +105,7 @@ export type TrapCheckResult = {
  */
 export async function runTrapCheck(
   body: string,
-  opts: { tenantId: string },
+  opts: { tenantId: string; ctx?: TrapContext },
 ): Promise<TrapCheckResult> {
   const { ok, traps } = await loadEnabledTraps(opts.tenantId);
   if (!ok) return { findings: [], blockingReasons: [], failed: true };
@@ -127,7 +117,7 @@ export async function runTrapCheck(
   const blockingReasons: string[] = [];
 
   for (const trap of traps) {
-    const hits = matchTrap(trap, body);
+    const hits = matchTrap(trap, body, opts.ctx);
     if (!hits.length) continue;
 
     const first = hits.reduce((a, b) => (a.index <= b.index ? a : b));

@@ -471,7 +471,7 @@ ${renderFirmFactsBlock()}`);
     // post, case result) is legal advertising for this firm, so this is
     // unconditional here, unlike app/api/content/draft/route.ts which also
     // generates non-legal formats (social, email) through the same route.
-    text = applyRequiredDisclaimers(text, { cta: await closingCtaFor() }).body;
+    text = applyRequiredDisclaimers(text, { cta: await closingCtaFor(), language }).body;
 
     // Sept 28 spec section 5: run the legal and firm checks on the generated
     // text and correct what has one known answer BEFORE saving. Every change

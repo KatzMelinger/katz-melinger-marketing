@@ -270,7 +270,7 @@ export async function gateSocialPost(args: {
   }> => {
     if (!args.draftId) return { reasons: [], findings: [], failed: false };
     try {
-      const traps = await runTrapCheck(args.content, { tenantId: args.tenantId });
+      const traps = await runTrapCheck(args.content, { tenantId: args.tenantId, ctx: { isWebPage: false } });
       return {
         reasons: traps.blockingReasons,
         findings: traps.findings,
