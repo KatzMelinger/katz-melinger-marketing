@@ -64,7 +64,7 @@ values
   ('00000000-0000-0000-0000-000000000001', $t$No review period for employees under 40$t$, $t$all_of_unless$t$, $t$["under 40"]$t$, array[$t$5-336$t$, $t$federal law does not set$t$, $t$no federal law sets$t$]::text[], $t$important$t$, $t$Mention NY GOL 5-336 when confidentiality about a discrimination, harassment or retaliation claim is included. (Oct 6 spec, trap 12)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
   ('00000000-0000-0000-0000-000000000001', $t$OWBPA overstated$t$, $t$regex$t$, $t$makes the release unenforceable|cannot shorten these timeframes$t$, '{}'::text[], $t$important$t$, $t$The employee may sign early; a missing OWBPA period invalidates only the age claim waiver. (Oct 6 spec, trap 13)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
   ('00000000-0000-0000-0000-000000000001', $t$FLSA claims described as released by a private agreement$t$, $t$all_of_unless$t$, $t$["release","Fair Labor Standards Act"]$t$, array[$t$court$t$, $t$Department of Labor$t$, $t$approval$t$]::text[], $t$critical$t$, $t$FLSA claims generally cannot be released privately without court or DOL approval. (Oct 6 spec, trap 14)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
-  ('00000000-0000-0000-0000-000000000001', $t$Non compete requires new consideration$t$, $t$regex$t$, $t$\bnew consideration\b|\bmust (?:receive|be given|get) something\b|\b(?:receive|received|given|get|got|give)(?: you)? something new\b|\breal consideration\b$t$, array[$t$continued employment$t$]::text[], $t$critical$t$, $t$In NY and NJ, continued employment is generally enough consideration for a non compete. (Oct 6 spec, trap 15)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
+  ('00000000-0000-0000-0000-000000000001', $t$Non compete requires new consideration$t$, $t$regex$t$, $t$\b(?:requires?|required|must|needs?|need to|has to|have to)\b[^.\n]{0,80}\b(?:new|additional|real|fresh|separate) consideration\b|\bmust (?:receive|be given|get) something\b|\b(?:must|need to|have to) (?:have )?(?:give|given|receive|received|get|got)(?: you)? something new\b$t$, array[$t$continued employment$t$]::text[], $t$critical$t$, $t$In NY and NJ, continued employment is generally enough consideration for a non compete. (Oct 6 spec, trap 15)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
   ('00000000-0000-0000-0000-000000000001', $t$FTC non compete rule status out of date$t$, $t$regex$t$, $t$(?:FTC|Federal Trade Commission)[^.\n]{0,100}non.?compete$t$, array[$t$2025$t$, $t$dropped its appeals$t$, $t$no federal ban$t$, $t$website$t$, $t$read more$t$]::text[], $t$important$t$, $t$A federal court set the FTC rule aside in 2024 and the FTC dropped its appeals in September 2025; there is no federal ban. (Oct 6 spec, trap 16)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
   ('00000000-0000-0000-0000-000000000001', $t$Restraining notice amount$t$, $t$regex$t$, $t$(?:freez|restrain)[^.\n]{0,80}amount of the judgment$t$, array[$t$twice$t$]::text[], $t$critical$t$, $t$CPLR 5222(b): a restraining notice covers up to twice the amount of the judgment. (Oct 6 spec, trap 17)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
   ('00000000-0000-0000-0000-000000000001', $t$New Jersey Special Civil Part limit$t$, $t$all_of_unless$t$, $t$["Special Civil Part","15,000"]$t$, array[$t$20,000$t$]::text[], $t$critical$t$, $t$The NJ Special Civil Part limit is $20,000 since July 1, 2022. (Oct 6 spec, trap 18)$t$, true, $t$sentences$t$, false, null, null, $t$all$t$),
@@ -83,6 +83,183 @@ values
   ('00000000-0000-0000-0000-000000000001', $t$Extra or reworded disclaimer$t$, $t$regex$t$, $t$does not constitute legal advice|contains general information$t$, '{}'::text[], $t$important$t$, $t$Only the locked disclaimer may appear, once. Fix known errors removes the others. (Oct 6 spec, trap 30)$t$, true, $t$sentences$t$, false, null, null, $t$web$t$),
   ('00000000-0000-0000-0000-000000000001', $t$Missing byline$t$, $t$document_missing$t$, $t$^\s*[*_]*\s*By [A-Z]$t$, '{}'::text[], $t$important$t$, $t$Website drafts carry "By [author], Katz Melinger PLLC" under the H1: Nicole Grunfeld for employment, Adam Sackowitz for commercial collections, Kenneth Katz for judgment enforcement. Fix known errors adds it where the practice area is mapped. (Oct 6 spec, trap 31)$t$, true, null, false, null, null, $t$web$t$)
 on conflict (tenant_id, lower(label)) do nothing;
+
+-- Keep existing rows in step with the source: a pattern changed after the
+-- first run (trap 15, 2026-10-06) is updated here. enabled is left as is,
+-- so a trap someone disabled on /content/traps stays disabled.
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["public policy exception","New York"]$t$, unless = array[$t$do not recognize$t$, $t$does not recognize$t$, $t$generally do not$t$, $t$declined$t$, $t$refused$t$, $t$rejected$t$, $t$unlike New York$t$, $t$but not New York$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$New York described as recognizing a common law public policy exception$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["Sabetay"]$t$, unless = array[$t$declined$t$, $t$refused$t$, $t$rejected$t$, $t$do not recognize$t$, $t$does not recognize$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Sabetay cited as support for a New York public policy exception$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["Wieder"]$t$, unless = array[$t$law firm$t$, $t$lawyers employed by$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Wieder cited as a general illegal acts exception$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$\b(?:violation|it|the\s+conduct)\s+must\s+(?:create|present|pose)\s+a\s+substantial(?:\s+and\s+specific)?\s+danger\b$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Labor Law 740 described with the pre 2022 substantial danger requirement$t$);
+update public.content_known_traps
+   set match_type = $t$document$t$, pattern = $t$["without notice","pay"]$t$, unless = array[$t$seven calendar days$t$, $t$7 calendar days$t$, $t$195$t$]::text[], severity = $t$critical$t$,
+       match_on = null, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$New York pay changes described as allowed without notice$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$general informational purposes only$t$, unless = array[$t$is not legal advice and does not create an attorney client relationship$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Reworded closing disclaimer$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$Call today at[^\n]*Call today at$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$raw_body$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$CTA repeated inside one line$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$\b(?:The firm|Katz Melinger PLLC|Katz Melinger)\s+(?:represents|handles|offers|helps|works|provides|focuses)\b$t$, unless = '{}'::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Firm described in the third person$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$\b[a-z]+-[a-z]+\b$t$, unless = array[$t$Sarbanes-Oxley$t$, $t$Dodd-Frank$t$, $t$http$t$]::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = true, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Hyphenated compound word$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["City Human Rights Law","four or more"]$t$, unless = array[$t$any size$t$, $t$harassment claims apply$t$]::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = $t$title_or_keyword_contains:harass$t$, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$NYCHRL harassment coverage stated as four or more$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$Commission on Human Rights[^.\n]{0,80}\b(?:1|one)\s+year$t$, unless = array[$t$gender based harassment$t$, $t$three years for$t$]::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = $t$title_or_keyword_contains:harass$t$, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$NYC Commission one year in harassment content$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["settlement","confidentiality"]$t$, unless = array[$t$5-336$t$, $t$preference$t$, $t$10:5-12.8$t$, $t$limits$t$, $t$ruling$t$, $t$prevent$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Harassment settlement confidentiality described as routine$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["under 40"]$t$, unless = array[$t$5-336$t$, $t$federal law does not set$t$, $t$no federal law sets$t$]::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$No review period for employees under 40$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$makes the release unenforceable|cannot shorten these timeframes$t$, unless = '{}'::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$OWBPA overstated$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["release","Fair Labor Standards Act"]$t$, unless = array[$t$court$t$, $t$Department of Labor$t$, $t$approval$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$FLSA claims described as released by a private agreement$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$\b(?:requires?|required|must|needs?|need to|has to|have to)\b[^.\n]{0,80}\b(?:new|additional|real|fresh|separate) consideration\b|\bmust (?:receive|be given|get) something\b|\b(?:must|need to|have to) (?:have )?(?:give|given|receive|received|get|got)(?: you)? something new\b$t$, unless = array[$t$continued employment$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Non compete requires new consideration$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$(?:FTC|Federal Trade Commission)[^.\n]{0,100}non.?compete$t$, unless = array[$t$2025$t$, $t$dropped its appeals$t$, $t$no federal ban$t$, $t$website$t$, $t$read more$t$]::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$FTC non compete rule status out of date$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$(?:freez|restrain)[^.\n]{0,80}amount of the judgment$t$, unless = array[$t$twice$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Restraining notice amount$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["Special Civil Part","15,000"]$t$, unless = array[$t$20,000$t$]::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$New Jersey Special Civil Part limit$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$jurisdictional (?:minimum|limit)[^.\n]{0,60}\b\d+\s+years$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Court limit stated in years$t$);
+update public.content_known_traps
+   set match_type = $t$all_of_unless$t$, pattern = $t$["Fair Debt Collection Practices Act","collection agenc"]$t$, unless = array[$t$consumer$t$]::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$FDCPA applied to all collection agencies$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$\b(?:one|two|three|\d+)\s+(?:to|or)\s+(?:two|three|four|\d+)\s+weeks of pay$t$, unless = '{}'::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Unsourced weeks of pay statistic$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$quid pro quo[^.\n]*(?:does not follow|never loses)|(?:does not follow|never loses)[^.\n]*quid pro quo$t$, unless = array[$t$hostile work environment$t$, $t$?$t$]::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Unfulfilled quid pro quo threat without federal caveat$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$Seth Katz|Craig Melinger|Daniel Melinger$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Names not on the approved people list$t$);
+update public.content_known_traps
+   set match_type = $t$document$t$, pattern = $t$\bour clients?\b[^.\n]{0,150}\b(?:recovered|secured|obtained|won|awarded|collected|settled for)\b|\b(?:recovered|secured|obtained|won|collected)\b[^.\n]{0,150}\bfor (?:our|a) clients?\b$t$, unless = array[$t$Prior results do not guarantee$t$]::text[], severity = $t$critical$t$,
+       match_on = null, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Client result without the prior results line$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$\]\(#\)$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$raw_body$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Link with no destination$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$===\s*[A-Z ,]+===|REMOVE BEFORE PUBLISHING|FOR DEVELOPER|DEVELOPER NOTE$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$raw_body$t$, case_sensitive = true, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Developer or checklist block in the body$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$\bfee structures?\b|\bwhat (?:the|an) attorney charges\b|\bexplain their fees\b|\bHow much does[^?\n]*\b(?:lawyer|attorney)\b[^?\n]*\b(?:cost|charge)|\bcontingency\b|\bcontingent[\s-]fees?\b|\bno fee unless\b|\b(?:written )?fee agreements?\b|\bhow (?:fees|legal fees) (?:and costs )?are handled\b|\bno upfront\b|\bpay nothing unless\b$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Fee discussion$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$honorarios contingentes|base de contingencia|no paga[^.\n]*a menos que|sin costo por adelantado|porcentaje de lo que recupere$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$all$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Fee discussion in Spanish$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$New York(?:C\.|\.2d|\.3d|\.S\.)|New Jersey\.(?:J\.|Super)|New York(?=C\b)$t$, unless = '{}'::text[], severity = $t$critical$t$,
+       match_on = $t$raw_body$t$, case_sensitive = true, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Citation broken by the state name rule$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]$t$, unless = '{}'::text[], severity = $t$important$t$,
+       match_on = $t$raw_body$t$, case_sensitive = false, regex_flags = $t$u$t$,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Emoji in a blog or web page$t$);
+update public.content_known_traps
+   set match_type = $t$regex$t$, pattern = $t$does not constitute legal advice|contains general information$t$, unless = '{}'::text[], severity = $t$important$t$,
+       match_on = $t$sentences$t$, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Extra or reworded disclaimer$t$);
+update public.content_known_traps
+   set match_type = $t$document_missing$t$, pattern = $t$^\s*[*_]*\s*By [A-Z]$t$, unless = '{}'::text[], severity = $t$important$t$,
+       match_on = null, case_sensitive = false, regex_flags = null,
+       scope = null, applies_to = $t$web$t$, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower($t$Missing byline$t$);
+
+-- An older trap that matched "NYSDHR" and "1 year" anywhere in a draft, so a
+-- correct "NYCCHR ... within 1 year" sentence next to a correct NYSDHR
+-- "three years" sentence held the draft. Now both must be in one sentence.
+update public.content_known_traps
+   set match_on = 'sentences', updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001'
+   and lower(label) = lower('NYSDHR sexual harassment deadline stated as 1 year');
 
 commit;
 

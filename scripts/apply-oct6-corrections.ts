@@ -28,6 +28,7 @@ import { getOperatingBrief } from "../lib/social-operating-brief";
 import { appendRun, changeId, readFixLog, whereIs, type ChangeSource, type FixChange } from "../lib/legal-fix-log";
 import { clearTextCertifications } from "../lib/draft-certifications";
 import { matchTrap, rowToTrap, type KnownTrap } from "../lib/known-traps";
+import { FOLLOWUP_OPS } from "./data/oct6-followup-corrections";
 
 for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
   const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
@@ -36,6 +37,8 @@ for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
 const TENANT = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
 const argv = process.argv.slice(2);
 const apply = argv.includes("--apply");
+/** --followup: the corrections drafted after the Task 12 run (scripts/data/oct6-followup-corrections.ts). */
+const followup = argv.includes("--followup");
 const outPath = (() => {
   const i = argv.indexOf("--out");
   return i >= 0 ? argv[i + 1] : null;
@@ -45,6 +48,7 @@ const WEBSITE_FORMATS = ["blog", "km_page_update", "km_practice_page", "km_blog_
 
 type Op = {
   draft_id: string;
+  move_schema?: boolean;
   find?: string;
   find_block_start?: string;
   find_block_end?: string;
@@ -159,7 +163,22 @@ function count(hay: string, needle: string): number {
   return n;
 }
 
-function applyOp(body: string, op: Op, changes: FixChange[], at: string): { body: string; result: OpResult } {
+const SCHEMA_BLOCK = /\n*<script type="application\/ld\+json">[\s\S]*?<\/script>\n*/g;
+
+function applyOp(body: string, op: Op, changes: FixChange[], at: string, schemaOut: string[]): { body: string; result: OpResult } {
+  // Task 8: schema code never lives in the body; it moves to metadata.schema_jsonld.
+  if (op.move_schema) {
+    const blocks = [...body.matchAll(SCHEMA_BLOCK)];
+    if (!blocks.length) return { body, result: { op, status: "not found" } };
+    let next = body;
+    for (const b of blocks) {
+      const i = next.indexOf(b[0]);
+      schemaOut.push(b[0].replace(/^\s*<script[^>]*>|<\/script>\s*$/g, "").trim());
+      changes.push({ id: changeId(), where: whereIs(next, i), from: b[0].trim(), to: "", reason: op.reason, source: op.source, source_ref: "schema_jsonld", anchor_before: next.slice(Math.max(0, i - 40), i), at });
+      next = next.slice(0, i) + "\n\n" + next.slice(i + b[0].length);
+    }
+    return { body: next.replace(/\n{3,}/g, "\n\n"), result: { op, status: "applied", count: blocks.length } };
+  }
   const skip = policySkip(op);
   if (skip) return { body, result: { op, status: "policy", detail: skip } };
 
@@ -206,7 +225,7 @@ async function main() {
   const brief = await getOperatingBrief(TENANT);
   const cta = { phone: brief.webPhone, offerPhrase: brief.offerPhrase };
 
-  const ops = [...SPEC_OPS, ...EXTRA_OPS];
+  const ops: Op[] = followup ? FOLLOWUP_OPS : [...SPEC_OPS, ...EXTRA_OPS];
   const byDraft = new Map<string, Op[]>();
   for (const op of ops) {
     const d = (drafts ?? []).find((x) => x.id === op.draft_id || x.id.startsWith(op.draft_id));
@@ -219,7 +238,7 @@ async function main() {
     lines.push(s);
     console.log(s);
   };
-  log(`# Oct 6 Task 12 corrections ${apply ? "(APPLIED)" : "(dry run, nothing written)"}`);
+  log(`# Oct 6 ${followup ? "follow-up" : "Task 12"} corrections ${apply ? "(APPLIED)" : "(dry run, nothing written)"}`);
   log(`${(drafts ?? []).length} open website drafts · ${ops.length} operations · CTA "${cta.phone}" / "${cta.offerPhrase}"`);
   log("");
 
@@ -233,10 +252,11 @@ async function main() {
     const meta = (d.metadata as Record<string, unknown> | null) ?? {};
     const changes: FixChange[] = [];
     let body = original;
+    const schemaOut: string[] = [];
     const draftOps = byDraft.get(d.id) ?? [];
     const results: OpResult[] = [];
     for (const op of draftOps) {
-      const r = applyOp(body, op, changes, at);
+      const r = applyOp(body, op, changes, at, schemaOut);
       body = r.body;
       results.push(r.result);
       tally[r.result.status]++;
@@ -270,7 +290,10 @@ async function main() {
 
     if (apply && changes.length > 0) {
       const fixLog = appendRun(readFixLog(meta), { previousTitle: (d.title as string | null) ?? null, previousBody: original, changes });
-      const nextMeta = clearTextCertifications({ ...meta, legal_fix_log: fixLog }).meta;
+      const withSchema = schemaOut.length
+        ? { ...meta, schema_jsonld: schemaOut.length === 1 ? schemaOut[0] : schemaOut }
+        : meta;
+      const nextMeta = clearTextCertifications({ ...withSchema, legal_fix_log: fixLog }).meta;
       const { error: upd } = await sb
         .from("content_drafts")
         .update({ body, metadata: nextMeta, updated_at: new Date().toISOString() })
