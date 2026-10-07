@@ -193,7 +193,9 @@ export const OCT6_TRAPS: TrapSeed[] = [
     label: "Non compete requires new consideration",
     matchType: "regex",
     matchOn: "sentences",
-    pattern: String.raw`\bnew consideration\b|\bmust (?:receive|be given|get) something\b|\b(?:receive|received|given|get|got|give)(?: you)? something new\b|\breal consideration\b`,
+    // A REQUIREMENT of new consideration, not the words: "a new consideration
+    // on your mind" and "the severance serves as new consideration" are fine.
+    pattern: String.raw`\b(?:requires?|required|must|needs?|need to|has to|have to)\b[^.\n]{0,80}\b(?:new|additional|real|fresh|separate) consideration\b|\bmust (?:receive|be given|get) something\b|\b(?:must|need to|have to) (?:have )?(?:give|given|receive|received|get|got)(?: you)? something new\b`,
     unless: ["continued employment"],
     severity: "critical",
     note: "In NY and NJ, continued employment is generally enough consideration for a non compete.",

@@ -81,6 +81,8 @@ const PASS: [string, string, TrapContext?][] = [
   ["*", "Yes. The demand can still be unlawful harassment even if the threat is never carried out. Under federal law, an unfulfilled threat is usually analyzed as a hostile work environment claim."],
   // Narrowings Kenneth approved.
   ["15", "You will learn something new about your rights."],
+  ["15", "But in 2025, there's a new consideration on your mind: artificial intelligence."],
+  ["15", "If the employer is now offering you severance in exchange for signing or reaffirming a non-compete, the severance serves as new consideration."],
   ["24", "We put our clients first."],
   ["27", "We offer a free consultation."],
   ["27", "The offer was contingent on a background check."],

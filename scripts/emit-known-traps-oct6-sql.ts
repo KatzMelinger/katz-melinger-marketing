@@ -85,6 +85,25 @@ values
 ${rows.join(",\n")}
 on conflict (tenant_id, lower(label)) do nothing;
 
+-- Keep existing rows in step with the source: a pattern changed after the
+-- first run (trap 15, 2026-10-06) is updated here. enabled is left as is,
+-- so a trap someone disabled on /content/traps stays disabled.
+${OCT6_TRAPS.map(
+  (t) => `update public.content_known_traps
+   set match_type = ${q(t.matchType)}, pattern = ${q(t.pattern)}, unless = ${arr(t.unless)}, severity = ${q(t.severity)},
+       match_on = ${q(t.matchOn ?? null)}, case_sensitive = ${t.caseSensitive ? "true" : "false"}, regex_flags = ${q(t.regexFlags ?? null)},
+       scope = ${q(t.scope ?? null)}, applies_to = ${q(t.appliesTo ?? "all")}, updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001' and lower(label) = lower(${q(t.label)});`,
+).join("\n")}
+
+-- An older trap that matched "NYSDHR" and "1 year" anywhere in a draft, so a
+-- correct "NYCCHR ... within 1 year" sentence next to a correct NYSDHR
+-- "three years" sentence held the draft. Now both must be in one sentence.
+update public.content_known_traps
+   set match_on = 'sentences', updated_at = now()
+ where tenant_id = '00000000-0000-0000-0000-000000000001'
+   and lower(label) = lower('NYSDHR sexual harassment deadline stated as 1 year');
+
 commit;
 
 -- Check: select label, match_type, match_on, applies_to from public.content_known_traps
