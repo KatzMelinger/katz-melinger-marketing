@@ -9,6 +9,7 @@
  * rewrite: a debtor-side draft stops at "Full redraft needed", fee sentences
  * are deleted and not replaced, and nothing inside a URL or heading moves.
  */
+import { OCT6_TRAPS } from "../lib/known-traps-oct6";
 import { autoRewrite } from "../lib/auto-rewrite";
 import { undoChange } from "../lib/legal-fix-log";
 import { STATUTE_TABLE } from "../lib/legal-statute-table";
@@ -201,6 +202,20 @@ async function main() {
   expect(oct6.body.includes("wage-hour-claims-employees/"), "link target keeps its hyphens");
   expect(oct6.body.includes("§ 5-336"), "statute number keeps its hyphen");
   expect(oct6.attorneyReview.some((a) => /we.*our firm/i.test(a)), "third person queued for a rewrite");
+  // 7. Oct 6 Task 23: a critical legal trap is queued for a rewrite at
+  //    generation (here without a model, so it lands on the attorney list).
+  const trap1 = OCT6_TRAPS.find((t) => t.number === "1")!;
+  const trapRun = await autoRewrite({
+    body: "# At will\n\nNew York and New Jersey courts recognize a public policy exception to at will employment.",
+    title: "At will",
+    practiceArea: "employment",
+    cta,
+    statuteRows: STATUTE_TABLE,
+    noModel: true,
+    traps: [{ ...trap1, id: "t1", enabled: true }],
+    trapCtx: { isWebPage: true },
+  });
+  expect(trapRun.attorneyReview.some((a) => a.includes(trap1.label)), "critical trap queued for a rewrite");
   const oct6Again = await autoRewrite({ body: oct6.body, title: oct6.title, practiceArea: "employment", cta, statuteRows: STATUTE_TABLE, noModel: true });
   expect(oct6Again.changes.length === 0, "second run changes nothing");
 

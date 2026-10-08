@@ -13,6 +13,7 @@
  */
 import { getSupabaseAdmin } from "./supabase-server";
 import { autoRewrite, type RewriteResult } from "./auto-rewrite";
+import { loadEnabledTraps } from "./trap-gate";
 import { runLegalFactChecks } from "./legal-verify";
 import { loadStatuteTable } from "./legal-statute-check";
 import { closingCtaFor } from "./closing-cta";
@@ -70,10 +71,11 @@ export async function fixDraft(args: {
   }
 
   const body = (draft.body as string | null) ?? "";
-  const [kbFindings, statutes, cta] = await Promise.all([
+  const [kbFindings, statutes, cta, traps] = await Promise.all([
     runLegalFactChecks(body, { tenantId: args.tenantId }).catch(() => []),
     loadStatuteTable(args.tenantId),
     closingCtaFor(args.tenantId),
+    loadEnabledTraps(args.tenantId),
   ]);
 
   const result = await autoRewrite({
@@ -86,6 +88,12 @@ export async function fixDraft(args: {
     cta,
     kbFindings,
     statuteRows: statutes.ok ? statutes.rows : [],
+    traps: traps.traps,
+    trapCtx: {
+      title: (draft.title as string | null) ?? null,
+      topic: (draft.topic as string | null) ?? null,
+      isWebPage: true,
+    },
     noModel: args.noModel,
   });
 
