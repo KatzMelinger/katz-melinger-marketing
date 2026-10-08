@@ -2,11 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { AGE_BUCKETS, HEALTH_LABEL, type AgeBucket, type Health, type PendingRow } from "@/lib/sales-dashboard/pending";
+import {
+  AGE_BUCKETS,
+  HEALTH_LABEL,
+  HEALTH_ORDER,
+  STAGE_LABEL,
+  type AgeBucket,
+  type Health,
+  type OwnerRollup,
+  type PendingRow,
+  type Stage,
+  type StageRollup,
+} from "@/lib/sales-dashboard/pending";
 
 import { Card, fmtNum, Tile } from "../ui";
 
-type ApiResult = { rows: PendingRow[]; options: { categories: string[]; sources: string[] } };
+type ApiResult = {
+  rows: PendingRow[];
+  byStage: StageRollup[];
+  byOwner: OwnerRollup[];
+  options: { categories: string[]; sources: string[] };
+};
 
 const HEALTH_BADGE: Record<Health, string> = {
   on_track: "bg-emerald-100 text-emerald-800",
@@ -15,13 +31,35 @@ const HEALTH_BADGE: Record<Health, string> = {
   critical: "bg-rose-100 text-rose-800",
 };
 
+const HEALTH_TEXT: Record<Health, string> = {
+  on_track: "text-emerald-700",
+  watch: "text-amber-700",
+  stalling: "text-orange-700",
+  critical: "text-rose-700",
+};
+
 const PRIORITY_BADGE: Record<string, string> = {
   High: "bg-blue-100 text-blue-900",
   Medium: "bg-sky-50 text-sky-800",
   Low: "bg-slate-100 text-slate-600",
 };
 
-const HEALTH_ORDER: Health[] = ["critical", "stalling", "watch", "on_track"];
+const STAGES: Stage[] = ["not_contacted", "sales_call_done", "letter_out"];
+
+/** Compact "3 critical · 2 stalling" summary, worst tiers first, zeros omitted. */
+function HealthCounts({ counts }: { counts: Record<Health, number> }) {
+  const parts = HEALTH_ORDER.filter((h) => counts[h] > 0);
+  if (!parts.length) return <span className="text-slate-400">—</span>;
+  return (
+    <span className="inline-flex flex-wrap gap-x-2 gap-y-0.5">
+      {parts.map((h) => (
+        <span key={h} className={`tabular-nums ${HEALTH_TEXT[h]}`}>
+          {counts[h]} {HEALTH_LABEL[h].toLowerCase()}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function PendingIntakesClient() {
   const [data, setData] = useState<ApiResult | null>(null);
@@ -29,6 +67,8 @@ export function PendingIntakesClient() {
 
   const [ageBucket, setAgeBucket] = useState<AgeBucket | "">("");
   const [health, setHealth] = useState<Health | "">("");
+  const [stage, setStage] = useState<Stage | "">("");
+  const [ownerFilter, setOwnerFilter] = useState("");
   const [category, setCategory] = useState("");
   const [source, setSource] = useState("");
   const [q, setQ] = useState("");
@@ -59,12 +99,14 @@ export function PendingIntakesClient() {
     return rows.filter((r) => {
       if (ageBucket && r.ageBucket !== ageBucket) return false;
       if (health && r.health !== health) return false;
+      if (stage && r.stage !== stage) return false;
+      if (ownerFilter && (r.owner ?? "Unassigned") !== ownerFilter) return false;
       if (category && (r.category ?? "(none)") !== category) return false;
       if (source && (r.source ?? "(none)") !== source) return false;
       if (needle && !(r.name ?? "").toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [rows, ageBucket, health, category, source, q]);
+  }, [rows, ageBucket, health, stage, ownerFilter, category, source, q]);
 
   const counts = useMemo(() => {
     const byHealth = Object.fromEntries(HEALTH_ORDER.map((h) => [h, 0])) as Record<Health, number>;
@@ -122,6 +164,73 @@ export function PendingIntakesClient() {
             <Tile label="On track" value={fmtNum(counts.on_track + counts.watch)} sub="touched within 2 weeks" />
           </div>
 
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card title="Where it's stalling in the funnel" note="click a stage to filter the table">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                      <th className="py-2 font-normal">Stage</th>
+                      <th className="py-2 text-right font-normal">Open</th>
+                      <th className="py-2 pl-3 font-normal">Health</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byStage.map((s) => (
+                      <tr
+                        key={s.stage}
+                        className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                        onClick={() => setStage((cur) => (cur === s.stage ? "" : s.stage))}
+                      >
+                        <td className={`py-2 pr-2 ${stage === s.stage ? "font-medium text-brand" : ""}`}>{s.label}</td>
+                        <td className="py-2 text-right tabular-nums">{fmtNum(s.total)}</td>
+                        <td className="py-2 pl-3">
+                          <HealthCounts counts={s.counts} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+
+            <Card title="By owner" note="click a name to filter the table">
+              <div className="max-h-64 overflow-y-auto overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                      <th className="py-2 font-normal">Owner</th>
+                      <th className="py-2 text-right font-normal">Open</th>
+                      <th className="py-2 pl-3 font-normal">Health</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byOwner.map((o) => (
+                      <tr
+                        key={o.owner}
+                        className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                        onClick={() => setOwnerFilter((cur) => (cur === o.owner ? "" : o.owner))}
+                      >
+                        <td className={`py-2 pr-2 ${ownerFilter === o.owner ? "font-medium text-brand" : ""}`}>{o.owner}</td>
+                        <td className="py-2 text-right tabular-nums">{fmtNum(o.total)}</td>
+                        <td className="py-2 pl-3">
+                          <HealthCounts counts={o.counts} />
+                        </td>
+                      </tr>
+                    ))}
+                    {data.byOwner.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="py-4 text-center text-slate-400">
+                          No open intakes.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+
           <Card title="Filters">
             <div className="flex flex-wrap items-center gap-2">
               <select
@@ -147,6 +256,19 @@ export function PendingIntakesClient() {
                 {HEALTH_ORDER.map((h) => (
                   <option key={h} value={h}>
                     {HEALTH_LABEL[h]}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Pipeline stage"
+                value={stage}
+                onChange={(e) => setStage(e.target.value as Stage | "")}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="">Any stage</option>
+                {STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {STAGE_LABEL[s]}
                   </option>
                 ))}
               </select>
@@ -183,6 +305,15 @@ export function PendingIntakesClient() {
                 onChange={(e) => setQ(e.target.value)}
                 className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
               />
+              {ownerFilter ? (
+                <button
+                  type="button"
+                  onClick={() => setOwnerFilter("")}
+                  className="rounded-md bg-slate-100 px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-200"
+                >
+                  Owner: {ownerFilter} ✕
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={runAiReview}
@@ -203,6 +334,7 @@ export function PendingIntakesClient() {
                   <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
                     <th className="py-2 font-normal">Name</th>
                     <th className="py-2 font-normal">Status</th>
+                    <th className="py-2 font-normal">Stage</th>
                     <th className="py-2 font-normal">Category</th>
                     <th className="py-2 font-normal">Priority</th>
                     <th className="py-2 font-normal">Owner</th>
@@ -220,6 +352,7 @@ export function PendingIntakesClient() {
                       <tr key={r.id} className="border-b border-slate-100 align-top">
                         <td className="py-2 pr-2">{r.name ?? "Unnamed"}</td>
                         <td className="py-2 pr-2 text-slate-600">{r.status ?? "—"}</td>
+                        <td className="py-2 pr-2 text-slate-600">{STAGE_LABEL[r.stage]}</td>
                         <td className="py-2 pr-2 text-slate-600">{r.category ?? "—"}</td>
                         <td className="py-2 pr-2">
                           {r.priority ? (
@@ -265,7 +398,7 @@ export function PendingIntakesClient() {
                   })}
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-6 text-center text-slate-400">
+                      <td colSpan={11} className="py-6 text-center text-slate-400">
                         No pending intakes match these filters.
                       </td>
                     </tr>

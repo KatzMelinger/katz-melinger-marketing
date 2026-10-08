@@ -45,15 +45,41 @@ export const HEALTH_LABEL: Record<Health, string> = {
   critical: "Critical",
 };
 
+/** Worst-first, for sorting and rollups. */
+export const HEALTH_ORDER: Health[] = ["critical", "stalling", "watch", "on_track"];
+
 const HEALTH_RANK: Record<Health, number> = { on_track: 0, watch: 1, stalling: 2, critical: 3 };
 function worseOf(a: Health, b: Health): Health {
   return HEALTH_RANK[b] > HEALTH_RANK[a] ? b : a;
 }
-function tierFromDays(days: number): Health {
-  if (days >= 30) return "critical";
-  if (days >= 14) return "stalling";
-  if (days >= 7) return "watch";
+
+/**
+ * Case Quality shifts the day thresholds instead of just riding along as a
+ * column: a High-priority case reaches "stalling" in ~10 days where a Low one
+ * takes ~18 — the same staleness means a bigger problem on a better case.
+ */
+const PRIORITY_SCALE: Record<"High" | "Medium" | "Low", number> = { High: 0.7, Medium: 1, Low: 1.3 };
+
+function tierFromDays(days: number, scale: number): Health {
+  if (days >= 30 * scale) return "critical";
+  if (days >= 14 * scale) return "stalling";
+  if (days >= 7 * scale) return "watch";
   return "on_track";
+}
+
+/** Stage in the pipeline, independent of health — where the case sits, not how stale it is. */
+export type Stage = "not_contacted" | "sales_call_done" | "letter_out";
+
+export const STAGE_LABEL: Record<Stage, string> = {
+  not_contacted: "Not yet contacted",
+  sales_call_done: "Sales call done, no letter",
+  letter_out: "Letter out, awaiting signature",
+};
+
+function stageOf(l: Pick<Lead, "letterSentAt" | "hadSalesCall">): Stage {
+  if (l.letterSentAt) return "letter_out";
+  if (l.hadSalesCall) return "sales_call_done";
+  return "not_contacted";
 }
 
 export type PendingRow = {
@@ -68,6 +94,7 @@ export type PendingRow = {
   createdAt: string;
   daysOld: number;
   ageBucket: AgeBucket;
+  stage: Stage;
   lastModifiedAt: string | null;
   daysSinceModified: number | null;
   letterSentAt: string | null;
@@ -107,22 +134,27 @@ export function buildPendingReport(leads: Lead[], now = Date.now()): PendingRow[
       const lastNoteAt = lastNote?.date ? lastNote.date.toISOString() : null;
       const daysSinceNote = daysSince(lastNoteAt, now);
 
+      const scale = l.quality ? PRIORITY_SCALE[l.quality] : 1;
       const staleness = daysSinceModified ?? daysOld;
       const reasons: string[] = [];
-      let health = tierFromDays(staleness);
+      let health = tierFromDays(staleness, scale);
       if (staleness >= 7) reasons.push(`No update in ${staleness}d`);
 
+      const unweighted = tierFromDays(staleness, 1);
+      if (HEALTH_RANK[health] > HEALTH_RANK[unweighted]) reasons.push("High priority — escalated");
+      else if (HEALTH_RANK[health] < HEALTH_RANK[unweighted]) reasons.push("Low priority — extended grace period");
+
       if (letterPendingDays != null) {
-        if (letterPendingDays >= 14) {
+        if (letterPendingDays >= 14 * scale) {
           health = worseOf(health, "critical");
           reasons.push(`Engagement letter pending ${letterPendingDays}d`);
-        } else if (letterPendingDays >= 7) {
+        } else if (letterPendingDays >= 7 * scale) {
           health = worseOf(health, "stalling");
           reasons.push(`Engagement letter pending ${letterPendingDays}d`);
         }
       }
 
-      if (daysOld >= 60 && !l.hadSalesCall && !l.letterSentAt) {
+      if (daysOld >= 60 * scale && !l.hadSalesCall && !l.letterSentAt) {
         health = worseOf(health, "critical");
         reasons.push(`${daysOld}d old with no sales call or letter sent`);
       }
@@ -138,6 +170,7 @@ export function buildPendingReport(leads: Lead[], now = Date.now()): PendingRow[
         createdAt: l.createdAt,
         daysOld,
         ageBucket: ageBucketOf(daysOld),
+        stage: stageOf(l),
         lastModifiedAt: l.lastStageChange,
         daysSinceModified,
         letterSentAt: l.letterSentAt,
@@ -154,4 +187,38 @@ export function buildPendingReport(leads: Lead[], now = Date.now()): PendingRow[
     if (HEALTH_RANK[b.health] !== HEALTH_RANK[a.health]) return HEALTH_RANK[b.health] - HEALTH_RANK[a.health];
     return b.daysOld - a.daysOld;
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rollups                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function healthCounts(rows: PendingRow[]): Record<Health, number> {
+  const out = Object.fromEntries(HEALTH_ORDER.map((h) => [h, 0])) as Record<Health, number>;
+  for (const r of rows) out[r.health]++;
+  return out;
+}
+
+export type StageRollup = { stage: Stage; label: string; total: number; counts: Record<Health, number> };
+
+/** Where the stalling actually sits in the funnel — pre-contact, post-call, or letter out. */
+export function byStage(rows: PendingRow[]): StageRollup[] {
+  return (["not_contacted", "sales_call_done", "letter_out"] as Stage[]).map((stage) => {
+    const rs = rows.filter((r) => r.stage === stage);
+    return { stage, label: STAGE_LABEL[stage], total: rs.length, counts: healthCounts(rs) };
+  });
+}
+
+export type OwnerRollup = { owner: string; total: number; counts: Record<Health, number> };
+
+/** Which rep is carrying the most stalling/critical cases, worst first. */
+export function byOwner(rows: PendingRow[]): OwnerRollup[] {
+  const map = new Map<string, PendingRow[]>();
+  for (const r of rows) {
+    const key = r.owner ?? "Unassigned";
+    map.set(key, [...(map.get(key) ?? []), r]);
+  }
+  return [...map.entries()]
+    .map(([owner, rs]) => ({ owner, total: rs.length, counts: healthCounts(rs) }))
+    .sort((a, b) => b.counts.critical + b.counts.stalling - (a.counts.critical + a.counts.stalling) || b.total - a.total);
 }

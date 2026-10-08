@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 
 import { guardDashboard } from "@/lib/sales-dashboard/access";
 import { loadDashboardContext } from "@/lib/sales-dashboard/metrics";
-import { buildPendingReport } from "@/lib/sales-dashboard/pending";
+import { buildPendingReport, byOwner, byStage } from "@/lib/sales-dashboard/pending";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,8 @@ export async function GET(req: Request) {
     const rows = buildPendingReport(ctx.leads);
     return NextResponse.json({
       rows,
+      byStage: byStage(rows),
+      byOwner: byOwner(rows),
       options: {
         categories: [...new Set(ctx.leads.map((l) => l.category ?? "(none)"))].sort(),
         sources: [...new Set(ctx.leads.map((l) => l.source ?? "(none)"))].sort(),
