@@ -5,10 +5,10 @@ import { getCurrentUser } from "@/lib/supabase-route";
 
 export const dynamic = "force-dynamic";
 
-/** Intake & Sales shows individual staff performance, so it is admin-only. */
+/** Intake & Sales is open to every signed-in user. */
 export default async function SalesLayout({ children }: { children: React.ReactNode }) {
   const me = await getCurrentUser();
-  if (!me || me.role !== "admin") return <Forbidden feature="Intake & Sales" />;
+  if (!me) return <Forbidden feature="Intake & Sales" />;
   return (
     <div
       className="min-h-full text-slate-900"

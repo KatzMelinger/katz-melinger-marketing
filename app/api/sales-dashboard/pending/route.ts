@@ -1,7 +1,7 @@
 /**
  * GET /api/sales-dashboard/pending — Pending Intakes report (lib/sales-dashboard/pending).
  * Current state, not date-ranged: every open intake, any creation date.
- * Admins, or Bearer SALES_DASHBOARD_API_KEY.
+ * Any signed-in user, or Bearer SALES_DASHBOARD_API_KEY.
  */
 import { NextResponse } from "next/server";
 
