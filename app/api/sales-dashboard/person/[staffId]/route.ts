@@ -1,7 +1,7 @@
 /**
  * GET /api/sales-dashboard/person/[staffId]?from=&to= — one team member's
  * lead numbers and call scores (lib/sales-dashboard/person.ts).
- * Admins, or Bearer SALES_DASHBOARD_API_KEY.
+ * Any signed-in user, or Bearer SALES_DASHBOARD_API_KEY.
  */
 import { NextResponse } from "next/server";
 

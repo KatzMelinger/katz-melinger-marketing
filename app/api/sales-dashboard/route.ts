@@ -1,6 +1,6 @@
 /**
  * GET /api/sales-dashboard?from=&to=&category=&source= — Intake & Sales
- * dashboard (lib/sales-dashboard). Admins, or Bearer SALES_DASHBOARD_API_KEY.
+ * dashboard (lib/sales-dashboard). Any signed-in user, or Bearer SALES_DASHBOARD_API_KEY.
  */
 import { NextResponse } from "next/server";
 
