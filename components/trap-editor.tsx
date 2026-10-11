@@ -26,6 +26,9 @@ type Form = {
   severity: KnownTrap["severity"];
   note: string;
   enabled: boolean;
+  sourceUrl: string;
+  effectiveDate: string;
+  lastVerified: string;
 };
 
 const EMPTY: Form = {
@@ -40,7 +43,22 @@ const EMPTY: Form = {
   severity: "important",
   note: "",
   enabled: true,
+  sourceUrl: "",
+  effectiveDate: "",
+  lastVerified: "",
 };
+
+/** "Create rule from this" (Task 24): a sentence from the Missing rules list. */
+export function formFromSentence(sentence: string): Form {
+  const s = sentence.trim();
+  return {
+    ...EMPTY,
+    label: s.length > 80 ? `${s.slice(0, 77)}...` : s,
+    matchType: "phrase",
+    pattern: s,
+    lastVerified: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+  };
+}
 
 export function formFromTrap(t: KnownTrap): Form {
   return {
@@ -56,6 +74,9 @@ export function formFromTrap(t: KnownTrap): Form {
     severity: t.severity,
     note: t.note,
     enabled: t.enabled,
+    sourceUrl: t.sourceUrl ?? "",
+    effectiveDate: t.effectiveDate ?? "",
+    lastVerified: t.lastVerified ?? "",
   };
 }
 
@@ -83,21 +104,27 @@ function payload(f: Form) {
     severity: f.severity,
     note: f.note,
     enabled: f.enabled,
+    sourceUrl: f.sourceUrl,
+    effectiveDate: f.effectiveDate,
+    lastVerified: f.lastVerified,
   };
 }
 
 export function TrapEditor({
   initial,
+  prefill,
   drafts,
   onSaved,
   onCancel,
 }: {
   initial?: KnownTrap | null;
+  /** A sentence to start a new trap from (the Missing rules list). */
+  prefill?: string | null;
   drafts: Draft[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
-  const [f, setF] = useState<Form>(initial ? formFromTrap(initial) : EMPTY);
+  const [f, setF] = useState<Form>(initial ? formFromTrap(initial) : prefill ? formFromSentence(prefill) : EMPTY);
   const [draftId, setDraftId] = useState("");
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -222,6 +249,23 @@ export function TrapEditor({
         <textarea className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-xs" rows={2}
           value={f.note} onChange={(e) => set("note", e.target.value)} />
       </label>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className={field}>
+          Source URL
+          <DashInput className="mt-1 w-full" value={f.sourceUrl} onChange={(e) => set("sourceUrl", e.target.value)}
+            placeholder="https://… (the primary source)" />
+        </label>
+        <label className={field}>
+          Effective date
+          <DashInput type="date" className="mt-1 w-full" value={f.effectiveDate} onChange={(e) => set("effectiveDate", e.target.value)} />
+          <span className="mt-0.5 block text-[10px] font-normal text-slate-500">A future date: the trap starts that day.</span>
+        </label>
+        <label className={field}>
+          Last verified
+          <DashInput type="date" className="mt-1 w-full" value={f.lastVerified} onChange={(e) => set("lastVerified", e.target.value)} />
+        </label>
+      </div>
 
       <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
         <label className={`${field} min-w-[16rem] flex-1`}>

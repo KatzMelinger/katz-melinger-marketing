@@ -27,6 +27,8 @@ type ValueMention = {
   sentence: string;
   index: number;
   amount: number;
+  /** The figure as written ("$15.92"), so a fix can replace it exactly. */
+  literal: string;
   unit: KbThresholdEntry["unit"];
   jurisdiction: LegalJurisdiction | null;
   /** A region signal found IN THE SAME SENTENCE, or null if unstated. */
@@ -59,7 +61,7 @@ const UNIT_MAP: Record<string, KbThresholdEntry["unit"]> = {
 };
 
 const YEAR_RE =
-  /\b(?:as of|in|since|effective(?: as of)?(?: \w+ \d{1,2},?)?|a partir de|desde|vigente(?: a partir de| desde)?|con vigencia desde)\s+(?:el\s+)?(\d{4})\b/i;
+  /\b(?:as of|in|since|effective(?: as of)?(?: \w+ \d{1,2},?)?|(?:starting|beginning)(?: on)?(?: \w+ \d{1,2},?)?|on \w+ \d{1,2},?|a partir de|desde|vigente(?: a partir de| desde)?|con vigencia desde)\s+(?:el\s+)?(\d{4})\b/i;
 
 const DOWNSTATE_RE =
   /\bNew York City\b|\bNYC\b|\bLong Island\b|\bWestchester\b|\bdownstate\b|\bciudad de Nueva York\b/i;
@@ -124,6 +126,7 @@ export function extractValueMentions(body: string): ValueMention[] {
         sentence: s.text,
         index: s.index + (m.index ?? 0),
         amount,
+        literal: m[0].match(/^\$\s?[\d,]+(?:\.\d{2})?/)?.[0] ?? `$${m[1]}`,
         unit,
         jurisdiction: detectJurisdiction(s.text),
         region: detectRegion(s.text),
@@ -179,6 +182,9 @@ function checkAgainstKnowledgeBase(
   const scoped = mention.region ? candidates.filter((t) => t.region === mention.region) : candidates;
   if (scoped.length === 0) return null; // nothing in the KB to compare against yet
 
+  const scheduled = checkScheduled(mention, scoped);
+  if (scheduled !== undefined) return scheduled;
+
   for (const entry of scoped) {
     if (closeEnough(mention.amount, entry.currentValue)) {
       if (mention.statedYear && entry.effectiveDate) {
@@ -227,6 +233,54 @@ function checkAgainstKnowledgeBase(
     title: `Figure doesn't match ${best.label}`,
     detail: `"$${mention.amount.toFixed(2)}" doesn't match the current ($${best.currentValue.toFixed(2)}${best.effectiveDate ? `, effective ${best.effectiveDate}` : ""})${best.priorValue !== null ? ` or prior ($${best.priorValue.toFixed(2)})` : ""} figure for ${best.label}.`,
     fix: `Correct the figure, or confirm the region — this may belong to a different region's rate.`,
+    mention,
+    jurisdiction: mention.jurisdiction,
+  });
+}
+
+/**
+ * A figure already known but not yet in force (Task 24: "NJ minimum wage
+ * $16.48, effective January 1, 2027"). Returns undefined when no schedule
+ * speaks to the mention, so the ordinary comparison runs.
+ *   - The scheduled figure with no year, or dated on or after the switch: right.
+ *   - The scheduled figure dated before the switch: the date is wrong.
+ *   - Another figure dated on or after the switch: wrong, and the fix is the
+ *     exact replacement, which the rewrite applies without a model call.
+ */
+function checkScheduled(mention: ValueMention, scoped: KbThresholdEntry[]): NormalizedFinding | null | undefined {
+  const withSchedule = scoped.filter((t) => t.scheduledValue != null && t.scheduledEffectiveDate);
+  if (withSchedule.length === 0) return undefined;
+  const same = withSchedule.find((t) => closeEnough(mention.amount, t.scheduledValue!));
+  if (same) {
+    const year = yearOf(same.scheduledEffectiveDate!);
+    if (!mention.statedYear || mention.statedYear >= year) return null;
+    return mentionFinding({
+      ruleId: "value_date_mismatch",
+      severity: "critical",
+      title: `Figure does not take effect until ${same.scheduledEffectiveDate}, not ${mention.statedYear}`,
+      detail: `"$${mention.amount.toFixed(2)}" is the ${same.label} from ${same.scheduledEffectiveDate}; it was not in effect in ${mention.statedYear}.`,
+      fix:
+        same.currentValue === same.scheduledValue
+          ? `State the effective date (${same.scheduledEffectiveDate}).`
+          : `State the effective date (${same.scheduledEffectiveDate}), or use the figure in effect in ${mention.statedYear} ($${same.currentValue.toFixed(2)}).`,
+      mention,
+      jurisdiction: mention.jurisdiction,
+    });
+  }
+  if (!mention.statedYear) return undefined;
+  const due = withSchedule.filter((t) => mention.statedYear! >= yearOf(t.scheduledEffectiveDate!));
+  // Only when one schedule clearly owns the sentence, and the figure is not
+  // some other entry's rate (a tipped cash wage in the same jurisdiction).
+  if (due.length !== 1) return undefined;
+  if (scoped.some((t) => t !== due[0] && closeEnough(mention.amount, t.currentValue))) return undefined;
+  const entry = due[0];
+  const to = `$${entry.scheduledValue!.toFixed(2)}`;
+  return mentionFinding({
+    ruleId: "value_scheduled_mismatch",
+    severity: "critical",
+    title: `The ${mention.statedYear} figure for ${entry.label} is ${to}`,
+    detail: `"${mention.literal}" is dated ${mention.statedYear}, but from ${entry.scheduledEffectiveDate} the ${entry.label} is ${to}${entry.sourceUrl ? ` (${entry.sourceUrl})` : ""}.`,
+    fix: `Replace "${mention.literal}" with "${to}"`,
     mention,
     jurisdiction: mention.jurisdiction,
   });

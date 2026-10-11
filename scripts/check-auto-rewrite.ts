@@ -14,6 +14,7 @@ import { autoRewrite } from "../lib/auto-rewrite";
 import { undoChange } from "../lib/legal-fix-log";
 import { STATUTE_TABLE } from "../lib/legal-statute-table";
 import type { NormalizedFinding } from "../lib/content-findings";
+import { checkValuesAgainst } from "../lib/legal-value-check";
 
 const cta = { phone: "212-460-0047", offerPhrase: "Free Confidential Case Evaluation" };
 let failed = 0;
@@ -218,6 +219,22 @@ async function main() {
   expect(trapRun.attorneyReview.some((a) => a.includes(trap1.label)), "critical trap queued for a rewrite");
   const oct6Again = await autoRewrite({ body: oct6.body, title: oct6.title, practiceArea: "employment", cta, statuteRows: STATUTE_TABLE, noModel: true });
   expect(oct6Again.changes.length === 0, "second run changes nothing");
+
+  // 8. Oct 6 Task 24: a different 2027 rate is replaced exactly, without a model.
+  {
+    const s27 = "Starting January 1, 2027, the New Jersey minimum wage is $16.75 per hour.";
+    const kb27 = checkValuesAgainst(s27, [
+      {
+        key: "nj_min_wage", label: "NJ minimum wage", practiceArea: "employment", jurisdiction: "NJ", region: null,
+        unit: "usd_per_hour", currentValue: 15.92, effectiveDate: "2026-01-01", priorValue: null, priorEffectiveDate: null,
+        scheduledValue: 16.48, scheduledEffectiveDate: "2027-01-01", matchKeywords: [], enforcementPath: null,
+        sourceUrl: "https://www.nj.gov/labor/", notes: null,
+      },
+    ]);
+    const r27 = await autoRewrite({ body: ["# NJ wages", "", s27].join("\n"), title: "NJ wages", practiceArea: "employment", cta, kbFindings: kb27, noModel: true });
+    expect(r27.body.includes("$16.48 per hour") && !r27.body.includes("$16.75"), `2027 NJ rate corrected (got ${r27.body.slice(0, 120)})`);
+    expect(r27.changes.some((c) => c.source === "knowledge base"), "2027 correction logged with the knowledge base as its source");
+  }
 
   console.log(failed ? `${failed} failed` : "all passed");
   process.exit(failed ? 1 : 0);

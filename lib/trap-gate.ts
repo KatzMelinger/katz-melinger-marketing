@@ -42,6 +42,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
 import { matchTrap, rowToTrap, type KnownTrap, type TrapContext } from "./known-traps";
+import { todayNy } from "./legal-knowledge-base";
 
 
 /** True when the error means the traps migration has not been run. */
@@ -69,9 +70,11 @@ export async function loadEnabledTraps(
       console.warn("[trap-gate] could not load traps:", error.message);
       return { ok: false, traps: [] };
     }
+    // A trap dated in the future starts on its effective date (Task 24).
+    const today = todayNy();
     return {
       ok: true,
-      traps: (data ?? []).map(rowToTrap),
+      traps: (data ?? []).map(rowToTrap).filter((t) => !t.effectiveDate || t.effectiveDate <= today),
     };
   } catch (e) {
     console.warn("[trap-gate] could not load traps:", e);

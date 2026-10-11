@@ -280,7 +280,7 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
   }
   for (const f of input.kbFindings ?? []) {
     if (!f.excerpt || !f.fix) continue;
-    if (f.ruleId === "constant_mismatch") {
+    if (f.ruleId === "constant_mismatch" || f.ruleId === "value_scheduled_mismatch") {
       const lit = f.fix.match(/^Replace "([^"]+)" with "([^"]+)"/);
       const i = ed.body.indexOf(f.excerpt);
       if (lit && i !== -1) {
