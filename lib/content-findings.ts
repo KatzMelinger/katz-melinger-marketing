@@ -469,6 +469,10 @@ export function countBySeverity(
   return counts;
 }
 
+/** Phrasing categories retired by Task 25 (Oct 6 spec). Old findings carry
+ *  them; new ones never do (lib/legal-claim-routing.ts). */
+export const RETIRED_CLAIM_TYPES: ReadonlySet<string> = new Set(["negative_statement", "interpretation"]);
+
 export const SOURCE_LABEL: Record<FindingSource, string> = {
   readability: "Readability",
   seo: "SEO",

@@ -21,6 +21,8 @@ import {
   setFindingStatus,
 } from "@/lib/content-findings-store";
 import { getSeverityOverrides } from "@/lib/finding-severity-store";
+import { withinHistory } from "@/lib/finding-severity";
+import { readFixLog } from "@/lib/legal-fix-log";
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 import { freshnessGateEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
@@ -41,7 +43,7 @@ export async function GET(
   const { supabase, tenantId } = await getTenantClient();
   const { data: draft } = await supabase
     .from("content_drafts")
-    .select("id, body")
+    .select("id, body, metadata")
     .eq("id", id)
     .maybeSingle();
   if (!draft) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -64,7 +66,12 @@ export async function GET(
   ]);
   // Task 21: never show a finding quoting text that is no longer in the draft.
   const { closed } = await closeStaleFindings({ draftId: id, tenantId, body, findings: listed });
-  const findings = closed.length ? await listFindings(id) : listed;
+  // Task 25: closed findings older than 30 days are not loaded into History.
+  const findings = withinHistory(closed.length ? await listFindings(id) : listed);
+  // "Corrections N · Decisions M": the live (not undone) changes in Changes made.
+  const corrections = readFixLog((draft.metadata as Record<string, unknown> | null) ?? {}).changes.filter(
+    (c) => !c.undone_at,
+  ).length;
   // "Checked against the version saved at …": when the checks last ran, and
   // whether the body has changed since (the panel says so instead of
   // presenting old findings as current).
@@ -79,7 +86,7 @@ export async function GET(
   // instead of indistinguishably omitting the tab the way it would for an
   // engine that isn't enabled at all. See lib/feature-flags.ts.
   const engines = { legal: legalAccuracyEnabled(), freshness: freshnessGateEnabled() };
-  return NextResponse.json({ findings, audit, severityOverrides, engines, checked });
+  return NextResponse.json({ findings, audit, severityOverrides, engines, checked, corrections });
 }
 
 export async function PATCH(
@@ -172,6 +179,6 @@ export async function PATCH(
     },
   });
 
-  const findings = await listFindings(id);
+  const findings = withinHistory(await listFindings(id));
   return NextResponse.json({ finding: updated, findings });
 }

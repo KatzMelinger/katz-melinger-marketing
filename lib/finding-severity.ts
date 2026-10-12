@@ -37,6 +37,7 @@
  */
 
 import type { FindingSeverity, FindingSource, StoredFinding } from "./content-findings";
+import { isStyleFinding } from "./finding-merge";
 
 export type PublishSeverity = "blocker" | "recommended" | "optional";
 
@@ -90,6 +91,34 @@ export const CAPPED_ENGINES: ReadonlySet<FindingSource> = new Set<FindingSource>
   "brand_voice",
   "linkability",
 ]);
+
+/**
+ * A review item a person must answer (Oct 6 spec, Tasks 23 and 25): open, not
+ * a style suggestion, not advisory. One definition for the panel header and
+ * the correction report, so the two never disagree.
+ */
+export function isDecision(f: Pick<StoredFinding, "source" | "ruleId" | "severity" | "status">): boolean {
+  if (f.status !== "open" && f.status !== "in_progress") return false;
+  if (isStyleFinding(f) || CAPPED_ENGINES.has(f.source)) return false;
+  return f.severity !== "advisory";
+}
+
+/** Closed findings older than this are not loaded into History (Task 25). */
+export const HISTORY_DAYS = 30;
+
+/** Open findings, plus closed ones from the last HISTORY_DAYS. */
+export function withinHistory<T extends Pick<StoredFinding, "status" | "resolvedAt" | "lastSeenAt">>(
+  findings: readonly T[],
+  now = Date.now(),
+): T[] {
+  const cutoff = now - HISTORY_DAYS * 24 * 60 * 60 * 1000;
+  return findings.filter(
+    (f) =>
+      f.status === "open" ||
+      f.status === "in_progress" ||
+      Date.parse(f.resolvedAt ?? f.lastSeenAt ?? "") >= cutoff,
+  );
+}
 
 const BASE: Record<FindingSeverity, PublishSeverity> = {
   critical: "blocker",

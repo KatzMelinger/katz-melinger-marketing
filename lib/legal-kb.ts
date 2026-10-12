@@ -151,6 +151,12 @@ function entryApplies(body: string, entry: KbEntry): boolean {
   return entry.matchKeywords.some((k) => k.trim() && b.includes(lower(k)));
 }
 
+/** Does any entry's subject appear in this sentence (Task 25: it is checked by R1-R4)? */
+export function kbEntriesCover(sentence: string, entries: readonly KbEntry[]): boolean {
+  const t = lower(sentence);
+  return entries.some((e) => e.matchKeywords.some((k) => k.trim() && t.includes(lower(k))));
+}
+
 /** Sentences that mention this entry's subject — where its rules are checked. */
 function topicSentences(body: string, entry: KbEntry): { text: string; index: number }[] {
   return sentences(body).filter((s) => {

@@ -45,7 +45,7 @@ for (const l of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
 
 import { runLegalCheck, runLegalFactChecks, toFinding, type ClaimVerdict } from "@/lib/legal-verify";
 import { BULK_SOURCE_LABEL as NJ_BULK_SOURCE_LABEL } from "@/lib/nj-statute-bulk";
-import type { NormalizedFinding } from "@/lib/content-findings";
+import { RETIRED_CLAIM_TYPES, type NormalizedFinding } from "@/lib/content-findings";
 
 const TENANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -69,16 +69,26 @@ type Case = {
 };
 
 const CASES: Case[] = [
+  // Task 25: phrasing categories are retired. A legal claim reaches a person
+  // (as "No rule for this claim yet", or through the rule that covers it), and
+  // never under negative_statement / interpretation.
   {
-    name: "Deterministic guard: negative statement routes to a human, not auto-cleared",
+    name: "Task 25: a negative legal statement still reaches a person, under no retired category",
     body: "The FMLA is not enforced by the EEOC, so a complaint filed there will not preserve FMLA rights.",
-    check: (f) => f.some((x) => x.claimType === "negative_statement"),
+    check: (f) =>
+      f.some((x) => x.source === "legal") && !f.some((x) => RETIRED_CLAIM_TYPES.has(x.claimType ?? "")),
   },
   {
-    name: "Deterministic guard: a doctrine/interpretation claim routes to a human",
+    name: "Task 25: a doctrine claim still reaches a person, under no retired category",
     body:
       "Because she already filed with the New York Division of Human Rights, the election of remedies doctrine may bar her from later bringing the same claim in court.",
-    check: (f) => f.some((x) => x.claimType === "interpretation"),
+    check: (f) =>
+      f.some((x) => x.source === "legal") && !f.some((x) => RETIRED_CLAIM_TYPES.has(x.claimType ?? "")),
+  },
+  {
+    name: "Task 25: general wording is never sent to an attorney",
+    body: "Every situation is different, and you may have rights. An employment attorney can review your situation.",
+    check: (f) => !f.some((x) => x.ruleId === "no_rule"),
   },
   {
     name: "3.12: a fabricated act name is flagged",

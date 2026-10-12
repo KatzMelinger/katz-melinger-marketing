@@ -562,6 +562,21 @@ function dedupe(findings: NormalizedFinding[]): NormalizedFinding[] {
 /** Run both checks over a draft body, reading the knowledge base live. A read
  *  failure degrades to skipping the KB comparison, not throwing — the
  *  internal-conflict check still runs regardless, since it needs no KB. */
+/**
+ * Does a knowledge base figure speak to this sentence (Task 25)? True when
+ * the value check would compare it: a dollar figure in a jurisdiction the
+ * base has a rate for, or a deadline/coverage entry whose keywords the
+ * sentence carries. A covered sentence is checked automatically, so it never
+ * needs an attorney just for want of a rule.
+ */
+export function thresholdCovers(sentence: string, thresholds: KbThresholdEntry[]): boolean {
+  if (thresholds.length === 0) return false;
+  for (const m of extractValueMentions(sentence)) {
+    if (m.jurisdiction && thresholds.some((t) => t.jurisdiction === m.jurisdiction && t.unit === m.unit)) return true;
+  }
+  return thresholds.some((t) => !t.unit.startsWith("usd") && keywordsMatch(t, sentence));
+}
+
 export async function checkValuesAgainstKnowledgeBase(
   body: string,
   tenantId?: string,
