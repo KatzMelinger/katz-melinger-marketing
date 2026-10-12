@@ -2171,6 +2171,7 @@ export function DraftDrawer({
                   // onApplyFindings the selection/auto-applicable one.
                   onFixAll={applyFindingTexts}
                   onApplyFindings={applyFindingTexts}
+                  onDraftChanged={() => void reloadDraft(draft.id)}
                 />
               </div>
             )}

@@ -77,6 +77,9 @@ export default function LegalReviewPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // Task 22: an attorney may type the corrected sentence instead of choosing
+  // an outcome; it is applied to the draft and logged in "Changes made".
+  const [replacements, setReplacements] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,6 +127,34 @@ export default function LegalReviewPage() {
       }
     },
     [notes, load],
+  );
+
+  const replace = useCallback(
+    async (draftId: string, finding: StoredFinding) => {
+      const proposed = (replacements[finding.id] ?? "").trim();
+      if (!proposed) {
+        setMsg("Type the corrected sentence first.");
+        return;
+      }
+      setBusy(finding.id);
+      setMsg(null);
+      try {
+        const res = await fetch(`/api/content/drafts/${draftId}/legal-fix`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ findingId: finding.id, action: "apply", proposed, byAttorney: true }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(body.error ?? "Failed to replace the sentence");
+        setReplacements((r) => ({ ...r, [finding.id]: "" }));
+        await load();
+      } catch (e) {
+        setMsg(e instanceof Error ? e.message : "Failed to replace the sentence");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [replacements, load],
   );
 
   const items = data?.items ?? [];
@@ -278,6 +309,10 @@ export default function LegalReviewPage() {
                     </p>
                   )}
 
+                  {f.status === "in_progress" && f.resolutionNote && (
+                    <p className="mt-2 text-xs font-medium text-amber-800">{f.resolutionNote}</p>
+                  )}
+
                   {data?.canClear && (
                     <div className="mt-3 border-t border-red-200 pt-3">
                       <input
@@ -297,6 +332,22 @@ export default function LegalReviewPage() {
                             </DashButton>
                           </span>
                         ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-start gap-2">
+                        <textarea
+                          className="min-w-[16rem] flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                          rows={2}
+                          placeholder="Or type the corrected sentence. It replaces the quoted sentence and is logged in Changes made."
+                          value={replacements[f.id] ?? ""}
+                          onChange={(e) => setReplacements((r) => ({ ...r, [f.id]: e.target.value }))}
+                        />
+                        <DashButton
+                          variant="outline"
+                          disabled={busy === f.id || !(replacements[f.id] ?? "").trim()}
+                          onClick={() => void replace(item.draftId, f)}
+                        >
+                          Replace sentence
+                        </DashButton>
                       </div>
                     </div>
                   )}

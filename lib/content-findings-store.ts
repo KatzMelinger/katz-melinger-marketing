@@ -20,6 +20,7 @@ import {
   type NormalizedFinding,
   type StoredFinding,
 } from "./content-findings";
+import { quoteStillPresent, STALE_NOTE } from "./finding-currency";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -105,6 +106,28 @@ export async function openCriticalFindings(
     const list = out.get(f.draftId) ?? [];
     list.push(f);
     out.set(f.draftId, list);
+  }
+  // A blocker quoting text that is no longer in the draft is closed, not
+  // obeyed (Oct 6 spec, Task 21). If the bodies cannot be read, the gate keeps
+  // every blocker: refusing on a stale finding is safer than passing on a
+  // live one.
+  if (out.size > 0) {
+    const { data: drafts, error: dErr } = await sb
+      .from("content_drafts")
+      .select("id, tenant_id, body")
+      .in("id", [...out.keys()]);
+    if (!dErr) {
+      for (const d of drafts ?? []) {
+        const r = await closeStaleFindings({
+          draftId: d.id as string,
+          tenantId: d.tenant_id as string,
+          body: typeof d.body === "string" ? d.body : "",
+          findings: out.get(d.id as string) ?? [],
+        });
+        if (r.open.length) out.set(d.id as string, r.open);
+        else out.delete(d.id as string);
+      }
+    }
   }
   return out;
 }
@@ -293,6 +316,54 @@ export async function setFindingStatus(args: {
     return null;
   }
   return data ? rowToFinding(data as Row) : null;
+}
+
+/**
+ * Close every open finding whose quoted text is no longer in `body` (Oct 6
+ * spec, Task 21; see lib/finding-currency.ts). Returns the findings that are
+ * still open, so a caller can display or gate on them directly.
+ *
+ * Status `resolved_by_edit` with resolution `fixed`: the same state the
+ * reconciler gives a finding whose check fell silent, so if the text comes
+ * back the next analysis reopens it as usual.
+ */
+export async function closeStaleFindings(args: {
+  draftId: string;
+  tenantId: string;
+  body: string;
+  findings?: StoredFinding[];
+}): Promise<{ open: StoredFinding[]; closed: StoredFinding[] }> {
+  const all = args.findings ?? (await listFindings(args.draftId));
+  const isOpen = (f: StoredFinding) => f.status === "open" || f.status === "in_progress";
+  const stale = all.filter((f) => isOpen(f) && quoteStillPresent(f, args.body) === false);
+  if (stale.length > 0) {
+    const now = new Date().toISOString();
+    const { error } = await getSupabaseAdmin()
+      .from("content_findings")
+      .update({
+        status: "resolved_by_edit",
+        resolution: "fixed",
+        resolution_note: STALE_NOTE,
+        resolved_at: now,
+        updated_at: now,
+      })
+      .in("id", stale.map((f) => f.id))
+      .eq("tenant_id", args.tenantId);
+    if (error) {
+      // Could not close them: report them as still open rather than hide a
+      // blocker the database still holds.
+      console.warn("[findings] stale close failed:", error.message);
+      return { open: all.filter(isOpen), closed: [] };
+    }
+    await recordAuditEvent({
+      tenantId: args.tenantId,
+      draftId: args.draftId,
+      event: "findings_closed_stale",
+      detail: { count: stale.length, rules: [...new Set(stale.map((f) => f.ruleId))].slice(0, 20) },
+    });
+  }
+  const closedIds = new Set(stale.map((f) => f.id));
+  return { open: all.filter((f) => isOpen(f) && !closedIds.has(f.id)), closed: stale };
 }
 
 // ---------------------------------------------------------------------------

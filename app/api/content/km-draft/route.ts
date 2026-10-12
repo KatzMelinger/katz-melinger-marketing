@@ -483,6 +483,7 @@ ${renderFirmFactsBlock()}`);
       topic: brief.primaryKeyword,
       practiceArea: brief.practiceArea,
       format: `km_${brief.contentType}`,
+      language,
     });
     text = grounded.body;
 

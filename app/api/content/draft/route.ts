@@ -692,6 +692,7 @@ ${readabilityPromptBlock(
         topic,
         practiceArea,
         format: draftFormat,
+        language: normalizeLanguage(o.language),
       });
       body = grounded.body;
       fixLog = grounded.fixLog;

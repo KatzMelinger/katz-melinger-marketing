@@ -42,7 +42,7 @@ import {
   normalizeFreshnessFindings,
   type NormalizedFinding,
 } from "./content-findings";
-import { listFindings, syncFindings } from "./content-findings-store";
+import { closeStaleFindings, listFindings, syncFindings } from "./content-findings-store";
 import { capSourceExpertise, coordinateFindings } from "./finding-coordination";
 import { findTimeSensitiveFacts } from "./freshness-check";
 import { classifyFreshness } from "./freshness-classify";
@@ -52,6 +52,7 @@ import { runTrapCheck } from "./trap-gate";
 import { runKbChecks } from "./legal-kb";
 import { runStatuteCheck } from "./legal-statute-check";
 import { firmFactFindings } from "./firm-fact-findings";
+import { quoteStillPresent } from "./finding-currency";
 import { requiredElementFindings } from "./required-elements";
 import { getOperatingBrief } from "./social-operating-brief";
 
@@ -1352,6 +1353,15 @@ export async function analyzeDraft(args: {
   // survive the next run. Best-effort: a findings failure must not fail the
   // analysis the caller actually asked for.
   try {
+    // What a check that did not run carries forward: only findings still open
+    // (or dismissed, which stays dismissed) AND whose quoted text is still in
+    // the body. Carrying a closed finding forward re-opened it, which is how a
+    // corrected sentence kept blocking a draft (Oct 6 spec, Task 21).
+    const carried = priorFindings.filter(
+      (f) =>
+        (f.status === "open" || f.status === "in_progress" || f.status === "dismissed") &&
+        quoteStillPresent(f, body) !== false,
+    );
     const raw: NormalizedFinding[] = [
       ...normalizeReadabilityFindings(analysis.readability_findings),
       ...normalizeStringFindings("seo", analysis.seo_findings),
@@ -1366,26 +1376,26 @@ export async function analyzeDraft(args: {
       // silence is not a fix.
       ...(legalResult.ran
         ? legalResult.findings
-        : priorFindings.filter((f) => f.source === "legal" && isAuthorityLoopRule(f.ruleId))),
+        : carried.filter((f) => f.source === "legal" && isAuthorityLoopRule(f.ruleId))),
       // Traps: this run's hits when the check ran, otherwise the ones a
       // previous run found. syncFindings auto-resolves anything it is not
       // handed, so dropping them on a failed check would silently clear a
       // seeded trap that is still sitting in the text.
       ...(trapResult.ran
         ? trapResult.findings
-        : priorFindings.filter((f) => f.ruleId?.startsWith("trap:"))),
+        : carried.filter((f) => f.ruleId?.startsWith("trap:"))),
       // Same carry-forward as the traps: a check that could not run has no
       // opinion, and letting its silence reach the sync would auto-resolve
       // findings that are still true.
       ...(factResult.ran
         ? factResult.findings
-        : priorFindings.filter(
+        : carried.filter(
             (f) => f.ruleId === "constant_mismatch" || f.ruleId === "named_act_unverified",
           )),
-      ...(kbResult.ran ? kbResult.findings : priorFindings.filter((f) => f.ruleId?.startsWith("kb:"))),
+      ...(kbResult.ran ? kbResult.findings : carried.filter((f) => f.ruleId?.startsWith("kb:"))),
       ...(statuteResult.ran
         ? statuteResult.findings
-        : priorFindings.filter((f) => f.ruleId?.startsWith("statute_"))),
+        : carried.filter((f) => f.ruleId?.startsWith("statute_"))),
       ...firmResult.findings,
     ];
 
@@ -1410,6 +1420,8 @@ export async function analyzeDraft(args: {
     }
     const tracked = coordinated.findings;
     const summary = await syncFindings({ draftId, tenantId: tid, incoming: tracked });
+    // Anything still open that quotes text no longer in the body (Task 21).
+    await closeStaleFindings({ draftId, tenantId: tid, body });
     if (summary.inserted || summary.reopened || summary.autoResolved) {
       logEvent("findings_synced", {
         draftId,

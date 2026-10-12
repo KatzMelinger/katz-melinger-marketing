@@ -26,6 +26,7 @@ import { linkRowFor } from "./link-map";
 import { closingCtaFor } from "./closing-cta";
 import { runLegalFactChecks } from "./legal-verify";
 import { autoRewrite } from "./auto-rewrite";
+import { loadEnabledTraps } from "./trap-gate";
 import { appendRun, readFixLog, type FixLog } from "./legal-fix-log";
 import { GENERAL_LEGAL_DISCLAIMER_TEXT, DISCLAIMER_URL } from "./legal-disclaimers";
 
@@ -121,12 +122,15 @@ export async function groundAndFix(args: {
   topic?: string | null;
   practiceArea?: string | null;
   format?: string | null;
+  /** "es" leaves the ending alone (no approved Spanish CTA yet). */
+  language?: string | null;
 }): Promise<{ body: string; title: string | null; fixLog: FixLog | null; fullRedraft: string | null }> {
   try {
-    const [kbFindings, statutes, cta] = await Promise.all([
+    const [kbFindings, statutes, cta, traps] = await Promise.all([
       runLegalFactChecks(args.body, { tenantId: args.tenantId }).catch(() => []),
       loadStatuteTable(args.tenantId),
       closingCtaFor(args.tenantId),
+      loadEnabledTraps(args.tenantId),
     ]);
     const r = await autoRewrite({
       body: args.body,
@@ -134,9 +138,12 @@ export async function groundAndFix(args: {
       topic: args.topic ?? null,
       practiceArea: args.practiceArea ?? null,
       format: args.format ?? null,
+      language: args.language ?? null,
       cta,
       kbFindings,
       statuteRows: statutes.ok ? statutes.rows : [],
+      traps: traps.traps,
+      trapCtx: { title: args.title, topic: args.topic ?? null, isWebPage: true },
     });
     const fixLog =
       r.changes.length || r.fullRedraft

@@ -12,7 +12,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isManualFindingStatus } from "@/lib/content-findings";
+import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 import {
+  closeStaleFindings,
   listAuditEvents,
   listFindings,
   recordAuditEvent,
@@ -39,25 +41,45 @@ export async function GET(
   const { supabase, tenantId } = await getTenantClient();
   const { data: draft } = await supabase
     .from("content_drafts")
-    .select("id")
+    .select("id, body")
     .eq("id", id)
     .maybeSingle();
   if (!draft) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const body = typeof draft.body === "string" ? draft.body : "";
 
   // The severity overrides ride along with the findings so the panel can
   // classify without a second round trip — it cannot render a scorecard or a
   // readiness count until it knows which rules are blockers (item 12).
-  const [findings, audit, severityOverrides] = await Promise.all([
+  const [listed, audit, severityOverrides, latest] = await Promise.all([
     listFindings(id),
     listAuditEvents(id),
     getSeverityOverrides(tenantId),
+    supabase
+      .from("content_analyses")
+      .select("scored_against, created_at")
+      .eq("draft_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then((r: { data: { scored_against?: AnalysisFingerprint | null; created_at?: string }[] | null }) => r.data?.[0] ?? null),
   ]);
+  // Task 21: never show a finding quoting text that is no longer in the draft.
+  const { closed } = await closeStaleFindings({ draftId: id, tenantId, body, findings: listed });
+  const findings = closed.length ? await listFindings(id) : listed;
+  // "Checked against the version saved at …": when the checks last ran, and
+  // whether the body has changed since (the panel says so instead of
+  // presenting old findings as current).
+  const checked = latest
+    ? {
+        at: latest.scored_against?.scored_at ?? latest.created_at ?? null,
+        stale: analysisStaleness(latest.scored_against ?? null, body).stale,
+      }
+    : null;
   // Which gated engines are actually armed right now — lets the panel show a
   // clear "Legal accuracy ✓" / "Freshness ✓" tab (checked, nothing outstanding)
   // instead of indistinguishably omitting the tab the way it would for an
   // engine that isn't enabled at all. See lib/feature-flags.ts.
   const engines = { legal: legalAccuracyEnabled(), freshness: freshnessGateEnabled() };
-  return NextResponse.json({ findings, audit, severityOverrides, engines });
+  return NextResponse.json({ findings, audit, severityOverrides, engines, checked });
 }
 
 export async function PATCH(

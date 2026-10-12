@@ -137,6 +137,14 @@ export function ChangesMadePanel({ draftId, body, nonce, onDraftChanged, onUnrev
           >
             {busy === "fix" ? "Fixing…" : "Fix known errors"}
           </button>
+          {/* Oct 6 spec, Task 23: every correction and open decision as a
+              Word document Diana can send to Kenneth or the attorney. */}
+          <a
+            href={`/api/content/drafts/${draftId}/correction-report`}
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] hover:bg-slate-50"
+          >
+            Export correction report
+          </a>
           {live.length > 0 && (
             <button
               type="button"
