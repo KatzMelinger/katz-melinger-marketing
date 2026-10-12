@@ -37,6 +37,7 @@
  */
 
 import { ruleCovers, statesLegalClaim, loadClaimCoverage, type ClaimCoverage } from "./legal-claim-routing";
+import { isAnchored } from "./legal-scope";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import { focusedExcerpt, quoteRelatesToClaim } from "./authority-excerpt";
 import { fingerprintFinding, RETIRED_CLAIM_TYPES, type NormalizedFinding } from "./content-findings";
@@ -233,12 +234,17 @@ export function toFinding(v: ClaimVerdict, coverage?: ClaimCoverage): Normalized
   if (!contradicted && !needsHumanOnly) {
     if (!statesLegalClaim(claim.sentence)) return null;
     if (coverage && ruleCovers(claim.sentence, coverage)) return null;
+    // A claim with a figure or citation is a decision for an attorney. One
+    // without (what an employer must do, what the law prohibits) is a "please
+    // confirm" item: listed, never a hold, not counted as a decision
+    // (Kenneth, 2026-10-12, the middle path).
+    const anchored = isAnchored(claim.sentence);
     return {
-      fingerprint: fingerprintFinding("legal", "no_rule", claim.sentence),
+      fingerprint: fingerprintFinding("legal", anchored ? "no_rule" : "no_rule_confirm", claim.sentence),
       source: "legal",
-      ruleId: "no_rule",
-      severity: "important",
-      title: "No rule for this claim yet",
+      ruleId: anchored ? "no_rule" : "no_rule_confirm",
+      severity: anchored ? "important" : "advisory",
+      title: anchored ? "No rule for this claim yet" : "Please confirm: no rule checks this statement yet",
       detail:
         v.quote ? `Authority says: "${v.quote}"` : "No knowledge base entry, statute row or trap checks this sentence.",
       excerpt: claim.sentence,

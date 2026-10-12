@@ -23,6 +23,8 @@ import {
 import { getSeverityOverrides } from "@/lib/finding-severity-store";
 import { withinHistory } from "@/lib/finding-severity";
 import { readFixLog } from "@/lib/legal-fix-log";
+import { learnApproval } from "@/lib/legal-learned";
+import { canClearLegalHold } from "@/lib/legal-reviewers";
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
 import { freshnessGateEnabled, legalAccuracyEnabled } from "@/lib/feature-flags";
@@ -178,6 +180,17 @@ export async function PATCH(
       resolution: resolution ?? null,
     },
   });
+
+  // An attorney approving a legal sentence as written approves it everywhere:
+  // no other draft sends the same sentence to an attorney again.
+  if (
+    resolution === "approved_as_is" &&
+    updated.source === "legal" &&
+    updated.excerpt &&
+    canClearLegalHold(user.email)
+  ) {
+    await learnApproval({ tenantId, sentence: updated.excerpt, by: user.email, draftId: id, rule: updated.ruleId });
+  }
 
   const findings = withinHistory(await listFindings(id));
   return NextResponse.json({ finding: updated, findings });

@@ -24,6 +24,8 @@
 --    interpretation categories close: their sentences are re-checked as legal
 --    claims on the next analysis. The code does the same on every analysis.
 --
+-- 3. legal_learned_statements: see below.
+--
 -- Idempotent.
 -- ============================================================================
 
@@ -92,5 +94,37 @@ update public.content_findings
  where status = 'open'          -- one already sent to an attorney stays with them
    and source = 'legal'
    and rule_id in ('negative_statement', 'interpretation');
+
+-- 3. What the system learns from attorneys (Kenneth, 2026-10-12).
+--    approved:   an attorney marked a legal sentence "Approved as is". The same
+--                sentence in any draft is then covered: never sent again.
+--    correction: an attorney replaced a sentence. The same wrong sentence in
+--                any later draft is corrected to the attorney's text by the
+--                fixer, logged in Changes made with who approved it; the
+--                replacement is itself an approved sentence.
+--    Exact sentences only (case, spacing, quotes and links ignored): a looser
+--    match could carry a decision onto a sentence the attorney never read.
+--    Listed on /content/rules, where any entry can be switched off.
+create table if not exists public.legal_learned_statements (
+  id                 uuid primary key default gen_random_uuid(),
+  tenant_id          uuid not null default '00000000-0000-0000-0000-000000000001'
+                       references public.tenants(id),
+  kind               text not null check (kind in ('approved', 'correction')),
+  sentence_key       text not null,
+  sentence           text not null,
+  replacement        text,
+  approved_by_email  text not null,
+  approved_at        timestamptz not null default now(),
+  draft_id           uuid,
+  finding_rule       text,
+  enabled            boolean not null default true,
+  unique (tenant_id, kind, sentence_key)
+);
+
+alter table public.legal_learned_statements enable row level security;
+drop policy if exists legal_learned_statements_tenant on public.legal_learned_statements;
+create policy legal_learned_statements_tenant on public.legal_learned_statements
+  for all using (tenant_id = public.current_tenant_id())
+  with check (tenant_id = public.current_tenant_id());
 
 commit;

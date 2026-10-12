@@ -27,6 +27,7 @@ import { clearTextCertifications } from "@/lib/draft-certifications";
 import { canClearLegalHold, reviewerFor } from "@/lib/legal-reviewers";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { hasWebPage } from "@/lib/draft-metadata";
+import { learnCorrection } from "@/lib/legal-learned";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -208,6 +209,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     actorEmail: actor.email,
     detail: { findingId, rule: finding.rule_id, changeId: change.id, objections: rejected },
   });
+  // An attorney's replacement is learned: the same wrong sentence in any later
+  // draft is corrected to this text (lib/legal-learned.ts).
+  if (byAttorney) {
+    await learnCorrection({
+      tenantId,
+      from: located.text,
+      to: proposed,
+      by: actor.email,
+      draftId: id,
+      rule: (finding.rule_id as string | null) ?? null,
+    });
+  }
   scheduleDraftAnalysis({
     draftId: id,
     body: newBody,

@@ -15,6 +15,7 @@ import { ContentNav } from "@/components/content-nav";
 import { DashButton, DashCard, DashInput, DashPill, DashSelect, DashSpinner } from "@/components/dashboard-ui";
 import { RescanDrafts } from "@/components/rescan-drafts";
 import type { KbRow, RuleChange } from "@/lib/rule-changes";
+import type { LearnedStatement } from "@/lib/legal-learned";
 
 type KbEntry = KbRow & { needsVerify: boolean };
 type Brief = Record<string, string | string[]>;
@@ -78,6 +79,7 @@ export default function RulesPage() {
   const [editing, setEditing] = useState<KbEntry | "new" | null>(null);
   const [kbFilter, setKbFilter] = useState("");
   const [showRescan, setShowRescan] = useState(false);
+  const [learned, setLearned] = useState<LearnedStatement[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +94,7 @@ export default function RulesPage() {
       setHistory(data.history ?? []);
       setBrief(data.brief ?? {});
       setCanApprove(!!data.canApprove);
+      setLearned(data.learned ?? []);
       const sd = await s.json().catch(() => ({}));
       setStored(sd.settings ?? {});
     } catch (e) {
@@ -348,6 +351,40 @@ export default function RulesPage() {
               <RescanDrafts />
             </section>
           )}
+
+          <section>
+            <h2 className="mb-1 text-lg font-semibold text-slate-900">Learned from attorney decisions ({learned.length})</h2>
+            <p className="mb-2 text-xs text-slate-600">
+              A sentence an attorney approved as written is never sent to an attorney again, in any draft. A sentence an
+              attorney replaced is corrected to their text wherever it appears again. Exact sentences only.
+            </p>
+            <DashCard className="divide-y divide-slate-100 p-0">
+              {learned.length === 0 && (
+                <p className="px-4 py-4 text-center text-xs text-slate-500">Nothing yet. Decisions appear here as attorneys make them.</p>
+              )}
+              {learned.map((l) => (
+                <div key={l.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-2 text-xs">
+                  <div className={`min-w-0 flex-1 ${l.enabled ? "" : "opacity-50"}`}>
+                    <DashPill tone={l.kind === "approved" ? "emerald" : "blue"}>{l.kind === "approved" ? "approved" : "correction"}</DashPill>
+                    <span className={`ml-2 italic text-slate-700 ${l.kind === "correction" ? "line-through" : ""}`}>“{l.sentence}”</span>
+                    {l.replacement && <div className="mt-1 pl-1 italic text-slate-900">→ “{l.replacement}”</div>}
+                    <div className="mt-0.5 text-[11px] text-slate-500">{l.approved_by_email}, {when(l.approved_at)}</div>
+                  </div>
+                  {canApprove && (
+                    <button
+                      type="button"
+                      className="shrink-0 text-slate-600 underline hover:opacity-80"
+                      onClick={async () => {
+                        if (await post({ action: "toggle_learned", id: l.id, enabled: !l.enabled })) await load();
+                      }}
+                    >
+                      {l.enabled ? "Switch off" : "Switch on"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </DashCard>
+          </section>
 
           <section>
             <h2 className="mb-2 text-lg font-semibold text-slate-900">Rule history</h2>

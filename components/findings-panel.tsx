@@ -169,6 +169,9 @@ export function FindingsPanel({
   // Task 25: decisions are the review items: not style, not advisory. The same
   // definition the correction report uses.
   const decisions = useMemo(() => open.filter(isDecision), [open]);
+  // Legal statements with no rule and no figure or citation: listed for an
+  // attorney to confirm, never a hold (Kenneth, 2026-10-12).
+  const toConfirm = useMemo(() => open.filter((f) => f.ruleId === "no_rule_confirm").length, [open]);
   const engines = useMemo(() => summarizeByEngine(findings, overrides), [findings, overrides]);
   const blockers = useMemo(() => countBlockers(findings, overrides), [findings, overrides]);
 
@@ -264,7 +267,8 @@ export function FindingsPanel({
           )}
           <span className="ml-1.5 font-normal opacity-70">
             Corrections {corrections} · Decisions {decisions.length}
-            {open.length > decisions.length ? ` · ${open.length - decisions.length} for information` : ""}
+            {toConfirm > 0 ? ` · To confirm ${toConfirm}` : ""}
+            {open.length - decisions.length - toConfirm > 0 ? ` · ${open.length - decisions.length - toConfirm} for information` : ""}
           </span>
           {checked?.at && (
             <div className="mt-0.5 text-[10px] font-normal opacity-70">

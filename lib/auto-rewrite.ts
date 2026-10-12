@@ -62,6 +62,12 @@ export type RewriteInput = {
   statuteRows?: StatuteRow[];
   /** Skip the model call (tests, dry runs that must cost nothing). */
   noModel?: boolean;
+  /**
+   * Sentences an attorney corrected before, with their text (Kenneth,
+   * 2026-10-12; lib/legal-learned.ts). The same wrong sentence anywhere is
+   * replaced with the attorney's text, no model call.
+   */
+  learnedCorrections?: { from: string; to: string; by: string; at: string }[];
 };
 
 export type RewriteResult = {
@@ -198,6 +204,12 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
   const offPractice = firm.find((f) => f.ruleId === "firm_off_practice");
   if (offPractice) {
     return { body: ed.body, title: ed.title, changes: [], attorneyReview: [], fullRedraft: offPractice.title };
+  }
+
+  // 0b. An attorney already corrected this exact sentence elsewhere.
+  for (const c of input.learnedCorrections ?? []) {
+    if (!ed.body.includes(c.from)) continue;
+    ed.replace(c.from, c.to, `Corrected as ${c.by} (attorney) corrected it on ${c.at.slice(0, 10)}.`, "attorney decision", "learned");
   }
 
   // Placeholders and schema code are reported, never filled in.

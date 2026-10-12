@@ -14,6 +14,8 @@ import { isDecision, withinHistory } from "../lib/finding-severity";
 import { statesLegalClaim, type ClaimCoverage } from "../lib/legal-claim-routing";
 import type { KbThresholdEntry } from "../lib/legal-knowledge-base";
 import { toFinding, type ClaimVerdict } from "../lib/legal-verify";
+import { sentenceKey } from "../lib/legal-learned";
+import { autoRewrite } from "../lib/auto-rewrite";
 
 let failed = 0;
 const expect = (ok: boolean, msg: string) => {
@@ -108,6 +110,17 @@ const contradicted = toFinding({ ...claim(neg, "negative_statement"), verdict: "
 expect(contradicted?.severity === "critical" && contradicted.claimType === "factual_mismatch",
   `a contradicted claim is critical and never a retired category (got ${contradicted?.claimType})`);
 
+// 4b. Middle path (Kenneth, 2026-10-12): a claim with no figure or citation is a
+// "please confirm" item, never a decision or a hold.
+const duty = "Your employer cannot retaliate against you for filing a complaint.";
+const confirm = toFinding(claim(duty, "negative_statement"), none);
+expect(confirm?.ruleId === "no_rule_confirm" && confirm.severity === "advisory",
+  `unanchored claim is please-confirm (got ${confirm?.ruleId}/${confirm?.severity})`);
+
+// 4c. Learning: a sentence an attorney approved is covered in every draft.
+expect(toFinding(claim(neg, "negative_statement"), { ...none, approved: new Set([sentenceKey(`  ${neg.toUpperCase()} `)]) }) === null,
+  "an attorney-approved sentence is not sent again (case and spacing ignored)");
+
 // 5. One decision count, shared by the panel and the report.
 const stored = (over: Partial<StoredFinding>): StoredFinding => ({
   id: "x", draftId: "d", fingerprint: "p", source: "legal", ruleId: "no_rule", severity: "important",
@@ -119,6 +132,7 @@ expect(isDecision(stored({})), "an open legal claim is a decision");
 expect(!isDecision(stored({ source: "readability", ruleId: "readability:02" })), "a style finding is not a decision");
 expect(!isDecision(stored({ severity: "advisory", source: "compliance" })), "an advisory finding is not a decision");
 expect(!isDecision(stored({ status: "resolved" })), "a closed finding is not a decision");
+expect(!isDecision(stored({ ruleId: "no_rule_confirm", severity: "advisory" })), "a please-confirm item is not a decision");
 
 // 6. History: closed findings older than 30 days are not loaded.
 const now = Date.parse("2026-10-12T12:00:00Z");
@@ -132,5 +146,22 @@ const hist = withinHistory(
 );
 expect(hist.map((h) => h.id).join(",") === "open-old,closed-new", `30-day window (got ${hist.map((h) => h.id)})`);
 
+// 7. Learning: an attorney's correction is applied wherever the sentence recurs.
+async function learnedRewrite() {
+  const wrong = "New York courts recognize a public policy exception to at will employment.";
+  const right = "New York courts generally do not recognize a common law public policy exception to at will employment.";
+  const r = await autoRewrite({
+    body: ["# At will", "", `Some intro text. ${wrong} More text.`].join("\n"),
+    title: "At will",
+    cta: { phone: "212-460-0047", offerPhrase: "Free Confidential Case Evaluation" },
+    noModel: true,
+    learnedCorrections: [{ from: wrong, to: right, by: "kjkatz@katzmelinger.com", at: "2026-10-12T00:00:00Z" }],
+  });
+  expect(r.body.includes(right) && !r.body.includes(wrong), "learned correction applied");
+  expect(r.changes.some((c) => c.source === "attorney decision" && c.reason.includes("kjkatz@katzmelinger.com")),
+    "logged as an attorney decision with who approved it");
+}
+
+await learnedRewrite();
 console.log(failed ? `${failed} failed` : "all passed");
 process.exit(failed ? 1 : 0);

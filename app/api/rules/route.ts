@@ -2,7 +2,8 @@
  * Rules without code (Oct 6 spec, Task 24).
  *
  * GET  /api/rules
- *        → { kb, history, pending, missing, brief, canApprove, today }
+ *        → { kb, history, pending, missing, brief, learned, canApprove, today }
+ *          learned: what attorneys approved or corrected (lib/legal-learned.ts)
  *          kb: knowledge base entries, each with needsVerify (12 months)
  *          history: the latest rule changes (brand, trap, kb)
  *          missing: claims in open drafts that no rule covers yet
@@ -18,6 +19,8 @@
  *            new pending proposal.
  *        { action: "verify", entryType, key }  attorneys only: the entry was
  *            checked against its source today.
+ *        { action: "toggle_learned", id, enabled }  attorneys only: switch a
+ *            learned approval or correction off or on.
  */
 import { NextRequest, NextResponse } from "next/server";
 
@@ -25,6 +28,7 @@ import { writeBrandSetting } from "@/lib/brand-settings";
 import { canClearLegalHold, reviewerFor } from "@/lib/legal-reviewers";
 import { sendEmails } from "@/lib/notify-shared";
 import { getOperatingBrief } from "@/lib/social-operating-brief";
+import { loadLearned } from "@/lib/legal-learned";
 import {
   applyKbRow,
   isMissingRuleTable,
@@ -134,11 +138,12 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   const tenantId = await resolveTenantId();
   try {
-    const [kbRows, history, missing, brief] = await Promise.all([
+    const [kbRows, history, missing, brief, learned] = await Promise.all([
       loadKbRows(tenantId),
       listRuleChanges(tenantId, { limit: 300 }),
       missingRules(tenantId),
       getOperatingBrief(tenantId),
+      loadLearned(tenantId, { includeDisabled: true }),
     ]);
     const today = todayNy();
     return NextResponse.json({
@@ -148,6 +153,7 @@ export async function GET() {
       pending: history.filter((h) => h.status === "pending"),
       missing,
       brief,
+      learned,
       canApprove: canClearLegalHold(user.email),
     });
   } catch (e) {
@@ -284,6 +290,20 @@ export async function POST(req: NextRequest) {
           kind: "kb", ref: kbRef(row), label: row.label, action: "verify",
           oldValue: { last_verified: row.last_verified }, newValue: { last_verified: today }, by: user.email,
         });
+        return NextResponse.json({ ok: true });
+      }
+
+      case "toggle_learned": {
+        if (!canClearLegalHold(user.email)) {
+          return NextResponse.json({ error: "Only a reviewing attorney can change a learned decision." }, { status: 403 });
+        }
+        if (typeof b.id !== "string") return NextResponse.json({ error: "id required" }, { status: 400 });
+        const { error } = await sb
+          .from("legal_learned_statements")
+          .update({ enabled: b.enabled !== false })
+          .eq("tenant_id", tenantId)
+          .eq("id", b.id);
+        if (error) throw new Error(error.message);
         return NextResponse.json({ ok: true });
       }
 

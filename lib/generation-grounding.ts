@@ -28,6 +28,7 @@ import { runLegalFactChecks } from "./legal-verify";
 import { autoRewrite } from "./auto-rewrite";
 import { loadEnabledTraps } from "./trap-gate";
 import { appendRun, readFixLog, type FixLog } from "./legal-fix-log";
+import { learnedCorrections, loadLearned } from "./legal-learned";
 import { GENERAL_LEGAL_DISCLAIMER_TEXT, DISCLAIMER_URL } from "./legal-disclaimers";
 
 function formatValue(t: KbThresholdEntry): string {
@@ -126,11 +127,12 @@ export async function groundAndFix(args: {
   language?: string | null;
 }): Promise<{ body: string; title: string | null; fixLog: FixLog | null; fullRedraft: string | null }> {
   try {
-    const [kbFindings, statutes, cta, traps] = await Promise.all([
+    const [kbFindings, statutes, cta, traps, learned] = await Promise.all([
       runLegalFactChecks(args.body, { tenantId: args.tenantId }).catch(() => []),
       loadStatuteTable(args.tenantId),
       closingCtaFor(args.tenantId),
       loadEnabledTraps(args.tenantId),
+      loadLearned(args.tenantId),
     ]);
     const r = await autoRewrite({
       body: args.body,
@@ -144,6 +146,7 @@ export async function groundAndFix(args: {
       statuteRows: statutes.ok ? statutes.rows : [],
       traps: traps.traps,
       trapCtx: { title: args.title, topic: args.topic ?? null, isWebPage: true },
+      learnedCorrections: learnedCorrections(learned),
     });
     const fixLog =
       r.changes.length || r.fullRedraft
