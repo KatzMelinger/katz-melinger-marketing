@@ -111,6 +111,11 @@ export function scrubAccuracyClaims(summary: string): string {
  */
 export async function loadComplianceRuleBlocks(
   jurisdiction: string,
+  opts: {
+    /** Leave a library row out of the prompt (Task 7: rows superseded by
+     *  Brand settings, or carrying a number that must never appear). */
+    dropDisclaimer?: (d: { label: string; text: string }) => boolean;
+  } = {},
 ): Promise<{ rulesBlock: string; disclaimersBlock: string }> {
   const codes = jurisdiction
     .split(",")
@@ -118,10 +123,13 @@ export async function loadComplianceRuleBlocks(
     .filter(Boolean);
 
   try {
-    const [rules, disclaimers] = await Promise.all([
+    const [rules, allDisclaimers] = await Promise.all([
       getRulesForJurisdictions(codes),
       getDisclaimersForJurisdictions(codes),
     ]);
+    const disclaimers = opts.dropDisclaimer
+      ? allDisclaimers.filter((d) => !opts.dropDisclaimer!({ label: d.label ?? "", text: d.text ?? "" }))
+      : allDisclaimers;
 
     const rulesBlock = rules.length
       ? rules

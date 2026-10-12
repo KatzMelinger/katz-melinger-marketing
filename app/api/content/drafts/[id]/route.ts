@@ -59,30 +59,7 @@ export async function GET(
   // re-run the whole library on first open. One run per body version.
   const draftBody = typeof (data as { body?: string }).body === "string" ? (data as { body: string }).body : "";
   if (staleness?.reason === "edited" && draftBody.trim()) {
-    const key = `${id}:${fingerprintBody(draftBody)}`;
-    const last = REANALYSIS_REQUESTED.get(key) ?? 0;
-    if (Date.now() - last > 15 * 60_000) {
-      REANALYSIS_REQUESTED.set(key, Date.now());
-      const d = data as Record<string, unknown>;
-      after(async () => {
-        try {
-          await analyzeDraft({
-            draftId: id,
-            body: draftBody,
-            targetKeywords: (d.seo_brief as { targetKeywords?: string[] } | null)?.targetKeywords ?? [],
-            title: (d.title as string | null) ?? null,
-            topic: (d.topic as string | null) ?? null,
-            format: (d.format as string | null) ?? null,
-            template: (d.template as string | null) ?? null,
-            practiceArea: (d.practice_area as string | null) ?? null,
-            readabilityConfig: await getReadabilityConfig(tenantId),
-            notify: false,
-          });
-        } catch (e) {
-          console.warn("[drafts] re-check on open failed:", e);
-        }
-      });
-    }
+    recheckInBackground(id, draftBody, data as Record<string, unknown>, tenantId);
   }
 
   return NextResponse.json({
@@ -94,6 +71,37 @@ export async function GET(
 
 /** draftId:bodyHash -> when a re-check was last requested (per server instance). */
 const REANALYSIS_REQUESTED = new Map<string, number>();
+
+/**
+ * Run every check on this body after the response is sent: on open when the
+ * text changed since the checks ran (Task 21), and on every save that changes
+ * the text (Oct 6 spec, Task 7: compliance must never analyze an old body).
+ * One run per body version per server instance.
+ */
+function recheckInBackground(id: string, body: string, d: Record<string, unknown>, tenantId: string) {
+  const key = `${id}:${fingerprintBody(body)}`;
+  const last = REANALYSIS_REQUESTED.get(key) ?? 0;
+  if (Date.now() - last <= 15 * 60_000) return;
+  REANALYSIS_REQUESTED.set(key, Date.now());
+  after(async () => {
+    try {
+      await analyzeDraft({
+        draftId: id,
+        body,
+        targetKeywords: (d.seo_brief as { targetKeywords?: string[] } | null)?.targetKeywords ?? [],
+        title: (d.title as string | null) ?? null,
+        topic: (d.topic as string | null) ?? null,
+        format: (d.format as string | null) ?? null,
+        template: (d.template as string | null) ?? null,
+        practiceArea: (d.practice_area as string | null) ?? null,
+        readabilityConfig: await getReadabilityConfig(tenantId),
+        notify: false,
+      });
+    } catch (e) {
+      console.warn("[drafts] background re-check failed:", e);
+    }
+  });
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -197,6 +205,11 @@ export async function PATCH(
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Task 7: a saved text change is re-checked at once (compliance included).
+  if (typeof body?.body === "string" && body.body !== existing.body && body.body.trim()) {
+    recheckInBackground(id, body.body, data as Record<string, unknown>, tenantId);
+  }
 
   if (events.length > 0) {
     const user = await getCurrentUser();

@@ -32,6 +32,15 @@ import {
 import { blockingAdHits, findAdTerms, marketingCopyViolations, reviewableAdHits } from "@/lib/ad-terms";
 import { blockingFeeHits, findFeeLanguage, reviewableFeeHits } from "@/lib/fee-language";
 import { findFirmFactClaims } from "@/lib/firm-facts";
+import { findNeverInContentPhones, getOperatingBrief, type OperatingBrief } from "@/lib/social-operating-brief";
+import {
+  ATTORNEY_ADVERTISING_LABEL,
+  closingCta,
+  GENERAL_LEGAL_DISCLAIMER_TEXT,
+  hasAttorneyAdvertisingLabel,
+  hasClosingCta,
+  hasGeneralLegalDisclaimer,
+} from "@/lib/legal-disclaimers";
 
 export type ContentSurface =
   | "blog"
@@ -87,10 +96,47 @@ const SURFACE_GUIDANCE: Record<ContentSurface, { label: string; notes: string }>
   },
 };
 
+/** Firm-owned web surfaces, where the locked label, CTA and disclaimer apply. */
+const WEB_SURFACES: ReadonlySet<ContentSurface> = new Set<ContentSurface>(["blog", "webpage"]);
+
+/**
+ * The firm's locked elements, from Brand settings (Oct 6 spec, Task 7). The
+ * model reads these, not a library row: the "Closing CTA" library row still
+ * carried 646-849-3352, and the model recommended it back to Diana.
+ */
+function lockedElementsBlock(brief: OperatingBrief, web: boolean): string {
+  const lines = [
+    "FIRM LOCKED ELEMENTS (from Brand settings; these are the only allowed versions):",
+    web ? `- First line of every blog and web page: "${ATTORNEY_ADVERTISING_LABEL}"` : null,
+    web ? `- Closing CTA, once, above the disclaimer: "${closingCta(brief.webPhone, brief.offerPhrase)}"` : null,
+    web ? `- Closing disclaimer, the last paragraph, verbatim: "${GENERAL_LEGAL_DISCLAIMER_TEXT}"` : null,
+    `- Fee rule: content never says how Katz Melinger or any lawyer charges (contingency, hourly, flat fee, "no fee unless we win", what the reader will pay). The free consultation offer ("${brief.offerPhrase}", "free consultation") is allowed.`,
+    `- Phone numbers that must NEVER appear in content or in any recommendation you make: ${brief.neverInContentPhones.join(", ") || "(none)"}. The website number is ${brief.webPhone}.`,
+    web
+      ? "- The label, the CTA and the disclaimer are checked separately, word for word. Do not report them missing; report only a reworded or extra copy."
+      : null,
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+/** A model note saying the label, CTA or disclaimer is missing. */
+const MISSING_RE = /\b(missing|lacks?|absent|no|without|add|include|needs?)\b/i;
+const DISCLAIMER_RE = /disclaimer|not legal advice|general information/i;
+const LABEL_RE = /attorney advertising/i;
+const CTA_RE = /call to action|\bCTA\b|call today/i;
+
+/** Replace any never-in-content number in text we show with the website number. */
+function scrubPhones(text: string, brief: OperatingBrief): string {
+  let out = text;
+  for (const hit of findNeverInContentPhones(text, brief.neverInContentPhones)) out = out.split(hit).join(brief.webPhone);
+  return out;
+}
+
 function buildSystemPrompt(
   surface: ContentSurface,
   rulesBlock: string,
   disclaimersBlock: string,
+  lockedBlock: string,
 ): string {
   const g = SURFACE_GUIDANCE[surface] ?? SURFACE_GUIDANCE.other;
   return `You are an expert in U.S. attorney advertising compliance, reviewing OUTBOUND CONTENT for a plaintiff-side employment law firm before it is published.
@@ -98,6 +144,7 @@ function buildSystemPrompt(
 You apply the following jurisdiction-specific rules:
 
 ${rulesBlock}
+${lockedBlock}
 ${disclaimersBlock}
 ${COMMON_FAILURE_MODES}
 
@@ -138,6 +185,8 @@ export async function checkContentCompliance(input: {
   surface: ContentSurface;
   practiceArea?: string;
   jurisdiction?: Jurisdiction;
+  /** Whose Brand settings apply. Defaults to the request's tenant. */
+  tenantId?: string;
 }): Promise<ContentComplianceResult> {
   const content = input.content.trim();
   if (!content) {
@@ -153,19 +202,31 @@ export async function checkContentCompliance(input: {
   }
 
   const jurisdiction = input.jurisdiction ?? "NY,NJ";
-  const { rulesBlock, disclaimersBlock } =
-    await loadComplianceRuleBlocks(jurisdiction);
+  const web = WEB_SURFACES.has(input.surface);
+  const brief = await getOperatingBrief(input.tenantId);
+  const { rulesBlock, disclaimersBlock } = await loadComplianceRuleBlocks(jurisdiction, {
+    // The locked block states the CTA and the disclaimer from Brand settings;
+    // a library copy of either can only disagree with it, and a row carrying
+    // a never-in-content number must not reach the model at all.
+    dropDisclaimer: (d) =>
+      /^closing (cta|disclaimer)$/i.test(d.label.trim()) ||
+      findNeverInContentPhones(d.text, brief.neverInContentPhones).length > 0,
+  });
   const systemPrompt = buildSystemPrompt(
     input.surface,
     rulesBlock,
     disclaimersBlock,
+    lockedElementsBlock(brief, web),
   );
 
   // Long-form content (blogs) can run past a few thousand words; cap what we
-  // send so the review stays fast and within token limits while still seeing
-  // the whole intro/CTA where most violations live.
+  // send so the review stays fast and within token limits. Keep the start AND
+  // the end: the CTA and the closing disclaimer are the last lines, and a
+  // start-only cut made the model report a present disclaimer as missing.
   const truncated =
-    content.length > 12000 ? content.slice(0, 12000) + "\n…[truncated]" : content;
+    content.length > 12000
+      ? `${content.slice(0, 9000)}\n…[middle omitted]…\n${content.slice(-3000)}`
+      : content;
 
   const userPrompt = `Review the following ${SURFACE_GUIDANCE[input.surface]?.label ?? "content"} for attorney-advertising compliance.
 
@@ -195,6 +256,23 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
     response.content[0]?.type === "text" ? response.content[0].text : "";
 
   const raw = extractJSON<Partial<ContentComplianceResult>>(text);
+  return applyFirmRules({ raw, content, surface: input.surface, brief });
+}
+
+/**
+ * Everything after the model call: the deterministic firm rules merged in, and
+ * the model's own output cleaned against Brand settings. Pure, so it is tested
+ * without a model (scripts/check-compliance-task7.ts).
+ */
+export function applyFirmRules(args: {
+  raw: Partial<ContentComplianceResult> | null;
+  content: string;
+  surface: ContentSurface;
+  brief: OperatingBrief;
+}): ContentComplianceResult {
+  const { raw, content, brief } = args;
+  const input = { surface: args.surface };
+  const web = WEB_SURFACES.has(args.surface);
   const base = normalizeComplianceResult(raw);
 
   // Fee arrangements are an ABSOLUTE firm rule, so they are matched
@@ -279,17 +357,50 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
           `Advertising term, unclear subject: "${h.match}" — confirm this is not a claim about Katz Melinger. ${h.why}. Context: "${h.sentence.slice(0, 120)}"`,
       );
 
-  const violations = [...base.violations, ...feeViolations, ...firmViolations, ...adViolations];
-  const hardViolations = feeViolations.length + firmViolations.length + adViolations.length;
+  // Task 7: a number that must never appear in content is a blocker on every
+  // surface (blogs also hold on it through lib/required-elements.ts).
+  const phoneViolations = findNeverInContentPhones(content, brief.neverInContentPhones).map((hit) => ({
+    rule: "Firm rule — phone number never in content",
+    severity: "high" as const,
+    excerpt: hit,
+    reason: `${hit} must never appear in content (Brand settings).`,
+    fix: `Use ${web ? brief.webPhone : brief.socialPhone} instead.`,
+  }));
+
+  // Task 7: the model reporting the label, CTA or disclaimer missing when the
+  // word-for-word check finds it in place is a false alarm, never shown.
+  const present = {
+    disclaimer: hasGeneralLegalDisclaimer(content),
+    label: hasAttorneyAdvertisingLabel(content),
+    cta: hasClosingCta(content, brief.webPhone, brief.offerPhrase),
+  };
+  const falseMissing = (text: string) =>
+    web &&
+    MISSING_RE.test(text) &&
+    ((present.disclaimer && DISCLAIMER_RE.test(text) && !/prior results|case result/i.test(text)) ||
+      (present.label && LABEL_RE.test(text)) ||
+      (present.cta && CTA_RE.test(text)));
+  const modelViolations = base.violations
+    .filter((v) => !falseMissing(`${v.rule} ${v.reason} ${v.fix}`))
+    .map((v) => ({ ...v, reason: scrubPhones(v.reason ?? "", brief), fix: scrubPhones(v.fix ?? "", brief) }));
+
+  const violations = [...modelViolations, ...feeViolations, ...firmViolations, ...adViolations, ...phoneViolations];
+  const hardViolations = feeViolations.length + firmViolations.length + adViolations.length + phoneViolations.length;
   return {
     ...base,
     violations,
-    warnings: [...base.warnings, ...feeWarnings, ...firmWarnings, ...adWarnings],
+    warnings: [
+      ...base.warnings.filter((w) => !falseMissing(w)).map((w) => scrubPhones(w, brief)),
+      ...feeWarnings,
+      ...firmWarnings,
+      ...adWarnings,
+    ],
+    requiredDisclaimers: base.requiredDisclaimers.map((d) => scrubPhones(d, brief)),
+    summary: scrubPhones(base.summary ?? "", brief),
     // A deterministic high-severity violation cannot leave the piece marked
     // compliant, whatever the model scored it.
     status: hardViolations > 0 ? "non_compliant" : base.status,
     score: hardViolations > 0 ? Math.min(base.score, 35) : base.score,
-    suggestedRewrite:
-      typeof raw?.suggestedRewrite === "string" ? raw.suggestedRewrite : "",
+    suggestedRewrite: scrubPhones(typeof raw?.suggestedRewrite === "string" ? raw.suggestedRewrite : "", brief),
   };
 }
