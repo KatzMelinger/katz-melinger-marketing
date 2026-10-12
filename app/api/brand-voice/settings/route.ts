@@ -8,34 +8,26 @@
  * firmName, targetGeography, keyMessages, toneOfVoice — but the table
  * accepts any key so Huraqan can grow into other context fields (e.g.
  * brandStory, valueProps) without schema changes.
+ *
+ * Every changed value is recorded in rule_changes (Oct 6 spec, Task 24), so a
+ * brand constant can be restored from Rules history.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantDb } from "@/lib/tenant-db";
+import { IDENTITY_TO_COLUMN } from "@/lib/brand-settings";
+import { recordRuleChange } from "@/lib/rule-changes";
+import { getCurrentUser, guardUser } from "@/lib/supabase-route";
+import { getTenantClient, getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
 
 const MAX_VALUE_LENGTH = 40000;
 
-// Firm-IDENTITY fields live canonically in tenant_settings (read by the sidebar,
-// getTenantConfig, and every per-tenant feature). They are ALSO mirrored here in
-// brand_voice_settings for backward compatibility with getFirmContext. This map
-// keeps the two in sync: any identity key saved through this endpoint is written
-// to its tenant_settings column, and the GET overlays tenant_settings on top so
-// the form always shows the canonical value (even if edited elsewhere).
-const IDENTITY_TO_COLUMN: Record<string, string> = {
-  firmName: "firm_name",
-  firmAddress: "firm_address",
-  firmPhone: "firm_phone",
-  firmEmail: "firm_email",
-  firmWebsite: "firm_website",
-  targetGeography: "target_geography",
-  firmSpokesperson: "firm_spokesperson",
-  brandPrimaryColor: "brand_primary_color",
-  logoUrl: "logo_url",
-};
+// Firm-identity fields are mirrored into tenant_settings: lib/brand-settings.ts.
 
 export async function GET() {
+  const denied = await guardUser();
+  if (denied) return denied;
   try {
     const db = await getTenantDb();
     const { data, error } = await db
@@ -78,6 +70,8 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   try {
     const body = await req.json().catch(() => ({}));
     const { settings } = body || {};
@@ -118,6 +112,12 @@ export async function PUT(req: NextRequest) {
     }
 
     const db = await getTenantDb();
+    const { data: beforeRows } = await db
+      .from("brand_voice_settings")
+      .select("key, value")
+      .in("key", rows.map((r) => r.key));
+    const before = new Map((beforeRows ?? []).map((r) => [r.key as string, (r.value as string | null) ?? ""]));
+
     const { error } = await db.upsert("brand_voice_settings", rows, {
       onConflict: "tenant_id,key",
     });
@@ -125,6 +125,21 @@ export async function PUT(req: NextRequest) {
     if (error) {
       console.error("[brand-voice/settings PUT] Supabase error:", error.message);
       return NextResponse.json({ error: "Failed to save settings" }, { status: 500 });
+    }
+
+    const { tenantId } = await getTenantClient();
+    for (const r of rows) {
+      const old = before.get(r.key);
+      if (old === r.value || (old === undefined && r.value === "")) continue;
+      await recordRuleChange(tenantId, {
+        kind: "brand",
+        ref: r.key,
+        label: r.key,
+        action: old === undefined ? "create" : "update",
+        oldValue: old ?? null,
+        newValue: r.value,
+        by: user.email,
+      });
     }
 
     // Mirror any firm-identity fields into tenant_settings (the canonical home),

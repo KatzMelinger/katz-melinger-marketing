@@ -19,6 +19,7 @@ import Link from "next/link";
 
 import { ContentNav } from "@/components/content-nav";
 import { DashButton, DashCard, DashPill, DashSpinner } from "@/components/dashboard-ui";
+import { RescanDrafts } from "@/components/rescan-drafts";
 import { TrapEditor } from "@/components/trap-editor";
 import type { KnownTrap, TrapScanResult } from "@/lib/known-traps";
 
@@ -37,8 +38,13 @@ export default function KnownTrapsPage() {
   const [draftsScanned, setDraftsScanned] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<{ id: string; title: string; status: string }[]>([]);
-  // null: no editor; "new": the Add form; otherwise the trap being edited.
-  const [editing, setEditing] = useState<KnownTrap | "new" | null>(null);
+  // null: no editor; "new": the Add form; { sentence }: a new trap from the
+  // Missing rules list; otherwise the trap being edited.
+  const [editing, setEditing] = useState<KnownTrap | "new" | { sentence: string } | null>(null);
+  const [saved, setSaved] = useState(false);
+  // Task 23/24: claims in open drafts that no rule covers yet.
+  const [missing, setMissing] = useState<{ sentence: string; drafts: { id: string; title: string }[] }[]>([]);
+  const [showMissing, setShowMissing] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
   const loadTraps = useCallback(async () => {
@@ -62,6 +68,10 @@ export default function KnownTrapsPage() {
 
   useEffect(() => {
     void loadTraps();
+    void fetch("/api/rules", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setMissing(d?.missing ?? []))
+      .catch(() => undefined);
   }, [loadTraps]);
 
   const scan = async () => {
@@ -123,24 +133,78 @@ export default function KnownTrapsPage() {
         <DashButton variant="outline" onClick={() => setEditing("new")}>
           Add trap
         </DashButton>
+        {missing.length > 0 && (
+          <button type="button" onClick={() => setShowMissing((v) => !v)} className="text-xs text-brand underline hover:opacity-80">
+            {missing.length} missing rule{missing.length === 1 ? "" : "s"}{showMissing ? " (hide)" : ""}
+          </button>
+        )}
         <button type="button" onClick={() => setShowAll((v) => !v)} className="text-xs text-brand underline hover:opacity-80">
           {traps.length} trap{traps.length === 1 ? "" : "s"} configured{showAll ? " (hide)" : " (edit)"}
         </button>
         {results && <span className="text-xs text-slate-500">{draftsScanned} drafts scanned</span>}
       </div>
 
+      {showMissing && missing.length > 0 && (
+        <DashCard className="mt-4 space-y-2">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Missing rules</h3>
+            <p className="text-xs text-slate-600">
+              Claims in open drafts that no trap or knowledge base entry covers yet. Each needs a person until a rule exists.
+            </p>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {missing.map((m) => (
+              <li key={m.sentence} className="flex flex-wrap items-start justify-between gap-2 py-2 text-xs">
+                <div className="min-w-0 flex-1">
+                  <p className="italic text-slate-700">“{m.sentence}”</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {m.drafts.map((d, i) => (
+                      <span key={d.id}>
+                        {i > 0 && ", "}
+                        <Link href={`/content/drafts?draft=${d.id}`} className="text-brand hover:underline">{d.title}</Link>
+                      </span>
+                    ))}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 text-brand underline hover:opacity-80"
+                  onClick={() => {
+                    setEditing({ sentence: m.sentence });
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                >
+                  Create rule from this
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-slate-500">
+            A figure (wage, deadline, employee count) belongs in the knowledge base instead: <Link href="/content/rules" className="text-brand underline">Rules</Link>.
+          </p>
+        </DashCard>
+      )}
+
       {editing && (
         <div className="mt-4">
           <TrapEditor
-            key={editing === "new" ? "new" : editing.id}
-            initial={editing === "new" ? null : editing}
+            key={editing === "new" ? "new" : "sentence" in editing ? `s:${editing.sentence}` : editing.id}
+            initial={editing === "new" || "sentence" in editing ? null : editing}
+            prefill={editing !== "new" && "sentence" in editing ? editing.sentence : null}
             drafts={drafts}
             onCancel={() => setEditing(null)}
             onSaved={async () => {
               setEditing(null);
+              setSaved(true);
               await loadTraps();
             }}
           />
+        </div>
+      )}
+
+      {saved && !editing && (
+        <div className="mt-4">
+          <RescanDrafts prompt="Trap saved. Rescan so every open draft is checked and corrected against it." />
         </div>
       )}
 
@@ -156,6 +220,9 @@ export default function KnownTrapsPage() {
                   {t.scope && <DashPill tone="neutral">{t.scope.split(":")[1]}</DashPill>}
                 </div>
                 <div className="flex shrink-0 gap-3">
+                  {t.effectiveDate && t.effectiveDate > new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) && (
+                    <DashPill tone="blue">starts {t.effectiveDate}</DashPill>
+                  )}
                   <button type="button" className="text-brand underline hover:opacity-80" onClick={() => setEditing(t)}>
                     Edit
                   </button>

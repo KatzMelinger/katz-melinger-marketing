@@ -7,6 +7,7 @@
  *        body: { id?, label, matchType, pattern, unless?, severity, note, enabled?,
  *                matchOn?, caseSensitive?, regexFlags?, scope?, appliesTo? }
  *        body: { id, enabled }  — enable or disable only
+ *        Every save is recorded in rule_changes (Task 24) with the old and new row.
  *
  * B6, "find across all": one list showing every draft that contains a given
  * known trap, so a pattern gets fixed rather than an instance.
@@ -23,6 +24,7 @@ import { matchTrap, rowToTrap, scanForTraps, type KnownTrap, type TrapContext } 
 import { getCurrentUser } from "@/lib/supabase-route";
 import { hasWebPage } from "@/lib/draft-metadata";
 import { getTenantClient } from "@/lib/tenant-db";
+import { recordRuleChange } from "@/lib/rule-changes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,6 +89,15 @@ function trapPayload(b: Record<string, unknown>): { row: Record<string, unknown>
       return { error: "That regular expression does not compile" };
     }
   }
+  const date = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const effectiveDate = date(b.effectiveDate);
+  const lastVerified = date(b.lastVerified);
+  for (const d of [effectiveDate, lastVerified]) {
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: "Dates must be YYYY-MM-DD" };
+  }
+  const sourceUrl = date(b.sourceUrl);
+  if (sourceUrl && !/^https?:\/\//i.test(sourceUrl)) return { error: "Source URL must start with http:// or https://" };
+
   const unless = Array.isArray(b.unless)
     ? (b.unless as unknown[]).filter((u): u is string => typeof u === "string" && u.trim().length > 0).map((u) => u.trim())
     : typeof b.unless === "string"
@@ -107,6 +118,9 @@ function trapPayload(b: Record<string, unknown>): { row: Record<string, unknown>
       regex_flags: regexFlags || null,
       scope,
       applies_to: b.appliesTo === "web" ? "web" : "all",
+      source_url: sourceUrl,
+      effective_date: effectiveDate,
+      last_verified: lastVerified,
     },
   };
 }
@@ -218,6 +232,20 @@ export async function PATCH(req: NextRequest) {
   const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const { supabase, tenantId } = await getTenantClient();
 
+  const before = typeof b.id === "string"
+    ? ((await supabase.from("content_known_traps").select("*").eq("id", b.id).maybeSingle()).data ?? null)
+    : null;
+  const record = (action: "create" | "update" | "enable" | "disable", after: any) =>
+    recordRuleChange(tenantId, {
+      kind: "trap",
+      ref: String(after?.id ?? b.id ?? ""),
+      label: String(after?.label ?? before?.label ?? "trap"),
+      action,
+      oldValue: before,
+      newValue: after,
+      by: user.email,
+    });
+
   // Enable / disable only, without resending the whole trap.
   if (typeof b.id === "string" && Object.keys(b).every((k) => k === "id" || k === "enabled")) {
     const { data, error } = await supabase
@@ -227,6 +255,7 @@ export async function PATCH(req: NextRequest) {
       .select()
       .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (data) await record(data.enabled ? "enable" : "disable", data);
     return NextResponse.json({ trap: data ? rowToTrap(data) : null });
   }
 
@@ -240,5 +269,6 @@ export async function PATCH(req: NextRequest) {
     : supabase.from("content_known_traps").insert(payload).select().maybeSingle();
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (data) await record(id ? "update" : "create", data);
   return NextResponse.json({ trap: data ? rowToTrap(data) : null });
 }

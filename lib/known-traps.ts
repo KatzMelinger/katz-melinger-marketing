@@ -88,6 +88,11 @@ export type KnownTrap = {
   scope?: string | null;
   /** "web": blogs and web pages only (structure rules a social post cannot meet). */
   appliesTo?: "all" | "web";
+  /** Task 24: where the rule comes from, when it starts, when it was last checked. */
+  sourceUrl?: string | null;
+  /** YYYY-MM-DD. A trap dated in the future does not run until that day. */
+  effectiveDate?: string | null;
+  lastVerified?: string | null;
 };
 
 /** What a scoped trap is checked against. */
@@ -116,6 +121,9 @@ export function rowToTrap(r: any): KnownTrap {
     regexFlags: typeof r.regex_flags === "string" && r.regex_flags ? r.regex_flags : null,
     scope: typeof r.scope === "string" && r.scope ? r.scope : null,
     appliesTo: r.applies_to === "web" ? "web" : "all",
+    sourceUrl: typeof r.source_url === "string" && r.source_url ? r.source_url : null,
+    effectiveDate: typeof r.effective_date === "string" && r.effective_date ? r.effective_date : null,
+    lastVerified: typeof r.last_verified === "string" && r.last_verified ? r.last_verified : null,
   };
 }
 
