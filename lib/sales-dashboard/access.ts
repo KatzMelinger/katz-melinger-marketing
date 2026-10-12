@@ -1,11 +1,10 @@
 /**
- * Who may read the Intake & Sales dashboard: app admins (it shows individual
- * staff performance), or a server holding SALES_DASHBOARD_API_KEY — the CMS
- * owners section reads the same numbers that way instead of recomputing them.
+ * Who may read the Intake & Sales dashboard: any signed-in user, or a server
+ * holding SALES_DASHBOARD_API_KEY — the CMS owners section reads the same numbers that way instead of recomputing them.
  */
 import { NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/supabase-route";
+import { requireUser } from "@/lib/supabase-route";
 import { resolveTenantId, DEFAULT_TENANT_ID } from "@/lib/tenant-context";
 
 import { DASHBOARD_SINCE } from "./intakes";
@@ -20,7 +19,7 @@ export async function guardDashboard(
     return { denied: null, tenantId: DEFAULT_TENANT_ID };
   }
   try {
-    await requireAdmin();
+    await requireUser();
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unauthorized";
     return { denied: NextResponse.json({ error: message }, { status: message.startsWith("Forbidden") ? 403 : 401 }) };

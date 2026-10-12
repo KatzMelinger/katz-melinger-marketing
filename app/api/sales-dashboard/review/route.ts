@@ -7,22 +7,22 @@
  *        its Follow-Up Notes (before signing) and the intake guess.
  * POST — { airtable_id, intake_staff_id, sales_staff_id } (either may be null
  *        for "nobody") saves a manual row the snapshot cron never overwrites.
- * Admins only.
+ * GET is open to any signed-in user; POST (changing who gets credit) is admins only.
  */
 import { NextResponse } from "next/server";
 
 import { intakeGuessFromNotes, noteAuthorsBeforeSigning } from "@/lib/sales-dashboard/credit";
 import { listDashboardIntakes, outcomeOf } from "@/lib/sales-dashboard/intakes";
 import { loadSalesStaff } from "@/lib/sales-staff";
-import { requireAdmin } from "@/lib/supabase-route";
+import { requireAdmin, requireUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
-async function admin() {
+async function gate(require: () => ReturnType<typeof requireUser>) {
   try {
-    return { user: await requireAdmin(), denied: null };
+    return { user: await require(), denied: null };
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unauthorized";
     return {
@@ -33,7 +33,7 @@ async function admin() {
 }
 
 export async function GET() {
-  const { denied } = await admin();
+  const { denied } = await gate(requireUser);
   if (denied) return denied;
   const supabase = getSupabaseAdmin();
   const tenantId = await resolveTenantId();
@@ -72,7 +72,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { user, denied } = await admin();
+  const { user, denied } = await gate(requireAdmin);
   if (denied) return denied;
   const supabase = getSupabaseAdmin();
   const tenantId = await resolveTenantId();
