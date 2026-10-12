@@ -61,7 +61,7 @@ const CLAIM_TYPE_LABEL: Record<string, string> = {
   interpretation: "Interpretation",
   negative_statement: "Negative statement",
   firm_claim: "Firm claim",
-  unclassified: "Unclassified",
+  unclassified: "No rule yet",
 };
 
 /** Amber past a week, red past a fortnight. Age is the whole point of the sort. */

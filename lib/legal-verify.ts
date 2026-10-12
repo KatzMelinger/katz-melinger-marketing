@@ -254,9 +254,11 @@ export function toFinding(v: ClaimVerdict, coverage?: ClaimCoverage): Normalized
       jurisdiction: claim.jurisdiction,
     };
   }
-  // Contradicted, or an NJ bulk-export citation. A retired category is
-  // recorded as what it now is: a claim an authority contradicts.
-  const claimType = RETIRED_CLAIM_TYPES.has(claim.claimType) ? "factual_mismatch" : claim.claimType;
+  // Contradicted, or an NJ bulk-export citation. A retired category, or the
+  // retired "unclassified" rule (Oct 6 spec, Task 8), is recorded as what it
+  // now is: a claim an authority contradicts.
+  const claimType =
+    RETIRED_CLAIM_TYPES.has(claim.claimType) || claim.claimType === "unclassified" ? "factual_mismatch" : claim.claimType;
   return {
     fingerprint: fingerprintFinding("legal", claimType, claim.sentence),
     source: "legal",
