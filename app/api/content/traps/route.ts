@@ -264,10 +264,18 @@ export async function PATCH(req: NextRequest) {
   const payload = { tenant_id: tenantId, ...parsed.row, updated_at: new Date().toISOString() };
 
   const id = typeof b.id === "string" ? b.id : null;
-  const q = id
-    ? supabase.from("content_known_traps").update(payload).eq("id", id).select().maybeSingle()
-    : supabase.from("content_known_traps").insert(payload).select().maybeSingle();
-  const { data, error } = await q;
+  const write = (row: Record<string, unknown>) =>
+    id
+      ? supabase.from("content_known_traps").update(row).eq("id", id).select().maybeSingle()
+      : supabase.from("content_known_traps").insert(row).select().maybeSingle();
+  let { data, error } = await write(payload);
+  // Before supabase/rule_changes_task24.sql adds the Task 24 columns, save
+  // without them rather than failing every trap save.
+  if (error && /source_url|effective_date|last_verified/.test(error.message)) {
+    const { source_url: _s, effective_date: _e, last_verified: _l, ...rest } = payload as Record<string, unknown>;
+    void _s; void _e; void _l;
+    ({ data, error } = await write(rest));
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (data) await record(id ? "update" : "create", data);
   return NextResponse.json({ trap: data ? rowToTrap(data) : null });

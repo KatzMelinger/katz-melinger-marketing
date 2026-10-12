@@ -1007,6 +1007,7 @@ export async function analyzeDraft(args: {
       content: body,
       surface: formatToComplianceSurface(format),
       practiceArea: args.practiceArea ?? undefined,
+      tenantId: tid,
     }).catch((err) => {
       console.warn("[content-analysis] Compliance check failed:", err);
       complianceError = err instanceof Error ? err.message : String(err);
