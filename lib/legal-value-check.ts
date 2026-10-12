@@ -562,6 +562,24 @@ function dedupe(findings: NormalizedFinding[]): NormalizedFinding[] {
 /** Run both checks over a draft body, reading the knowledge base live. A read
  *  failure degrades to skipping the KB comparison, not throwing — the
  *  internal-conflict check still runs regardless, since it needs no KB. */
+/**
+ * Does a knowledge base figure check this sentence (Task 25)? True only when
+ * the value check would actually compare a figure in it: a dollar figure in a
+ * jurisdiction the base has a rate for, or a deadline or employee count the
+ * sentence states, under an entry whose keywords it carries. Mentioning the
+ * FMLA is not enough: a sentence about who enforces it states no figure, and
+ * the FMLA deadline entry checks nothing in it.
+ */
+export function thresholdCovers(sentence: string, thresholds: KbThresholdEntry[]): boolean {
+  if (thresholds.length === 0) return false;
+  for (const m of extractValueMentions(sentence)) {
+    if (m.jurisdiction && thresholds.some((t) => t.jurisdiction === m.jurisdiction && t.unit === m.unit)) return true;
+  }
+  return extractConstantMentions(sentence).some((m) =>
+    thresholds.some((t) => t.unit === m.unit && keywordsMatch(t, sentence)),
+  );
+}
+
 export async function checkValuesAgainstKnowledgeBase(
   body: string,
   tenantId?: string,

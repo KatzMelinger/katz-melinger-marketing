@@ -18,6 +18,10 @@
       "schedule": "40 * * * *"
     },
     {
+      "path": "/api/findings/archive",
+      "schedule": "20 7 * * *"
+    },
+    {
       "path": "/api/sales-dashboard/snapshot",
       "schedule": "50 * * * *"
     },

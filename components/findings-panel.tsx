@@ -31,7 +31,7 @@ import {
   type StoredFinding,
 } from "@/lib/content-findings";
 import {
-  CAPPED_ENGINES,
+  isDecision,
   countBlockers,
   groupByRule,
   hasKnownFix,
@@ -109,6 +109,8 @@ export function FindingsPanel({
   const [msg, setMsg] = useState<string | null>(null);
   // When the checks last ran, and whether the body changed since (Task 21).
   const [checked, setChecked] = useState<{ at: string | null; stale: boolean } | null>(null);
+  // Live entries in Changes made, for the header count (Task 25).
+  const [corrections, setCorrections] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,6 +121,7 @@ export function FindingsPanel({
         setFindings(data.findings ?? []);
         setOverrides(data.severityOverrides ?? {});
         setChecked(data.checked ?? null);
+        setCorrections(typeof data.corrections === "number" ? data.corrections : 0);
       }
     } finally {
       setLoading(false);
@@ -160,15 +163,15 @@ export function FindingsPanel({
   };
 
   const open = useMemo(() => findings.filter(isOpen), [findings]);
-  // Task 25: closed findings older than 30 days are history nobody reads;
-  // they stay in the table, they just are not loaded into the panel.
-  const closed = useMemo(() => {
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    return findings.filter((f) => !isOpen(f) && Date.parse(f.resolvedAt ?? f.lastSeenAt ?? "") >= cutoff);
-  }, [findings]);
-  // Task 25: the style engines (readability, SEO, AEO, CASH, brand voice,
-  // linkability) never block, so they are not counted as review items.
-  const reviewOpen = useMemo(() => open.filter((f) => !CAPPED_ENGINES.has(f.source)), [open]);
+  // Task 25: the API loads closed findings from the last 30 days only (older
+  // ones move to the archive).
+  const closed = useMemo(() => findings.filter((f) => !isOpen(f)), [findings]);
+  // Task 25: decisions are the review items: not style, not advisory. The same
+  // definition the correction report uses.
+  const decisions = useMemo(() => open.filter(isDecision), [open]);
+  // Legal statements with no rule and no figure or citation: listed for an
+  // attorney to confirm, never a hold (Kenneth, 2026-10-12).
+  const toConfirm = useMemo(() => open.filter((f) => f.ruleId === "no_rule_confirm").length, [open]);
   const engines = useMemo(() => summarizeByEngine(findings, overrides), [findings, overrides]);
   const blockers = useMemo(() => countBlockers(findings, overrides), [findings, overrides]);
 
@@ -263,8 +266,9 @@ export function FindingsPanel({
             <>Ready to publish · no blockers</>
           )}
           <span className="ml-1.5 font-normal opacity-70">
-            {reviewOpen.length} decision{reviewOpen.length === 1 ? "" : "s"}
-            {open.length > reviewOpen.length ? ` · ${open.length - reviewOpen.length} style suggestions` : ""}
+            Corrections {corrections} · Decisions {decisions.length}
+            {toConfirm > 0 ? ` · To confirm ${toConfirm}` : ""}
+            {open.length - decisions.length - toConfirm > 0 ? ` · ${open.length - decisions.length - toConfirm} for information` : ""}
           </span>
           {checked?.at && (
             <div className="mt-0.5 text-[10px] font-normal opacity-70">

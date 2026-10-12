@@ -18,7 +18,9 @@ export type ChangeSource =
   | "brand rule"
   | "required element"
   /** Sections copied in from a duplicate before it was archived (Appendix F). */
-  | "duplicate merge";
+  | "duplicate merge"
+  /** An attorney corrected this exact sentence before (lib/legal-learned.ts). */
+  | "attorney decision";
 
 export type FixChange = {
   id: string;

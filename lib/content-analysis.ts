@@ -40,6 +40,7 @@ import {
   normalizeStringFindings,
   normalizeReadabilityFindings,
   normalizeFreshnessFindings,
+  RETIRED_CLAIM_TYPES,
   type NormalizedFinding,
 } from "./content-findings";
 import { closeStaleFindings, listFindings, syncFindings } from "./content-findings-store";
@@ -63,6 +64,9 @@ import { getOperatingBrief } from "./social-operating-brief";
  */
 function isAuthorityLoopRule(ruleId: string | null): boolean {
   if (!ruleId) return true;
+  // Retired categories (Task 25) are not carried: their sentences are
+  // re-tested as legal claims the next time the loop runs.
+  if (RETIRED_CLAIM_TYPES.has(ruleId)) return false;
   if (/^(trap:|kb:|statute_|firm_|value_)/.test(ruleId)) return false;
   return ruleId !== "constant_mismatch" && ruleId !== "named_act_unverified";
 }

@@ -14,6 +14,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import {
   reconcileFindings,
+  RETIRED_CLAIM_TYPES,
   type FindingResolution,
   type FindingSource,
   type FindingStatus,
@@ -21,6 +22,7 @@ import {
   type StoredFinding,
 } from "./content-findings";
 import { quoteStillPresent, STALE_NOTE } from "./finding-currency";
+import { isStyleFinding, prepareFindings } from "./finding-merge";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -160,7 +162,10 @@ export async function syncFindings(args: {
   /** Re-opened findings: previously marked fixed, still reported. Also news. */
   reopenedFindings: NormalizedFinding[];
 }> {
-  const { draftId, tenantId, incoming, sources } = args;
+  const { draftId, tenantId, sources } = args;
+  // Task 25: style findings are not review items, and one sentence is one finding.
+  const incoming = prepareFindings(args.incoming);
+  const merged = new Set(incoming.flatMap((f) => f.mergedFingerprints ?? []));
   const empty = {
     inserted: 0, reopened: 0, autoResolved: 0, touched: 0,
     insertedFindings: [] as NormalizedFinding[], reopenedFindings: [] as NormalizedFinding[],
@@ -169,6 +174,12 @@ export async function syncFindings(args: {
 
   const existing = await listFindings(draftId);
   const plan = reconcileFindings(existing, incoming, sources ? { sources } : undefined);
+  // A row folded into another finding closes in any run, partial or full.
+  for (const prior of existing) {
+    if (!merged.has(prior.fingerprint)) continue;
+    if (prior.status !== "open" && prior.status !== "in_progress") continue;
+    if (!plan.autoResolve.some((p) => p.id === prior.id)) plan.autoResolve.push(prior);
+  }
   const now = new Date().toISOString();
 
   try {
@@ -237,17 +248,32 @@ export async function syncFindings(args: {
 
     // resolved_by_edit, not resolved: a check only falls silent when the text
     // it was pointing at changed, so this is the one closure that is evidence
-    // of an actual fix rather than a decision someone made (item 12).
+    // of an actual fix rather than a decision someone made (item 12). The
+    // Task 25 closures are not fixes and say what they are instead.
     for (const stale of plan.autoResolve) {
+      const retired = stale.source === "legal" && RETIRED_CLAIM_TYPES.has(stale.ruleId ?? "");
+      // Already with an attorney: theirs to close.
+      if (retired && stale.status === "in_progress" && !merged.has(stale.fingerprint)) continue;
+      const why = merged.has(stale.fingerprint)
+        ? "Merged into the finding on the same sentence."
+        : isStyleFinding(stale)
+          ? "Style suggestion: shown in the scores, no longer a review item."
+          : retired
+            ? "Retired category: the sentence is re-checked as a legal claim."
+            : null;
       await sb
         .from("content_findings")
-        .update({
-          status: "resolved_by_edit",
-          resolved_at: now,
-          resolution: "fixed",
-          resolution_note: "The content changed and the check no longer reports this.",
-          updated_at: now,
-        })
+        .update(
+          why
+            ? { status: "resolved", resolved_at: now, resolution_note: why, updated_at: now }
+            : {
+                status: "resolved_by_edit",
+                resolved_at: now,
+                resolution: "fixed",
+                resolution_note: "The content changed and the check no longer reports this.",
+                updated_at: now,
+              },
+        )
         .eq("id", stale.id);
     }
   } catch (e) {

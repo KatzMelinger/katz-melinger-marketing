@@ -13,7 +13,7 @@ import { closeStaleFindings } from "@/lib/content-findings-store";
 import { readFixLog } from "@/lib/legal-fix-log";
 import { buildCorrectionReport } from "@/lib/correction-report-docx";
 import { reviewerFor } from "@/lib/legal-reviewers";
-import { CAPPED_ENGINES } from "@/lib/finding-severity";
+import { isDecision } from "@/lib/finding-severity";
 
 export const runtime = "nodejs";
 
@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { open } = await closeStaleFindings({ draftId: id, tenantId, body: typeof d.body === "string" ? d.body : "" });
   // Decisions are the review items, not style suggestions (Task 25).
-  const decisions = open.filter((f) => !CAPPED_ENGINES.has(f.source) && f.severity !== "advisory");
+  const decisions = open.filter(isDecision);
   const log = readFixLog((d.metadata as Record<string, unknown> | null) ?? {});
   const title = (d.title as string | null)?.trim() || (d.topic as string | null)?.trim() || "Untitled";
   const buffer = await buildCorrectionReport({

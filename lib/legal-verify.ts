@@ -36,10 +36,11 @@
  * sampling is not enough to spend either.
  */
 
+import { ruleCovers, statesLegalClaim, loadClaimCoverage, type ClaimCoverage } from "./legal-claim-routing";
 import { isAnchored } from "./legal-scope";
 import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import { focusedExcerpt, quoteRelatesToClaim } from "./authority-excerpt";
-import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
+import { fingerprintFinding, RETIRED_CLAIM_TYPES, type NormalizedFinding } from "./content-findings";
 import { classifyLegalClaims, type LegalClaim } from "./legal-classifier";
 import { retrieveAuthority } from "./legal-retrieval";
 import { formatCitation } from "./legal-citation";
@@ -203,7 +204,7 @@ export async function verifyClaimAgainst(
  *  scripts/eval-legal-layer.ts (5.3) — the NJ-bulk-never-auto-clears behavior
  *  (3.11) is a pure function of a verdict + sourceUrl, so it's tested
  *  directly here instead of through a live NJ bulk-export download. */
-export function toFinding(v: ClaimVerdict): NormalizedFinding | null {
+export function toFinding(v: ClaimVerdict, coverage?: ClaimCoverage): NormalizedFinding | null {
   const { claim } = v;
 
   // A claim verified only against the NJ Legislature's unreviewed bulk export
@@ -217,79 +218,66 @@ export function toFinding(v: ClaimVerdict): NormalizedFinding | null {
 
   const contradicted = v.verdict === "contradicted";
 
-  // THE SCOPE RULE AT EMISSION (Diana 2.1).
-  //
-  // A contradiction is always a finding: an authority says otherwise, and that
-  // is the whole point of the layer.
-  //
-  // Everything else must be ANCHORED to a citation or a figure to be worth a
-  // reviewer's attention. An inconclusive verdict on a sentence with neither
-  // is the old noise: a plain-language explanation the classifier could not
-  // place, filed as "Unclassified legal claim - routed for review" against
-  // prose that was correct. Diana's rule is that such a sentence produces
-  // nothing, and this is where that becomes true for a claim that was in scope
-  // when extracted but turned out to rest on no checkable assertion.
-  //
   // Firm claims produce nothing here at all: lib/content-compliance.ts runs
   // the same findFeeLanguage/findFirmFactClaims checks and owns them under
   // `compliance`. A hit reaching a reviewer twice, under two sources, is the
   // duplication the known-traps gate already had.
   if (claim.claimType === "firm_claim") return null;
-  if (!contradicted && !isAnchored(claim.sentence)) return null;
-  // Sept 28 spec, section 1: "No draft shows an Unclassified legal claim
-  // finding." The classifier failing to place a sentence is not evidence of
-  // anything; it filed ~80 of these on one correct draft. A cited section the
-  // statute table does not know is raised separately as "unverified citation"
-  // (lib/legal-statute-check.ts), which is the useful half of what this was
-  // trying to say.
-  if (!contradicted && claim.claimType === "unclassified") return null;
-  const needsHumanOnly = v.verdict === "supported" && njBulkOnly;
-  const title = contradicted
-    ? `Contradicted by ${
-        claim.citations[0] ? formatCitation(claim.citations[0]) : "the cited authority"
-      }`
-    : needsHumanOnly
-      ? "NJ citation verified only against the unreviewed bulk statute export — confirm before relying on it"
-      : claimNeedsReviewTitle(claim);
 
+  // A contradiction is always a finding: an authority says otherwise, and that
+  // is the whole point of the layer. So is an NJ citation checked only against
+  // the bulk export (above). Everything else goes to an attorney only as a
+  // real legal claim that no rule covers (Oct 6 spec, Task 25), never for how
+  // it is phrased: the negative_statement and interpretation categories are
+  // retired, and their sentences pass through the same test.
+  const needsHumanOnly = v.verdict === "supported" && njBulkOnly;
+  if (!contradicted && !needsHumanOnly) {
+    if (!statesLegalClaim(claim.sentence)) return null;
+    if (coverage && ruleCovers(claim.sentence, coverage)) return null;
+    // A claim with a figure or citation is a decision for an attorney. One
+    // without (what an employer must do, what the law prohibits) is a "please
+    // confirm" item: listed, never a hold, not counted as a decision
+    // (Kenneth, 2026-10-12, the middle path).
+    const anchored = isAnchored(claim.sentence);
+    return {
+      fingerprint: fingerprintFinding("legal", anchored ? "no_rule" : "no_rule_confirm", claim.sentence),
+      source: "legal",
+      ruleId: anchored ? "no_rule" : "no_rule_confirm",
+      severity: anchored ? "important" : "advisory",
+      title: anchored ? "No rule for this claim yet" : "Please confirm: no rule checks this statement yet",
+      detail:
+        v.quote ? `Authority says: "${v.quote}"` : "No knowledge base entry, statute row or trap checks this sentence.",
+      excerpt: claim.sentence,
+      fix: "An attorney needs to confirm this claim. Once confirmed, add it as a rule (Rules or Known traps) so it is checked automatically.",
+      claimType: "unclassified",
+      sourceChecked: v.sourceUrl,
+      jurisdiction: claim.jurisdiction,
+    };
+  }
+  // Contradicted, or an NJ bulk-export citation. A retired category is
+  // recorded as what it now is: a claim an authority contradicts.
+  const claimType = RETIRED_CLAIM_TYPES.has(claim.claimType) ? "factual_mismatch" : claim.claimType;
   return {
-    fingerprint: fingerprintFinding("legal", claim.claimType, claim.sentence),
+    fingerprint: fingerprintFinding("legal", claimType, claim.sentence),
     source: "legal",
-    ruleId: claim.claimType,
-    // A contradiction is critical; everything else needs a person but is not
-    // itself evidence of an error.
+    ruleId: claimType,
     severity: contradicted ? "critical" : "important",
-    title,
-    detail: needsHumanOnly
-      ? `The bulk export appears to support this claim (${v.reason}), but that source is an automated extraction, not attorney-reviewed text — confirm it against the curated corpus or Westlaw.`
-      : v.quote
+    title: contradicted
+      ? `Contradicted by ${claim.citations[0] ? formatCitation(claim.citations[0]) : "the cited authority"}`
+      : "NJ citation verified only against the unreviewed bulk statute export — confirm before relying on it",
+    detail: contradicted
+      ? v.quote
         ? `Authority says: "${v.quote}"`
-        : v.reason,
+        : v.reason
+      : `The bulk export appears to support this claim (${v.reason}), but that source is an automated extraction, not attorney-reviewed text — confirm it against the curated corpus or Westlaw.`,
     excerpt: claim.sentence,
     fix: contradicted
       ? "Correct the claim to match the cited authority, or cite the provision that actually supports it."
-      : needsHumanOnly
-        ? "An attorney should confirm this NJ citation against the curated corpus or Westlaw; the bulk export is an unreviewed automated extraction."
-        : "An attorney needs to confirm this claim — it cannot be settled by looking a source up.",
-    claimType: claim.claimType,
+      : "An attorney should confirm this NJ citation against the curated corpus or Westlaw; the bulk export is an unreviewed automated extraction.",
+    claimType,
     sourceChecked: v.sourceUrl,
     jurisdiction: claim.jurisdiction,
   };
-}
-
-function claimNeedsReviewTitle(claim: LegalClaim): string {
-  switch (claim.claimType) {
-    case "negative_statement":
-      return "Negative legal statement — no lookup can confirm this";
-    case "interpretation":
-      return "Legal interpretation — needs an attorney";
-    case "firm_claim":
-      return "Claim about the firm — no authority can confirm this";
-    case "unclassified":
-      return "Unclassified legal claim — routed for review";
-    default:
-      return "Legal claim needs review";
-  }
 }
 
 export type LegalCheckResult = {
@@ -355,8 +343,9 @@ export async function runLegalCheck(
     });
   }
 
+  const coverage = await loadClaimCoverage(opts.tenantId);
   const findings = verdicts
-    .map(toFinding)
+    .map((v) => toFinding(v, coverage))
     .filter((f): f is NormalizedFinding => f !== null);
 
   return {

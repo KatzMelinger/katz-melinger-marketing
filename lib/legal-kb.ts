@@ -34,6 +34,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
 import { CURRENT_FACTS, type CurrentFact } from "./current-facts";
+import { isAnchored } from "./legal-scope";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -149,6 +150,17 @@ function sentences(body: string): { text: string; index: number }[] {
 function entryApplies(body: string, entry: KbEntry): boolean {
   const b = lower(body);
   return entry.matchKeywords.some((k) => k.trim() && b.includes(lower(k)));
+}
+
+/**
+ * Is this sentence checked by an entry's R1-R4 rules (Task 25)? Those compare
+ * citations and figures, so the sentence must name the entry's subject AND
+ * state a figure or citation; a bare mention of the subject is not checked.
+ */
+export function kbEntriesCover(sentence: string, entries: readonly KbEntry[]): boolean {
+  if (!isAnchored(sentence)) return false;
+  const t = lower(sentence);
+  return entries.some((e) => e.matchKeywords.some((k) => k.trim() && t.includes(lower(k))));
 }
 
 /** Sentences that mention this entry's subject — where its rules are checked. */

@@ -21,6 +21,7 @@ import { appendRun, readFixLog } from "./legal-fix-log";
 import { clearTextCertifications } from "./draft-certifications";
 import { recordAuditEvent } from "./content-findings-store";
 import { hasWebPage } from "./draft-metadata";
+import { learnedCorrections, loadLearned } from "./legal-learned";
 
 export const REWRITE_FORMATS = new Set(["blog", "km_blog_post", "km_page_update", "km_practice_page"]);
 
@@ -71,11 +72,12 @@ export async function fixDraft(args: {
   }
 
   const body = (draft.body as string | null) ?? "";
-  const [kbFindings, statutes, cta, traps] = await Promise.all([
+  const [kbFindings, statutes, cta, traps, learned] = await Promise.all([
     runLegalFactChecks(body, { tenantId: args.tenantId }).catch(() => []),
     loadStatuteTable(args.tenantId),
     closingCtaFor(args.tenantId),
     loadEnabledTraps(args.tenantId),
+    loadLearned(args.tenantId),
   ]);
 
   const result = await autoRewrite({
@@ -95,6 +97,7 @@ export async function fixDraft(args: {
       isWebPage: true,
     },
     noModel: args.noModel,
+    learnedCorrections: learnedCorrections(learned),
   });
 
   const outcome: FixDraftOutcome = {

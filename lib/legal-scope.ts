@@ -120,3 +120,27 @@ export function inLegalScope(sentence: string): boolean {
 export function isAnchored(sentence: string): boolean {
   return legalScopeKinds(sentence).length > 0;
 }
+
+/* Task 25 (Oct 6 spec): what counts as a legal claim. Used by the classifier
+ * (scope) and by lib/legal-claim-routing.ts (who a claim goes to). */
+
+/** Plain-language framing a law firm page uses everywhere. Never a claim. */
+const GENERAL_WORDING =
+  /\b(?:you )?(?:may|might|could) have (?:legal )?(?:rights|claims?|options|a case|recourse)\b|\bevery (?:situation|case|claim) is (?:different|unique)\b|\b(?:an? )?(?:employment )?(?:attorney|lawyer) can (?:review|help|evaluate|assess|explain|advise)\b|\b(?:speak|talk|consult) (?:with|to) an? (?:experienced )?(?:employment )?(?:attorney|lawyer)\b|\bdepends on the (?:facts|circumstances|details)\b|\bthis (?:article|page|post) is (?:for )?(?:general )?information/i;
+
+/** What an employer can or cannot do. */
+const EMPLOYER_RULE =
+  /\b(?:employers?|companies|businesses|your (?:boss|employer|company))\b[^.;]{0,60}?\b(?:must(?: not)?|may not|cannot|can't|can not|shall(?: not)?|(?:is|are) (?:not )?(?:required|allowed|permitted|prohibited|barred|forbidden)|(?:has|have) to|(?:is|are) (?:legally )?obligated)\b/i;
+
+/** A rule stated about the law itself. */
+const LEGAL_RULE =
+  /\b(?:it is|is|are) (?:illegal|unlawful)\b|\b(?:is|are) (?:not )?(?:enforced|administered) by\b|\b(?:law|statute|act|code|regulation|doctrine|NYSHRL|NYCHRL|FLSA|NYLL|Title VII|ADA|ADEA|FMLA|LAD|CEPA|Labor Law)\b[^.;]{0,80}?\b(?:requires?|prohibits?|protects?|bars?|forbids?|entitles?|mandates?|applies to|covers?)\b|\b(?:you|employees?|workers?) (?:are|is) (?:legally )?entitled to\b|\b(?:you|employees?|workers?) (?:must|have to|need to) file\b|\bstatute of limitations\b/i;
+
+/** Does this sentence assert something about the law that could be wrong? */
+export function statesLegalClaim(sentence: string): boolean {
+  const s = sentence.trim();
+  if (!s) return false;
+  const anchored = isAnchored(s);
+  if (!anchored && GENERAL_WORDING.test(s)) return false;
+  return anchored || EMPLOYER_RULE.test(s) || LEGAL_RULE.test(s);
+}

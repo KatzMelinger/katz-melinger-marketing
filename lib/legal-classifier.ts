@@ -38,7 +38,7 @@ import { findFeeLanguage } from "./fee-language";
 import { findFirmFactClaims } from "./firm-facts";
 import { findCitations, type ParsedCitation } from "./legal-citation";
 import type { LegalClaimType, LegalJurisdiction } from "./content-findings";
-import { inLegalScope } from "./legal-scope";
+import { inLegalScope, statesLegalClaim } from "./legal-scope";
 
 export type LegalClaim = {
   /** The sentence as written. */
@@ -333,8 +333,14 @@ export async function classifyLegalClaims(body: string): Promise<LegalClaim[]> {
   // lib/content-compliance.ts already runs findFeeLanguage and
   // findFirmFactClaims over the same body and files them under `compliance`,
   // so admitting them here filed every hit a second time under `legal`.
+  //
+  // Widened 2026-10-12 (Kenneth, Task 25 "middle path"): a sentence that
+  // states what an employer must or must not do, or what the law requires or
+  // prohibits, is in scope too, with no figure or citation. General wording
+  // ("you may have rights") still is not. Such a claim never holds a draft:
+  // with no rule covering it, it is a "please confirm" item (legal-verify).
   const sentences = splitSentences(body).filter(
-    (s) => inLegalScope(s.text) && looksLegal(s.text),
+    (s) => (inLegalScope(s.text) || statesLegalClaim(s.text)) && looksLegal(s.text),
   );
   const claims: LegalClaim[] = [];
   const needModel: { text: string; index: number }[] = [];
