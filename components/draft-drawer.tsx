@@ -721,6 +721,33 @@ export function DraftDrawer({
     }
   }
 
+  // The keyword the draft carries, from the brief or, on older drafts, the
+  // SEO brief's target list or metadata (where the analysis reads it).
+  const panelKeyword = (() => {
+    if (brief.primaryKeyword) return brief.primaryKeyword;
+    const t = (draft?.seo_brief as { targetKeywords?: unknown } | null)?.targetKeywords;
+    if (Array.isArray(t) && typeof t[0] === "string" && t[0].trim()) return t[0].trim();
+    const m = (draft?.metadata as Record<string, unknown> | null)?.primary_keyword;
+    return typeof m === "string" ? m.trim() : "";
+  })();
+
+  // "Choose keyword" / "use this" on the draft (Oct 6 spec, Task 15). Using a
+  // keyword re-runs the analysis, so the SEO checks run against it.
+  const keywordAction = async (id: string, payload: { keyword?: string }) => {
+    const r = await fetch(`/api/content/drafts/${id}/keyword`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Keyword request failed (${r.status})`);
+    await reloadDraft(id);
+    if (payload.keyword) {
+      const fresh = await fetch(`/api/content/drafts/${id}`, { cache: "no-store" }).then((x) => (x.ok ? x.json() : null));
+      if (fresh?.draft) await runAnalysis(fresh.draft);
+    }
+  };
+
   // The server changed the draft (a rewrite or an undo in Changes made):
   // pull the current row so the editor and scores show what is stored.
   const reloadDraft = async (id: string) => {
@@ -2099,12 +2126,14 @@ export function DraftDrawer({
                 )}
 
                 {/* Keyword decision (Oct 6 spec, Tasks 15 and 17) */}
-                {Boolean(brief.contentType || (draft?.metadata as Record<string, unknown> | null)?.keyword_selection) && (
+                {draft && Boolean(brief.contentType || panelKeyword || (draft.metadata as Record<string, unknown> | null)?.keyword_selection) && (
                   <div className="rounded-lg border border-slate-200 p-3">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Primary keyword</div>
                     <KeywordDecisionPanel
-                      keyword={brief.primaryKeyword ?? ""}
-                      decision={(draft?.metadata as Record<string, unknown> | null)?.keyword_selection as KeywordDecision | undefined}
+                      keyword={panelKeyword}
+                      decision={(draft.metadata as Record<string, unknown> | null)?.keyword_selection as KeywordDecision | undefined}
+                      onChoose={() => keywordAction(draft.id, {})}
+                      onUse={(k) => keywordAction(draft.id, { keyword: k })}
                     />
                   </div>
                 )}
