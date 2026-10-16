@@ -38,6 +38,7 @@ import { assignPriorityLabels, scoreOpportunity } from "@/lib/opportunity-scorin
 import { fetchWordPressModifiedMap, normalizeUrlForMatch } from "@/lib/wordpress";
 import { fetchGscPositionMap } from "@/lib/gsc-positions";
 import { getTenantConfig } from "@/lib/tenant-config";
+import { getKeywordDifficulty } from "@/lib/dataforseo";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
 import { guardUser } from "@/lib/supabase-route";
@@ -245,6 +246,10 @@ async function runSyncForTenant(tenantId: string) {
     ]);
     counts.gsc_positions = gscPositions.size;
 
+    // Task 17: difficulty for every candidate (it was never written, so the
+    // column was always empty), from DataForSEO like the volume.
+    const difficulty = await getKeywordDifficulty(candidates.map((c) => c.keyword)).catch(() => new Map<string, number>());
+
     // Build + classify + score every row (Steps 1, 3 & 5).
     step = "score";
     const now = new Date().toISOString();
@@ -295,6 +300,7 @@ async function runSyncForTenant(tenantId: string) {
         source: c.source,
         competitor: c.competitor,
         search_volume: c.searchVolume,
+        keyword_difficulty: difficulty.get(c.keyword.toLowerCase().trim()) ?? null,
         our_position: c.ourPosition,
         competitor_position: c.competitorPosition,
         relevance_score: quality.relevanceScore,
@@ -319,6 +325,9 @@ async function runSyncForTenant(tenantId: string) {
           opportunityScore: c.opportunityScore,
           competitorsBeatingUs: c.competitorsBeatingUs,
           competitor: c.competitor,
+          // Task 17: every number here is DataForSEO's, fetched now.
+          volumeSource: c.searchVolume != null ? "dataforseo" : null,
+          fetchedAt: now,
         },
         last_synced_at: now,
         updated_at: now,

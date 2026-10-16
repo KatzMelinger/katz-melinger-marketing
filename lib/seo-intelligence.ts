@@ -17,6 +17,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantConfig, DEFAULT_SEO_DOMAIN } from "@/lib/tenant-config";
 import { runTechnicalCrawl, type CrawlError } from "@/lib/technical-seo-crawl";
+import { keywordProblem, seedFromTitle } from "@/lib/keyword-guard";
 
 /**
  * The current tenant's primary domain. KM's config returns "katzmelinger.com",
@@ -807,12 +808,13 @@ export async function buildContentSeoBrief(input: {
   headings: string[];
   competitorGaps: string[];
 }> {
-  const focus = input.topic.trim().toLowerCase();
-  const primary = [
-    `${focus} new york`,
-    `${focus} attorney`,
-    `${focus} legal rights`,
-  ].filter(Boolean);
+  // Oct 6 spec, Task 15: the topic is often a task title ("Publish 'What to
+  // Do After Being Fired' action checklist ..."). Suggest the search seed
+  // inside it, not the title with "new york" appended, and never a phrase
+  // that fails the keyword guard. The draft routes then choose the real
+  // keyword from DataForSEO (lib/keyword-selection-data.ts).
+  const focus = seedFromTitle(input.topic) || input.topic.trim().toLowerCase();
+  const primary = [focus, `${focus} new york`, `${focus} attorney`].filter((k) => !keywordProblem(k));
 
   const longTailKeywords = [
     `${focus} statute of limitations`,

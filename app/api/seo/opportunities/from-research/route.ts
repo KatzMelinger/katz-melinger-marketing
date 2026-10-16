@@ -32,6 +32,8 @@ import { scoreOpportunity } from "@/lib/opportunity-scoring";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb } from "@/lib/tenant-db";
 import { guardUser } from "@/lib/supabase-route";
+import { getKeywordMetrics } from "@/lib/dataforseo";
+import { suggestionProblem } from "@/lib/keyword-provenance";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,10 +69,19 @@ export async function POST(req: NextRequest) {
   if (!keyword) {
     return NextResponse.json({ error: "keyword is required" }, { status: 400 });
   }
-  const searchVolume =
+  // Oct 6 spec, Task 17: Keyword Research volumes may be AI estimates. The
+  // Opportunity carries DataForSEO's number or none; the estimate is kept in
+  // metrics for the record and never scored.
+  const aiEstimate =
     typeof body.searchVolume === "number" && Number.isFinite(body.searchVolume)
       ? body.searchVolume
       : null;
+  const fee = suggestionProblem(keyword);
+  if (fee) {
+    return NextResponse.json({ error: `Not added: the keyword ${fee}.` }, { status: 422 });
+  }
+  const real = (await getKeywordMetrics([keyword]).catch(() => new Map())).get(keyword.toLowerCase().trim()) ?? null;
+  const searchVolume = real?.volume ?? null;
   const competitor = typeof body.competitor === "string" ? body.competitor : null;
 
   const tenantId = await resolveTenantId();
@@ -135,6 +146,7 @@ export async function POST(req: NextRequest) {
     source: "manual",
     competitor,
     search_volume: searchVolume,
+    keyword_difficulty: real?.difficulty ?? null,
     our_position: null,
     competitor_position: null,
     relevance_score: quality.relevanceScore,
@@ -151,7 +163,14 @@ export async function POST(req: NextRequest) {
     opportunity_score: opportunityScore,
     priority_label: priorityFromScore(opportunityScore),
     status: "new",
-    metrics: { searchVolume, source: "manual" },
+    metrics: {
+      searchVolume,
+      source: "manual",
+      volumeSource: real ? "dataforseo" : null,
+      fetchedAt: real?.fetchedAt ?? null,
+      trend: real?.monthly ?? [],
+      aiEstimate,
+    },
     last_synced_at: now,
     updated_at: now,
   };

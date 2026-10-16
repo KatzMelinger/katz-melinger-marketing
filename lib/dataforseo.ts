@@ -617,3 +617,107 @@ export async function getKeywordSuggestions(
     })
     .filter((k) => k.keyword);
 }
+
+// ============================================================================
+// Keyword metrics with provenance (Oct 6 spec, Tasks 15 and 17)
+// ============================================================================
+
+/** New York State. Google Ads geo target 21167; DataForSEO uses the same codes. */
+export const DATAFORSEO_NEW_YORK_LOCATION_CODE = 21167;
+
+export type KeywordMetrics = {
+  keyword: string;
+  /** US monthly searches. */
+  volume: number | null;
+  /** 0-100. */
+  difficulty: number | null;
+  /** Last 12 months of US searches, oldest first. */
+  monthly: number[];
+  source: "dataforseo";
+  /** When DataForSEO produced these numbers (from the cache, or now). */
+  fetchedAt: string;
+};
+
+function fetchedAtOf(json: unknown): string {
+  const v = (json as { __fetchedAt?: unknown } | null)?.__fetchedAt;
+  return typeof v === "string" ? v : new Date().toISOString();
+}
+
+/**
+ * Volume, difficulty and the 12-month series for each phrase, from one
+ * keyword_overview call per 700 phrases (US). Phrases DataForSEO has no data
+ * for are left out of the map: a missing number is never estimated.
+ */
+export async function getKeywordMetrics(phrases: string[]): Promise<Map<string, KeywordMetrics>> {
+  const out = new Map<string, KeywordMetrics>();
+  const unique = [...new Set(phrases.map((p) => p.toLowerCase().trim()).filter(Boolean))];
+  for (let i = 0; i < unique.length; i += 700) {
+    const chunk = unique.slice(i, i + 700);
+    try {
+      const json = await cachedDataForSeoPost("dataforseo_labs/google/keyword_overview/live", {
+        keywords: chunk,
+        location_code: DATAFORSEO_LOCATION_CODE,
+        language_code: DATAFORSEO_LANGUAGE_CODE,
+      });
+      const fetchedAt = fetchedAtOf(json);
+      for (const item of extractItems(json)) {
+        const phrase = String(item?.keyword ?? "").toLowerCase().trim();
+        if (!phrase) continue;
+        const info = item?.keyword_info ?? {};
+        const monthly: Array<{ year: number; month: number; search_volume: number | null }> = Array.isArray(
+          info?.monthly_searches,
+        )
+          ? info.monthly_searches
+          : [];
+        out.set(phrase, {
+          keyword: phrase,
+          volume: toNum(info?.search_volume),
+          difficulty: toNum(item?.keyword_properties?.keyword_difficulty),
+          monthly: monthly
+            .slice()
+            .sort((a, b) => a.year - b.year || a.month - b.month)
+            .slice(-12)
+            .map((m) => toNum(m.search_volume) ?? 0),
+          source: "dataforseo",
+          fetchedAt,
+        });
+      }
+    } catch {
+      // skip this chunk; the phrases simply have no data
+    }
+  }
+  return out;
+}
+
+/**
+ * Monthly searches in one location (default: New York State), from the Google
+ * Ads search volume endpoint, which, unlike DataForSEO Labs, works below
+ * country level. Up to 1000 phrases per call.
+ */
+export async function getLocalSearchVolume(
+  phrases: string[],
+  locationCode: number = DATAFORSEO_NEW_YORK_LOCATION_CODE,
+): Promise<Map<string, { volume: number | null; fetchedAt: string }>> {
+  const out = new Map<string, { volume: number | null; fetchedAt: string }>();
+  const unique = [...new Set(phrases.map((p) => p.toLowerCase().trim()).filter(Boolean))];
+  for (let i = 0; i < unique.length; i += 1000) {
+    try {
+      const json = await cachedDataForSeoPost("keywords_data/google_ads/search_volume/live", {
+        keywords: unique.slice(i, i + 1000),
+        location_code: locationCode,
+        language_code: DATAFORSEO_LANGUAGE_CODE,
+      });
+      const fetchedAt = fetchedAtOf(json);
+      // This endpoint returns rows directly in result[], not result[0].items.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows: any[] = (json as any)?.tasks?.[0]?.result ?? [];
+      for (const r of rows) {
+        const phrase = String(r?.keyword ?? "").toLowerCase().trim();
+        if (phrase) out.set(phrase, { volume: toNum(r?.search_volume), fetchedAt });
+      }
+    } catch {
+      // no local data for this chunk
+    }
+  }
+  return out;
+}

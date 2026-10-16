@@ -57,6 +57,7 @@ import {
 } from "@/lib/redraft-analyze";
 import { autoSeoMetadata } from "@/lib/strategy-engine";
 import { getPillars } from "@/lib/pillars-store";
+import { keywordProblem, seedFromTitle } from "@/lib/keyword-guard";
 import {
   buildLinkPlan,
   approvedLinkPlanBlock,
@@ -380,6 +381,12 @@ export async function POST(req: Request) {
 
   // 4. Save the draft.
   const draftTitle = title || url;
+  // Oct 6 spec, Task 15: the update's keyword is a real one (the chosen one,
+  // a valid update keyword, or the seed in the title), never the page title.
+  const chosenKeyword = str((body.keywordSelection as { chosen?: { keyword?: unknown } } | undefined)?.chosen?.keyword);
+  const updateKeyword =
+    [chosenKeyword, str(body.primaryKeyword), ...keywords, seedFromTitle(title)].find((k) => k && !keywordProblem(k)) ??
+    draftTitle;
   const resolvedPillar = pillarId || seoMeta?.pillarId || null;
   const { data: draftRow, error: draftErr } = await supabase
     .from("content_drafts")
@@ -396,6 +403,8 @@ export async function POST(req: Request) {
         source_url: url,
         ...(grounded.fixLog ? { legal_fix_log: grounded.fixLog } : {}),
         update_keywords: keywords,
+        update_target_url: url,
+        ...(body.keywordSelection && typeof body.keywordSelection === "object" ? { keyword_selection: body.keywordSelection } : {}),
         pillar_id: resolvedPillar,
         // Section-structure check (H1/H2/H3 scaffold) so the drawer's QA gate
         // holds refreshed pages to the same heading structure as new drafts.
@@ -413,7 +422,7 @@ export async function POST(req: Request) {
           headingChanges,
         },
         km_brief: {
-          primaryKeyword: title || url,
+          primaryKeyword: updateKeyword,
           secondaryKeywords: keywords,
           pillarId: resolvedPillar,
           internalPillarLink: linkPlan.links[0]?.url ?? null,
@@ -429,7 +438,7 @@ export async function POST(req: Request) {
         },
       },
       seo_brief: {
-        primaryKeyword: title || url,
+        primaryKeyword: updateKeyword,
         secondaryKeywords: keywords,
         pillarId: resolvedPillar,
         targetKeywords: keywords,

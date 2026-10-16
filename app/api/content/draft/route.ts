@@ -20,6 +20,9 @@ import { stripEmDashes } from "@/lib/sanitize-content";
 import { isSensitiveTopic, SENSITIVE_TONE_OVERRIDE } from "@/lib/sensitive-topic";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { keywordProblem } from "@/lib/keyword-guard";
+import type { KeywordDecision } from "@/lib/keyword-selection";
+import { selectKeyword } from "@/lib/keyword-selection-data";
 import { approvedLinkPlanBlock, buildLinkPlan } from "@/lib/internal-links";
 import { MIN_CONFIRMED_INTERNAL_LINKS } from "@/lib/internal-links-check";
 import { readabilityPromptBlock, readabilityContentType, autoBreakLongParagraphs } from "@/lib/readability-rules";
@@ -236,7 +239,42 @@ export async function POST(req: Request) {
   const kmContentType = kmContentTypeFor(contentType, templateKey);
   // The real target keyword, not the headline. Falls back to the topic for
   // callers that don't send target_keywords.
-  const primaryKeyword = resolvePrimaryKeyword(targetKeywords[0], topic);
+  let primaryKeyword = resolvePrimaryKeyword(targetKeywords[0], topic);
+
+  // Oct 6 spec, Task 15: choose a real keyword before anything is written. A
+  // Recommendation arrives with its headline as the topic; a keyword that
+  // carries a task word or runs past eight words is replaced by the chosen
+  // one. When a live page already covers the topic, the draft is offered as
+  // an update of that page ("Create anyway" writes a new page).
+  let keywordSelection: KeywordDecision | null = null;
+  if (isWebContent) {
+    keywordSelection = await selectKeyword({
+      tenantId: await resolveTenantId(),
+      title: topic,
+      incoming: primaryKeyword,
+    }).catch(() => null);
+    if (keywordProblem(primaryKeyword) && keywordSelection) {
+      const replacement =
+        keywordSelection.chosen?.keyword ?? (keywordProblem(keywordSelection.seed) ? null : keywordSelection.seed);
+      if (replacement) {
+        primaryKeyword = replacement;
+        if (targetKeywords.length) targetKeywords[0] = replacement;
+        else targetKeywords.push(replacement);
+      }
+    }
+    if (keywordSelection?.mode === "update" && keywordSelection.updateTargetUrl && o.force !== true) {
+      return NextResponse.json(
+        {
+          error: `A live page already covers this topic. Update ${keywordSelection.updateTargetUrl} instead, or choose "Create anyway" for a new page.`,
+          duplicate: true,
+          updateTarget: true,
+          existing: { kind: "published", id: keywordSelection.updateTargetUrl, label: keywordSelection.updateTargetUrl },
+          keywordSelection,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   if (isWebContent) {
     if (!kmContentType) {
@@ -701,7 +739,11 @@ ${readabilityPromptBlock(
       draftFormat,
       body,
       title,
-      { ...(kmBrief ? { km_brief: kmBrief } : {}), ...(fixLog ? { legal_fix_log: fixLog } : {}) },
+      {
+        ...(kmBrief ? { km_brief: kmBrief } : {}),
+        ...(fixLog ? { legal_fix_log: fixLog } : {}),
+        ...(keywordSelection ? { keyword_selection: keywordSelection } : {}),
+      },
       kmBrief
         ? {
             primaryKeyword: kmBrief.primaryKeyword,

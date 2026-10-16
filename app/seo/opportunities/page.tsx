@@ -21,6 +21,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { ContentNav } from "@/components/content-nav";
 import { KmBriefWizard } from "@/components/km-brief-wizard";
 import { formatNumber, SeoShell } from "@/components/seo-shell";
+import { SourcedNumber } from "@/components/sourced-number";
 
 type Opportunity = {
   id: string;
@@ -45,7 +46,24 @@ type Opportunity = {
   clusterRole: string | null;
   clusterType: string | null;
   clusterPrimaryKeyword: string | null;
+  metrics?: { volumeSource?: string | null; fetchedAt?: string | null; aiEstimate?: number | null } | null;
 };
+
+/** Task 17: where an Opportunity's volume came from. Synced rows are DataForSEO's;
+ *  a manual row only when DataForSEO confirmed it. */
+function volumeSource(o: Opportunity): string {
+  if (o.metrics?.volumeSource) return o.metrics.volumeSource;
+  return o.source === "manual" || o.source === "imported" ? "ai_estimate" : "dataforseo";
+}
+
+function VolumeCell({ o }: { o: Opportunity }) {
+  return (
+    <>
+      <SourcedNumber value={o.searchVolume} source={volumeSource(o)} fetchedAt={o.metrics?.fetchedAt ?? null} />
+      {o.keywordDifficulty != null && <span className="ml-1 text-[10px] text-slate-400">KD {o.keywordDifficulty}</span>}
+    </>
+  );
+}
 
 type KeywordExclusion = { id: string; term: string; reason: string | null };
 
@@ -657,7 +675,7 @@ function OppRow({
         </div>
       </td>
       <td className="py-2 pr-3 tabular-nums text-slate-700">
-        {o.searchVolume != null ? formatNumber(o.searchVolume) : "—"}
+        <VolumeCell o={o} />
       </td>
       <td className="py-2 pr-3">
         {o.recommendedContentType && (
@@ -739,7 +757,7 @@ function OppMemberRow({
         <span className="tabular-nums text-xs text-slate-400">{o.relevanceScore}</span>
       </td>
       <td className="py-1.5 pr-3 tabular-nums text-slate-500">
-        {o.searchVolume != null ? formatNumber(o.searchVolume) : "—"}
+        <VolumeCell o={o} />
       </td>
       <td className="py-1.5 pr-3 text-[10px] text-slate-400">
         {o.recommendedContentType

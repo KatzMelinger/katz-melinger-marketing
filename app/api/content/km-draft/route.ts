@@ -68,6 +68,9 @@ import { findExistingContent, duplicateMessage } from "@/lib/content-dedup";
 import { applyRequiredDisclaimers } from "@/lib/legal-disclaimers";
 import { closingCtaFor } from "@/lib/closing-cta";
 import { groundAndFix, groundingBlock } from "@/lib/generation-grounding";
+import { keywordProblem } from "@/lib/keyword-guard";
+import type { KeywordDecision } from "@/lib/keyword-selection";
+import { selectKeyword } from "@/lib/keyword-selection-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -141,6 +144,19 @@ function parseBrief(o: Record<string, unknown>): Partial<KMPerPageBrief> {
   };
 }
 
+/** A decision the wizard already showed (lib/keyword-selection.ts), or null. */
+function readDecision(v: unknown): KeywordDecision | null {
+  if (!v || typeof v !== "object") return null;
+  const d = v as Partial<KeywordDecision>;
+  return typeof d.seed === "string" && (d.mode === "new" || d.mode === "update") && Array.isArray(d.rejected)
+    ? (d as KeywordDecision)
+    : null;
+}
+
+function titleCaseKeyword(k: string): string {
+  return k.replace(/\b(ny|nyc|nj)\b/gi, (m) => m.toUpperCase()).replace(/(^|\s)([a-z])/g, (_m, s, c) => s + c.toUpperCase());
+}
+
 export async function POST(req: Request) {
   const denied = await guardUser();
   if (denied) return denied;
@@ -180,6 +196,41 @@ export async function POST(req: Request) {
 
   const brief = partial as KMPerPageBrief;
   const language = normalizeLanguage((body as Record<string, unknown>).language);
+
+  // Oct 6 spec, Task 15: keyword selection before anything is written. The
+  // wizard sends the decision it showed; otherwise (or when the keyword is a
+  // task title) the pipeline runs here. A keyword that fails the guard is
+  // replaced by the chosen one; a valid keyword someone typed is kept.
+  const b0 = body as Record<string, unknown>;
+  let keywordSelection = readDecision(b0.keywordSelection);
+  if (!keywordSelection || keywordProblem(brief.primaryKeyword)) {
+    keywordSelection = await selectKeyword({
+      tenantId: await resolveTenantId(),
+      title: brief.h1 || brief.primaryKeyword,
+      incoming: brief.primaryKeyword,
+    }).catch(() => null);
+  }
+  if (keywordProblem(brief.primaryKeyword) && keywordSelection) {
+    const replacement =
+      keywordSelection.chosen?.keyword ?? (keywordProblem(keywordSelection.seed) ? null : keywordSelection.seed);
+    if (replacement) {
+      // The H1, slug and meta title were built from the task title too.
+      if (keywordProblem(brief.h1 ?? "")) brief.h1 = titleCaseKeyword(replacement);
+      if (keywordProblem((brief.urlSlug ?? "").replace(/-/g, " "))) brief.urlSlug = replacement.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+      if (keywordProblem(brief.metaTitle ?? "")) brief.metaTitle = titleCaseKeyword(replacement);
+      brief.primaryKeyword = replacement;
+    }
+  }
+  if (keywordSelection?.mode === "update" && b0.allowNewPage !== true) {
+    return NextResponse.json(
+      {
+        error: `A live page already covers this topic: ${keywordSelection.updateTargetUrl}. Update that page, or confirm a new page.`,
+        updateTarget: true,
+        keywordSelection,
+      },
+      { status: 409 },
+    );
+  }
 
   // Duplicate guard — never generate a second draft for a keyword/cluster that
   // already has a draft, brief, board item, or published page. Manual override
@@ -496,6 +547,8 @@ ${renderFirmFactsBlock()}`);
       structure_check: { missing: structureCheck.missing, passed: structureCheck.passed },
       freshness: { flags: freshnessFlags },
       ...(grounded.fixLog ? { legal_fix_log: grounded.fixLog } : {}),
+      // Task 15: the keyword decision, shown on the draft.
+      ...(keywordSelection ? { keyword_selection: keywordSelection } : {}),
     });
 
     // Connection: advance the Production Board row this draft belongs to.
