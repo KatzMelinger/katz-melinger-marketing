@@ -756,3 +756,25 @@ export async function getKeywordIdeas(seeds: string[], limit: number = 300): Pro
     })
     .filter((k) => k.keyword);
 }
+
+/**
+ * "People also ask" questions on Google's first page for a keyword (Oct 6
+ * spec, Task 18, question patterns). One SERP call, cached like the rest.
+ */
+export async function getPeopleAlsoAsk(keyword: string): Promise<string[]> {
+  const json = await cachedDataForSeoPost("serp/google/organic/live/advanced", {
+    keyword,
+    location_code: DATAFORSEO_LOCATION_CODE,
+    language_code: DATAFORSEO_LANGUAGE_CODE,
+    depth: 10,
+  });
+  const out: string[] = [];
+  for (const item of extractItems(json)) {
+    if (item?.type !== "people_also_ask") continue;
+    for (const q of Array.isArray(item?.items) ? item.items : []) {
+      const t = String(q?.title ?? "").trim();
+      if (t) out.push(t);
+    }
+  }
+  return [...new Set(out)];
+}

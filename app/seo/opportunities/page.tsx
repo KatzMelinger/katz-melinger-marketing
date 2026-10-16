@@ -22,6 +22,8 @@ import { ContentNav } from "@/components/content-nav";
 import { KmBriefWizard } from "@/components/km-brief-wizard";
 import { formatNumber, SeoShell } from "@/components/seo-shell";
 import { SourcedNumber } from "@/components/sourced-number";
+import { ContentGapTabs, GAP_TABS } from "@/components/content-gap-tabs";
+import type { GapView } from "@/lib/content-gaps";
 
 type Opportunity = {
   id: string;
@@ -158,6 +160,7 @@ export default function SeoOpportunitiesPage() {
   const [listFilter, setListFilter] = useState<string>("all");
   const [practiceFilter, setPracticeFilter] = useState<string>("all");
   const [risingOnly, setRisingOnly] = useState(false);
+  const [view, setView] = useState<"radar" | GapView>("radar");
   const [discovering, setDiscovering] = useState(false);
   const [pageSize, setPageSize] = useState<number | "all">(20);
   const [page, setPage] = useState(1);
@@ -388,6 +391,41 @@ export default function SeoOpportunitiesPage() {
         </div>
       )}
 
+      {/* Task 18: the Radar plus the content gap views. */}
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        {([{ id: "radar", label: "Radar" }, ...GAP_TABS] as { id: "radar" | GapView; label: string }[]).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setView(t.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+              view === t.id ? "border-brand text-brand" : "border-transparent text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {view !== "radar" ? (
+        <ContentGapTabs
+          view={view}
+          onCreateBrief={(a) => {
+            setWizardSecondary(a.secondary ?? []);
+            setWizardOpp({
+              id: "",
+              keyword: a.keyword,
+              practiceArea: a.practiceArea ?? null,
+              recommendedContentType: null,
+              intent: null,
+              pillarId: a.pillarId ?? null,
+              competitor: null,
+              searchVolume: null,
+            } as unknown as Opportunity);
+          }}
+        />
+      ) : (
+      <>
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#e2e8f0] bg-slate-50 px-4 py-2.5 text-xs">
         <div className="flex flex-wrap items-center gap-4">
           <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -617,6 +655,9 @@ export default function SeoOpportunitiesPage() {
             </div>
           )}
         </div>
+      )}
+
+      </>
       )}
 
       {(wizardOpp || scratchOpen) && (
