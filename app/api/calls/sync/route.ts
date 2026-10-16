@@ -9,7 +9,10 @@
  *   `Authorization: Bearer ${CRON_SECRET}`. Reads ?since=YYYY-MM-DD from query;
  *   without it the cron re-syncs only the last CRON_LOOKBACK_DAYS (7) days,
  *   which is enough to settle calls that were still in progress on the last
- *   run. A full-history resync is the POST without `since`.
+ *   run. It also re-fetches calls from the last 90 days that still have no
+ *   marketing source, a few per run, so a source CallRail reports later moves
+ *   the call into it (Oct 6 spec, Task 10). A full-history resync is the POST
+ *   without `since`.
  *   Registered in vercel.json (hourly) so the call log stays fresh without a
  *   human clicking the button — everything downstream (scoring, lead-response
  *   leakage) is only as current as the last sync.
@@ -19,7 +22,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { fetchCallRailCallsDetailedPage } from "@/lib/callrail-fetch";
+import { fetchCallRailCall, fetchCallRailCallsDetailedPage } from "@/lib/callrail-fetch";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
@@ -34,6 +37,51 @@ type Json = Record<string, unknown>;
 // CallRail can attach a transcript days after the call; re-syncing a week
 // back picks those up so they become scoreable.
 const CRON_LOOKBACK_DAYS = 7;
+/** Calls still without a marketing source: how far back, and how many per run. */
+const SOURCE_BACKFILL_DAYS = 90;
+const SOURCE_BACKFILL_LIMIT = 40;
+
+/**
+ * Re-fetch calls that CallRail had not attributed when they were synced, so
+ * "Source not yet known" rows move into their marketing source once known.
+ * Best-effort: a failure leaves the call for the next run.
+ */
+async function backfillMissingSources(supabase: SupabaseClient): Promise<{ checked: number; filled: number }> {
+  const apiKey = process.env.CALLRAIL_API_KEY;
+  const accountId = process.env.CALLRAIL_ACCOUNT_ID;
+  if (!apiKey || !accountId) return { checked: 0, filled: 0 };
+  const since = new Date(Date.now() - SOURCE_BACKFILL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("calls")
+    .select("id")
+    .is("raw->>source", null)
+    .gte("start_time", since)
+    .order("start_time", { ascending: false })
+    .limit(SOURCE_BACKFILL_LIMIT);
+  if (error || !data?.length) return { checked: 0, filled: 0 };
+  let filled = 0;
+  for (const { id } of data as { id: string }[]) {
+    const got = await fetchCallRailCall(apiKey, accountId, id);
+    if (!got.ok || !got.call.source) continue;
+    const c = got.call;
+    const patch = {
+      marketing_source: c.source ?? null,
+      medium: c.medium ?? null,
+      campaign: c.campaign ?? null,
+      landing_page_url: c.landing_page_url ?? null,
+      referrer_domain: c.referrer_domain ?? null,
+      call_type: c.call_type ?? null,
+      raw: c as unknown as Json,
+      synced_at: new Date().toISOString(),
+    };
+    let { error: upd } = await supabase.from("calls").update(patch).eq("id", id);
+    if (upd && isMissingColumnError(upd.message)) {
+      ({ error: upd } = await supabase.from("calls").update(withoutAttribution(patch)).eq("id", id));
+    }
+    if (!upd) filled++;
+  }
+  return { checked: data.length, filled };
+}
 
 /**
  * Attribution columns added by supabase/calls_marketing_source.sql. Until that
@@ -230,6 +278,8 @@ export async function GET(req: NextRequest) {
     sinceParam && sinceParam.trim()
       ? sinceParam.trim()
       : new Date(Date.now() - CRON_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const backfill = await backfillMissingSources(supabase).catch(() => ({ checked: 0, filled: 0 }));
+  if (backfill.checked) console.log("[calls/sync] source backfill:", backfill);
   // Cron has no user session — stamp the default tenant.
   return runCallsSync(supabase, DEFAULT_TENANT_ID, since);
 }

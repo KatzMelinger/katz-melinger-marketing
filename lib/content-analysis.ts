@@ -49,6 +49,8 @@ import { findTimeSensitiveFacts } from "./freshness-check";
 import { classifyFreshness } from "./freshness-classify";
 import { getCurrentFacts } from "./current-facts-store";
 import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
+import { getThresholds, type KbThresholdEntry } from "./legal-knowledge-base";
+import { checkValuesAgainst } from "./legal-value-check";
 import { runTrapCheck } from "./trap-gate";
 import { runKbChecks } from "./legal-kb";
 import { runStatuteCheck } from "./legal-statute-check";
@@ -709,6 +711,46 @@ Score the linkability and produce concrete outreach angles. Return JSON only:
  * photo", "diagram"), a concrete visual description, and ready-to-use
  * alt text for accessibility.
  */
+/** Knowledge base figures for the laws this body names, one per line. */
+export function imageFacts(body: string, thresholds: KbThresholdEntry[]): string {
+  const hay = body.toLowerCase();
+  const named = thresholds.filter((t) =>
+    (t.matchKeywords[0] ?? "").split("|").some((term) => term.trim() && hay.includes(term.trim().toLowerCase())),
+  );
+  return named
+    .slice(0, 25)
+    .map((t) => {
+      const v =
+        t.unit === "employees"
+          ? t.currentValue <= 1
+            ? "all employers, any size"
+            : `${t.currentValue} or more employees`
+          : t.unit.startsWith("usd")
+            ? `$${t.currentValue.toFixed(2)} ${t.unit.replace("usd_per_", "per ")}`
+            : `${t.currentValue} ${t.unit}`;
+      return `- ${t.label}: ${v}`;
+    })
+    .join("\n");
+}
+
+/**
+ * An image spec that states a legal figure is held to the knowledge base like
+ * the body: a figure with an exact replacement is corrected, and a suggestion
+ * whose figure cannot be corrected safely is dropped (Oct 6 spec, Task 8).
+ */
+export function checkImageFigures(img: SuggestedImage, thresholds: KbThresholdEntry[]): SuggestedImage | null {
+  if (thresholds.length === 0) return img;
+  let out = { ...img };
+  for (const field of ["description", "altText"] as const) {
+    for (const f of checkValuesAgainst(out[field], thresholds)) {
+      const lit = f.fix?.match(/^Replace "([^"]+)" with "([^"]+)"/);
+      if (lit && out[field].includes(lit[1])) out = { ...out, [field]: out[field].split(lit[1]).join(lit[2]) };
+      else return null;
+    }
+  }
+  return out;
+}
+
 async function contentEnhancements(args: {
   body: string;
   topic: string;
@@ -716,8 +758,14 @@ async function contentEnhancements(args: {
   format: string | null;
   template: string | null;
   targetKeywords: string[];
+  tenantId: string;
 }): Promise<{ titles: string[]; images: SuggestedImage[] }> {
   const truncated = args.body.slice(0, 5000);
+  // Oct 6 spec, Task 8: image specs state legal figures too (an infographic
+  // read "NYCHRL: 1+ employee"). Give the generator the knowledge base figures
+  // for the laws this draft names, and check what it writes against them.
+  const thresholds = await getThresholds(args.tenantId).catch(() => []);
+  const facts = imageFacts(args.body, thresholds);
   const hasTitle = !!(args.title && args.title.trim().length > 0);
 
   const formatHint = args.format
@@ -761,7 +809,10 @@ Return JSON only:
   ]
 }
 
-Produce 4-6 image suggestions covering:
+${facts ? `Legal figures for any image that states one (use exactly these; never another number):
+${facts}
+
+` : ""}Produce 4-6 image suggestions covering:
 - 1 hero image (top of article)
 - 1-2 supporting photos or quote cards (mid-article)
 - 1 infographic OR diagram OR data viz (if the content has process steps, deadlines, statistics, or comparisons)
@@ -795,6 +846,8 @@ Produce 4-6 image suggestions covering:
             description: i.description,
             altText: i.altText,
           }))
+          .map((i) => checkImageFigures(i, thresholds))
+          .filter((i): i is SuggestedImage => i !== null)
       : [];
     return { titles, images };
   } catch {
@@ -999,6 +1052,7 @@ export async function analyzeDraft(args: {
       format,
       template,
       targetKeywords,
+      tenantId: tid,
     }),
     // Advisory attorney-advertising compliance. Never let it fail the whole
     // analysis — degrade to a null score the UI renders as "re-run", but keep

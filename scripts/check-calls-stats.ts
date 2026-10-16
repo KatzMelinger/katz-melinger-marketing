@@ -14,6 +14,7 @@ import {
   firmLocalDayStartUTC,
   monthToDate,
   needsCallback,
+  rangeLabel,
   sourceLabel,
   type CallStatsRow,
   type RecoveryRow,
@@ -90,8 +91,11 @@ report(
 
 console.log("\n-- source labels + by-source table (8.3) --------------------------");
 eq(sourceLabel({ marketing_source: "SearchGPT", source_name: "Website pool" }), "SearchGPT", "marketing source wins");
-eq(sourceLabel({ marketing_source: "  ", source_name: "Website pool" }), "(tracking line) Website pool", "fallback");
-eq(sourceLabel({ marketing_source: null, source_name: null }), "Unknown", "nothing");
+// Task 10: the CallRail source field only; never a tracker name.
+eq(sourceLabel({ marketing_source: "  " }), "Source not yet known", "no source yet");
+eq(sourceLabel({ marketing_source: null }), "Source not yet known", "nothing");
+eq(rangeLabel("2026-09-01", "2026-09-30"), "Sep 1 - Sep 30, 2026", "range label");
+eq(rangeLabel("2025-12-15", "2026-01-10"), "Dec 15, 2025 - Jan 10, 2026", "range across years");
 const src = bySource(RANGE, NOW);
 const direct = src.find((s) => s.source === "Direct");
 eq(direct && [direct.calls, direct.answered, direct.unanswered, direct.unansweredPct], [3, 0, 2, 66.7], "Direct (outbound excluded, ringing not unanswered)");

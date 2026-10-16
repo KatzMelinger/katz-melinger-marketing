@@ -78,13 +78,28 @@ export function isInbound(row: Pick<CallStatsRow, "direction">): boolean {
   return (row.direction ?? "inbound").toLowerCase() !== "outbound";
 }
 
-/** Label for the Source column and filter. Marketing source first. */
-export function sourceLabel(row: Pick<CallStatsRow, "marketing_source" | "source_name">): string {
-  const m = row.marketing_source?.trim();
-  if (m) return m;
-  const s = row.source_name?.trim();
-  if (s) return `(tracking line) ${s}`;
-  return "Unknown";
+/** Shown until CallRail reports a call's marketing source. */
+export const SOURCE_NOT_YET_KNOWN = "Source not yet known";
+
+/**
+ * Label for the Source column, filter and table: the CallRail `source` field
+ * only (Oct 6 spec, Task 10). The tracker name ("Website pool") is not a
+ * marketing source, so a call without one is "Source not yet known" (one
+ * row, not one per tracking line) until the sync fills it in.
+ */
+export function sourceLabel(row: Pick<CallStatsRow, "marketing_source">): string {
+  return row.marketing_source?.trim() || SOURCE_NOT_YET_KNOWN;
+}
+
+/** "Sep 1 - Sep 30, 2026" for a pair of YYYY-MM-DD dates. */
+export function rangeLabel(from: string, to: string): string {
+  const fmt = (d: string, year: boolean) => {
+    const [y, m, day] = d.split("-").map(Number);
+    const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1] ?? "";
+    return `${month} ${day}${year ? `, ${y}` : ""}`;
+  };
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) return "";
+  return from === to ? fmt(from, true) : `${fmt(from, from.slice(0, 4) !== to.slice(0, 4))} - ${fmt(to, true)}`;
 }
 
 export type CallStats = {

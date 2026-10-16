@@ -135,7 +135,9 @@ export const CLAIM_TYPE_LABEL: Record<LegalClaimType, string> = {
   interpretation: "Interpretation",
   negative_statement: "Negative statement",
   firm_claim: "Firm claim",
-  unclassified: "Unclassified",
+  // Task 8: the "unclassified" rule is retired; this claim type now only marks
+  // a legal claim no rule covers yet ("No rule for this claim yet").
+  unclassified: "No rule yet",
 };
 
 export const RESOLUTION_LABEL: Record<FindingResolution, string> = {

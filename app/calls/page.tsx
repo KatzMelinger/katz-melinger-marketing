@@ -12,6 +12,7 @@ import {
   isIsoDate,
   monthToDate,
   needsCallback,
+  rangeLabel,
   sourceLabel,
   type CallStatsRow,
   type CallStatus,
@@ -30,6 +31,7 @@ type CallRow = CallStatsRow & {
   customer_name: string | null;
   customer_phone_number: string | null;
   source_name: string | null;
+  referrer_domain?: string | null;
   duration: number | null;
   lead_status: string | null;
   agent_email?: string | null;
@@ -91,7 +93,6 @@ export default function CallsPage() {
   const router = useRouter();
   const [initialRange] = useState(() => monthToDate(Date.now()));
   const [calls, setCalls] = useState<CallRow[]>([]);
-  const [monthCalls, setMonthCalls] = useState<CallRow[] | null>(null);
   const [recovery, setRecovery] = useState<Map<string, RecoveryRow>>(new Map());
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -126,18 +127,6 @@ export default function CallsPage() {
     }
   }, []);
 
-  // The callback list always covers the current month to date, whatever the
-  // date pickers say (spec 8.4).
-  const loadMonth = useCallback(async () => {
-    try {
-      const mtd = monthToDate(Date.now());
-      const data = await fetchRange(mtd.from, mtd.to);
-      if (data.ok) setMonthCalls(Array.isArray(data.calls) ? data.calls : []);
-    } catch {
-      /* callback list is best-effort */
-    }
-  }, []);
-
   const loadRecovery = useCallback(async () => {
     try {
       const res = await fetch("/api/leads/recovery", { cache: "no-store" });
@@ -157,12 +146,11 @@ export default function CallsPage() {
   }, [from, to, load]);
 
   useEffect(() => {
-    void loadMonth();
     void loadRecovery();
-  }, [loadMonth, loadRecovery]);
+  }, [loadRecovery]);
 
   async function reloadAll() {
-    await Promise.all([load(from, to), loadMonth(), loadRecovery()]);
+    await Promise.all([load(from, to), loadRecovery()]);
   }
 
   // A full-history sync is longer than one request may run, so the route
@@ -287,9 +275,11 @@ export default function CallsPage() {
 
   const stats = useMemo(() => computeCallStats(calls, nowMs), [calls, nowMs]);
   const sourceTable = useMemo(() => bySource(calls, nowMs), [calls, nowMs]);
+  // Oct 6 spec, Task 10: the callback list follows the selected date range
+  // (default: this month to date), the same range as everything else here.
   const callbacks = useMemo(
-    () => (monthCalls ? needsCallback(monthCalls, recovery, nowMs) : []),
-    [monthCalls, recovery, nowMs],
+    () => needsCallback(calls, recovery, nowMs),
+    [calls, recovery, nowMs],
   );
 
   const totalCalls = stats.total;
@@ -443,17 +433,18 @@ export default function CallsPage() {
           className="rounded-xl border border-[#e2e8f0] p-6 shadow-sm"
           style={{ backgroundColor: "#ffffff" }}
         >
-          <h2 className="text-base font-semibold text-slate-900">Needs callback</h2>
+          <h2 className="text-base font-semibold text-slate-900">
+            Needs callback{rangeLabel(from || initialRange.from, to || initialRange.to) ? ` · ${rangeLabel(from || initialRange.from, to || initialRange.to)}` : ""}
+          </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Callers this month whose latest missed or voicemail call was not followed by an answered call.
-            Always covers the current month to date, whatever the dates above say. Marking someone called
-            back, reached or dead removes them (same status as the{" "}
+            Callers in the selected dates whose latest missed or voicemail call was not followed by an answered
+            call. Marking someone called back, reached or dead removes them (same status as the{" "}
             <Link href="/lead-response" className="text-brand hover:underline">
               lead-response
             </Link>{" "}
             worklist).
           </p>
-          {monthCalls == null ? (
+          {loading && calls.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">Loading…</p>
           ) : callbacks.length === 0 ? (
             <p className="mt-4 text-sm text-emerald-700">Nobody is waiting on a callback.</p>
@@ -523,7 +514,8 @@ export default function CallsPage() {
           <h2 className="text-base font-semibold text-slate-900">Calls and share unanswered by source</h2>
           <p className="mt-1 text-sm text-slate-500">
             Inbound calls in the selected date range, by CallRail marketing source. Unanswered = missed or
-            voicemail. &quot;(tracking line)&quot; rows have no marketing source on record yet.
+            voicemail. &quot;Source not yet known&quot; is calls CallRail has not attributed yet; they move to their
+            source when the sync picks it up.
           </p>
           {sourceTable.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">No inbound calls in this range.</p>
@@ -569,6 +561,7 @@ export default function CallsPage() {
                   <th className="pb-3 pr-4 font-medium">Caller</th>
                   <th className="pb-3 pr-4 font-medium">Phone</th>
                   <th className="pb-3 pr-4 font-medium">Source</th>
+                  <th className="pb-3 pr-4 font-medium">Referrer</th>
                   <th className="pb-3 pr-4 font-medium">Duration</th>
                   <th className="pb-3 pr-4 font-medium">Status</th>
                   <th className="pb-3 pr-4 font-medium">Lang</th>
@@ -606,6 +599,7 @@ export default function CallsPage() {
                       </td>
                       <td className="py-3 pr-4 tabular-nums text-slate-600">{callerNumber}</td>
                       <td className="py-3 pr-4">{srcLabel}</td>
+                      <td className="py-3 pr-4 text-xs text-slate-500">{row.referrer_domain?.trim() || "—"}</td>
                       <td className="py-3 pr-4 tabular-nums">{duration}</td>
                       <td className="py-3 pr-4">
                         <span

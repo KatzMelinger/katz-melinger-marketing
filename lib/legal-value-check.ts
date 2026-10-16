@@ -364,7 +364,8 @@ const DURATION_RE = new RegExp(
 
 /** "four or more employees", "at least 15 employees", "20+ employees". */
 const COVERAGE_RE = new RegExp(
-  "\\b(" + NUM + ")\\s*\\+?\\s*(?:or\\s+more\\s+|or\\s+fewer\\s+)?employees\\b" +
+  // "employees?": image specs write "1+ employee" (Oct 6 spec, Task 8).
+  "\\b(" + NUM + ")\\s*\\+?\\s*(?:or\\s+more\\s+|or\\s+fewer\\s+)?employees?\\b" +
     "|\\b(?:at\\s+least|fewer\\s+than|more\\s+than|minimum\\s+of|no\\s+fewer\\s+than)\\s+(" + NUM + ")\\s+employees\\b",
   "gi",
 );
@@ -384,6 +385,8 @@ type ConstantMention = {
   unit: "days" | "years" | "employees";
   /** The exact text matched, so a fix can tell the model what to replace. */
   matchedText: string;
+  /** Where the match starts within the sentence. */
+  at: number;
 };
 
 export function extractConstantMentions(body: string): ConstantMention[] {
@@ -405,6 +408,7 @@ export function extractConstantMentions(body: string): ConstantMention[] {
         value: scaled,
         unit,
         matchedText: m[0],
+        at: m.index ?? 0,
       });
     }
     for (const m of s.text.matchAll(COVERAGE_RE)) {
@@ -416,6 +420,7 @@ export function extractConstantMentions(body: string): ConstantMention[] {
         value,
         unit: "employees",
         matchedText: m[0],
+        at: m.index ?? 0,
       });
     }
     const anySize = s.text.match(COVERAGE_ANY_SIZE_RE);
@@ -426,6 +431,7 @@ export function extractConstantMentions(body: string): ConstantMention[] {
         value: 1,
         unit: "employees",
         matchedText: anySize[0],
+        at: anySize.index ?? 0,
       });
     }
   }
@@ -442,6 +448,23 @@ function keywordsMatch(entry: KbThresholdEntry, sentence: string): boolean {
       return t.length > 0 && hay.includes(t);
     }),
   );
+}
+
+/** The clause of a sentence around an offset: between the nearest comma,
+ *  semicolon or dash on either side. */
+function clauseAt(sentence: string, at: number): string {
+  const before = sentence.slice(0, at);
+  const start = Math.max(before.lastIndexOf(","), before.lastIndexOf(";"), before.lastIndexOf(" - ")) + 1;
+  const rest = sentence.slice(at);
+  const ends = [rest.indexOf(","), rest.indexOf(";"), rest.indexOf(" - ")].filter((i) => i >= 0);
+  return sentence.slice(start, ends.length ? at + Math.min(...ends) : sentence.length);
+}
+
+/** "2024-02-15" -> "February 15, 2024", read directly (no timezone shift). */
+function longDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const month = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][m - 1];
+  return month ? `${month} ${d}, ${y}` : iso;
 }
 
 /** How a value reads back to a reviewer, in its own unit. */
@@ -461,9 +484,30 @@ function checkConstantAgainstKnowledgeBase(
   // Only entries in the same unit whose keywords the sentence actually carries.
   // Most specific wins when several qualify, so a sentence naming both the
   // statute and the deadline beats one matched on the statute alone.
+  // When several entries apply, the one whose keywords sit in the same clause
+  // as the figure wins, then the most specific. "3 years to file an
+  // administrative complaint with the Division of Human Rights, or three years
+  // to file a lawsuit" names both deadlines; each figure belongs to its own
+  // clause (Oct 6 spec, Task 8: 43fb024e's correction cited the lawsuit
+  // deadline for the administrative one).
+  const clause = clauseAt(mention.sentence, mention.at);
+  const inClause = (t: KbThresholdEntry) =>
+    t.matchKeywords.filter((g) => g.split("|").some((term) => term.trim() && clause.toLowerCase().includes(term.trim().toLowerCase())))
+      .length;
+  const lawTerms = (t: KbThresholdEntry) => (t.matchKeywords[0] ?? "").split("|").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  // A sentence naming more than one law ("Federal 15+ employees; NYSHRL all
+  // employers; NYCHRL 4+") is only held to an entry whose law is named in the
+  // figure's own clause. Otherwise nothing is flagged, rather than holding
+  // one law's figure to another law's rule.
+  const hay = mention.sentence.toLowerCase();
+  const lawsNamed = new Set(
+    thresholds.filter((t) => lawTerms(t).some((x) => hay.includes(x))).map((t) => lawTerms(t)[0]),
+  );
+  const lowClause = clause.toLowerCase();
   const entry = thresholds
     .filter((t) => t.unit === mention.unit && keywordsMatch(t, mention.sentence))
-    .sort((a, b) => b.matchKeywords.length - a.matchKeywords.length)[0];
+    .filter((t) => lawsNamed.size <= 1 || lawTerms(t).some((x) => lowClause.includes(x)))
+    .sort((a, b) => inClause(b) - inClause(a) || b.matchKeywords.length - a.matchKeywords.length)[0];
   if (!entry) return null; // nothing in the knowledge base speaks to this sentence
   if (mention.value === entry.currentValue) return null; // correct
   // A sentence can state two correct values for one topic: "two years, or
@@ -480,7 +524,12 @@ function checkConstantAgainstKnowledgeBase(
     if (valid.includes(mention.value)) return null;
   }
 
-  const current = formatConstant(entry.currentValue, mention.unit);
+  // A deadline that changed on a date applies to claims from that date on.
+  const current =
+    formatConstant(entry.currentValue, mention.unit) +
+    (mention.unit !== "employees" && entry.effectiveDate && entry.priorValue !== null
+      ? ` for claims arising on or after ${longDate(entry.effectiveDate)}`
+      : "");
   const stated = formatConstant(mention.value, mention.unit);
   const since = entry.effectiveDate ? ` since ${entry.effectiveDate}` : "";
   const wasRight = entry.priorValue !== null && mention.value === entry.priorValue;
