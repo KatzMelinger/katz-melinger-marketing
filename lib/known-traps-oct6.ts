@@ -373,7 +373,8 @@ export const OCT6_TRAPS: TrapSeed[] = [
     label: "Missing byline",
     matchType: "document_missing",
     appliesTo: "web",
-    pattern: String.raw`^\s*[*_]*\s*By [A-Z]`,
+    // "\[?": the byline links to the author's bio (Task 19).
+    pattern: String.raw`^\s*[*_]*\s*By \[?[A-Z]`,
     unless: [],
     severity: "important",
     note: "Website drafts carry \"By [author], Katz Melinger PLLC\" under the H1: Nicole Grunfeld for employment, Adam Sackowitz for commercial collections, Kenneth Katz for judgment enforcement. Fix known errors adds it where the practice area is mapped.",

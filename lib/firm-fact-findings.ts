@@ -76,12 +76,15 @@ function sameName(a: string, b: string): boolean {
   return key(a) === key(b);
 }
 
+/** "By [Name](bio page), Katz Melinger PLLC": the byline links to the author's
+ *  bio (Oct 6 spec, Task 19), which carries the bar admissions. */
 export function bylineFor(author: Author): string {
   const short = author.name.replace(/\s+[A-Z]\.\s+/, " ");
-  return `By ${short}, Katz Melinger PLLC`;
+  return author.bioPageUrl ? `By [${short}](${author.bioPageUrl}), Katz Melinger PLLC` : `By ${short}, Katz Melinger PLLC`;
 }
 
-const BYLINE_RE = /^\s*[*_]*\s*By\s+([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})(?:,\s*Esq\.?)?/m;
+/** A byline, linked to a bio or not: "By Kenneth Katz", "By [Kenneth Katz](...)". */
+const BYLINE_RE = /^\s*[*_]*\s*By\s+\[?([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})\]?(?:\([^)]*\))?(?:,\s*Esq\.?)?/m;
 const MANAGING_PARTNER_RE = /managing\s+partner/i;
 const STATISTIC_RE =
   /\b\d{1,3}(?:\.\d+)?\s*(?:%|percent)\s+of\s+(?:all\s+)?(?:\w+\s+){0,2}(?:employees|workers|cases|clients|claims|people|Americans|New\s+Yorkers|women|men|employers|businesses|companies|respondents|plaintiffs)\b|\b(?:studies|statistics|research|surveys?|data)\s+(?:show|shows|suggest|suggests|indicate|indicates|found|find)\b/i;

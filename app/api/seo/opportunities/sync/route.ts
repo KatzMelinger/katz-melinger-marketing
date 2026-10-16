@@ -222,12 +222,21 @@ async function runSyncForTenant(tenantId: string) {
     // Preserve user-acted statuses: fetch this tenant's existing rows.
     const keys = candidates.map((c) => c.keyword);
     const { data: existingRows } = await db
-      .select("seo_opportunities", "keyword, status")
+      .select("seo_opportunities", "keyword, status, metrics")
       .in("keyword", keys);
     const existingStatus = new Map(
       ((existingRows ?? []) as unknown as Array<{ keyword: string; status: string }>).map(
         (r) => [r.keyword, r.status],
       ),
+    );
+    // Task 16: the weekly discovery's trend lives in metrics; this daily
+    // rebuild of metrics must not erase it.
+    const TREND_KEYS = ["trend3m", "trendYoy", "rising", "monthly", "trendCheckedAt", "discoveredFrom", "updateExistingPage"];
+    const keptTrend = new Map(
+      ((existingRows ?? []) as unknown as Array<{ keyword: string; metrics: Record<string, unknown> | null }>).map((r) => [
+        r.keyword,
+        Object.fromEntries(TREND_KEYS.filter((k) => r.metrics && k in r.metrics).map((k) => [k, r.metrics![k]])),
+      ]),
     );
 
     // Dedupe against existing site pages in one query (Phase B). Map each
@@ -324,6 +333,7 @@ async function runSyncForTenant(tenantId: string) {
         opportunity_score: toInt(opportunityScore),
         status,
         metrics: {
+          ...(keptTrend.get(c.keyword) ?? {}),
           searchVolume: c.searchVolume,
           ourPosition: c.ourPosition,
           competitorPosition: c.competitorPosition,

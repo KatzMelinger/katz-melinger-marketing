@@ -266,11 +266,15 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
   const expected = expectedAuthor(ctx);
   if (expected) {
     const byline = bylineFor(expected);
-    const m = ed.body.match(/^\s*[*_]*\s*By\s+[A-Z][^\n]*$/m);
+    const m = ed.body.match(/^\s*[*_]*\s*By\s+\[?[A-Z][^\n]*$/m);
     if (m) {
       const line = m[0].trim();
-      if (!line.replace(/[*_]/g, "").startsWith(byline) && !new RegExp(expected.name.split(" ").pop() ?? "", "i").test(line)) {
+      const rightAuthor = new RegExp(expected.name.split(" ").pop() ?? "", "i").test(line);
+      if (!line.replace(/[*_]/g, "").startsWith(byline) && !rightAuthor) {
         ed.replace(line, byline, `Author follows the practice area (Appendix D): ${expected.name}.`, "firm fact", "firm_author");
+      } else if (rightAuthor && expected.bioPageUrl && !line.includes(expected.bioPageUrl)) {
+        // Task 19: the byline links to the author's bio page.
+        ed.replace(line, byline, `The byline links to ${expected.name}'s bio page (Oct 6 spec, Task 19).`, "brand rule", "byline_bio_link");
       }
     } else {
       const h1 = ed.body.match(/^#\s+.+$/m);

@@ -631,7 +631,7 @@ export type KeywordMetrics = {
   volume: number | null;
   /** 0-100. */
   difficulty: number | null;
-  /** Last 12 months of US searches, oldest first. */
+  /** Monthly US searches, oldest first (DataForSEO usually returns 12). */
   monthly: number[];
   source: "dataforseo";
   /** When DataForSEO produced these numbers (from the cache, or now). */
@@ -676,7 +676,6 @@ export async function getKeywordMetrics(phrases: string[]): Promise<Map<string, 
           monthly: monthly
             .slice()
             .sort((a, b) => a.year - b.year || a.month - b.month)
-            .slice(-12)
             .map((m) => toNum(m.search_volume) ?? 0),
           source: "dataforseo",
           fetchedAt,
@@ -720,4 +719,62 @@ export async function getLocalSearchVolume(
     }
   }
   return out;
+}
+
+/**
+ * Keyword ideas for a list of seeds (Oct 6 spec, Task 16): one call covers a
+ * whole practice-area seed list (up to 200 seeds). Returns each idea with its
+ * metrics, so no second lookup is needed.
+ */
+export async function getKeywordIdeas(seeds: string[], limit: number = 300): Promise<KeywordMetrics[]> {
+  const clean = [...new Set(seeds.map((s) => s.toLowerCase().trim()).filter(Boolean))].slice(0, 200);
+  if (clean.length === 0) return [];
+  const json = await cachedDataForSeoPost("dataforseo_labs/google/keyword_ideas/live", {
+    keywords: clean,
+    location_code: DATAFORSEO_LOCATION_CODE,
+    language_code: DATAFORSEO_LANGUAGE_CODE,
+    limit: Math.min(Math.max(limit, 1), 1000),
+  });
+  const fetchedAt = fetchedAtOf(json);
+  return extractItems(json)
+    .map((item) => {
+      const info = item?.keyword_info ?? {};
+      const monthly: Array<{ year: number; month: number; search_volume: number | null }> = Array.isArray(info?.monthly_searches)
+        ? info.monthly_searches
+        : [];
+      return {
+        keyword: String(item?.keyword ?? "").toLowerCase().trim(),
+        volume: toNum(info?.search_volume),
+        difficulty: toNum(item?.keyword_properties?.keyword_difficulty),
+        monthly: monthly
+          .slice()
+          .sort((a, b) => a.year - b.year || a.month - b.month)
+          .map((m) => toNum(m.search_volume) ?? 0),
+        source: "dataforseo" as const,
+        fetchedAt,
+      };
+    })
+    .filter((k) => k.keyword);
+}
+
+/**
+ * "People also ask" questions on Google's first page for a keyword (Oct 6
+ * spec, Task 18, question patterns). One SERP call, cached like the rest.
+ */
+export async function getPeopleAlsoAsk(keyword: string): Promise<string[]> {
+  const json = await cachedDataForSeoPost("serp/google/organic/live/advanced", {
+    keyword,
+    location_code: DATAFORSEO_LOCATION_CODE,
+    language_code: DATAFORSEO_LANGUAGE_CODE,
+    depth: 10,
+  });
+  const out: string[] = [];
+  for (const item of extractItems(json)) {
+    if (item?.type !== "people_also_ask") continue;
+    for (const q of Array.isArray(item?.items) ? item.items : []) {
+      const t = String(q?.title ?? "").trim();
+      if (t) out.push(t);
+    }
+  }
+  return [...new Set(out)];
 }

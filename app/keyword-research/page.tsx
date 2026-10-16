@@ -1288,6 +1288,8 @@ type TrackedKeyword = {
   url: string | null;
   last_checked_at: string | null;
   created_at: string;
+  /** Task 16: "emerging" when the Radar's weekly discovery added it. */
+  status?: string | null;
 };
 
 function TrackedTab() {
@@ -1440,6 +1442,11 @@ function TrackedTab() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{item.keyword}</span>
+                        {(item.status === "emerging" || item.notes?.startsWith("Emerging")) && (
+                          <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800" title={item.notes ?? "Found by the Radar's weekly discovery"}>
+                            Emerging
+                          </span>
+                        )}
                         <CopyButton text={item.keyword} />
                       </div>
                     </td>

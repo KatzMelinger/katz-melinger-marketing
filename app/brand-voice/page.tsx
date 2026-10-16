@@ -220,6 +220,13 @@ const SETTING_FIELDS: {
     placeholder: "/disclaimer/",
     help: "Every social post must carry the Attorney Advertising label and link here. Instagram is exempt from the link only — captions can't render one.",
   },
+  {
+    key: "lawChanges",
+    label: "Law changes to watch",
+    multiline: true,
+    placeholder: "new jersey minimum wage 2027 | $16.48 from January 1, 2027, announced September 29, 2026",
+    help: "One per line: the search term, then | and a note. The Opportunity Radar's weekly discovery adds each term with its search data, so new law gets content before competitors notice.",
+  },
 ];
 
 const PLATFORMS: { id: string; label: string }[] = [

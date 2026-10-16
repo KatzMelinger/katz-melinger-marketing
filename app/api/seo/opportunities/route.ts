@@ -114,6 +114,14 @@ export async function GET(req: NextRequest) {
 
     const lastSyncedAt =
       all.map((r) => r.last_synced_at).filter(Boolean).sort().at(-1) ?? null;
+    // Task 16: when the weekly discovery last ran (and whether it worked).
+    const { data: disc } = await db
+      .from("pipeline_logs")
+      .select("created_at, status, error_message")
+      .eq("step_reached", "discovery")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const lastDiscovery = (disc?.[0] as { created_at: string; status: string; error_message: string | null } | undefined) ?? null;
 
     return NextResponse.json({
       opportunities: visible.map((r) => {
@@ -158,6 +166,7 @@ export async function GET(req: NextRequest) {
       }),
       counts,
       lastSyncedAt,
+      lastDiscovery,
     });
   } catch (e) {
     return NextResponse.json(
