@@ -52,6 +52,7 @@ import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
 import { getThresholds, type KbThresholdEntry } from "./legal-knowledge-base";
 import { checkValuesAgainst } from "./legal-value-check";
 import { keywordProblem } from "./keyword-guard";
+import { answerReadiness } from "./answer-readiness";
 import { runTrapCheck } from "./trap-gate";
 import { runKbChecks } from "./legal-kb";
 import { runStatuteCheck } from "./legal-statute-check";
@@ -1219,7 +1220,9 @@ export async function analyzeDraft(args: {
   const readabilityFindingList = ruleResult
     ? formatReadabilityFindings(ruleResult.findings)
     : readabilityFindings(body);
-  const aeoFindingList = aeo.findings;
+  // Oct 6 spec, Task 19: Answer readiness, a warning in the AEO tile (never
+  // a blocker; style findings are not review items, Task 25).
+  const aeoFindingList = hasWebPage(format) ? [...aeo.findings, ...answerReadiness(body)] : aeo.findings;
   logEvent("readability_scored", {
     engine: useReadabilityRules ? "rules" : "flesch",
     score: readabilityScore,

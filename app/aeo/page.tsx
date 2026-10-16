@@ -794,9 +794,94 @@ function PromptRow({
 
 // ---------- Sources ---------------------------------------------------------
 
+type OffSiteSource = {
+  domain: string;
+  kind: string;
+  citations: number;
+  urls: string[];
+  checked: number;
+  firmPresent: boolean;
+  competitorsPresent: string[];
+  gap: boolean;
+};
+
+/** Oct 6 spec, Task 19: every source the AI answers cite, firm present or absent. */
+function OffSiteGaps() {
+  const [data, setData] = useState<{ runAt: string | null; sources: OffSiteSource[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/aeo/sources", { cache: "no-store" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error ?? "Failed");
+      setData(j);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+  const gaps = (data?.sources ?? []).filter((s) => s.gap);
+  return (
+    <Card className="p-5 md:col-span-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs uppercase tracking-wider opacity-70">
+          Cited sources: firm present or absent{data?.runAt ? ` (sweep of ${new Date(data.runAt).toLocaleDateString()})` : ""}
+        </div>
+        <button type="button" onClick={() => void load()} disabled={loading} className="rounded-md border border-brand px-3 py-1 text-xs font-medium text-brand disabled:opacity-50">
+          {loading ? "Checking cited pages…" : data ? "Check again" : "Check cited sources"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {!data && !loading && (
+        <p className="text-xs opacity-60">Fetches the pages the AI answers cite and looks for the firm and for competitors on each.</p>
+      )}
+      {data && (
+        <>
+          <p className="mb-2 text-xs">
+            <b>{gaps.length}</b> off-site gap{gaps.length === 1 ? "" : "s"}: sources that name a competitor but not the firm.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="opacity-70">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Source</th>
+                  <th className="py-1 pr-3 font-medium">Type</th>
+                  <th className="py-1 pr-3 font-medium">Citations</th>
+                  <th className="py-1 pr-3 font-medium">Firm</th>
+                  <th className="py-1 font-medium">Competitors named</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.sources.map((s) => (
+                  <tr key={s.domain} className={`border-t border-black/5 ${s.gap ? "bg-amber-50" : ""}`}>
+                    <td className="py-1 pr-3">
+                      <a href={s.urls[0] ?? `https://${s.domain}`} target="_blank" rel="noreferrer" className="underline">{s.domain}</a>
+                    </td>
+                    <td className="py-1 pr-3 opacity-70">{s.kind}</td>
+                    <td className="py-1 pr-3">{s.citations}</td>
+                    <td className="py-1 pr-3">
+                      {s.checked === 0 ? <span className="opacity-50">not checked</span> : s.firmPresent ? <span className="text-emerald-700">firm present</span> : <span className="text-red-700">firm absent</span>}
+                    </td>
+                    <td className="py-1">{s.competitorsPresent.join(", ") || <span className="opacity-50">none</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function SourcesTab({ dashboard }: { dashboard: Dashboard }) {
   return (
     <div className="grid md:grid-cols-2 gap-4">
+      <OffSiteGaps />
       <Card className="p-5">
         <div className="text-xs uppercase tracking-wider opacity-70 mb-3">
           Top citation sources (latest sweep)

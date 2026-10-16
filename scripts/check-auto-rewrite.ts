@@ -66,7 +66,7 @@ async function main() {
   });
   expect(r.fullRedraft === null, "gender draft is patchable");
   expect(r.body.includes("within 3 years"), "one year -> 3 years");
-  expect(r.body.includes("By Nicole Grunfeld, Katz Melinger PLLC"), "author -> Nicole Grunfeld");
+  expect(r.body.includes("By [Nicole Grunfeld](https://katzmelinger.com/attorney/nicole-d-grunfeld/), Katz Melinger PLLC"), "author -> Nicole Grunfeld, linked to her bio (Task 19)");
   expect(!/contingency|pay nothing unless/i.test(r.body), "fee sentence deleted");
   expect(!r.body.includes("—"), "em dash removed");
   expect(!/#EmploymentLaw/.test(r.body), "hashtag removed");
@@ -85,7 +85,7 @@ async function main() {
   if (kbChange) {
     const u = undoChange(r.body, r.title, kbChange);
     expect(u.ok && u.body.includes("within one year"), "undo restores one year");
-    expect(u.ok && u.body.includes("By Nicole Grunfeld"), "undo leaves the author change");
+    expect(u.ok && u.body.includes("By [Nicole Grunfeld]"), "undo leaves the author change");
   }
   // Undo a deletion (the fee sentence) puts it back.
   const feeChange = r.changes.find((c) => c.source_ref === "fee_language");
