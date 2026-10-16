@@ -12,6 +12,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { SourcedNumber } from "@/components/sourced-number";
+
 type Tab = "discover" | "expand" | "gaps" | "tracked";
 
 const PRACTICE_AREAS = [
@@ -363,9 +365,14 @@ type DiscoverKeyword = {
   keyword: string;
   volume?: number | null;
   difficulty?: number | null;
+  /** Task 17: where the numbers came from (lib/keyword-provenance.ts). */
+  volumeSource?: string;
+  difficultySource?: string;
+  fetchedAt?: string;
   intent?: string;
   relevance?: number | null;
   contentSuggestion?: string;
+  contentSuggestionRemoved?: string;
   practiceArea?: string;
   opportunity?: string;
 };
@@ -374,6 +381,10 @@ type QuickWin = {
   keyword: string;
   volume?: number | null;
   difficulty?: number | null;
+  /** Task 17: where the numbers came from (lib/keyword-provenance.ts). */
+  volumeSource?: string;
+  difficultySource?: string;
+  fetchedAt?: string;
   reason?: string;
 };
 
@@ -381,6 +392,10 @@ type HighValueTarget = {
   keyword: string;
   volume?: number | null;
   difficulty?: number | null;
+  /** Task 17: where the numbers came from (lib/keyword-provenance.ts). */
+  volumeSource?: string;
+  difficultySource?: string;
+  fetchedAt?: string;
   strategy?: string;
 };
 
@@ -614,8 +629,8 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
                         <p className="text-xs opacity-70 mt-0.5">{qw.reason}</p>
                       </div>
                       <div className="flex items-center gap-3 text-xs opacity-70 shrink-0 ml-3">
-                        <span>{qw.volume?.toLocaleString()} /mo</span>
-                        <DifficultyBadge d={qw.difficulty} />
+                        <span><SourcedNumber value={qw.volume} source={qw.volumeSource} fetchedAt={qw.fetchedAt} /> /mo</span>
+                        <DifficultyBadge d={qw.difficulty} />{" "}{qw.difficultySource !== "dataforseo" && <span className="text-[9px] italic text-slate-400">est.</span>}
                       </div>
                     </div>
                   ))}
@@ -639,8 +654,8 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
                         <p className="text-xs opacity-70 mt-0.5">{hv.strategy}</p>
                       </div>
                       <div className="flex items-center gap-3 text-xs opacity-70 shrink-0 ml-3">
-                        <span>{hv.volume?.toLocaleString()} /mo</span>
-                        <DifficultyBadge d={hv.difficulty} />
+                        <span><SourcedNumber value={hv.volume} source={hv.volumeSource} fetchedAt={hv.fetchedAt} /> /mo</span>
+                        <DifficultyBadge d={hv.difficulty} />{" "}{hv.difficultySource !== "dataforseo" && <span className="text-[9px] italic text-slate-400">est.</span>}
                       </div>
                     </div>
                   ))}
@@ -683,8 +698,8 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
                             <CopyButton text={kw.keyword} />
                           </div>
                         </td>
-                        <td className="px-4 py-3 opacity-70">{kw.volume?.toLocaleString() || "—"}</td>
-                        <td className="px-4 py-3"><DifficultyBadge d={kw.difficulty || 0} /></td>
+                        <td className="px-4 py-3"><SourcedNumber value={kw.volume} source={kw.volumeSource} fetchedAt={kw.fetchedAt} /></td>
+                        <td className="px-4 py-3"><DifficultyBadge d={kw.difficulty || 0} />{" "}{kw.difficultySource !== "dataforseo" && <span className="text-[9px] italic text-slate-400">est.</span>}</td>
                         <td className="px-4 py-3"><IntentBadge intent={kw.intent || "informational"} /></td>
                         <td className="px-4 py-3">
                           <div className="w-16 bg-black/10 dark:bg-white/10 rounded-full h-2">
@@ -692,11 +707,11 @@ function DiscoverTab({ initialSeed = "" }: { initialSeed?: string }) {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs opacity-70">{kw.practiceArea || "—"}</td>
-                        <td className="px-4 py-3 text-xs opacity-70 max-w-[200px] truncate">{kw.contentSuggestion || "—"}</td>
+                        <td className="px-4 py-3 text-xs opacity-70 max-w-[200px] truncate">{kw.contentSuggestion || (kw.contentSuggestionRemoved ? <span className="italic text-slate-400">removed: {kw.contentSuggestionRemoved}</span> : "—")}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <TrackButton keyword={kw.keyword} practiceArea={kw.practiceArea} compact />
-                            <SendToOpportunitiesButton keyword={kw.keyword} searchVolume={kw.volume} compact />
+                            <SendToOpportunitiesButton keyword={kw.keyword} searchVolume={kw.volumeSource === "dataforseo" ? kw.volume : null} compact />
                           </div>
                         </td>
                       </tr>
@@ -748,6 +763,10 @@ type ExpandKeywordItem = {
   keyword: string;
   volume?: number | null;
   difficulty?: number | null;
+  /** Task 17: where the numbers came from (lib/keyword-provenance.ts). */
+  volumeSource?: string;
+  difficultySource?: string;
+  fetchedAt?: string;
 };
 
 type ExpandSectionKey = "longTail" | "questions" | "local" | "semantic" | "competitor";
@@ -910,11 +929,11 @@ function ExpandTab() {
                           <span className="text-sm">{item.keyword}</span>
                           <CopyButton text={item.keyword} />
                           <TrackButton keyword={item.keyword} compact />
-                          <SendToOpportunitiesButton keyword={item.keyword} searchVolume={item.volume} compact />
+                          <SendToOpportunitiesButton keyword={item.keyword} searchVolume={item.volumeSource === "dataforseo" ? item.volume : null} compact />
                         </div>
                         <div className="flex items-center gap-4 text-xs opacity-70">
-                          <span>{item.volume?.toLocaleString() || "—"} /mo</span>
-                          <DifficultyBadge d={item.difficulty || 0} />
+                          <span><SourcedNumber value={item.volume} source={item.volumeSource} fetchedAt={item.fetchedAt} /> /mo</span>
+                          <DifficultyBadge d={item.difficulty || 0} />{" "}{item.difficultySource !== "dataforseo" && <span className="text-[9px] italic text-slate-400">est.</span>}
                         </div>
                       </div>
                     ))}
@@ -971,6 +990,10 @@ type CompetitorKeywordGap = {
   keyword: string;
   volume?: number | null;
   difficulty?: number | null;
+  /** Task 17: where the numbers came from (lib/keyword-provenance.ts). */
+  volumeSource?: string;
+  difficultySource?: string;
+  fetchedAt?: string;
   competitorAdvantage?: string;
   ourOpportunity?: string;
   competitor?: string;
@@ -995,6 +1018,10 @@ type LocalOpportunity = {
   keyword: string;
   volume?: number | null;
   difficulty?: number | null;
+  /** Task 17: where the numbers came from (lib/keyword-provenance.ts). */
+  volumeSource?: string;
+  difficultySource?: string;
+  fetchedAt?: string;
   location?: string;
   tactic?: string;
 };
@@ -1149,11 +1176,11 @@ function GapsTab() {
                         <span className="font-medium text-sm">{ck.keyword}</span>
                         <CopyButton text={ck.keyword} />
                         <TrackButton keyword={ck.keyword} compact />
-                        <SendToOpportunitiesButton keyword={ck.keyword} searchVolume={ck.volume} competitor={ck.competitor ?? ck.domain} compact />
+                        <SendToOpportunitiesButton keyword={ck.keyword} searchVolume={ck.volumeSource === "dataforseo" ? ck.volume : null} competitor={ck.competitor ?? ck.domain} compact />
                       </div>
                       <div className="flex items-center gap-3 text-xs">
-                        <span className="opacity-70">{ck.volume?.toLocaleString()} /mo</span>
-                        <DifficultyBadge d={ck.difficulty || 0} />
+                        <span><SourcedNumber value={ck.volume} source={ck.volumeSource} fetchedAt={ck.fetchedAt} /> /mo</span>
+                        <DifficultyBadge d={ck.difficulty || 0} />{" "}{ck.difficultySource !== "dataforseo" && <span className="text-[9px] italic text-slate-400">est.</span>}
                       </div>
                     </div>
                     <p className="text-xs opacity-70">{ck.ourOpportunity}</p>
@@ -1210,7 +1237,7 @@ function GapsTab() {
                     <div key={i} className="bg-black/5 dark:bg-white/5 rounded-md p-3 text-sm">
                       <div className="font-medium mb-1">{t.topic}</div>
                       <p className="text-xs opacity-70 mb-1">{t.contentApproach}</p>
-                      <p className="text-xs opacity-70">Est. volume: {t.estimatedTotalVolume?.toLocaleString()}</p>
+                      <p className="text-xs opacity-70">Est. volume: <SourcedNumber value={t.estimatedTotalVolume} source="ai_estimate" /></p>
                     </div>
                   ))}
                 </div>
@@ -1230,9 +1257,9 @@ function GapsTab() {
                           <span className="font-medium">{l.keyword}</span>
                           <CopyButton text={l.keyword} />
                           <TrackButton keyword={l.keyword} compact />
-                          <SendToOpportunitiesButton keyword={l.keyword} searchVolume={l.volume} compact />
+                          <SendToOpportunitiesButton keyword={l.keyword} searchVolume={l.volumeSource === "dataforseo" ? l.volume : null} compact />
                         </div>
-                        <DifficultyBadge d={l.difficulty || 0} />
+                        <span><DifficultyBadge d={l.difficulty || 0} />{" "}{l.difficultySource !== "dataforseo" && <span className="text-[9px] italic text-slate-400">est.</span>}</span>
                       </div>
                       <p className="text-xs opacity-70">{l.tactic}</p>
                     </div>
@@ -1425,7 +1452,7 @@ function TrackedTab() {
                       )}
                     </td>
                     <td className="px-4 py-3"><RankMovement previous={item.previous_rank} current={item.current_rank} /></td>
-                    <td className="px-4 py-3 opacity-70">{item.search_volume?.toLocaleString() || "—"}</td>
+                    <td className="px-4 py-3"><SourcedNumber value={item.search_volume} source="dataforseo" fetchedAt={item.last_checked_at} /></td>
                     <td className="px-4 py-3"><DifficultyBadge d={item.difficulty} /></td>
                     <td className="px-4 py-3 text-xs opacity-70 max-w-[200px] truncate">
                       {item.url ? (

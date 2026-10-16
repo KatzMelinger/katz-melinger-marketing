@@ -24,6 +24,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { KeywordDecisionPanel } from "@/components/keyword-decision-panel";
+import type { KeywordDecision } from "@/lib/keyword-selection";
 import { marked } from "marked";
 
 import { DashSpinner, DashPill } from "@/components/dashboard-ui";
@@ -2094,6 +2096,17 @@ export function DraftDrawer({
                     {certMsg && <p className="text-[10px] text-red-600">{certMsg}</p>}
                   </div>
                 </div>
+                )}
+
+                {/* Keyword decision (Oct 6 spec, Tasks 15 and 17) */}
+                {Boolean(brief.contentType || (draft?.metadata as Record<string, unknown> | null)?.keyword_selection) && (
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Primary keyword</div>
+                    <KeywordDecisionPanel
+                      keyword={brief.primaryKeyword ?? ""}
+                      decision={(draft?.metadata as Record<string, unknown> | null)?.keyword_selection as KeywordDecision | undefined}
+                    />
+                  </div>
                 )}
 
                 {/* Content info */}

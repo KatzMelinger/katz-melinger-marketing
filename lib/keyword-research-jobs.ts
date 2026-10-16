@@ -16,6 +16,7 @@
  */
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { applyProvenance } from "./keyword-provenance";
 import { resolveTenantId } from "@/lib/tenant-context";
 import {
   getAnthropic,
@@ -162,6 +163,15 @@ export async function runAnthropicJob(args: {
     } catch (parseErr) {
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       throw new Error(`Failed to parse AI response: ${msg}`);
+    }
+
+    // Oct 6 spec, Task 17: every number tagged with its source (DataForSEO
+    // replaces the model's estimate where it has one) and every suggestion
+    // screened for fee language and firm-fact claims before it is stored.
+    try {
+      parsed = await applyProvenance(parsed);
+    } catch (e) {
+      console.warn(`[keyword-research-jobs] provenance for ${jobId} failed:`, e);
     }
 
     await markDone(jobId, parsed);

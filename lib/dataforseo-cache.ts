@@ -136,9 +136,12 @@ export async function cachedDataForSeoPost(
   // Tag the returned JSON with a non-enumerable cache-hit marker so cost-aware
   // callers (lib/usage-meter.ts) can tell whether a billable request fired.
   // Non-enumerable ⇒ JSON.stringify and every existing caller are unaffected.
-  const mark = (json: unknown, hit: boolean) => {
+  // __fetchedAt (Oct 6 spec, Task 17): when DataForSEO produced these numbers,
+  // so every volume and difficulty can show its date.
+  const mark = (json: unknown, hit: boolean, fetchedAt: string = new Date().toISOString()) => {
     try {
       Object.defineProperty(json, "__cacheHit", { value: hit, enumerable: false, configurable: true });
+      Object.defineProperty(json, "__fetchedAt", { value: fetchedAt, enumerable: false, configurable: true });
     } catch {
       /* primitive / frozen — caller falls back to assuming a live call */
     }
@@ -150,13 +153,13 @@ export async function cachedDataForSeoPost(
     const supabase = getSupabaseAdmin();
     const { data: cached } = await supabase
       .from("dataforseo_cache")
-      .select("response_body, expires_at")
+      .select("response_body, expires_at, cached_at")
       .eq("cache_key", cacheKey)
       .maybeSingle();
     if (cached && new Date(cached.expires_at as string) > new Date()) {
       // Advisory metering: cache hit = 0 billable units (kept for visibility).
       await recordVendorUsage("dataforseo", { provider: "dataforseo", endpoint: path, units: 0, cacheHit: true });
-      return mark(JSON.parse(cached.response_body as string), true);
+      return mark(JSON.parse(cached.response_body as string), true, (cached.cached_at as string | null) ?? undefined);
     }
   } catch {
     // Cache table missing / Supabase unavailable — fall through to live.

@@ -92,6 +92,14 @@ export async function POST(
       { status: 400 },
     );
   }
+  // Oct 6 spec, Task 15: a keyword that failed selection is chosen by a
+  // person on the draft, never "fixed" into the text by a rewrite.
+  if (findingList.some((f) => f.startsWith("Keyword needs selection"))) {
+    return NextResponse.json(
+      { error: "Keyword needs selection: choose the primary keyword on the draft first. Apply fix does not run against it." },
+      { status: 409 },
+    );
+  }
 
   const { supabase, tenantId } = await getTenantClient();
   const { data: draft, error } = await supabase

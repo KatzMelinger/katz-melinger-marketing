@@ -51,6 +51,7 @@ import { getCurrentFacts } from "./current-facts-store";
 import { runLegalCheck, runLegalFactChecks } from "./legal-verify";
 import { getThresholds, type KbThresholdEntry } from "./legal-knowledge-base";
 import { checkValuesAgainst } from "./legal-value-check";
+import { keywordProblem } from "./keyword-guard";
 import { runTrapCheck } from "./trap-gate";
 import { runKbChecks } from "./legal-kb";
 import { runStatuteCheck } from "./legal-statute-check";
@@ -986,7 +987,7 @@ export async function analyzeDraft(args: {
   const {
     draftId,
     body,
-    targetKeywords = [],
+    targetKeywords: givenKeywords = [],
     title = null,
     topic = null,
     format = null,
@@ -995,6 +996,12 @@ export async function analyzeDraft(args: {
     tenantId,
     notify = true,
   } = args;
+  // Oct 6 spec, Task 15: no SEO finding is measured against a keyword that
+  // carries a task word or runs past eight words (a task title stored as the
+  // keyword). The SEO tile says "Keyword needs selection" instead, and the
+  // keyword checks, cannibalization included, see no keyword at all.
+  const keywordIssue = givenKeywords[0]?.trim() ? keywordProblem(givenKeywords[0]) : null;
+  const targetKeywords = keywordIssue ? [] : givenKeywords;
   // The cannibalization gate at approval runs for blogs only — a service page
   // is ALLOWED to own its commercial term. The scorecard tile below applies the
   // same test, so it can never warn about a draft the gate would wave through.
@@ -1020,6 +1027,11 @@ export async function analyzeDraft(args: {
 
   const aeo = heuristicAEO(body);
   const seo = heuristicSEO({ body, title, format, template, targetKeywords });
+  if (keywordIssue) {
+    seo.findings.unshift(
+      `Keyword needs selection: "${givenKeywords[0]}" is not a search keyword (${keywordIssue.toLowerCase()}). Choose one on the draft before relying on SEO checks.`,
+    );
+  }
   // Set inside the compliance catch below so the UI can show the reviewer WHY
   // the tile reads "n/a" instead of a silent, unexplained gap.
   let complianceError: string | null = null;

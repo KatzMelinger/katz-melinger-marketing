@@ -17,6 +17,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useTenant } from "@/components/tenant-provider";
+import { KeywordDecisionPanel } from "@/components/keyword-decision-panel";
+import { keywordProblem } from "@/lib/keyword-guard";
+import type { KeywordDecision } from "@/lib/keyword-selection";
 import { type ContentLanguage } from "@/lib/content-language";
 import {
   getKmStructure,
@@ -163,6 +166,75 @@ export function KmBriefWizard({
   const [dupExisting, setDupExisting] = useState<DuplicateExisting | null>(null);
   const [dupLang, setDupLang] = useState<ContentLanguage>("en");
   const [doneDraftId, setDoneDraftId] = useState<string | null | undefined>(undefined);
+
+  // Oct 6 spec, Task 15: the keyword decision, made before anything is written.
+  const [selection, setSelection] = useState<KeywordDecision | null>(null);
+  const [selLoading, setSelLoading] = useState(false);
+  const [allowNewPage, setAllowNewPage] = useState(false);
+  const [updating, setUpdating] = useState(false);
+
+  const applyKeyword = (kw: string) =>
+    setBrief((b) => ({
+      ...b,
+      primaryKeyword: kw,
+      h1: titleCase(kw),
+      urlSlug: slugify(kw),
+      metaTitle: `${titleCase(kw)}${firmSuffix}`,
+    }));
+
+  const runSelection = async (title: string, keyword: string) => {
+    if (!title.trim() && !keyword.trim()) return;
+    setSelLoading(true);
+    try {
+      const res = await fetch("/api/seo/keyword-selection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, keyword }),
+      });
+      const d = (await res.json()) as KeywordDecision & { error?: string };
+      if (!res.ok) return;
+      setSelection(d);
+      // A task title is never the keyword: put the chosen one in its place.
+      if (keywordProblem(keyword) && d.chosen) applyKeyword(d.chosen.keyword);
+    } finally {
+      setSelLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (opp.keyword) void runSelection(opp.keyword, opp.keyword);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** "Update of [URL]": refresh the live page instead of writing a new one. */
+  const updateExistingPage = async () => {
+    if (!selection?.updateTargetUrl) return;
+    setUpdating(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content-production/update-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: selection.updateTargetUrl,
+          title: brief.h1,
+          primaryKeyword: brief.primaryKeyword,
+          keywords: [brief.primaryKeyword, ...(brief.secondaryKeywords ?? [])].filter(Boolean),
+          practiceArea: String(brief.practiceArea ?? "").includes("collection") ? "collections" : "employment",
+          pillarId: brief.pillarId,
+          keywordSelection: selection,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error ?? "Update failed");
+      setDoneDraftId(j.draft_id ?? null);
+      onGenerated(j.draft_id ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const [linkPlan, setLinkPlan] = useState<LinkPlan | null>(null);
   const [linkPlanLoading, setLinkPlanLoading] = useState(false);
@@ -340,6 +412,15 @@ export function KmBriefWizard({
       setError(errs[0]);
       return;
     }
+    const kwProblem = keywordProblem(brief.primaryKeyword);
+    if (kwProblem) {
+      setError(`Keyword needs selection: ${kwProblem}.`);
+      return;
+    }
+    if (selection?.mode === "update" && !allowNewPage) {
+      setError(`A live page already covers this topic (${selection.updateTargetUrl}). Update that page, or tick "Write a new page anyway".`);
+      return;
+    }
     setGenerating(true);
     try {
       // 1. Persist the brief.
@@ -374,10 +455,15 @@ export function KmBriefWizard({
       const genRes = await fetch("/api/content/km-draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...brief, language: lang, force }),
+        body: JSON.stringify({ ...brief, language: lang, force, keywordSelection: selection, allowNewPage }),
       });
       const genJson = await genRes.json();
       if (!genRes.ok) {
+        if (genRes.status === 409 && genJson?.updateTarget) {
+          setSelection(genJson.keywordSelection ?? null);
+          setError(genJson.error ?? "A live page already covers this topic");
+          return;
+        }
         if (genRes.status === 409 && genJson?.duplicate) {
           setDupLang(lang);
           setDupBlocked(true);
@@ -486,7 +572,10 @@ export function KmBriefWizard({
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                     <p><span className="text-slate-500">Primary keyword:</span> <b>{opp.keyword}</b></p>
                     {opp.searchVolume != null && (
-                      <p className="mt-1"><span className="text-slate-500">Volume:</span> {opp.searchVolume.toLocaleString()}</p>
+                      <p className="mt-1">
+                        <span className="text-slate-500">Volume:</span> {opp.searchVolume.toLocaleString()}{" "}
+                        <span className="text-[10px] text-slate-500">(from the Opportunity Radar)</span>
+                      </p>
                     )}
                     {opp.competitor && (
                       <p className="mt-1"><span className="text-slate-500">Outranked by:</span> {opp.competitor}</p>
@@ -518,6 +607,39 @@ export function KmBriefWizard({
                         );
                       }}
                     />
+                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Keyword decision</span>
+                        <button
+                          type="button"
+                          className="text-[11px] text-brand underline disabled:opacity-50"
+                          disabled={selLoading}
+                          onClick={() => void runSelection(opp.keyword || brief.h1 || "", brief.primaryKeyword ?? "")}
+                        >
+                          {selLoading ? "Checking…" : "Check keyword"}
+                        </button>
+                      </div>
+                      <KeywordDecisionPanel keyword={brief.primaryKeyword ?? ""} decision={selection} onUse={applyKeyword} />
+                      {selection?.mode === "update" && selection.updateTargetUrl && (
+                        <div className="mt-2 space-y-1.5 border-t border-slate-200 pt-2 text-xs">
+                          <p className="text-amber-800">A live page already covers this topic. The spec&apos;s default is to update it.</p>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              className="rounded-md bg-brand px-3 py-1.5 text-white disabled:opacity-50"
+                              disabled={updating}
+                              onClick={() => void updateExistingPage()}
+                            >
+                              {updating ? "Updating…" : "Update that page instead"}
+                            </button>
+                            <label className="flex items-center gap-1.5 text-slate-700">
+                              <input type="checkbox" checked={allowNewPage} onChange={(e) => setAllowNewPage(e.target.checked)} />
+                              Write a new page anyway
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </Field>
                   <Field label="Practice area">
                     <select className="inp" value={brief.practiceArea} onChange={(e) => set({ practiceArea: e.target.value as KMPracticeArea })}>
@@ -579,7 +701,7 @@ export function KmBriefWizard({
                   <div className="rounded-lg border border-slate-200">
                     <table className="w-full text-left text-sm">
                       <thead className="border-b border-slate-200 text-xs text-slate-500">
-                        <tr><th className="p-2 w-8"></th><th className="p-2">Suggestion</th><th className="p-2">Intent</th><th className="p-2">Volume</th><th className="p-2">KD</th></tr>
+                        <tr><th className="p-2 w-8"></th><th className="p-2">Suggestion</th><th className="p-2">Intent</th><th className="p-2" title="DataForSEO, via the Opportunity Radar">Volume <span className="text-[9px] font-normal text-slate-400">DFS</span></th><th className="p-2" title="DataForSEO keyword difficulty">KD <span className="text-[9px] font-normal text-slate-400">DFS</span></th></tr>
                       </thead>
                       <tbody>
                         {secLoading && <tr><td colSpan={5} className="p-4 text-center text-slate-500">Loading…</td></tr>}
