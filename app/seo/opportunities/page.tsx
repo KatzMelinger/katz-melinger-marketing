@@ -46,7 +46,17 @@ type Opportunity = {
   clusterRole: string | null;
   clusterType: string | null;
   clusterPrimaryKeyword: string | null;
-  metrics?: { volumeSource?: string | null; fetchedAt?: string | null; aiEstimate?: number | null } | null;
+  metrics?: {
+    volumeSource?: string | null;
+    fetchedAt?: string | null;
+    aiEstimate?: number | null;
+    /** Task 16: weekly discovery (lib/radar-discovery.ts). */
+    trend3m?: number | null;
+    trendYoy?: number | null;
+    rising?: boolean;
+    updateExistingPage?: string | null;
+    discoveredFrom?: string[];
+  } | null;
 };
 
 /** Task 17: where an Opportunity's volume came from. Synced rows are DataForSEO's;
@@ -71,8 +81,33 @@ type Payload = {
   opportunities: Opportunity[];
   counts: { total: number; actionable: number; excluded: number; covered: number; handled: number };
   lastSyncedAt: string | null;
+  lastDiscovery?: { created_at: string; status: string; error_message: string | null } | null;
   error?: string;
 };
+
+/** "+42%" / "-8%" for a trend ratio. */
+function pct(v: number | null | undefined): string | null {
+  if (v == null || !Number.isFinite(v)) return null;
+  return `${v >= 0 ? "+" : ""}${Math.round(v * 100)}%`;
+}
+
+function TrendCell({ o }: { o: Opportunity }) {
+  const t3 = pct(o.metrics?.trend3m);
+  const yoy = pct(o.metrics?.trendYoy);
+  if (!t3 && !yoy && !o.metrics?.updateExistingPage) return <span className="text-slate-400">—</span>;
+  return (
+    <span className="whitespace-nowrap text-xs">
+      {t3 && <span className={(o.metrics?.trend3m ?? 0) > 0 ? "text-emerald-700" : "text-slate-600"} title="Last 3 months vs the 3 before (DataForSEO)">{t3}</span>}
+      {yoy && <span className="ml-1 text-slate-500" title="Last 3 months vs the same 3 last year">yoy {yoy}</span>}
+      {o.metrics?.rising && <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">Rising</span>}
+      {o.metrics?.updateExistingPage && (
+        <a href={o.metrics.updateExistingPage} target="_blank" rel="noreferrer" className="mt-0.5 block text-[10px] text-amber-700 underline">
+          Update existing page
+        </a>
+      )}
+    </span>
+  );
+}
 
 const SOURCE_LABEL: Record<string, string> = {
   quickwin: "Quick win",
@@ -80,6 +115,7 @@ const SOURCE_LABEL: Record<string, string> = {
   longtail: "Long-tail",
   imported: "Imported",
   manual: "Manual (research)",
+  emerging: "Emerging",
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -121,6 +157,8 @@ export default function SeoOpportunitiesPage() {
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
   const [listFilter, setListFilter] = useState<string>("all");
   const [practiceFilter, setPracticeFilter] = useState<string>("all");
+  const [risingOnly, setRisingOnly] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [pageSize, setPageSize] = useState<number | "all">(20);
   const [page, setPage] = useState(1);
   const [exclusionsOpen, setExclusionsOpen] = useState(false);
@@ -212,6 +250,22 @@ export default function SeoOpportunitiesPage() {
     }
   };
 
+  // Task 16: the weekly discovery, on demand.
+  const discover = async () => {
+    setDiscovering(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/seo/radar/discover", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Discovery failed");
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Discovery failed");
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
   const groupIntoClusters = async () => {
     setClustering(true);
     setClusterMsg(null);
@@ -270,7 +324,8 @@ export default function SeoOpportunitiesPage() {
 
   const filteredRows = allRows
     .filter((o) => (listFilter === "all" ? true : o.listName === listFilter))
-    .filter((o) => (practiceFilter === "all" ? true : o.practiceArea === practiceFilter));
+    .filter((o) => (practiceFilter === "all" ? true : o.practiceArea === practiceFilter))
+    .filter((o) => (risingOnly ? o.metrics?.rising === true : true));
 
   // Fold clustered keywords into one "unit" per cluster (primary + members), so
   // related keywords show as a single expandable row instead of competing rows.
@@ -392,6 +447,10 @@ export default function SeoOpportunitiesPage() {
               </select>
             </label>
           )}
+          <label className="inline-flex items-center gap-1.5">
+            <input type="checkbox" checked={risingOnly} onChange={(e) => setRisingOnly(e.target.checked)} />
+            <span className="text-slate-700">Rising only</span>
+          </label>
           <label className="inline-flex items-center gap-2">
             <span className="text-slate-500">Show:</span>
             <select
@@ -413,7 +472,21 @@ export default function SeoOpportunitiesPage() {
             {data?.lastSyncedAt
               ? `Synced ${new Date(data.lastSyncedAt).toLocaleString()}`
               : "Never synced"}
+            {" · "}
+            {data?.lastDiscovery
+              ? data.lastDiscovery.status === "success"
+                ? `Discovered ${new Date(data.lastDiscovery.created_at).toLocaleDateString()}`
+                : `Discovery failed ${new Date(data.lastDiscovery.created_at).toLocaleDateString()}`
+              : "No discovery yet"}
           </span>
+          <button
+            onClick={discover}
+            disabled={discovering}
+            title="Find keywords the firm does not track yet (runs every Monday)"
+            className="rounded-md border border-emerald-500 px-3 py-1.5 font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+          >
+            {discovering ? "Discovering…" : "Discover now"}
+          </button>
           <button
             onClick={() => setScratchOpen(true)}
             className="rounded-md border border-brand px-3 py-1.5 font-medium text-brand hover:bg-brand/5"
@@ -454,6 +527,7 @@ export default function SeoOpportunitiesPage() {
                 <th className="pb-2 pr-3 font-medium">Keyword</th>
                 <th className="pb-2 pr-3 font-medium w-32">Relevance</th>
                 <th className="pb-2 pr-3 font-medium">Volume</th>
+                <th className="pb-2 pr-3 font-medium">Trend</th>
                 <th className="pb-2 pr-3 font-medium">Suggested type</th>
                 <th className="pb-2 pr-3 font-medium">Status</th>
                 <th className="pb-2 text-right font-medium">Action</th>
@@ -462,14 +536,14 @@ export default function SeoOpportunitiesPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-500">
+                  <td colSpan={7} className="py-6 text-center text-slate-500">
                     Loading opportunities…
                   </td>
                 </tr>
               )}
               {!loading && pageUnits.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-500">
+                  <td colSpan={7} className="py-8 text-center text-slate-500">
                     No opportunities match. Adjust the filters above, or click{" "}
                     <b>Refresh opportunities</b> to pull and filter the latest keyword gaps.
                   </td>
@@ -678,6 +752,9 @@ function OppRow({
         <VolumeCell o={o} />
       </td>
       <td className="py-2 pr-3">
+        <TrendCell o={o} />
+      </td>
+      <td className="py-2 pr-3">
         {o.recommendedContentType && (
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
@@ -758,6 +835,9 @@ function OppMemberRow({
       </td>
       <td className="py-1.5 pr-3 tabular-nums text-slate-500">
         <VolumeCell o={o} />
+      </td>
+      <td className="py-1.5 pr-3">
+        <TrendCell o={o} />
       </td>
       <td className="py-1.5 pr-3 text-[10px] text-slate-400">
         {o.recommendedContentType

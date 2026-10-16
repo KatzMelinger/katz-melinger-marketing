@@ -18,6 +18,10 @@
       "schedule": "40 * * * *"
     },
     {
+      "path": "/api/seo/radar/discover",
+      "schedule": "0 7 * * 1"
+    },
+    {
       "path": "/api/findings/archive",
       "schedule": "20 7 * * *"
     },
