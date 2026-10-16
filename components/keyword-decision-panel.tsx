@@ -31,14 +31,30 @@ export function KeywordDecisionPanel({
   keyword,
   decision,
   onUse,
+  onChoose,
 }: {
   /** The keyword the draft carries now. */
   keyword: string;
   decision: KeywordDecision | null | undefined;
   /** Offered in the wizard: put a candidate in the keyword field. */
-  onUse?: (keyword: string) => void;
+  onUse?: (keyword: string) => void | Promise<void>;
+  /** Offered on a draft: run the keyword selection again. */
+  onChoose?: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<"" | "choose" | "use">("");
+  const [err, setErr] = useState("");
+  const run = async (kind: "choose" | "use", f: () => void | Promise<void>) => {
+    setBusy(kind);
+    setErr("");
+    try {
+      await f();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("");
+    }
+  };
   const problem = keywordProblem(keyword);
   const c = decision?.chosen ?? null;
   return (
@@ -54,8 +70,13 @@ export function KeywordDecisionPanel({
           <div className="flex flex-wrap items-center gap-x-2">
             <span className="font-medium text-slate-900">{c.keyword}</span>
             {onUse && c.keyword !== keyword.trim().toLowerCase() && (
-              <button type="button" className="text-brand underline" onClick={() => onUse(c.keyword)}>
-                use this
+              <button
+                type="button"
+                className="text-brand underline disabled:opacity-50"
+                disabled={!!busy}
+                onClick={() => void run("use", () => onUse(c.keyword))}
+              >
+                {busy === "use" ? "saving…" : "use this"}
               </button>
             )}
           </div>
@@ -71,6 +92,17 @@ export function KeywordDecisionPanel({
       ) : (
         <div className="text-slate-500">No keyword decision recorded for this draft.</div>
       )}
+      {onChoose && (problem || !c) && (
+        <button
+          type="button"
+          className="rounded-md border border-slate-300 px-2 py-1 font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+          disabled={!!busy}
+          onClick={() => void run("choose", onChoose)}
+        >
+          {busy === "choose" ? "Checking DataForSEO…" : decision ? "Choose keyword again" : "Choose keyword"}
+        </button>
+      )}
+      {err && <div className="text-red-700">{err}</div>}
       {decision && (
         <div className={decision.mode === "update" ? "font-medium text-amber-800" : "text-slate-700"}>
           {decision.mode === "update" && decision.updateTargetUrl ? (
