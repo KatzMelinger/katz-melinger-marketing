@@ -74,6 +74,9 @@ type Candidate = {
 
 const normalize = (k: string) => k.trim().toLowerCase();
 
+/** Integer columns get whole numbers (positions and scores can be averages). */
+const toInt = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? null : Math.round(v));
+
 /**
  * Append a pipeline run record. Logging must never break or mask the pipeline
  * result, so all failures here are swallowed.
@@ -301,8 +304,8 @@ async function runSyncForTenant(tenantId: string) {
         competitor: c.competitor,
         search_volume: c.searchVolume,
         keyword_difficulty: difficulty.get(c.keyword.toLowerCase().trim()) ?? null,
-        our_position: c.ourPosition,
-        competitor_position: c.competitorPosition,
+        our_position: toInt(c.ourPosition),
+        competitor_position: toInt(c.competitorPosition),
         relevance_score: quality.relevanceScore,
         excluded: quality.excluded,
         exclude_reason: quality.excludeReason ?? null,
@@ -313,10 +316,12 @@ async function runSyncForTenant(tenantId: string) {
         pillar_id: pillarId,
         recommended_content_type: contentTypeFromIntent(intent),
         existing_url: existingUrl,
-        existing_url_position: gscPosition,
+        // Integer column; Search Console reports an average (12.45). A float
+        // here failed every sync from 2026-09-02 to 2026-10-16.
+        existing_url_position: gscPosition == null ? null : Math.round(gscPosition),
         existing_url_modified_at: existingUrlModifiedAt,
         action_label: actionLabel,
-        opportunity_score: opportunityScore,
+        opportunity_score: toInt(opportunityScore),
         status,
         metrics: {
           searchVolume: c.searchVolume,
@@ -335,7 +340,7 @@ async function runSyncForTenant(tenantId: string) {
     });
 
     // Priority bucket (high/medium/low) by percentile across this batch.
-    const labels = assignPriorityLabels(built.map((b) => b.opportunity_score));
+    const labels = assignPriorityLabels(built.map((b) => b.opportunity_score ?? 0));
     const rows = built.map((b, i) => ({ ...b, priority_label: labels[i] }));
 
     // upsert stamps tenant_id; conflict key is (tenant_id, keyword).
@@ -359,8 +364,8 @@ async function runSyncForTenant(tenantId: string) {
         return {
           keyword: normalize(g.keyword),
           competitor_domain: g.domain as string,
-          competitor_position: g.competitorPosition ?? null,
-          our_position: g.ourPosition ?? null,
+          competitor_position: toInt(g.competitorPosition),
+          our_position: toInt(g.ourPosition),
           search_volume: g.searchVolume ?? null,
           confirmed_gap: confirmed,
           updated_at: now,
