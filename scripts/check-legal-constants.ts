@@ -44,6 +44,10 @@ const KB: KbThresholdEntry[] = [
   t({ key: "title_vii_employer_coverage", label: "Title VII employer coverage",
       jurisdiction: "federal", unit: "employees", currentValue: 15,
       matchKeywords: ["Title VII", "employee|employees|employer|employers|cover|covers|covered|applies|apply"] }),
+  t({ key: "njlad_employer_coverage", label: "NJLAD employer coverage",
+      jurisdiction: "NJ", unit: "employees", currentValue: 1,
+      matchKeywords: ["NJLAD|New Jersey Law Against Discrimination|Law Against Discrimination",
+                      "employee|employer|cover|applies|apply"] }),
   t({ key: "eeoc_charge_deadline_deferral", label: "EEOC charge deadline in a deferral state",
       jurisdiction: "federal", unit: "days", currentValue: 300, priorValue: 180,
       matchKeywords: ["EEOC", "deadline|charge|file|filing|days to|time limit"] }),
@@ -67,6 +71,9 @@ const MUST_FLAG: Array<[string, string]> = [
   ["You must file a charge with the EEOC within 180 days.", "the 180/300 deferral error"],
   ["In New York, the salary threshold is $1,275.00 per week in the rest of the state.", "wage: wrong figure for the region"],
   ["In New York City the minimum wage is $17.00 per hour as of 2025.", "wage: right figure, wrong year"],
+  // Oct 20: the multi-law fix must still catch a figure held to the law right before it.
+  ["The NJLAD covers employers with 15 or more employees and is broader than Title VII.", "NJLAD given Title VII's threshold"],
+  ["Title VII covers employers of any size, unlike the NJLAD.", "Title VII given the NJLAD's rule"],
 ];
 
 const MUST_BE_SILENT: Array<[string, string]> = [
@@ -80,6 +87,10 @@ const MUST_BE_SILENT: Array<[string, string]> = [
   ["Our firm has recovered wages for employees for over 20 years.", "firm prose with a duration"],
   ["In New York, the salary threshold is $1,199.10 per week in the rest of the state.", "wage: correct figure"],
   ["In New York City the minimum wage is $17.00 per hour as of 2026.", "wage: correct figure and year"],
+  // The three sentences the Oct 20 rescan "corrected" into errors.
+  ["In New Jersey, the New Jersey Law Against Discrimination (NJLAD) covers employers of any size and recognizes a wider range of protected classes than Title VII.", "60648452: NJLAD any size, Title VII named later"],
+  ["In New York and New Jersey, ALL employers regardless of size are protected from sexual harassment under Title VII of the Civil Rights Act, the New York State Human Rights Law, and the New Jersey Law Against Discrimination.", "3483b66f: several laws, one of them any size"],
+  ["Under New Jersey law, employees are protected by statutes including the New Jersey Law Against Discrimination, or NJLAD, which prohibits discrimination by all employers regardless of size based on protected characteristics such as age, race, sex, disability, and national origin.", "91773c07: a comma is not a number"],
 ];
 
 let failed = 0;
@@ -105,6 +116,19 @@ const sample = checkValuesAgainst("The New York State Human Rights Law requires 
 console.log(`   title : ${sample.title}`);
 console.log(`   detail: ${sample.detail}`);
 console.log(`   fix   : ${sample.fix}`);
+
+// Two laws with different rules share one figure: flagged for the attorney,
+// with no automatic fix (rewriting it to one law's value breaks the other).
+const shared = checkValuesAgainst("The NYSHRL and NYCHRL apply to all employers regardless of size.", KB)[0];
+const sharedOk = !!shared && shared.fix === null;
+if (!sharedOk) failed++;
+console.log(`${sharedOk ? "pass" : "FAIL"}  one figure for two laws with different rules: attorney item, no fix`);
+
+// A stated "all employers" against a threshold is never swapped word for word.
+const anySize = checkValuesAgainst("Title VII covers employers of any size, unlike the NJLAD.", KB)[0];
+const swap = /^Replace "/.test(anySize?.fix ?? "");
+if (swap) failed++;
+console.log(`${swap ? "FAIL" : "pass"}  "any size" against a threshold is an instruction, not a swap`);
 
 console.log(failed === 0 ? `\nall ${MUST_FLAG.length + MUST_BE_SILENT.length} cases pass` : `\n${failed} FAILED`);
 process.exit(failed === 0 ? 0 : 1);

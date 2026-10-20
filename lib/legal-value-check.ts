@@ -354,7 +354,10 @@ function toNumber(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-const NUM = "(?:[\\d,]{1,7}|" + Object.keys(NUMBER_WORDS).join("|") + ")";
+// A figure starts with a digit: "[\d,]{1,7}" also matched a lone comma, so
+// ", employees are protected" read as "0 employees" and was "corrected"
+// (91773c07, 2026-10-20).
+const NUM = "(?:\\d[\\d,]{0,6}|" + Object.keys(NUMBER_WORDS).join("|") + ")";
 
 /** "3 years", "one year", "300 days", "180 calendar days". */
 const DURATION_RE = new RegExp(
@@ -453,11 +456,22 @@ function keywordsMatch(entry: KbThresholdEntry, sentence: string): boolean {
 /** The clause of a sentence around an offset: between the nearest comma,
  *  semicolon or dash on either side. */
 function clauseAt(sentence: string, at: number): string {
+  const { start, end } = clauseBounds(sentence, at);
+  return sentence.slice(start, end);
+}
+
+function clauseBounds(sentence: string, at: number): { start: number; end: number } {
   const before = sentence.slice(0, at);
   const start = Math.max(before.lastIndexOf(","), before.lastIndexOf(";"), before.lastIndexOf(" - ")) + 1;
   const rest = sentence.slice(at);
   const ends = [rest.indexOf(","), rest.indexOf(";"), rest.indexOf(" - ")].filter((i) => i >= 0);
-  return sentence.slice(start, ends.length ? at + Math.min(...ends) : sentence.length);
+  return { start, end: ends.length ? at + Math.min(...ends) : sentence.length };
+}
+
+/** Two values say the same thing: every employee count of one or less means
+ *  "all employers", whichever way the knowledge base or the copy writes it. */
+function sameConstant(a: number, b: number, unit: ConstantMention["unit"]): boolean {
+  return unit === "employees" ? a === b || (a <= 1 && b <= 1) : a === b;
 }
 
 /** "2024-02-15" -> "February 15, 2024", read directly (no timezone shift). */
@@ -504,12 +518,48 @@ function checkConstantAgainstKnowledgeBase(
     thresholds.filter((t) => lawTerms(t).some((x) => hay.includes(x))).map((t) => lawTerms(t)[0]),
   );
   const lowClause = clause.toLowerCase();
-  const entry = thresholds
+  const candidates = thresholds
     .filter((t) => t.unit === mention.unit && keywordsMatch(t, mention.sentence))
     .filter((t) => lawsNamed.size <= 1 || lawTerms(t).some((x) => lowClause.includes(x)))
-    .sort((a, b) => inClause(b) - inClause(a) || b.matchKeywords.length - a.matchKeywords.length)[0];
-  if (!entry) return null; // nothing in the knowledge base speaks to this sentence
-  if (mention.value === entry.currentValue) return null; // correct
+    .sort((a, b) => inClause(b) - inClause(a) || b.matchKeywords.length - a.matchKeywords.length);
+  if (candidates.length === 0) return null; // nothing in the knowledge base speaks to this sentence
+  let entry = candidates[0];
+  let sharedByLaws: string[] | null = null;
+  if (lawsNamed.size > 1) {
+    // Several laws named: the figure belongs to the law written closest
+    // BEFORE it in its clause ("the NJLAD covers employers of any size ...
+    // than Title VII" is about the NJLAD). Choosing by keyword count held
+    // the NJLAD's "any size" to Title VII's 15 employees (60648452,
+    // 2026-10-20).
+    const { start } = clauseBounds(mention.sentence, mention.at);
+    const lead = lowClause.slice(0, mention.at - start);
+    const before = candidates
+      .map((t) => ({ t, at: Math.max(...lawTerms(t).map((x) => lead.lastIndexOf(x))) }))
+      .filter((c) => c.at >= 0)
+      .sort((a, b) => b.at - a.at);
+    const nearest = before[0];
+    if (nearest) {
+      entry = nearest.t;
+      // "The NYSHRL and NYCHRL apply to all employers": two laws share the
+      // figure and their rules differ, so no single value is the fix.
+      // Rewriting it to "4 or more" would make the NYSHRL half false. It
+      // stays a finding for the attorney, with no automatic fix.
+      if (before.some((b) => !sameConstant(b.t.currentValue, nearest.t.currentValue, mention.unit))) {
+        sharedByLaws = before.map((b) => b.t.label);
+      }
+    } else if (
+      // No law before the figure, and one of the named laws has exactly this
+      // value: the sentence may be stating that law's rule. Not a known-value
+      // error; nothing is changed ("ALL employers ... under Title VII, the
+      // NYSHRL and the NJLAD", 3483b66f).
+      thresholds.some(
+        (t) => t.unit === mention.unit && keywordsMatch(t, mention.sentence) && sameConstant(mention.value, t.currentValue, mention.unit),
+      )
+    ) {
+      return null;
+    }
+  }
+  if (sameConstant(mention.value, entry.currentValue, mention.unit)) return null; // correct
   // A sentence can state two correct values for one topic: "two years, or
   // three years if willful", "four or more employees, and all employers for
   // gender based harassment". When it states more than one value in this unit,
@@ -521,7 +571,7 @@ function checkConstantAgainstKnowledgeBase(
     const valid = thresholds
       .filter((t) => t.unit === mention.unit && keywordsMatch(t, mention.sentence))
       .map((t) => t.currentValue);
-    if (valid.includes(mention.value)) return null;
+    if (valid.some((v) => sameConstant(mention.value, v, mention.unit))) return null;
   }
 
   // A deadline that changed on a date applies to claims from that date on.
@@ -533,6 +583,23 @@ function checkConstantAgainstKnowledgeBase(
   const stated = formatConstant(mention.value, mention.unit);
   const since = entry.effectiveDate ? ` since ${entry.effectiveDate}` : "";
   const wasRight = entry.priorValue !== null && mention.value === entry.priorValue;
+
+  if (sharedByLaws) {
+    return {
+      fingerprint: fingerprintFinding("legal", "constant_mismatch", mention.sentence),
+      source: "legal",
+      ruleId: "constant_mismatch",
+      severity: "critical",
+      title: `One ${mention.unit === "employees" ? "coverage rule" : "value"} (${stated}) is stated for laws whose rules differ`,
+      detail:
+        `This sentence gives ${stated} for ${sharedByLaws.join(" and ")}, which do not share one rule. ` +
+        `An attorney should word it (for example, one clause per law). No automatic fix is applied.`,
+      excerpt: mention.sentence,
+      fix: null,
+      sourceChecked: entry.sourceUrl,
+      jurisdiction: entry.jurisdiction,
+    };
+  }
 
   return {
     fingerprint: fingerprintFinding("legal", "constant_mismatch", mention.sentence),
@@ -555,10 +622,17 @@ function checkConstantAgainstKnowledgeBase(
     // swap: dropping "all employers (any size)" into the slot a threshold
     // occupied produces "applies to employers with all employers (any size)".
     // The other direction is a clean substitution and stays one.
+    //
+    // The reverse is not a swap either: "any size" -> "15 or more employees"
+    // gave "15 or more employees regardless of size are protected"
+    // (2026-10-20). A stated "all employers" against a threshold is
+    // rewritten by instruction.
     fix:
       mention.unit === "employees" && entry.currentValue <= 1
         ? `Remove the "${mention.matchedText}" threshold and say the law applies to ALL employers regardless of size. Change nothing else in the sentence.`
-        : `Replace "${mention.matchedText}" with "${current}". Change nothing else in the sentence.`,
+        : mention.unit === "employees" && mention.value <= 1
+          ? `This says the law covers all employers ("${mention.matchedText}"), but ${entry.label} is ${entry.currentValue} or more employees. Rewrite only that coverage statement so it says the law applies to employers with ${entry.currentValue} or more employees, keeping the sentence grammatical. Change nothing else in the sentence.`
+          : `Replace "${mention.matchedText}" with "${current}". Change nothing else in the sentence.`,
     sourceChecked: entry.sourceUrl,
     jurisdiction: entry.jurisdiction,
   };
