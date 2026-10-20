@@ -198,8 +198,9 @@ async function main() {
   expect(oct6.body.includes("58 N.Y.2d 293 (1983)"), "reporter citation untouched");
   expect(oct6.body.includes("N.J.S.A. 10:5-12.8"), "N.J.S.A. citation untouched");
   expect(oct6.body.includes("under New York law"), "N.Y. in prose still spelled out");
-  expect(oct6.body.includes("an at will employee"), "hyphen removed");
-  expect(oct6.body.includes("Your coworker may sign a non compete"), "closed form and non compete");
+  // Hyphens are allowed since October 7; trap 8 retired 2026-10-20.
+  expect(oct6.body.includes("an at-will employee"), "hyphen kept");
+  expect(oct6.body.includes("Your co-worker may sign a non-compete"), "hyphenated words kept");
   expect(oct6.body.includes("wage-hour-claims-employees/"), "link target keeps its hyphens");
   expect(oct6.body.includes("§ 5-336"), "statute number keeps its hyphen");
   expect(oct6.attorneyReview.some((a) => /we.*our firm/i.test(a)), "third person queued for a rewrite");

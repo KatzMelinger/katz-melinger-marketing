@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PIPELINE_STATUSES, isPipelineStatus } from "@/lib/content-status";
 import { getTenantClient } from "@/lib/tenant-db";
+import { archivedDraftIds } from "@/lib/draft-archive";
 
 export const runtime = "nodejs";
 
@@ -92,7 +93,10 @@ export async function GET(req: NextRequest) {
   ]);
   if (pipeErr) return NextResponse.json({ error: pipeErr.message }, { status: 500 });
 
-  const all = (pipeData ?? []) as PipelineRow[];
+  // Archived drafts stay out of every list (Oct 20 spec, Task A3).
+  const pipeRows = (pipeData ?? []) as PipelineRow[];
+  const archived = await archivedDraftIds(supabase, pipeRows.map((r) => r.draft_id));
+  const all = pipeRows.filter((r) => !r.draft_id || !archived.has(r.draft_id));
   const owners = (ownersData ?? []) as OwnerRow[];
 
   let filtered = all;

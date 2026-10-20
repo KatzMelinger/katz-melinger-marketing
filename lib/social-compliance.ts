@@ -148,8 +148,8 @@ const RULES: Rule[] = [
     scope: "all",
     label: "Fee or price language — off-brand",
     severity: "block",
-    // A free consultation is allowed (Kenneth, 2026-09-29) in both languages;
-    // every other fee or price statement is not.
+    // Price and fee statements. "Free consultation" is caught by the shared
+    // fee rule (lib/fee-language.ts), banned since 2026-10-20.
     re: /\bno fee\b|\bcontingency\b|\$\s?\d|\bsin\s+costo\b|\bhonorarios\s+de\s+contingencia\b|\bsin\s+(cargo|honorarios)\b|\bcuota\s+de\s+contingencia\b/i,
   },
   {
@@ -193,7 +193,7 @@ const INSTAGRAM_LINK_CTA_RE =
 const AD_LABEL_RE = /attorney\s*advertising|#attorneyadvertising/i;
 
 /* -------------------------------------------------------------------------- */
-/* Item 9 — hyphens, and the hashtag block                                     */
+/* Item 9 — the hashtag block                                                  */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -207,24 +207,6 @@ const AD_LABEL_RE = /attorney\s*advertising|#attorneyadvertising/i;
  */
 const NO_HASHTAG_FORMATS = /script|video|reel/i;
 
-
-/**
- * Blank out the runs a hyphen is allowed to live in, so what remains is prose.
- *
- * Without this the rule fires on the firm's own phone number, on every URL
- * (including the disclaimer link item 4 requires), and on hashtags — three
- * things the brand rule was never aimed at. Replacement preserves length so
- * reported offsets still line up with the original body.
- */
-function maskHyphenExemptRuns(body: string): string {
-  const blank = (m: string) => " ".repeat(m.length);
-  return body
-    .replace(/https?:\/\/\S+/gi, blank)
-    .replace(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g, blank)
-    .replace(/\/[A-Za-z0-9._~\-/]+\//g, blank)
-    .replace(PHONE_RE, blank)
-    .replace(/#[A-Za-z0-9_-]+/g, blank);
-}
 
 // S5/6.6: AEO and GEO need the location and topic words IN THE BODY — a
 // hashtag isn't read as body content by an AI-search engine the way sentence
@@ -344,20 +326,10 @@ export function checkSocialCompliance(text: string, ctx: ComplianceContext = {})
     }
   }
 
-  // ITEM 9 — no hyphens outside a phone number, and a consistent hashtag block.
+  // ITEM 9 — a consistent hashtag block. The "no hyphens" half was dropped on
+  // 2026-10-20 (Kenneth): hyphens are allowed wherever grammatically correct,
+  // in social posts as on the website. Em and en dashes stay banned.
   if (isSocial) {
-    const prose = maskHyphenExemptRuns(body);
-    const hyphen = prose.match(/\w-\w/);
-    if (hyphen) {
-      const at = prose.indexOf(hyphen[0]);
-      flags.push({
-        code: "hyphen",
-        label: "Hyphenated term — brand rule is no hyphens outside the phone number",
-        severity: "block",
-        excerpt: body.slice(Math.max(0, at - 12), at + 20).trim().slice(0, 40),
-      });
-    }
-
     // Count and closing tag come from the platform range (LinkedIn runs far
     // lighter than Instagram/Facebook), and the firm tag must be the LAST one
     // — the operating brief's hashtagRule and Diana's 6.9 both say "ending

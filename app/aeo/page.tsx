@@ -255,6 +255,8 @@ export default function AEOPage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [retrying, setRetrying] = useState(false);
   // Shared Ideas + Create flow — used by per-prompt rows on Overview tab.
   const ca = useContentActions();
 
@@ -291,8 +293,12 @@ export default function AEOPage() {
       try {
         const res = await fetch(`/api/aeo/runs/${activeRunId}`);
         const data = await res.json();
+        if (typeof data?.prompts_done === "number" && typeof data?.prompt_count === "number") {
+          setProgress({ done: data.prompts_done, total: data.prompt_count });
+        }
         if (data?.status === "done" || data?.status === "failed") {
           setActiveRunId(null);
+          setProgress(null);
           refreshAll();
         }
       } catch {
@@ -301,6 +307,22 @@ export default function AEOPage() {
     }, 5000);
     return () => clearInterval(id);
   }, [activeRunId]);
+
+  // Finish a failed or stalled sweep: only the prompts it has not answered run.
+  const retryRun = async (runId: string) => {
+    setRetrying(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/aeo/runs/${runId}/continue`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Retry failed");
+      setActiveRunId(runId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Retry failed");
+    }
+    setRetrying(false);
+  };
+  const lastRun = runs[0] ?? null;
 
   const startRun = async () => {
     setStarting(true);
@@ -344,7 +366,11 @@ export default function AEOPage() {
           )}
           <Button onClick={startRun} disabled={starting || !!activeRunId}>
             {starting || activeRunId ? <Spinner /> : <span aria-hidden>▶</span>}
-            {activeRunId ? "Run in progress…" : "Run sweep"}
+            {activeRunId
+              ? progress
+                ? `Running: ${progress.done} of ${progress.total} prompts`
+                : "Run in progress…"
+              : "Run sweep"}
           </Button>
         </div>
       </div>
@@ -360,10 +386,27 @@ export default function AEOPage() {
           <p className="text-sm flex items-center gap-2">
             <Spinner />
             <span>
-              A sweep is running in the background. Dashboard will refresh when it
-              completes.
+              A sweep is running in the background
+              {progress ? ` (${progress.done} of ${progress.total} prompts done)` : ""}. Dashboard
+              will refresh when it completes.
             </span>
           </p>
+        </Card>
+      )}
+
+      {!activeRunId && lastRun?.status === "failed" && (
+        <Card className="p-3 border-red-500/40">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-red-700 dark:text-red-400">
+              The last sweep ({new Date(lastRun.created_at).toLocaleString()}) failed
+              {lastRun.error ? `: ${lastRun.error}` : "."} The dashboard shows the last
+              completed sweep.
+            </p>
+            <Button onClick={() => retryRun(lastRun.id)} disabled={retrying}>
+              {retrying ? <Spinner /> : null}
+              Retry
+            </Button>
+          </div>
         </Card>
       )}
 

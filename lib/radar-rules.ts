@@ -12,7 +12,7 @@
  * collections, places outside New York and New Jersey) and agency-intent
  * collections searches unless they ask for a lawyer.
  */
-import { classifyKeywordGeo } from "./keyword-geo";
+import { outsideServiceArea } from "./keyword-geo";
 
 export type Trend = { trend3m: number | null; trendYoy: number | null; rising: boolean; avg3: number | null };
 
@@ -46,7 +46,8 @@ export function radarExclusion(keyword: string): string | null {
   if (EMPLOYER_SIDE.test(k)) return "Employer-side employment";
   if (DEBTOR_SIDE.test(k)) return "Debtor-side collections";
   if (AGENCY.test(k) && !LAWYER.test(k)) return "Collection agency intent (no lawyer in the search)";
-  if (classifyKeywordGeo(k).state === "other_state") return "Location outside New York and New Jersey";
+  const place = outsideServiceArea(k);
+  if (place) return place;
   return null;
 }
 

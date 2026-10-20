@@ -98,7 +98,7 @@ export async function groundingRules(tenantId: string): Promise<string> {
     "",
     "FIRM RULES:",
     "- In employment law the firm represents employees only. In commercial collections and judgment enforcement it represents creditors and businesses only. Write for that reader, never the other side.",
-    "- Never say how the firm or lawyers charge or what the reader will pay for representation (contingency, hourly, flat fee, retainers, \"no upfront cost\", \"without paying legal fees out of pocket\"). The only permitted cost statement is the free consultation offer. Attorney fee recovery as a statutory remedy may be stated.",
+    "- Never say how the firm or lawyers charge or what the reader will pay for representation (contingency, hourly, flat fee, retainers, \"no upfront cost\", \"without paying legal fees out of pocket\"). Never write \"free consultation\" or what lawyers in general offer; the only offer is \"Free Confidential Case Evaluation\", and the system adds it in the closing call to action. Attorney fee recovery as a statutory remedy may be stated.",
     "- Never promise or predict results; never use \"guarantee\", \"best\", \"expert\", \"specialize\", \"aggressive\" or \"maximum compensation\"; no outcome figures. If results are mentioned add \"Prior results do not guarantee a similar outcome.\"",
     "- No placeholders or bracketed notes. No schema code, JSON or scripts in the body.",
     "- Spell out New York and New Jersey (NYC is allowed in titles and keywords). No dashes of any kind. \"We\" and \"our firm\" are allowed.",

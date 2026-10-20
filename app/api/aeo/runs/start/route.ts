@@ -2,7 +2,8 @@
  * POST /api/aeo/runs/start
  *   Body: { providers?: string[], promptIds?: string[] }
  *   Manual/UI trigger. Creates an aeo_runs row and kicks the sweep off in the
- *   background. Returns { runId } so the caller can poll /api/aeo/runs/[id].
+ *   background, in time-boxed chunks that continue themselves through
+ *   /api/aeo/runs/[id]/continue. Returns { runId } so the caller can poll /api/aeo/runs/[id].
  *
  * GET /api/aeo/runs/start
  *   Weekly Vercel Cron trigger (requires Authorization: Bearer ${CRON_SECRET}).
@@ -13,7 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { startRun, executeRun, reapStaleRuns } from "@/lib/aeo-runner";
+import { startRun, executeAndContinue, reapStaleRuns } from "@/lib/aeo-runner";
 import { evaluateRankAlerts } from "@/lib/alerts-engine";
 import { listTenantIds } from "@/lib/tenant-db";
 import type { AEOProviderId } from "@/lib/aeo-providers";
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
     rankAlertsWritten += rank.written;
     try {
       const runId = await startRun({ triggeredBy: "cron" }, tenantId);
-      after(executeRun(runId));
+      after(executeAndContinue(req.nextUrl.origin, runId));
       runIds.push(runId);
     } catch (e) {
       sweepError = e instanceof Error ? e.message : "sweep failed";
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
       : undefined;
 
     const runId = await startRun({ providers, promptIds, triggeredBy: "manual" });
-    after(executeRun(runId));
+    after(executeAndContinue(req.nextUrl.origin, runId));
     return NextResponse.json({ runId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to start run";

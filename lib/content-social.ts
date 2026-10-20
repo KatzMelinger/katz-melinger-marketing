@@ -112,8 +112,7 @@ the dedicated social line, never the main office number):
   or as #AttorneyAdvertising, and must link to ${brief.disclaimerUrl} for the general-information
   disclaimer. Instagram is the one exception to the LINK (captions can't render one) — it still
   needs the label.
-- No hyphens anywhere except inside the phone number. Write "attorney client privilege", not the
-  hyphenated form. Links, email addresses and hashtags are exempt.
+- Hyphens are fine wherever grammatically correct ("non-exempt"). Never use em dashes or en dashes.
 
 ${ANTI_AI_VOICE_RULES}
 ${skillsContext ? `\n${skillsContext}\n` : ""}

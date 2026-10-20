@@ -484,9 +484,9 @@ function buildBriefSkeleton(
   const metaDescription = (
     firm.isDefault
       ? decision.practiceArea === "employment"
-        ? `Katz Melinger PLLC represents employees in New York and New Jersey on ${primary}. Free consultation.`
+        ? `Katz Melinger PLLC represents employees in New York and New Jersey on ${primary}. Free Confidential Case Evaluation.`
         : `Katz Melinger PLLC represents creditors in New York and New Jersey on ${primary}. Direct court enforcement.`
-      : `${firm.firmName} serves ${firm.targetGeography} on ${primary}. Free consultation.`
+      : `${firm.firmName} serves ${firm.targetGeography} on ${primary}. Free Confidential Case Evaluation.`
   ).slice(0, 155);
 
   return {

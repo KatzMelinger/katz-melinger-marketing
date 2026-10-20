@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
 import {
@@ -12,6 +12,7 @@ import {
   isIsoDate,
   monthToDate,
   needsCallback,
+  missedLeads,
   rangeLabel,
   sourceLabel,
   type CallStatsRow,
@@ -39,7 +40,7 @@ type CallRow = CallStatsRow & {
   score?: ScoreRow | null;
 };
 
-type CallsResponse = { calls?: CallRow[]; error?: string; source?: string; hint?: string };
+type CallsResponse = { calls?: CallRow[]; error?: string; source?: string; hint?: string; from?: string; to?: string };
 
 function formatDurationSeconds(total: number): string {
   if (!Number.isFinite(total) || total < 0) return "—";
@@ -107,10 +108,18 @@ export default function CallsPage() {
   const [status, setStatus] = useState<"all" | "answered" | "voicemail" | "missed" | "in_progress">("all");
   const [language, setLanguage] = useState<"all" | "en" | "es" | "mixed" | "unknown">("all");
 
+  // Changing the start date and then the end date fires two requests. Without
+  // this guard the slower, wider one (Sep 1 - Oct 20) could land last and
+  // replace the list under a "Sep 1 - Sep 30" heading: 102 callers instead of
+  // 65 (Oct 20 spec, Task A19). Only the latest request may write.
+  const loadSeq = useRef(0);
+  const [loadedRange, setLoadedRange] = useState<{ from: string; to: string } | null>(null);
   const load = useCallback(async (f: string, t: string) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const data = await fetchRange(f, t);
+      if (seq !== loadSeq.current) return;
       setNowMs(Date.now());
       if (!data.ok) {
         setError(data.error ?? "Failed to load calls");
@@ -118,12 +127,13 @@ export default function CallsPage() {
       }
       setError(data.error ?? null);
       setCalls(Array.isArray(data.calls) ? data.calls : []);
+      setLoadedRange(data.from && data.to ? { from: data.from, to: data.to } : null);
       setSource(data.source ?? null);
       setHint(data.hint ?? null);
     } catch {
-      setError("Network error");
+      if (seq === loadSeq.current) setError("Network error");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, []);
 
@@ -281,6 +291,7 @@ export default function CallsPage() {
     () => needsCallback(calls, recovery, nowMs),
     [calls, recovery, nowMs],
   );
+  const missedCount = useMemo(() => missedLeads(calls, nowMs).length, [calls, nowMs]);
 
   const totalCalls = stats.total;
   const answered = stats.answered;
@@ -434,8 +445,18 @@ export default function CallsPage() {
           style={{ backgroundColor: "#ffffff" }}
         >
           <h2 className="text-base font-semibold text-slate-900">
-            Needs callback{rangeLabel(from || initialRange.from, to || initialRange.to) ? ` · ${rangeLabel(from || initialRange.from, to || initialRange.to)}` : ""}
+            Needs callback
+            {(() => {
+              // Label the list with the range its data was fetched for.
+              const r = loadedRange ?? { from: from || initialRange.from, to: to || initialRange.to };
+              const label = rangeLabel(r.from, r.to);
+              return label ? ` · ${label}` : "";
+            })()}
           </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            {missedCount} missed lead{missedCount === 1 ? "" : "s"} in these dates (the same count Lead Response shows
+            as lost), {callbacks.length} still waiting on a callback.
+          </p>
           <p className="mt-1 text-sm text-slate-500">
             Callers in the selected dates whose latest missed or voicemail call was not followed by an answered
             call. Marking someone called back, reached or dead removes them (same status as the{" "}

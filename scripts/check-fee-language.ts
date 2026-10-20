@@ -4,7 +4,8 @@
  *   node scripts/run.mjs scripts/check-fee-language.ts
  *
  * Read-only, no DB, no model calls. The rule since 2026-09-29 (Kenneth): no fee
- * language of any kind; the free consultation offer is the only exception.
+ * language of any kind. Since 2026-10-20 "free consultation" is banned too; the
+ * only offer is "Free Confidential Case Evaluation", in the CTA.
  * MUST_BLOCK is drawn from Diana's Sept 28 audit (section 4 and 11.6) — each of
  * those sentences was in a draft. MUST_PASS guards the wage content, where
  * "hourly", "costs" and "out of pocket" are ordinary words.
@@ -22,12 +23,16 @@ const MUST_BLOCK: Array<[string, string]> = [
   ["Collection firms often bill hourly or take a percentage of the recovery.", "48d5e3f7"],
   ["Our team can review your case at no cost.", "at no cost"],
   ["A retainer is required before work begins.", "retainer"],
+  // Oct 20 spec, Part 2 item 2 (Kenneth, 2026-10-20).
+  ["We offer a free consultation.", "free consultation banned"],
+  ["Initial consultations are free.", "free consultation banned"],
+  ["Many employment attorneys offer free initial consultations.", "43fb024e"],
+  ["Most employment attorneys offer a free initial consultation to review your situation.", "7a4bc5e3"],
+  ["Ofrecemos una consulta gratuita.", "consulta gratuita banned"],
 ];
 
 const MUST_PASS: Array<[string, string]> = [
   ["Call today for a Free Confidential Case Evaluation.", "the offer"],
-  ["We offer a free consultation.", "free consultation allowed"],
-  ["Initial consultations are free.", "free consultation allowed"],
   ["Hourly employees are entitled to overtime at one and a half times their regular rate.", "hourly wage sense"],
   ["Your hourly rate must be at least the minimum wage.", "hourly wage sense"],
   ["Employers may not make you pay out of pocket for uniforms.", "out of pocket, wage sense"],

@@ -96,7 +96,7 @@ export async function computeLeadResponse(
   const data = await loadPaged<LeadCall>(async (lo, hi) => {
     let q = supabase
       .from("calls")
-      .select("id, customer_phone_number, source_name, duration, answered, voicemail, first_call, direction, start_time")
+      .select("id, customer_name, customer_phone_number, source_name, duration, answered, voicemail, first_call, direction, start_time, call_type")
       .eq("tenant_id", tenantId)
       .gte("start_time", opts.sinceISO);
     if (untilUTC) q = q.lt("start_time", untilUTC);

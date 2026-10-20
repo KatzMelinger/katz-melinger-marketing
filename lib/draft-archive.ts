@@ -27,6 +27,26 @@ export function readArchive(meta: Record<string, unknown> | null | undefined): A
   return a && typeof a === "object" && a.archived_at ? a : null;
 }
 
+/**
+ * Which of these draft ids are archived. The Production Board and Publishing
+ * QA read content_pipeline, whose CHECK constraint has no "archived" status,
+ * so an archived draft's row keeps its old stage; callers drop rows whose
+ * draft is in this set (Oct 20 spec, Task A3).
+ */
+export async function archivedDraftIds(supabase: any, ids: (string | null | undefined)[]): Promise<Set<string>> {
+  const unique = [...new Set(ids.filter((id): id is string => !!id))];
+  const out = new Set<string>();
+  for (let i = 0; i < unique.length; i += 200) {
+    const { data } = await supabase
+      .from("content_drafts")
+      .select("id")
+      .in("id", unique.slice(i, i + 200))
+      .eq("status", "archived");
+    for (const r of data ?? []) out.add(r.id as string);
+  }
+  return out;
+}
+
 export async function archiveDrafts(args: {
   supabase: any;
   tenantId?: string;

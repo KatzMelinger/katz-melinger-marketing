@@ -24,6 +24,7 @@ import { NextResponse } from "next/server";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { semanticKey } from "@/lib/content-dedup";
+import { archivedDraftIds } from "@/lib/draft-archive";
 
 export const runtime = "nodejs";
 
@@ -167,8 +168,12 @@ export async function GET() {
   };
   const items: Item[] = [];
 
+  // Archived drafts never appear on the board (Oct 20 spec, Task A3).
+  const archived = await archivedDraftIds(supabase, (pipe ?? []).map((p) => p.draft_id as string | null));
+
   // Pipeline items: the production stages (brief → published).
   for (const p of pipe ?? []) {
+    if (p.draft_id && archived.has(p.draft_id as string)) continue;
     const note = ((p.notes as string) ?? "").toLowerCase();
     const createdBy: Item["createdBy"] = note.startsWith("created by peggy")
       ? "peggy"

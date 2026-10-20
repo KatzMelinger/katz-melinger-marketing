@@ -37,7 +37,7 @@ import {
 import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
-import { ArchiveBanner } from "@/components/archive-banner";
+import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 import {
   CANNIBALIZATION_LABEL,
@@ -1340,6 +1340,21 @@ export function DraftDrawer({
         ) : !draft && !briefOnly ? (
           <div className="py-20 text-center text-sm text-slate-500">
             {suggestionId || draftId ? "Draft not found." : "No brief linked to this item yet."}
+          </div>
+        ) : draft && (draft as { status?: string }).status === "archived" ? (
+          // Oct 20 spec, Task A3: an archived draft opens read only.
+          <div className="px-5 py-4">
+            <ArchivedDraftView
+              draftId={draft.id}
+              metadata={(draft as { metadata?: Record<string, unknown> }).metadata ?? null}
+              title={item.title}
+              html={renderedBody}
+              proseClass={PROSE_CLASS}
+              onChanged={() => {
+                void reloadDraft(draft.id);
+                onChanged();
+              }}
+            />
           </div>
         ) : (
           <div className="px-5 py-4">

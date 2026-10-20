@@ -14,9 +14,13 @@
  *   24  "our client" in any sentence was critical, and Trap 7 now asks for
  *       first person ("our clients"), so it would have fired on most pages.
  *       Narrowed to a sentence that reports a result.
- *   27  "free consultation" is allowed (Kenneth, 2026-10-06); "contingen" also
- *       matched "contingent on"; the cost question must be about a lawyer.
- *   27es  "consulta gratuita" is allowed for the same reason.
+ *   27  "contingen" also matched "contingent on"; the cost question must be
+ *       about a lawyer. "Free consultation" was allowed on 2026-10-06 and is
+ *       banned again since 2026-10-20 (Kenneth, Diana's Oct 20 spec, Part 2
+ *       item 2), together with what lawyers in general offer or charge.
+ *   27es  "consulta gratuita" likewise banned since 2026-10-20.
+ *   8   Retired 2026-10-20 (hyphens allowed since October 7); removed from
+ *       this list and disabled by scripts/apply-oct20-traps.ts.
  *   31  Critical in the spec, but Appendix D gives civil litigation pages no
  *       author, so a critical "missing byline" could never be cleared there.
  *       Important instead; Fix known errors adds the byline wherever an author
@@ -113,18 +117,6 @@ export const OCT6_TRAPS: TrapSeed[] = [
     unless: [],
     severity: "important",
     note: "Blogs and service pages are written as \"we\" and \"our firm\" (Diana, October 6, 2026). Rewrite the sentence in the first person: \"we represent\", not \"The firm represents\".",
-  },
-  {
-    number: "8",
-    label: "Hyphenated compound word",
-    matchType: "regex",
-    matchOn: "sentences",
-    appliesTo: "web",
-    caseSensitive: true,
-    pattern: String.raw`\b[a-z]+-[a-z]+\b`,
-    unless: ["Sarbanes-Oxley", "Dodd-Frank", "http"],
-    severity: "important",
-    note: "No hyphens except phone numbers, statute numbers and official law names. Replace the hyphen with a space.",
   },
   {
     number: "9",
@@ -318,20 +310,20 @@ export const OCT6_TRAPS: TrapSeed[] = [
     label: "Fee discussion",
     matchType: "regex",
     matchOn: "sentences",
-    pattern: String.raw`\bfee structures?\b|\bwhat (?:the|an) attorney charges\b|\bexplain their fees\b|\bHow much does[^?\n]*\b(?:lawyer|attorney)\b[^?\n]*\b(?:cost|charge)|\bcontingency\b|\bcontingent[\s-]fees?\b|\bno fee unless\b|\b(?:written )?fee agreements?\b|\bhow (?:fees|legal fees) (?:and costs )?are handled\b|\bno upfront\b|\bpay nothing unless\b`,
+    pattern: String.raw`\bfee structures?\b|\bwhat (?:the|an) attorney charges\b|\bexplain their fees\b|\bHow much does[^?\n]*\b(?:lawyer|attorney)\b[^?\n]*\b(?:cost|charge)|\bcontingency\b|\bcontingent[\s-]fees?\b|\bno fee unless\b|\b(?:written )?fee agreements?\b|\bhow (?:fees|legal fees) (?:and costs )?are handled\b|\bno upfront\b|\bpay nothing unless\b|\bfree\s+(?:initial\s+)?consultations?\b|\bconsultations?\s+(?:are|is)\s+free\b|\b(?:many|most|some|all)\s+(?:\w+\s+)?(?:attorneys|lawyers|law firms)\s+(?:offer|provide|charge|work on)\b`,
     unless: [],
     severity: "critical",
-    note: "No statements about how lawyers charge or any payment arrangement. A free consultation or Free Confidential Case Evaluation may be offered (Kenneth, 2026-10-06).",
+    note: "No statements about how lawyers charge, what lawyers in general offer, or any payment arrangement, and no \"free consultation\". The only offer is \"Free Confidential Case Evaluation\", in the CTA (Kenneth, 2026-10-20). Attorney fee recovery as a statutory remedy is allowed.",
   },
   {
     number: "27es",
     label: "Fee discussion in Spanish",
     matchType: "regex",
     matchOn: "sentences",
-    pattern: String.raw`honorarios contingentes|base de contingencia|no paga[^.\n]*a menos que|sin costo por adelantado|porcentaje de lo que recupere`,
+    pattern: String.raw`honorarios contingentes|base de contingencia|no paga[^.\n]*a menos que|sin costo por adelantado|porcentaje de lo que recupere|\bconsultas?\s+(?:inicial(?:es)?\s+)?gratuitas?\b`,
     unless: [],
     severity: "critical",
-    note: "Spanish fee rule. A free consultation may be offered; payment arrangements may not be described.",
+    note: "Spanish fee rule: no \"consulta gratuita\" and no payment arrangements. The only offer is \"Evaluación Gratuita y Confidencial de su Caso\", in the CTA (Kenneth, 2026-10-20).",
   },
   {
     number: "28",

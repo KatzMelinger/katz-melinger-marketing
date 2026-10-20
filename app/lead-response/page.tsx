@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarketingNav } from "@/components/marketing-nav";
+import { firmLocalToday } from "@/lib/calls-stats";
+
+/** YYYY-MM-DD, `days` before a firm-local YYYY-MM-DD (calendar arithmetic). */
+function daysBefore(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d - days)).toISOString().slice(0, 10);
+}
 
 type SourceLeakage = {
   source: string;
@@ -89,14 +96,27 @@ export default function LeadResponsePage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [days, setDays] = useState(90);
+  // A preset (days back) or a custom firm-local range. Both are sent as
+  // since/until days, the same bounds the Calls page uses, so the two pages
+  // count the same calls for the same dates (Oct 20 spec, Task A19).
+  const [days, setDays] = useState<number | "custom">(90);
+  const today = firmLocalToday(Date.now());
+  const [customFrom, setCustomFrom] = useState(daysBefore(today, 30));
+  const [customTo, setCustomTo] = useState(today);
+  const range = useMemo(
+    () =>
+      days === "custom"
+        ? { since: customFrom <= customTo ? customFrom : customTo, until: customFrom <= customTo ? customTo : customFrom }
+        : { since: daysBefore(today, days - 1), until: today },
+    [days, customFrom, customTo, today],
+  );
 
   // Worklist filters
   const [recency, setRecency] = useState<"all" | "48h" | "7d">("all");
   const [hideResolved, setHideResolved] = useState(false);
 
-  const loadReport = useCallback(async (d: number) => {
-    const res = await fetch(`/api/leads/leakage?days=${d}`, { cache: "no-store" });
+  const loadReport = useCallback(async (r: { since: string; until: string }) => {
+    const res = await fetch(`/api/leads/leakage?since=${r.since}&until=${r.until}`, { cache: "no-store" });
     const j = await res.json();
     if (!res.ok) {
       setError(j.error ?? "Failed to load");
@@ -129,8 +149,8 @@ export default function LeadResponsePage() {
   }, []);
 
   useEffect(() => {
-    void loadReport(days);
-  }, [days, loadReport]);
+    void loadReport(range);
+  }, [range, loadReport]);
   useEffect(() => {
     void loadRecovery();
     void loadSnapshots();
@@ -143,7 +163,7 @@ export default function LeadResponsePage() {
       const res = await fetch("/api/calls/sync", { method: "POST" });
       const j = (await res.json()) as { error?: string };
       if (!res.ok) setError(j.error ?? "Sync failed");
-      await loadReport(days);
+      await loadReport(range);
     } finally {
       setBusy(false);
     }
@@ -234,12 +254,38 @@ export default function LeadResponsePage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm text-slate-900">
-              <option value={30}>Last 30 days</option>
-              <option value={90}>Last 90 days</option>
-              <option value={180}>Last 180 days</option>
-              <option value={365}>Last 12 months</option>
+            <select
+              value={String(days)}
+              onChange={(e) => setDays(e.target.value === "custom" ? "custom" : Number(e.target.value))}
+              className="rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm text-slate-900"
+            >
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="180">Last 180 days</option>
+              <option value="365">Last 12 months</option>
+              <option value="custom">Custom range</option>
             </select>
+            {days === "custom" && (
+              <>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={today}
+                  onChange={(e) => e.target.value && setCustomFrom(e.target.value)}
+                  className="rounded-lg border border-[#e2e8f0] bg-white px-2 py-2 text-sm text-slate-900"
+                  aria-label="From"
+                />
+                <span className="text-sm text-slate-500">to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  max={today}
+                  onChange={(e) => e.target.value && setCustomTo(e.target.value)}
+                  className="rounded-lg border border-[#e2e8f0] bg-white px-2 py-2 text-sm text-slate-900"
+                  aria-label="To"
+                />
+              </>
+            )}
             <button onClick={() => void runSync()} disabled={busy} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-[#1369c4] disabled:opacity-50">
               {busy ? "Working…" : "Sync from CallRail"}
             </button>

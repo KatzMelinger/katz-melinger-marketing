@@ -3,8 +3,8 @@
  *
  * Query params (all optional):
  *   ?days=90                 — lookback window (default 90, max 365)
- *   ?since=YYYY-MM-DD        — explicit start (overrides days)
- *   ?until=YYYY-MM-DD        — explicit end
+ *   ?since=YYYY-MM-DD        — explicit start, firm-local day (overrides days)
+ *   ?until=YYYY-MM-DD        — explicit end, firm-local day, inclusive
  *   ?avg_case_value=7500     — override the dollarization input
  *   ?sign_rate=0.25          — override expected lead→signed rate (0–1)
  *
@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { firmLocalDayStartUTC, isIsoDate } from "@/lib/calls-stats";
 import { computeLeadResponse } from "@/lib/lead-response-server";
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
@@ -45,10 +46,13 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
 
   const sinceParam = sp.get("since");
-  const untilParam = sp.get("until");
+  const untilRaw = sp.get("until");
+  const untilParam = untilRaw && isIsoDate(untilRaw) ? untilRaw : null;
   let sinceISO: string;
-  if (sinceParam) {
-    sinceISO = `${sinceParam}T00:00:00`;
+  if (sinceParam && isIsoDate(sinceParam)) {
+    // Firm-local midnight, the same bound the Calls page uses, so the two
+    // pages count the same calls for the same dates (Oct 20 spec, Task A19).
+    sinceISO = firmLocalDayStartUTC(sinceParam);
   } else {
     const d = new Date();
     d.setDate(d.getDate() - clampDays(sp.get("days")));

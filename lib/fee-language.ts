@@ -4,7 +4,9 @@
  * The rule (Kenneth, 2026-09-29, replacing the 2026-08-26 three-way split):
  * content never says how the firm or lawyers CHARGE, or what the reader will or
  * will not PAY for representation — not about the firm and not about other
- * lawyers. The one exception is the free consultation offer. The firm is
+ * lawyers. The one exception is the firm's offer, "Free Confidential Case
+ * Evaluation", which belongs in the CTA only. "Free consultation" was allowed
+ * from 2026-09-29 and is banned since 2026-10-20 (Kenneth). The firm is
  * flat-fee and has never worked on contingency.
  *
  * NOT fee language, and allowed (Kenneth, same day): attorney fee RECOVERY as a
@@ -19,8 +21,7 @@
  * reviewer reading the finding wants to know whether the sentence was a false
  * claim about the firm or market commentary — but all three block now.
  *
- * A free initial consultation MAY be mentioned; fee arrangements may not. When
- * removing fee language, DELETE the reference — do not substitute "flat fee",
+ * When removing fee language, DELETE the reference — do not substitute "flat fee",
  * because that is still telling the reader how the firm charges.
  *
  * Why this is not left to the compliance model: that check is a prompt, and a
@@ -94,6 +95,17 @@ const BANNED: { rule: string; re: RegExp }[] = [
   // (Fee SHIFTING — the statute making the employer pay — is a remedy and is
   // deliberately not here; see the header.)
   { rule: "Free or low cost", re: /\bfree\s+or\s+low[-\s]cost\b|\blow[-\s]cost\s+(?:initial\s+)?consultations?\b/gi },
+  // Added 2026-10-20 (Kenneth, Diana's Oct 20 spec, Part 2 item 2): the only
+  // offer is "Free Confidential Case Evaluation", in the CTA. "Free
+  // consultation" and what lawyers in general offer or charge are out.
+  {
+    rule: "Free consultation",
+    re: /\bfree\s+(?:initial\s+)?consultations?\b|\bconsultations?\s+(?:are|is)\s+free\b|\bconsultas?\s+(?:inicial(?:es)?\s+)?gratuitas?\b/gi,
+  },
+  {
+    rule: "What lawyers offer or charge",
+    re: /\b(?:many|most|some|all)\s+(?:\w+\s+)?(?:attorneys|lawyers|law\s+firms)\s+(?:offer|provide|charge|work\s+on)\b/gi,
+  },
   { rule: "At no cost", re: /\bat\s+no\s+(?:cost|charge)\b|\bwithout\s+(?:having\s+to\s+)?pay(?:ing)?\s+(?:any\s+)?(?:legal|attorneys?['’]?)\s+fees\b/gi },
   // Billing models. "hourly" alone is NOT a fee word in wage content ("hourly
   // employees", "your hourly rate"), so only the billing senses match.
@@ -104,15 +116,12 @@ const BANNED: { rule: string; re: RegExp }[] = [
 ];
 
 /**
- * Phrasings that must NOT be flagged. A free consultation is expressly allowed,
- * and it lives in the same neighbourhood of words as the banned patterns — so
- * without this the rule would fire on the one fee-adjacent thing the firm is
- * permitted to say, and get switched off.
+ * Phrasings that must NOT be flagged: the firm's own offer, "Free
+ * Confidential Case Evaluation" (and the older "Free Case Review" wording,
+ * which the ending normalizer replaces). It lives in the same neighbourhood
+ * of words as the banned patterns.
  */
-const ALLOWED = [
-  /\bfree\s+(?:initial\s+)?(?:consultation|case\s+(?:evaluation|review)|assessment)\b/gi,
-  /\bconsultations?\s+(?:are|is)\s+free\b/gi,
-];
+const ALLOWED = [/\bfree\s+(?:confidential\s+)?case\s+(?:evaluation|review)\b/gi];
 
 function sentenceAround(body: string, index: number): string {
   const start = body.lastIndexOf(".", index);
@@ -216,8 +225,9 @@ export const FEE_LANGUAGE_RULE =
   "or what the reader will or will not pay for representation. Flag: contingency, hourly or " +
   "flat fees, retainers, \"no fee unless you win\", \"you do not pay unless you recover\", " +
   "percentage-of-recovery figures, \"no upfront cost\", \"at no cost\", \"free or low cost\", " +
-  "\"without paying legal fees out of pocket\". The only permitted cost statement is that a " +
-  "consultation or case evaluation is free. Do NOT flag attorney fee recovery as a legal remedy " +
+  "\"without paying legal fees out of pocket\", \"free consultation\", and what lawyers in general " +
+  "offer or charge (\"many attorneys offer free initial consultations\"). The only permitted offer is " +
+  "the firm's \"Free Confidential Case Evaluation\" in the closing call to action. Do NOT flag attorney fee recovery as a legal remedy " +
   "(\"attorneys' fees and costs are recoverable under the FLSA\", \"the employer may have to pay " +
   "your attorneys' fees\"): that is what the statute awards, and it stays. When removing fee " +
   "language, delete only that language; never replace it with another fee statement.";
