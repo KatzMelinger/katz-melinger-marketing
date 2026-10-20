@@ -1,6 +1,8 @@
 /**
  * GET  /api/content/drafts          — list recent drafts (paginated)
  *   query: ?format=blog|linkedin|...&limit=50&offset=0&q=search
+ *   archived=1 includes archived drafts, which are left out otherwise
+ *   (Oct 20 spec, Task A3).
  *   limit defaults to 50 (max 500). q matches title, topic or body
  *   (case-insensitive substring). Returns { drafts, total, offset, limit, hasMore }.
  *
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
     .order("id", { ascending: false })
     .range(offset, offset + limit - 1);
   if (format) q = q.eq("format", format);
+  if (searchParams.get("archived") !== "1") q = q.neq("status", "archived");
   if (search) {
     // Title and topic are what people search by; body catches a phrase that
     // only appears in the text. A plain substring match on ~hundreds of rows.

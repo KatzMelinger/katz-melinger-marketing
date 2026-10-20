@@ -12,6 +12,7 @@ import {
   computeCallStats,
   firmLocalDayEndExclusiveUTC,
   firmLocalDayStartUTC,
+  missedLeads,
   monthToDate,
   needsCallback,
   rangeLabel,
@@ -19,6 +20,7 @@ import {
   type CallStatsRow,
   type RecoveryRow,
 } from "../lib/calls-stats";
+import { analyzeLeadResponse } from "../lib/lead-response";
 
 const NOW = Date.parse("2026-09-29T16:00:00Z"); // noon in New York
 const minsAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -137,6 +139,29 @@ eq(ana && [ana.name, ana.tries, ana.firstTime, ana.source, ana.lastStatus], ["An
 const carl = list.find((c) => c.phone === "2125550103");
 eq(carl && [carl.tries, carl.firstTime, carl.lastStatus], [1, false, "Voicemail"], "Carl (repeat, VM)");
 eq(list[0].phone, "2125550106", "newest last try first");
+
+console.log("\n-- one missed-lead rule (Oct 20 spec, Task A19) ---------------------");
+// Worked callers still count as missed leads; they only leave the to-do list.
+const missedAll = missedLeads(CB, NOW);
+eq(
+  missedAll.filter((m) => !list.some((c) => c.phone === m.phone)).map((m) => m.phone).sort(),
+  ["2125550105"],
+  "only the caller worked after the last try leaves the to-do list",
+);
+// Lead Response's "lost" uses the same rule, so the two pages match.
+const lr = analyzeLeadResponse(
+  CB.map((c) => ({
+    ...c,
+    customer_phone_number: c.customer_phone_number ?? null,
+    source_name: c.source_name ?? null,
+    duration: c.duration ?? null,
+    voicemail: !!c.voicemail,
+    first_call: !!c.first_call,
+  })),
+  { avgCaseValue: 1, expectedSignRate: 1 },
+  NOW,
+);
+eq(lr.lost, missedAll.length, "Lead Response lost = Calls missed leads");
 
 console.log("\n-- firm-local dates (8.2) -----------------------------------------");
 eq(monthToDate(NOW), { from: "2026-09-01", to: "2026-09-29" }, "month to date");

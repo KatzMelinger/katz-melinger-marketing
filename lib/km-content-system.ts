@@ -562,7 +562,8 @@ Employment clients: Employees only. Never employers on employment matters.
 Collections clients: Businesses, creditors, CFOs, controllers, AR managers, attorneys
 Fees: Never describe how the firm or any lawyer charges, or what the client will pay. No
 contingency, hourly, flat fee, "no upfront cost", "you pay nothing unless". The only permitted
-cost statement is the free consultation offer. Attorney fee recovery may be stated as a remedy.
+cost statement is "Free Confidential Case Evaluation" in the closing CTA; never write "free consultation"
+or what lawyers in general offer or charge. Attorney fee recovery may be stated as a remedy.
 Licensed in: New York and New Jersey
 Key employment statutes: FLSA, NYLL, NYSHRL, NYCHRL, Title VII, ADA, FMLA, NJLAD, NJWHL
 Key collections statutes: NY CPLR Article 52, FDCPA, UCC, NY Debtor and Creditor Law, NJ Court Rules
@@ -674,7 +675,7 @@ WHY: The correct version gives specific, verifiable facts.
 10 Evidence and Documentation — Practice-area-specific bullet list. Close with preservation warning.
 11 Statute of Limitations or Enforcement Window — Own H2 section. Specific timeframes by statute. Do not bury in FAQ.
 12 How Your Case or Matter Gets Handled — Three H3 subheadings: Negotiated Settlement, Agency or Court Proceedings, Litigation or Enforcement.
-13 Why Katz Melinger — Employment: four paragraphs (employee-side only, NY+NJ licensed, plain language, free consultation). Collections: four paragraphs (creditor representation, NY+NJ licensed with statutes, direct court representation vs agency, written updates at each stage). Never describe fees.
+13 Why Katz Melinger — Employment: four paragraphs (employee-side only, NY+NJ licensed, plain language, Free Confidential Case Evaluation). Collections: four paragraphs (creditor representation, NY+NJ licensed with statutes, direct court representation vs agency, written updates at each stage). Never describe fees.
 14 FAQ — 6 to 8 questions. H3 format. Core legal service questions. Answers open with direct sentence.
 15 Closing CTA — H2 + 2 to 3 sentences + CTA button + trust line. CTA #3.
 

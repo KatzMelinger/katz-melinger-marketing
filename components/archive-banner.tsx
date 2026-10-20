@@ -51,26 +51,49 @@ export function ArchiveBanner({ draftId, status, metadata, onChanged }: Props) {
   };
 
   if (status === "archived") {
+    const restore = () => {
+      // One live draft per topic (Oct 20 spec, Task A3): bringing this draft
+      // back archives the version that was kept in its place.
+      const swap = info?.duplicate_of
+        ? `Restoring this draft archives ${keeperTitle ? `"${keeperTitle}"` : "the version we kept"} in its place, so two live drafts never share a keyword. Continue?`
+        : "Restore this draft?";
+      if (!window.confirm(swap)) return;
+      void call({ action: "restore" });
+    };
+    const when = info?.archived_at ? new Date(info.archived_at).toLocaleDateString() : null;
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-800">
-        <span>
+      <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-800">
+        <p>
           <span className="font-semibold">
-            {info?.duplicate_of
-              ? `Archived as a duplicate of ${keeperTitle ? `"${keeperTitle}"` : info.duplicate_of.slice(0, 8)}`
-              : `Archived${info?.reason ? ` (${info.reason})` : ""}`}
+            Archived{when ? ` on ${when}` : ""}: {info?.reason ?? "no reason recorded"}.
           </span>
-          {info?.archived_by ? ` by ${info.archived_by.split("@")[0]}` : ""}
-          {info?.archived_at ? ` on ${new Date(info.archived_at).toLocaleDateString()}` : ""}. Nothing was deleted.
-        </span>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void call({ action: "restore" })}
-          className="rounded border border-slate-400 bg-white px-2 py-1 text-[11px] font-medium hover:bg-slate-50 disabled:opacity-50"
-        >
-          Restore
-        </button>
-        {msg && <span className="w-full text-[11px] text-rose-700">{msg}</span>}
+          {info?.duplicate_of && (
+            <>
+              {" "}The version we kept is{" "}
+              <span className="font-medium">{keeperTitle ? `"${keeperTitle}"` : info.duplicate_of.slice(0, 8)}</span>.
+            </>
+          )}
+          {info?.archived_by ? ` Archived by ${info.archived_by.split("@")[0]}.` : ""} This copy is read only.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {info?.duplicate_of && (
+            <a
+              href={`/content/drafts?id=${info.duplicate_of}`}
+              className="rounded bg-brand px-2 py-1 text-[11px] font-medium text-white hover:bg-brand/90"
+            >
+              Open the version we kept
+            </a>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={restore}
+            className="rounded border border-slate-400 bg-white px-2 py-1 text-[11px] font-medium hover:bg-slate-50 disabled:opacity-50"
+          >
+            Restore
+          </button>
+        </div>
+        {msg && <p className="mt-1 text-[11px] text-rose-700">{msg}</p>}
       </div>
     );
   }
@@ -100,6 +123,39 @@ export function ArchiveBanner({ draftId, status, metadata, onChanged }: Props) {
         Archive…
       </button>
       {msg && <p className="text-[11px] text-rose-700">{msg}</p>}
+    </div>
+  );
+}
+
+/**
+ * The whole review screen for an archived draft (Oct 20 spec, Task A3): the
+ * banner and the text, read only. No Approve, Send back, Edit, Apply fix,
+ * findings or compliance panels, so an archived copy can never be mistaken
+ * for the live one.
+ */
+export function ArchivedDraftView({
+  draftId,
+  metadata,
+  title,
+  html,
+  proseClass = "",
+  onChanged,
+}: {
+  draftId: string;
+  metadata: Record<string, unknown> | null | undefined;
+  title: string | null | undefined;
+  html: string;
+  proseClass?: string;
+  onChanged: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <ArchiveBanner draftId={draftId} status="archived" metadata={metadata} onChanged={onChanged} />
+      {title && <h3 className="text-base font-semibold text-slate-700">{title}</h3>}
+      <div
+        className={`max-h-[70vh] overflow-y-auto rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 ${proseClass}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   );
 }

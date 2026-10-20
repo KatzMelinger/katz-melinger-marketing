@@ -510,28 +510,9 @@ function brandRules(ed: Editor) {
       .replace(/,\s*,/g, ",");
     if (fixed === s.text || !ed.replace(s.text, fixed, "No dashes (brand rule).", "brand rule", "dash", s.start)) break;
   }
-  // Hyphenated compounds (Oct 6 spec, trap 8): "at-will" becomes "at will".
-  // Lowercase words only, so statute numbers ("5-336"), phone numbers and
-  // official names ("Sarbanes-Oxley") are untouched; URLs, link targets,
-  // citations and headings are protected.
-  const CLOSED: Record<string, string> = { "e-mail": "email", "co-worker": "coworker", "co-workers": "coworkers" };
-  for (let guard = 0; guard < 300; guard++) {
-    const re = /(?<![\w@/.-])[a-z]+(?:-[a-z]+)+(?![\w-]|\.[a-z])/g;
-    let hit: RegExpExecArray | null = null;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(ed.body))) {
-      if (!protectedAt(ed.body, m.index)) {
-        hit = m;
-        break;
-      }
-    }
-    if (!hit) break;
-    const s = sentenceAt(ed.body, hit.index);
-    const fixed = s.text.replace(re, (x, off: number) =>
-      protectedAt(s.text, off) ? x : (CLOSED[x] ?? x.replace(/-/g, " ")),
-    );
-    if (fixed === s.text || !ed.replace(s.text, fixed, "No hyphens (brand rule).", "brand rule", "hyphen", s.start)) break;
-  }
+  // Hyphens are no longer removed: since October 7 they are allowed wherever
+  // grammatically correct ("non-exempt", "self-check"); trap 8 was retired on
+  // 2026-10-20 (Oct 20 spec, Part 2 item 9). Em and en dashes stay banned above.
   // Hashtags in blog body text (not headings, not URLs).
   for (let guard = 0; guard < 50; guard++) {
     const re = /(^|[\s(])#[A-Za-z][\w]*/gm;

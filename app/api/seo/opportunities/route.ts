@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { loadCoverageMap, semanticKey, type CoverageMatch } from "@/lib/content-dedup";
 import { getTenantDb } from "@/lib/tenant-db";
+import { outsideServiceArea } from "@/lib/keyword-geo";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -76,7 +77,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const all = (data ?? []) as Row[];
+    // Rows synced before the location rule covered every source still carry
+    // excluded=false; apply it on read too (Oct 20 spec, Part 2 item 4).
+    const all = ((data ?? []) as Row[]).map((r) => {
+      if (r.excluded) return r;
+      const place = outsideServiceArea(r.keyword);
+      return place ? { ...r, excluded: true, exclude_reason: place } : r;
+    });
 
     // Registry coverage: a keyword that already has a draft / brief / board item /
     // published page elsewhere (Content Studio, Peggy, the agent) is "already

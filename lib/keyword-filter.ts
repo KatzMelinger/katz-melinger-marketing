@@ -15,6 +15,7 @@
  */
 
 import { classifyKeywordCluster } from "@/lib/keyword-cluster";
+import { outsideServiceArea } from "@/lib/keyword-geo";
 
 export type KeywordQuality = {
   /** 0-100; higher = more worth writing for. */
@@ -182,6 +183,10 @@ export function scoreKeyword(
   }
   if (TRAVEL_HOSPITALITY_PATTERNS.some((re) => re.test(lc))) {
     return { relevanceScore: 0, excluded: true, excludeReason: "Travel/hospitality noise, not a law-firm topic", flags: ["travel_noise"] };
+  }
+  const place = outsideServiceArea(keyword);
+  if (place) {
+    return { relevanceScore: 0, excluded: true, excludeReason: place, flags: ["out_of_area"] };
   }
   if (ctx.customExclusions?.length) {
     const hit = ctx.customExclusions.find((t) => t && lc.includes(t));

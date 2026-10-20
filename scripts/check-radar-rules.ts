@@ -39,9 +39,27 @@ const drop: [string, RegExp][] = [
   ["collection agency ny", /agency/],
   ["debt collection agencies nyc", /agency/],
   ["wrongful termination lawyer california", /outside New York/],
+  // Oct 20 spec, Part 2 item 4: the term Diana found at the top of Radar.
+  ["what is the minimum wage in california", /outside New York/],
+  ["overtime lawyer houston", /outside New York/],
+  ["wage theft attorney buffalo", /City outside/],
+  ["employment lawyer cherry hill", /City outside/],
 ];
 for (const [k, re] of drop) expect(re.test(radarExclusion(k) ?? ""), `dropped: ${k} (${radarExclusion(k)})`);
-for (const k of ["collection agency lawyer ny", "commercial collections attorney nj", "fmla lawyer", "information subpoena", "nj wage theft act"]) {
+for (const k of [
+  "collection agency lawyer ny",
+  "commercial collections attorney nj",
+  "fmla lawyer",
+  "information subpoena",
+  "nj wage theft act",
+  // Everyday words that used to read as state abbreviations (" in ", " or ").
+  "wrongful termination in the workplace",
+  "employment lawyer or attorney",
+  "abogado de despido en la ciudad",
+  "washington heights employment lawyer",
+  "employment lawyer westchester",
+  "wage lawyer jersey city",
+]) {
   expect(radarExclusion(k) === null, `kept: ${k} (${radarExclusion(k)})`);
 }
 

@@ -19,7 +19,7 @@ import {
 } from "@/components/analysis-card";
 import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
-import { ArchiveBanner } from "@/components/archive-banner";
+import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import { DRAFT_STATUSES, type DraftStatus } from "@/lib/content-status";
@@ -281,6 +281,9 @@ export default function DraftsPage() {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  // Archived drafts stay out of the list and search unless asked for (Oct 20 spec, Task A3).
+  const [showArchived, setShowArchived] = useState(false);
+  const showArchivedRef = useRef(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
   const [composing, setComposing] = useState(false);
@@ -359,6 +362,7 @@ export default function DraftsPage() {
       for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
         const params = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
         if (query) params.set("q", query);
+        if (showArchivedRef.current) params.set("archived", "1");
         const res = await fetch(`/api/content/drafts?${params.toString()}`, { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (seq !== listSeqRef.current) return;
@@ -391,9 +395,10 @@ export default function DraftsPage() {
 
   useEffect(() => {
     listQueryRef.current = debouncedSearch;
+    showArchivedRef.current = showArchived;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch]);
+  }, [debouncedSearch, showArchived]);
 
   // Read ?id= or ?batch= from URL on mount.
   useEffect(() => {
@@ -661,6 +666,15 @@ export default function DraftsPage() {
               placeholder="Search all drafts (title, topic, text)…"
               className="w-full"
             />
+            <label className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-600">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                className="h-3 w-3"
+              />
+              Show archived
+            </label>
             {totalDrafts !== null && (
               <p className="mt-1 text-[11px] text-slate-500">
                 {debouncedSearch
@@ -738,7 +752,25 @@ export default function DraftsPage() {
               Pick a draft from the list to view, edit, analyze, or export.
             </DashCard>
           )}
-          {selectedDraft && (
+          {selectedDraft && selectedDraft.status === "archived" && (
+            <DashCard>
+              <ArchivedDraftView
+                draftId={selectedDraft.id}
+                metadata={selectedDraft.metadata as Record<string, unknown> | null}
+                title={selectedDraft.title || selectedDraft.topic}
+                html={renderedBody}
+                proseClass={PROSE_CLASS}
+                onChanged={() => {
+                  refresh();
+                  fetch(`/api/content/drafts/${selectedDraft.id}`, { cache: "no-store" })
+                    .then((r) => r.json())
+                    .then((data) => setSelectedDraft(data.draft))
+                    .catch(() => {});
+                }}
+              />
+            </DashCard>
+          )}
+          {selectedDraft && selectedDraft.status !== "archived" && (
             <>
               <DashCard>
                 <div className="flex items-center gap-2 flex-wrap">

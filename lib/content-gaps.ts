@@ -255,18 +255,37 @@ async function language(tenantId: string): Promise<GapResult> {
  * DataForSEO suggestions and People Also Ask, each overlap-checked.
  * ------------------------------------------------------------------------ */
 const QUESTION = /^(can|how|what|when|is|are|do|does|why|should|will|if|who|where)\b/i;
+/** Per-lookup cap for the Questions view (suggestions and People Also Ask). */
+const QUESTION_LOOKUP_MS = 45_000;
 
 async function questions(tenantId: string): Promise<GapResult> {
   const [g, targets] = await Promise.all([gscQueries(tenantId, { days: 28, withPage: false }), loadExistingTargets(tenantId)]);
   if (!g.ok) return { view: "questions", items: [], summary: [], error: g.error };
   const winners = g.rows.filter((r) => r.clicks > 0 && QUESTION.test(r.query)).sort((a, b) => b.clicks - a.clicks).slice(0, 6);
-  const items: GapItem[] = [];
-  for (const w of winners) {
-    const stem = w.query.split(/\s+/).slice(0, 4).join(" ");
-    const [sugg, paa] = await Promise.all([
-      getKeywordSuggestions(stem, 30).catch(() => []),
-      getPeopleAlsoAsk(w.query).catch(() => []),
+  // All winners at once, each lookup capped, so the view answers well inside
+  // the route's 120s limit; one slow People Also Ask SERP used to keep the
+  // tab on "Loading…" until the platform killed the request (Oct 20 spec,
+  // Part 2 item 5).
+  let timedOut = 0;
+  const capped = <T,>(p: Promise<T[]>): Promise<T[]> =>
+    Promise.race([
+      p.catch(() => [] as T[]),
+      new Promise<T[]>((resolve) =>
+        setTimeout(() => {
+          timedOut++;
+          resolve([]);
+        }, QUESTION_LOOKUP_MS),
+      ),
     ]);
+  const perWinner = await Promise.all(
+    winners.map(async (w) => {
+      const stem = w.query.split(/\s+/).slice(0, 4).join(" ");
+      const [sugg, paa] = await Promise.all([capped(getKeywordSuggestions(stem, 30)), capped(getPeopleAlsoAsk(w.query))]);
+      return { w, sugg, paa };
+    }),
+  );
+  const items: GapItem[] = [];
+  for (const { w, sugg, paa } of perWinner) {
     const siblings = [
       ...sugg.filter((s) => QUESTION.test(s.keyword) && s.keyword !== w.query).slice(0, 6).map((s) => ({ q: s.keyword, from: `DataForSEO ${s.searchVolume}/mo` })),
       ...paa.slice(0, 4).map((q) => ({ q: q.toLowerCase().replace(/\?$/, ""), from: "People Also Ask" })),
@@ -283,7 +302,9 @@ async function questions(tenantId: string): Promise<GapResult> {
       });
     }
   }
-  return { view: "questions", items, summary: [`${winners.length} question queries earning clicks in the last 28 days.`] };
+  const summary = [`${winners.length} question queries earning clicks in the last 28 days.`];
+  if (timedOut > 0) summary.push(`${timedOut} DataForSEO lookup${timedOut === 1 ? "" : "s"} did not answer in time and ${timedOut === 1 ? "was" : "were"} skipped; reload to try again.`);
+  return { view: "questions", items, summary };
 }
 
 export async function contentGap(view: GapView, tenantId: string): Promise<GapResult> {

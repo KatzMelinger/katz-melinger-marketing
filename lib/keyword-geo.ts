@@ -95,26 +95,29 @@ const OTHER_STATE_TERMS = [
   // States
   "california", "texas", "florida", "illinois", "massachusetts",
   "pennsylvania", "ohio", "michigan", "georgia", "north carolina",
-  "south carolina", "washington", "colorado", "arizona", "nevada",
+  "south carolina", "washington state", "seattle washington", "colorado", "arizona", "nevada",
   "oregon", "minnesota", "wisconsin", "missouri", "tennessee",
   "virginia", "maryland", "kentucky", "indiana", "louisiana",
   "alabama", "mississippi", "arkansas", "oklahoma", "kansas",
   "iowa", "utah", "new mexico", "connecticut", "hawaii", "alaska",
-  // State abbreviations with word boundaries
-  " ca ", " ca,", " ca.", " tx ", " fl ", " il ", " ma ", " pa ",
-  " oh ", " mi ", " ga ", " nc ", " sc ", " wa ", " co ", " az ",
-  " nv ", " or ", " mn ", " wi ", " mo ", " tn ", " va ", " md ",
-  " ky ", " in ", " la ", " al ", " ms ", " ar ", " ok ", " ks ",
-  " ia ", " ut ", " nm ", " ct ", " hi ", " ak ",
+  // State abbreviations with word boundaries. Abbreviations that are also
+  // everyday English or Spanish words (in, or, co, al, la, mi, ma, oh, ok,
+  // hi, ms, mo, va, ar) are left out: " in " used to send "wrongful
+  // termination in the workplace" and "lawyer or attorney" to other_state.
+  " ca ", " ca,", " ca.", " tx ", " fl ", " il ", " pa ",
+  " ga ", " nc ", " sc ", " wa ", " az ",
+  " nv ", " mn ", " wi ", " tn ", " md ",
+  " ky ", " ks ",
+  " ia ", " ut ", " nm ", " ct ", " ak ",
   // Major non-NY/NJ metros
   "los angeles", "san francisco", "san diego", "oakland",
   "houston", "dallas", "austin", "san antonio",
   "miami", "orlando", "tampa", "jacksonville",
   "chicago", "boston", "philadelphia", "pittsburgh",
-  "cleveland", "columbus", "detroit", "atlanta",
+  "cleveland", "columbus ohio", "detroit", "atlanta",
   "charlotte", "raleigh", "seattle", "denver", "phoenix",
   "las vegas", "portland", "minneapolis", "milwaukee",
-  "nashville", "memphis", "richmond", "baltimore",
+  "nashville", "memphis", "richmond va", "richmond virginia", "baltimore",
 ];
 
 function matchAny(haystack: string, table: { city: string; matches: string[] }[]): { city: string } | null {
@@ -168,6 +171,21 @@ export function classifyKeywordGeo(keyword: string): KeywordGeo {
 
   // No geo at all — generic legal term.
   return { state: null, region: null, city: null };
+}
+
+/**
+ * Why a keyword names a place outside the firm's market, or null. The market
+ * is New York and New Jersey; a named city must be in New York City,
+ * Westchester, Long Island or northern New Jersey (Oct 20 spec, Part 2
+ * item 4). Used by every Opportunities source, not just Radar discovery.
+ */
+export function outsideServiceArea(keyword: string): string | null {
+  const geo = classifyKeywordGeo(keyword);
+  if (geo.state === "other_state") return "Location outside New York and New Jersey";
+  if (geo.region === "upstate_ny" || geo.region === "central_nj" || geo.region === "south_nj") {
+    return `City outside the firm's area (${geo.city})`;
+  }
+  return null;
 }
 
 // --- UI helpers exported so pages share consistent option labels ---

@@ -36,13 +36,35 @@ export function ContentGapTabs({
     let live = true;
     setLoading(true);
     setData(null);
-    fetch(`/api/seo/gaps?view=${view}`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d: GapResult) => live && setData(d))
-      .catch(() => live && setData({ view, items: [], summary: [], error: "Could not load" }))
-      .finally(() => live && setLoading(false));
+    // Never spin forever: a non-OK answer or a request that runs past the
+    // route's limit shows the error instead (Oct 20 spec, Part 2 item 5).
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 115_000);
+    fetch(`/api/seo/gaps?view=${view}`, { cache: "no-store", signal: ctrl.signal })
+      .then(async (r) => {
+        const d = (await r.json().catch(() => null)) as Partial<GapResult> | null;
+        if (!r.ok || !d) throw new Error(d?.error ?? `The request failed (${r.status}).`);
+        return d;
+      })
+      .then((d) => live && setData({ view, items: d.items ?? [], summary: d.summary ?? [], error: d.error }))
+      .catch((e: unknown) => {
+        if (!live) return;
+        const msg =
+          e instanceof DOMException && e.name === "AbortError"
+            ? "This view took too long to load (Search Console or DataForSEO did not answer). Try again in a minute."
+            : e instanceof Error
+              ? `Could not load: ${e.message}`
+              : "Could not load";
+        setData({ view, items: [], summary: [], error: msg });
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (live) setLoading(false);
+      });
     return () => {
       live = false;
+      clearTimeout(timer);
+      ctrl.abort();
     };
   }, [view]);
 

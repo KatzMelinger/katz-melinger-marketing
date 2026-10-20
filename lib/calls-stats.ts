@@ -19,7 +19,13 @@
  * voicemail first contact is a lead that was NOT connected.
  */
 
-import { normalizePhone } from "@/lib/lead-response";
+/** Normalize to the last 10 digits so formatting variants group together. */
+export function normalizePhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 7) return null;
+  return digits.slice(-10);
+}
 
 export const FIRM_TZ = "America/New_York";
 export const IN_PROGRESS_WINDOW_MS = 30 * 60 * 1000;
@@ -205,17 +211,34 @@ export type CallbackItem = {
 };
 
 /**
- * Everyone whose most recent unanswered inbound call has not been followed by
- * an answered call (inbound, or an answered outbound callback), minus callers
- * already worked on /lead-response. A worked status only counts if it was set
- * AFTER the latest unanswered call — a caller marked "reached" last month who
- * rings and gets missed again is back on the list.
+ * Callers in the needs-callback list, minus those already worked on
+ * /lead-response. A worked status only counts if it was set AFTER the latest
+ * unanswered call — a caller marked "reached" last month who rings and gets
+ * missed again is back on the list.
  */
 export function needsCallback(
   rows: CallStatsRow[],
   recovery: Map<string, RecoveryRow>,
   nowMs: number,
 ): CallbackItem[] {
+  return missedLeads(rows, nowMs).filter((item) => {
+    const rec = recovery.get(item.phone);
+    if (!rec || !WORKED_STATUSES.has(rec.status)) return true;
+    const actedAt = rec.last_action_at ? new Date(rec.last_action_at).getTime() : NaN;
+    // No timestamp: trust the status. Otherwise it must postdate the last try.
+    return !(Number.isNaN(actedAt) || actedAt >= new Date(item.lastTry).getTime());
+  });
+}
+
+/**
+ * THE definition of a missed (lost) lead, shared by the Calls page and Lead
+ * Response so both report the same count for the same dates (Oct 20 spec,
+ * Task A19): a caller whose most recent unanswered inbound call in the range
+ * has not been followed by an answered call, inbound or an answered outbound
+ * callback. Whether someone has since worked the lead does not change the
+ * count; needsCallback drops worked callers from the to-do list.
+ */
+export function missedLeads(rows: CallStatsRow[], nowMs: number): CallbackItem[] {
   const groups = new Map<string, CallStatsRow[]>();
   for (const r of rows) {
     const phone = normalizePhone(r.customer_phone_number);
@@ -243,12 +266,6 @@ export function needsCallback(
 
     const last = group[lastUnanswered];
     const lastTry = last.start_time;
-    const rec = recovery.get(phone);
-    if (rec && WORKED_STATUSES.has(rec.status)) {
-      const actedAt = rec.last_action_at ? new Date(rec.last_action_at).getTime() : NaN;
-      // No timestamp: trust the status. Otherwise it must postdate the last try.
-      if (Number.isNaN(actedAt) || actedAt >= startMs(last)) continue;
-    }
 
     // The streak: unanswered inbound calls since the last connected call.
     let lastAnswered = -1;

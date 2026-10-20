@@ -29,7 +29,6 @@ const FIRE: [string, string, TrapContext?][] = [
   ["5", "*This article is for general informational purposes only and is not legal advice. Reading it does not create an attorney client relationship.*"],
   ["6", "Call today at 212-460-0047 for a Call today at 212 460 0047 for a Free Case Evaluation."],
   ["7", "Katz Melinger PLLC represents employees in New York."],
-  ["8", "You are an at-will employee."],
   ["9", "The New York City Human Rights Law applies to employers with four or more employees.", harass],
   ["10", "To file with the New York City Commission on Human Rights, the deadline is 1 year.", harass],
   ["11", "Settlement agreements typically include confidentiality provisions and a release."],
@@ -55,6 +54,10 @@ const FIRE: [string, string, TrapContext?][] = [
   ["27", "You will receive a written fee agreement that clearly explains how fees and costs are handled."],
   ["15", "They must have given you something new, a raise or a promotion."],
   ["27es", "Trabajamos con honorarios contingentes."],
+  // Banned again since 2026-10-20 (Oct 20 spec, Part 2 item 2).
+  ["27", "We offer a free consultation."],
+  ["27", "Many employment attorneys offer free initial consultations."],
+  ["27es", "Ofrecemos una consulta gratuita."],
   ["28", "See New YorkC. Admin. Code § 8-107."],
   ["29", "📞 **(212) 460-0047**"],
   ["30", "This article contains general information and does not constitute legal advice."],
@@ -84,10 +87,8 @@ const PASS: [string, string, TrapContext?][] = [
   ["15", "But in 2025, there's a new consideration on your mind: artificial intelligence."],
   ["15", "If the employer is now offering you severance in exchange for signing or reaffirming a non-compete, the severance serves as new consideration."],
   ["24", "We put our clients first."],
-  ["27", "We offer a free consultation."],
   ["27", "The offer was contingent on a background check."],
   ["27", "How much does it cost to file in small claims court?"],
-  ["27es", "Ofrecemos una consulta gratuita."],
   ["28", "See N.Y.C. Admin. Code § 8-107 and Murphy, 58 N.Y.2d 293."],
   ["31", "*Attorney Advertising*\n\n# Title\n\nBy Nicole Grunfeld, Katz Melinger PLLC\n\nText."],
   ["31", "**By Adam Sackowitz, Katz Melinger PLLC**"],
@@ -97,7 +98,6 @@ const PASS: [string, string, TrapContext?][] = [
   ["31", "Social caption with no byline.", { isWebPage: false }],
   ["7", "The firm represents workers.", { isWebPage: false }],
   // A link inside a sentence no longer hides it (Task 3) — and a link is not a hyphen.
-  ["8", "See [our guide](https://katzmelinger.com/wage-and-hour-claims/) for more."],
 ];
 
 let failures = 0;

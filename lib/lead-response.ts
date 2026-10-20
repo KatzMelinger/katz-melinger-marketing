@@ -10,13 +10,21 @@
  * first contact ever connected on a later attempt (recovered) or was lost for
  * good — which is the metric that ties to revenue.
  *
+ * "Lost" uses the same rule as the Calls page's Needs callback list
+ * (missedLeads in lib/calls-stats.ts), so the two pages report the same count
+ * for the same dates (Oct 20 spec, Task A19). Call status comes from the same
+ * place too (CallRail call_type, with the 30-minute in-progress rule).
+ *
  * Pure functions only (no I/O) so this is unit-testable and reusable.
  */
+
+import { callStatus, missedLeads, normalizePhone, type CallStatsRow } from "./calls-stats";
+
+export { normalizePhone };
 
 export const DEFAULT_TZ = "America/New_York"; // firm is NY/NJ; bucket hours in firm-local time
 const BUSINESS_START_HOUR = 8;
 const BUSINESS_END_HOUR = 18; // 6pm
-const CONNECT_MIN_SECONDS = 0; // answered && !voicemail counts as a connection
 
 export type LeadCall = {
   id: string;
@@ -28,6 +36,9 @@ export type LeadCall = {
   first_call: boolean;
   direction?: string | null;
   start_time: string | null;
+  /** CallRail call_type, when synced (answered, missed, voicemail, in_progress...). */
+  call_type?: string | null;
+  customer_name?: string | null;
 };
 
 export type LeadResponseOptions = {
@@ -57,6 +68,7 @@ export type HourLeakage = {
 export type LostLead = {
   phone: string;
   source: string;
+  /** The caller's latest unanswered call in the range (the one never returned). */
   firstContactAt: string;
   firstContactStatus: "Missed" | "Voicemail";
   firstTimeCaller: boolean;
@@ -82,20 +94,10 @@ export type LeadResponseReport = {
   lostLeads: LostLead[];
 };
 
-/** Normalize to the last 10 digits so formatting variants group together. */
-export function normalizePhone(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length < 7) return null;
-  return digits.slice(-10);
-}
+type CallStatus = "Answered" | "Voicemail" | "Missed" | "In progress";
 
-type CallStatus = "Answered" | "Voicemail" | "Missed";
-
-function statusOf(c: LeadCall): CallStatus {
-  if (c.voicemail === true) return "Voicemail";
-  if (c.answered === true && (c.duration ?? 0) >= CONNECT_MIN_SECONDS) return "Answered";
-  return "Missed";
+function statusOf(c: LeadCall, nowMs: number): CallStatus {
+  return callStatus({ ...c, start_time: c.start_time as string }, nowMs);
 }
 
 function isInbound(c: LeadCall): boolean {
@@ -136,8 +138,18 @@ function isAfterHours(iso: string, tz: string): boolean {
 export function analyzeLeadResponse(
   calls: LeadCall[],
   opts: LeadResponseOptions,
+  nowMs: number = Date.now(),
 ): LeadResponseReport {
   const tz = opts.timeZone ?? DEFAULT_TZ;
+
+  // Lost = the shared missed-lead rule, over every call (outbound callbacks
+  // included, since an answered callback recovers the lead).
+  const missed = new Map(
+    missedLeads(
+      calls.filter((c) => c.start_time).map((c) => ({ ...c, start_time: c.start_time as string }) as CallStatsRow),
+      nowMs,
+    ).map((m) => [m.phone, m]),
+  );
 
   // Keep inbound calls with a usable phone + timestamp, sorted oldest→newest.
   const usable = calls
@@ -170,8 +182,8 @@ export function analyzeLeadResponse(
   for (const group of groups.values()) {
     totalLeads += 1;
     const first = group[0];
-    const firstStatus = statusOf(first);
-    const everConnected = group.some((c) => statusOf(c) === "Answered");
+    const firstStatus = statusOf(first, nowMs);
+    const everConnected = group.some((c) => statusOf(c, nowMs) === "Answered");
     const sourceKey = first.source_name?.trim() || "Unknown";
     const hour = localHour(first.start_time as string, tz);
 
@@ -185,28 +197,30 @@ export function analyzeLeadResponse(
     const hourBucket = byHour.get(hour)!;
     hourBucket.firstContacts += 1;
 
-    const firstContactMissed = firstStatus !== "Answered";
+    const firstContactMissed = firstStatus === "Missed" || firstStatus === "Voicemail";
+    const lostItem = missed.get(first.phone);
     if (firstContactMissed) {
       missedFirstContact += 1;
       src.missedFirstContact += 1;
       hourBucket.missed += 1;
-      if (everConnected) {
+      if (!lostItem) {
         recovered += 1;
         src.recovered += 1;
-      } else {
-        lost += 1;
-        src.lost += 1;
-        if (first.first_call === true) firstTimeCallerLost += 1;
-        if (isAfterHours(first.start_time as string, tz)) afterHoursLost += 1;
-        lostLeads.push({
-          phone: first.phone,
-          source: sourceKey,
-          firstContactAt: first.start_time as string,
-          firstContactStatus: firstStatus as "Missed" | "Voicemail",
-          firstTimeCaller: first.first_call === true,
-          attempts: group.length,
-        });
       }
+    }
+    if (lostItem) {
+      lost += 1;
+      src.lost += 1;
+      if (lostItem.firstTime) firstTimeCallerLost += 1;
+      if (isAfterHours(lostItem.lastTry, tz)) afterHoursLost += 1;
+      lostLeads.push({
+        phone: first.phone,
+        source: sourceKey,
+        firstContactAt: lostItem.lastTry,
+        firstContactStatus: lostItem.lastStatus,
+        firstTimeCaller: lostItem.firstTime,
+        attempts: lostItem.tries,
+      });
     }
 
     bySource.set(sourceKey, src);

@@ -110,7 +110,7 @@ function lockedElementsBlock(brief: OperatingBrief, web: boolean): string {
     web ? `- First line of every blog and web page: "${ATTORNEY_ADVERTISING_LABEL}"` : null,
     web ? `- Closing CTA, once, above the disclaimer: "${closingCta(brief.webPhone, brief.offerPhrase)}"` : null,
     web ? `- Closing disclaimer, the last paragraph, verbatim: "${GENERAL_LEGAL_DISCLAIMER_TEXT}"` : null,
-    `- Fee rule: content never says how Katz Melinger or any lawyer charges (contingency, hourly, flat fee, "no fee unless we win", what the reader will pay). The free consultation offer ("${brief.offerPhrase}", "free consultation") is allowed.`,
+    `- Fee rule: content never says how Katz Melinger or any lawyer charges (contingency, hourly, flat fee, "no fee unless we win", what the reader will pay). The only offer is "${brief.offerPhrase}", in the closing CTA; "free consultation" and what lawyers in general offer are not allowed (Kenneth, 2026-10-20).`,
     `- Phone numbers that must NEVER appear in content or in any recommendation you make: ${brief.neverInContentPhones.join(", ") || "(none)"}. The website number is ${brief.webPhone}.`,
     web
       ? "- The label, the CTA and the disclaimer are checked separately, word for word. Do not report them missing; report only a reworded or extra copy."
@@ -290,7 +290,7 @@ export function applyFirmRules(args: {
       h.subject === "firm"
         ? "This states how Katz Melinger charges. The firm is flat-fee and has never worked on contingency, so the claim is also inaccurate."
         : "Firm content never says how lawyers charge or what the reader will pay for representation, including statements about other lawyers.",
-    fix: "Delete the sentence. Do not replace it with another fee statement. Only the free consultation offer is permitted.",
+    fix: "Delete the sentence. Do not replace it with another fee statement. The only offer is the Free Confidential Case Evaluation in the closing CTA.",
   }));
 
   // Borderline hits (usually a passive construction with no clear subject) go
