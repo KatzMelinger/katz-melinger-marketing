@@ -20,7 +20,9 @@ export type ChangeSource =
   /** Sections copied in from a duplicate before it was archived (Appendix F). */
   | "duplicate merge"
   /** An attorney corrected this exact sentence before (lib/legal-learned.ts). */
-  | "attorney decision";
+  | "attorney decision"
+  /** Improve to Ready (Oct 20 spec, Task A9): a gap the system filled, with its data source. */
+  | "improvement";
 
 export type FixChange = {
   id: string;

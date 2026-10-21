@@ -18,6 +18,8 @@ import { spawn } from "node:child_process";
 
 const SUITE = [
   "check-oct20-regressions",
+  "check-source-check",
+  "check-improve-to-ready",
   "check-draft-frame",
   "check-draft-readiness",
   "check-known-traps-oct6",

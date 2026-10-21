@@ -39,6 +39,9 @@ import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
 import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
 import { ReadinessChecklist } from "@/components/readiness-checklist";
+import { SourcesPanel } from "@/components/sources-panel";
+import { ImprovementSummary } from "@/components/improvement-summary";
+import { readImprovement } from "@/lib/improve-to-ready-shared";
 import type { Readiness } from "@/lib/draft-readiness";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 import {
@@ -1427,6 +1430,20 @@ export function DraftDrawer({
               )}
             </div>
 
+            {draft && framedReadiness && (
+              // Oct 20 spec, Task A9: what Huraqan improved, and what needs a person.
+              <div className="mt-3">
+                <ImprovementSummary
+                  draftId={draft.id}
+                  improvement={readImprovement((draft as { metadata?: Record<string, unknown> }).metadata ?? null)}
+                  onDone={() => {
+                    void reloadDraft(draft.id);
+                    setFindingsNonce((n) => n + 1);
+                  }}
+                />
+              </div>
+            )}
+
             {/* 2.15 — review-panel tabs. Content is the compact default (draft +
                 basic SEO context + status); Legal/Findings/QA render nothing
                 until picked, so opening the drawer is never a scroll past
@@ -2282,6 +2299,12 @@ export function DraftDrawer({
                   onUnreviewed={setUnreviewedChanges}
                   onDraftChanged={() => void reloadDraft(draft.id)}
                 />
+                {framedReadiness && (
+                  // Oct 20 spec, Task A7: each legal claim, its source and the quoted passage.
+                  <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                    <SourcesPanel draftId={draft.id} nonce={findingsNonce} onChecked={() => void reloadDraft(draft.id)} />
+                  </div>
+                )}
               </div>
             )}
             {draft && (

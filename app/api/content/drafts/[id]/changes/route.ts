@@ -15,6 +15,8 @@ import { readFixLog, undoChange, unreviewedChanges } from "@/lib/legal-fix-log";
 import { clearTextCertifications } from "@/lib/draft-certifications";
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
+import { isFramedFormat } from "@/lib/draft-frame";
+import { frameDraft } from "@/lib/draft-frame-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("id, title, body, metadata")
+    .select("id, title, topic, body, format, practice_area, metadata")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -75,7 +77,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!res.ok) return NextResponse.json({ error: res.error }, { status: 409 });
 
     const changes = log.changes.map((c) => (c.id === change.id ? { ...c, undone_at: now, undone_by: user.email } : c));
-    const nextMeta = clearTextCertifications({ ...meta, legal_fix_log: { ...log, changes } }).meta;
+    let nextMeta = clearTextCertifications({ ...meta, legal_fix_log: { ...log, changes } }).meta;
+    // A website draft's article is stored apart from its body (Oct 20 spec,
+    // Task A1): an undone change must leave the stored article too, or the
+    // next rebuild would put it back.
+    if (isFramedFormat((draft.format as string | null) ?? null)) {
+      const framed = await frameDraft(tenantId, {
+        body: res.body,
+        title: res.title,
+        topic: (draft.topic as string | null) ?? null,
+        format: draft.format as string,
+        practice_area: (draft.practice_area as string | null) ?? null,
+        metadata: nextMeta,
+      });
+      if (framed) {
+        res.body = framed.body;
+        nextMeta = framed.metadata;
+      }
+    }
     const { error: upd } = await supabase
       .from("content_drafts")
       .update({ body: res.body, title: res.title, metadata: nextMeta, updated_at: now })

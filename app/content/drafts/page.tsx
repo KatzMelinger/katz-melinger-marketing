@@ -21,6 +21,9 @@ import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
 import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
 import { ReadinessChecklist } from "@/components/readiness-checklist";
+import { SourcesPanel } from "@/components/sources-panel";
+import { ImprovementSummary } from "@/components/improvement-summary";
+import { readImprovement } from "@/lib/improve-to-ready-shared";
 import type { Readiness } from "@/lib/draft-readiness";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
@@ -854,7 +857,21 @@ export default function DraftsPage() {
                   />
                 </div>
                 {readiness?.applicable && (
-                  <div className="mt-3">
+                  <div className="mt-3 space-y-3">
+                    <ImprovementSummary
+                      draftId={selectedDraft.id}
+                      improvement={readImprovement(selectedDraft.metadata as Record<string, unknown> | null)}
+                      onDone={() => {
+                        fetch(`/api/content/drafts/${selectedDraft.id}`, { cache: "no-store" })
+                          .then((r) => r.json())
+                          .then((data) => {
+                            setSelectedDraft(data.draft);
+                            setEditBody(data.draft?.body ?? "");
+                            setFindingsNonce((n) => n + 1);
+                          })
+                          .catch(() => {});
+                      }}
+                    />
                     <ReadinessChecklist readiness={readiness} />
                   </div>
                 )}
@@ -1015,6 +1032,22 @@ export default function DraftsPage() {
                   />
                 </div>
               </DashCard>
+
+              {readiness?.applicable && (
+                // Oct 20 spec, Task A7: each legal claim, its source and the quoted passage.
+                <DashCard>
+                  <SourcesPanel
+                    draftId={selectedDraft.id}
+                    nonce={findingsNonce}
+                    onChecked={() => {
+                      fetch(`/api/content/drafts/${selectedDraft.id}`, { cache: "no-store" })
+                        .then((r) => r.json())
+                        .then((data) => setSelectedDraft(data.draft))
+                        .catch(() => {});
+                    }}
+                  />
+                </DashCard>
+              )}
 
               {/* Section 9 — automatic rewrites of errors with a known answer,
                   each listed with its source and undoable on its own. */}

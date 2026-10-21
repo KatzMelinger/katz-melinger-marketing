@@ -15,7 +15,7 @@ export function draftPrimaryKeyword(meta: Meta | null | undefined): string | nul
   const kb = (m.km_brief as Meta | undefined) ?? {};
   const sb = (m.seo_brief as Meta | undefined) ?? {};
   const sel = (m.keyword_selection as { chosen?: { keyword?: unknown } } | undefined)?.chosen?.keyword;
-  for (const k of [m.primaryKeyword, kb.primaryKeyword, sb.primaryKeyword, sel]) {
+  for (const k of [m.primaryKeyword, m.primary_keyword, kb.primaryKeyword, sb.primaryKeyword, sel]) {
     if (typeof k === "string" && k.trim()) return k.trim();
   }
   return null;
