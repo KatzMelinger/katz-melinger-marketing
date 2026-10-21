@@ -100,8 +100,8 @@ const PRIMARY_HOSTS = [
  * Verbatim reproductions of official text that the knowledge base already
  * cites (13 thresholds on Cornell LII, NYC Administrative Code on American
  * Legal Publishing, the city's official publisher). Accepted and marked, so
- * the Sources panel shows they are not the official site; replacing them is
- * Kenneth's call (2026-10-21).
+ * the Sources panel shows they are not the official site. Kept as accepted
+ * reproductions (Kenneth, 2026-10-21).
  */
 const REPRODUCTION_HOSTS = ["law.cornell.edu", "codelibrary.amlegal.com"];
 
