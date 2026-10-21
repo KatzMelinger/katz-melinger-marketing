@@ -8,7 +8,10 @@ import { getSupabaseAdmin } from "./supabase-server";
 import { getOperatingBrief } from "./social-operating-brief";
 import { quoteStillPresent } from "./finding-currency";
 import { isReady, type Readiness, type ReadinessFinding } from "./draft-readiness";
-import { isFramedFormat } from "./draft-frame";
+import { isFramedFormat, readContent } from "./draft-frame";
+import { qualityForDraft, qualityNotes } from "./quality-checks";
+import { readQualitySerp } from "./quality-checks-serp";
+import { loadSourceCheckInputs } from "./source-check-server";
 import type { DraftForFrame } from "./draft-frame-server";
 
 export async function readinessFor(
@@ -18,7 +21,7 @@ export async function readinessFor(
   const out = new Map<string, Readiness>();
   const framed = drafts.filter((d) => isFramedFormat(d.format));
   if (framed.length === 0) return out;
-  const brief = await getOperatingBrief(tenantId);
+  const [brief, sources] = await Promise.all([getOperatingBrief(tenantId), loadSourceCheckInputs(tenantId).catch(() => undefined)]);
   const sb = getSupabaseAdmin();
   const byDraft = new Map<string, (ReadinessFinding & { draftId: string })[]>();
   const ids = framed.map((d) => d.id);
@@ -56,7 +59,10 @@ export async function readinessFor(
   }
   for (const d of framed) {
     const current = (byDraft.get(d.id) ?? []).filter((f) => quoteStillPresent(f, d.body ?? "") !== false);
-    out.set(d.id, isReady(d, brief, current));
+    // Task A8: the quality checks, information only until calibrated.
+    const content = readContent(d.metadata);
+    const quality = content ? qualityNotes([...qualityForDraft(d, content), ...(readQualitySerp(d.metadata)?.checks ?? [])]) : [];
+    out.set(d.id, isReady(d, brief, current, sources, quality));
   }
   return out;
 }

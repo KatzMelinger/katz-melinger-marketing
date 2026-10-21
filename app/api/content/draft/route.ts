@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { requestImproveToReady } from "@/lib/improve-trigger";
+import { isFramedFormat } from "@/lib/draft-frame";
 import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
 import { ANTI_AI_VOICE_RULES } from "@/lib/anti-ai-voice";
@@ -768,6 +770,8 @@ ${readabilityPromptBlock(
           }
         : {},
     );
+    // Oct 20 spec, Task A9: Improve to Ready runs on every new draft.
+    if (draftId && isFramedFormat(draftFormat)) after(() => requestImproveToReady(new URL(req.url).origin, draftId));
     scheduleDraftAnalysis({
       draftId,
       body,

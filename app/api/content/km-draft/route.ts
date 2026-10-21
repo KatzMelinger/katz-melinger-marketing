@@ -15,7 +15,9 @@
  * from the older free-form ones.
  */
 
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { requestImproveToReady } from "@/lib/improve-trigger";
+import { isFramedFormat } from "@/lib/draft-frame";
 import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
 import {
@@ -560,6 +562,8 @@ ${renderFirmFactsBlock()}`);
       // Task 15: the keyword decision, shown on the draft.
       ...(keywordSelection ? { keyword_selection: keywordSelection } : {}),
     });
+    // Oct 20 spec, Task A9: Improve to Ready runs on every new draft.
+    if (draftId && isFramedFormat(`km_${brief.contentType}`)) after(() => requestImproveToReady(new URL(req.url).origin, draftId));
 
     // Connection: advance the Production Board row this draft belongs to.
     // Without this, the board never learns a draft was created (draft_id stays

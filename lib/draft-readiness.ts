@@ -27,6 +27,10 @@ import { keywordProblem } from "./keyword-guard";
 import { internalLinks, MIN_INTERNAL_LINKS } from "./required-elements";
 import type { OperatingBrief } from "./social-operating-brief";
 import { REVIEW_AREA_LABEL } from "./legal-reviewers";
+import { readSourceCheck, sourceStatus } from "./source-check";
+import { sentenceKey } from "./legal-learned";
+import type { KbThresholdEntry } from "./legal-knowledge-base";
+import type { StatuteRow } from "./legal-statute-table";
 
 export type ReadinessKey = "frame" | "keyword" | "legal_facts" | "clearance" | "checks" | "fee" | "links" | "style" | "sources_quality";
 
@@ -61,7 +65,7 @@ export const READINESS_LABEL: Record<ReadinessKey, string> = {
   fee: "Fee rule",
   links: `At least ${MIN_INTERNAL_LINKS} internal links`,
   style: "Style: no em or en dashes, no emojis",
-  sources_quality: "Sources and SEO/AEO checks",
+  sources_quality: "Sources: every legal claim supported by its primary source or an attorney",
 };
 
 const DASH = /[–—]/;
@@ -72,7 +76,7 @@ function primaryKeyword(meta: Record<string, unknown>): string | null {
   const kb = (meta.km_brief as Record<string, unknown> | undefined) ?? {};
   const sb = (meta.seo_brief as Record<string, unknown> | undefined) ?? {};
   const sel = (meta.keyword_selection as { chosen?: { keyword?: unknown } } | undefined)?.chosen?.keyword;
-  for (const k of [meta.primaryKeyword, kb.primaryKeyword, sb.primaryKeyword, sel]) {
+  for (const k of [meta.primaryKeyword, meta.primary_keyword, kb.primaryKeyword, sb.primaryKeyword, sel]) {
     if (typeof k === "string" && k.trim()) return k.trim();
   }
   return null;
@@ -83,7 +87,17 @@ function quote(s: string | null, n = 110): string {
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 }
 
-export function isReady(d: DraftForFrame, brief: OperatingBrief, openFindings: ReadinessFinding[]): Readiness {
+/** What the source check needs (lib/source-check-server.ts loadSourceCheckInputs). */
+export type ReadinessSources = { thresholds: KbThresholdEntry[]; statutes: StatuteRow[]; approved: Set<string> };
+
+export function isReady(
+  d: DraftForFrame,
+  brief: OperatingBrief,
+  openFindings: ReadinessFinding[],
+  sources?: ReadinessSources,
+  /** Task A8 quality checks, one line each, information only. */
+  quality?: string[],
+): Readiness {
   if (!isFramedFormat(d.format)) return { applicable: false, ready: false, items: [], failing: [] };
   const meta = d.metadata ?? {};
   const body = d.body ?? "";
@@ -183,15 +197,44 @@ export function isReady(d: DraftForFrame, brief: OperatingBrief, openFindings: R
   if (emoji) styleReasons.push(`An emoji: ${emoji[0]}`);
   item("style", styleReasons);
 
-  // 9. Part 4 (Tasks A7, A8): shown, not active yet.
-  items.push({
-    key: "sources_quality",
-    label: READINESS_LABEL.sources_quality,
-    pass: true,
-    reasons: [],
-    pending: true,
-    notes: ["Not active yet: the source check (A7) and SEO/AEO checks (A8) come with Part 4."],
-  });
+  // 9. Sources (Task A7): every legal claim checked against its primary
+  // source on this version, and supported or answered by an attorney. The
+  // SEO/AEO quality checks (Task A8) are information until calibrated.
+  if (!sources || !content) {
+    items.push({
+      key: "sources_quality",
+      label: READINESS_LABEL.sources_quality,
+      pass: true,
+      reasons: [],
+      pending: true,
+      notes: ["The source check could not be loaded here."],
+    });
+  } else {
+    const st = sourceStatus(content, readSourceCheck(meta), sources.thresholds, sources.statutes, sources.approved, sentenceKey);
+    const reasons: string[] = [];
+    if (st.unchecked.length) {
+      reasons.push(
+        `${st.unchecked.length} legal claim${st.unchecked.length === 1 ? " is" : "s are"} not source-checked on this version. Press Improve to Ready (or Check sources).`,
+      );
+    }
+    for (const e of st.current.filter((x) => x.verdict === "contradicted").slice(0, 3)) {
+      reasons.push(`Contradicted by ${e.kb_label ?? "its source"}: "${quote(e.sentence, 90)}" (source: "${quote(e.quote, 90)}")`);
+    }
+    const open = st.current.filter((x) => x.verdict === "not_found" || x.verdict === "no_entry");
+    for (const e of open.slice(0, 3)) reasons.push(`Needs a decision from ${attorney ?? "the reviewing attorney"}: "${quote(e.sentence, 100)}"`);
+    if (open.length > 3) reasons.push(`and ${open.length - 3} more decisions`);
+    const supported = st.current.filter((x) => x.verdict === "supported" || x.verdict === "answered").length;
+    items.push({
+      key: "sources_quality",
+      label: READINESS_LABEL.sources_quality,
+      pass: reasons.length === 0,
+      reasons,
+      notes: [
+        `${supported} of ${st.claims} legal claim${st.claims === 1 ? "" : "s"} supported by a primary source or an attorney.`,
+        ...(quality?.length ? quality : ["SEO and AEO quality checks are shown as information until calibrated (Task A8)."]),
+      ],
+    });
+  }
 
   const failing = items.filter((i) => !i.pass).map((i) => i.key);
   return { applicable: true, ready: failing.length === 0, items, failing };

@@ -758,6 +758,36 @@ export async function getKeywordIdeas(seeds: string[], limit: number = 300): Pro
 }
 
 /**
+ * The first page for a keyword: the top ten organic results and the People
+ * Also Ask questions (Oct 20 spec, Task A8). The same cached call as
+ * getPeopleAlsoAsk, so asking for both costs one SERP request.
+ */
+export async function getSerpOverview(
+  keyword: string,
+): Promise<{ organic: { url: string; title: string; domain: string }[]; paa: string[] }> {
+  const json = await cachedDataForSeoPost("serp/google/organic/live/advanced", {
+    keyword,
+    location_code: DATAFORSEO_LOCATION_CODE,
+    language_code: DATAFORSEO_LANGUAGE_CODE,
+    depth: 10,
+  });
+  const organic: { url: string; title: string; domain: string }[] = [];
+  const paa: string[] = [];
+  for (const item of extractItems(json)) {
+    if (item?.type === "organic" && organic.length < 10 && item?.url) {
+      organic.push({ url: String(item.url), title: String(item?.title ?? ""), domain: String(item?.domain ?? "") });
+    }
+    if (item?.type === "people_also_ask") {
+      for (const q of Array.isArray(item?.items) ? item.items : []) {
+        const t = String(q?.title ?? "").trim();
+        if (t && !paa.includes(t)) paa.push(t);
+      }
+    }
+  }
+  return { organic, paa };
+}
+
+/**
  * "People also ask" questions on Google's first page for a keyword (Oct 6
  * spec, Task 18, question patterns). One SERP call, cached like the rest.
  */

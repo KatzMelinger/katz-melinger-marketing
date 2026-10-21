@@ -13,7 +13,9 @@
  * drawer's "Approve → Publish" still advances editorial status only.
  */
 
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { requestImproveToReady } from "@/lib/improve-trigger";
+import { isFramedFormat } from "@/lib/draft-frame";
 import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
 import {
@@ -474,6 +476,8 @@ export async function POST(req: Request) {
     );
   }
   const draftId = draftRow.id as string;
+  // Oct 20 spec, Task A9: Improve to Ready runs on every new draft.
+  if (draftId && isFramedFormat("km_page_update")) after(() => requestImproveToReady(new URL(req.url).origin, draftId));
 
   // 5. Surface on the Production Board — reuse the row for this URL if one
   //    already exists, otherwise create one at "draft".
