@@ -16,6 +16,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
 import {
   cachedSystemPrompt,
@@ -249,6 +250,13 @@ export async function POST(req: Request) {
     }
   }
 
+  // Oct 20 spec, Task A3: one live draft per primary keyword. Not
+  // overridable: the existing draft is opened and refreshed instead.
+  {
+    const live = await findLiveDraftFor({ tenantId: await resolveTenantId(), keyword: brief.primaryKeyword });
+    if (live) return NextResponse.json(liveDraftConflictBody(live), { status: 409 });
+  }
+
   // If this draft is being generated from a brief_suggestion, we'll advance the
   // matching Production Board row once the draft is saved (see linkPipelineDraft).
   const suggestionId =
@@ -356,7 +364,7 @@ export async function POST(req: Request) {
     `- Each section has a clear, scannable H2/H3 — no section is a wall of text.\n` +
     `- An FAQ section answers real search questions in a featured-snippet-friendly format.\n` +
     `- Statutes, deadlines, and figures are stated precisely or omitted — never guessed.\n` +
-    `- The piece reads in KM's brand voice and ends with a clear next step / CTA.`;
+    `- The piece reads in KM's brand voice and ends with a clear next step (the system adds the call to action itself).`;
 
   // Current verified statutory figures — inject so the draft uses correct,
   // dated values instead of guessing or repeating stale numbers. Read from the
@@ -535,6 +543,7 @@ ${renderFirmFactsBlock()}`);
       practiceArea: brief.practiceArea,
       format: `km_${brief.contentType}`,
       language,
+      pillarId: brief.pillarId ?? null,
     });
     text = grounded.body;
 
@@ -547,6 +556,7 @@ ${renderFirmFactsBlock()}`);
       structure_check: { missing: structureCheck.missing, passed: structureCheck.passed },
       freshness: { flags: freshnessFlags },
       ...(grounded.fixLog ? { legal_fix_log: grounded.fixLog } : {}),
+      ...(grounded.frameMeta ?? {}),
       // Task 15: the keyword decision, shown on the draft.
       ...(keywordSelection ? { keyword_selection: keywordSelection } : {}),
     });

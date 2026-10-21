@@ -137,6 +137,11 @@ export async function listApprovedWpContent(args: {
       );
       continue;
     }
+    // Oct 20 spec, Task A2: a byline still pending attorney review never goes live.
+    if (/^\s*[*_]*\s*(?:Pending attorney review|Pendiente de revisi[oó]n por abogado)\b/im.test((d.body as string | null) ?? "")) {
+      console.warn(`[wp-publish] ${d.id} is queued but its byline is still pending attorney review; not served.`);
+      continue;
+    }
 
     const seoBrief = (d.seo_brief as Record<string, unknown> | null) ?? null;
     const title = (d.title as string | null) ?? (d.topic as string | null) ?? "Untitled";

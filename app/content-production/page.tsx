@@ -61,6 +61,8 @@ type Item = {
   previousRank?: number | null;
   /** How the URL was resolved — "unmapped" means no live page was found. */
   urlSource?: "tracked" | "variant" | "unmapped";
+  /** The failing Ready items (Oct 20 spec, Task A4). */
+  notReady?: string[];
 };
 type Payload = {
   stages: Stage[];
@@ -1026,6 +1028,22 @@ function Card({
           </span>
         )}
       </div>
+      {item.notReady && item.notReady.length > 0 && (
+        // Oct 20 spec, Task A4: what still stands between this draft and Ready.
+        <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+            Not ready: {item.notReady.length}
+          </div>
+          <ul className="mt-0.5 space-y-0.5">
+            {item.notReady.slice(0, 3).map((r) => (
+              <li key={r} className="text-[11px] leading-snug text-amber-900 line-clamp-2">
+                {r}
+              </li>
+            ))}
+            {item.notReady.length > 3 && <li className="text-[11px] text-amber-700">and {item.notReady.length - 3} more</li>}
+          </ul>
+        </div>
+      )}
       {(onCreateBrief && item.source === "opportunity") || (onReview && item.source === "pipeline") ? (
         <div className="mt-2">
           {item.source === "opportunity" && onCreateBrief && (
@@ -1041,7 +1059,7 @@ function Card({
               onClick={() => onReview(item)}
               className="w-full rounded border border-brand px-2 py-1 text-[12px] font-medium text-brand hover:bg-brand/5"
             >
-              {item.stageKind === "approve" ? "Review → Publish →" : "Review draft →"}
+              {item.stageKind === "approve" || item.stageKind === "ready" ? "Review → Publish →" : "Review draft →"}
             </button>
           )}
         </div>

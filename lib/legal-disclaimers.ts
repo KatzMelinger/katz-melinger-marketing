@@ -237,12 +237,36 @@ const LEGACY_GENERAL_DISCLAIMERS = [
 export const RESULTS_DISCLAIMER =
   "Prior results do not guarantee a similar outcome. Results vary depending on your particular facts and legal circumstances.";
 
+/**
+ * The Spanish frame, approved by Kenneth on 2026-10-20 (Diana's Oct 20 spec,
+ * Task A13): his wording as counsel, reproduce verbatim. "Aviso Legal" links
+ * to the English disclaimer page until a Spanish one exists; the link is the
+ * brand setting `spanishDisclaimerUrl`, so swapping it is one edit.
+ */
+export const SPANISH_ATTORNEY_ADVERTISING_LABEL = "Publicidad de abogados";
+export const SPANISH_RESULTS_DISCLAIMER = "Los resultados anteriores no garantizan un resultado similar.";
+export function spanishGeneralDisclaimer(url: string = DISCLAIMER_URL): string {
+  return (
+    "Este artículo tiene fines informativos generales únicamente, no constituye asesoría legal y no crea una relación entre abogado y cliente. " +
+    `Para más información, consulte nuestro [Aviso Legal](${url}) completo.`
+  );
+}
+export function spanishClosingCta(phone: string, offerPhraseEs: string): string {
+  return `Llame hoy al ${phone} para una ${offerPhraseEs}.`;
+}
+
+/** "tel:+12124600047" for "212-460-0047" (US numbers). */
+export function telHref(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return `tel:+${digits.length === 10 ? `1${digits}` : digits}`;
+}
+
 export function hasAttorneyAdvertisingLabel(body: string): boolean {
   return body.toLowerCase().includes("attorney advertising");
 }
 
 /** Markdown emphasis and link syntax removed, whitespace collapsed, lowercased. */
-function plain(s: string): string {
+export function plain(s: string): string {
   return s
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/<[^>]+>/g, "")
@@ -301,8 +325,8 @@ export function looksLikeCaseResult(body: string): boolean {
 /* The ending normalizer (Oct 6 spec, Task 2)                                */
 /* ------------------------------------------------------------------------- */
 
-/** "Call today at" anywhere in a line. */
-const CTA_START = /\bcall\s+(?:us\s+)?today\s+at\b/i;
+/** "Call today at" (or the Spanish "Llame hoy al") anywhere in a line. */
+const CTA_START = /\bcall\s+(?:us\s+)?today\s+at\b|\bll[aá]me(?:nos)?\s+hoy\s+al\b/i;
 /** A short line that is an older CTA: "Call (212) 460-0047 for a ...". */
 const OLD_CTA_LINE = /^call\b[^.]{0,40}\(?\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}/;
 
@@ -311,9 +335,10 @@ const OLD_CTA_LINE = /^call\b[^.]{0,40}\(?\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}/;
  * reworded one, the site footer pasted into a body, or a short "not legal
  * advice" paragraph. Long prose that merely mentions legal advice is not.
  */
-function isDisclaimerLine(p: string): boolean {
+export function isDisclaimerLine(p: string): boolean {
   if (!p) return false;
   if (p.includes("general informational purposes only")) return true;
+  if (p.includes("fines informativos generales")) return true;
   if (LEGACY_GENERAL_DISCLAIMERS.map(plain).includes(p)) return true;
   return (
     p.length < 400 &&
@@ -339,7 +364,7 @@ export type EndingChange = {
  * Remove the CTA from one line and keep any other sentence on it. Returns ""
  * when nothing else was on the line.
  */
-function stripCtaFromLine(line: string): string {
+export function stripCtaFromLine(line: string): string {
   const p = plain(line);
   if (OLD_CTA_LINE.test(p) && p.length < 200) return "";
   const first = line.search(CTA_START);

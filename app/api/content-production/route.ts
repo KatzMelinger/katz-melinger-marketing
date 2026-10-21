@@ -25,6 +25,8 @@ import { guardUser } from "@/lib/supabase-route";
 import { getTenantDb } from "@/lib/tenant-db";
 import { semanticKey } from "@/lib/content-dedup";
 import { archivedDraftIds } from "@/lib/draft-archive";
+import { readinessFor } from "@/lib/draft-readiness-server";
+import type { Readiness } from "@/lib/draft-readiness";
 
 export const runtime = "nodejs";
 
@@ -95,11 +97,18 @@ export async function GET() {
     .select("workflow_stages, content_buckets, pillars")
     .maybeSingle();
 
-  const stages: Stage[] = (
+  const configured: Stage[] = (
     Array.isArray(settings?.workflow_stages) && settings.workflow_stages.length
       ? [...settings.workflow_stages].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       : DEFAULT_STAGES
   ).filter((s) => s.kind !== "brief"); // Brief column removed; brief items fold into Draft.
+  // Oct 20 spec, Task A4: "Ready for Diana" sits right after Approve and holds
+  // only drafts that pass every Ready item.
+  const stages: Stage[] = configured.some((s) => s.kind === "ready")
+    ? configured
+    : configured.flatMap((s) =>
+        s.kind === "approve" ? [s, { kind: "ready", label: "Ready for Diana", order: s.order + 0.5 }] : [s],
+      );
   const buckets = Array.isArray(settings?.content_buckets) ? settings.content_buckets : [];
   const pillars = Array.isArray(settings?.pillars)
     ? settings.pillars.map((p: { id: string; label: string }) => ({ id: p.id, label: p.label }))
@@ -165,11 +174,43 @@ export async function GET() {
      *              failure look identical to a keyword with nothing to do.
      */
     urlSource?: "tracked" | "variant" | "unmapped";
+    /** Oct 20 spec, Task A4: the failing Ready items, for a website draft at the Approve stage. */
+    notReady?: string[];
   };
   const items: Item[] = [];
 
   // Archived drafts never appear on the board (Oct 20 spec, Task A3).
   const archived = await archivedDraftIds(supabase, (pipe ?? []).map((p) => p.draft_id as string | null));
+
+  // Oct 20 spec, Task A4: drafts at the Approve stage that pass every Ready
+  // item go to "Ready for Diana"; every other one lists its failing items.
+  // The same isReady() the Approve route enforces.
+  const atApprove = (pipe ?? []).filter(
+    (p) => p.draft_id && !archived.has(p.draft_id as string) && PIPE_TO_STAGE[(p.status as string) ?? ""] === "approve",
+  );
+  const readinessById = new Map<string, Readiness>();
+  if (atApprove.length > 0) {
+    const ids = atApprove.map((p) => p.draft_id as string);
+    const { data: drafts } = await supabase
+      .from("content_drafts")
+      .select("id, body, title, topic, format, practice_area, metadata, status")
+      .in("id", ids);
+    const tenantId = supabase.tenantId;
+    const rows = (drafts ?? []).filter((d) => d.status === "review");
+    const r = await readinessFor(
+      tenantId,
+      rows.map((d) => ({
+        id: d.id as string,
+        body: (d.body as string | null) ?? "",
+        title: (d.title as string | null) ?? null,
+        topic: (d.topic as string | null) ?? null,
+        format: (d.format as string | null) ?? null,
+        practice_area: (d.practice_area as string | null) ?? null,
+        metadata: (d.metadata as Record<string, unknown> | null) ?? null,
+      })),
+    ).catch(() => new Map<string, Readiness>());
+    for (const [k, v] of r) readinessById.set(k, v);
+  }
 
   // Pipeline items: the production stages (brief → published).
   for (const p of pipe ?? []) {
@@ -180,10 +221,15 @@ export async function GET() {
       : note.startsWith("autonomous agent")
         ? "agent"
         : "manual";
+    const readiness = p.draft_id ? readinessById.get(p.draft_id as string) : undefined;
+    const baseStage = PIPE_TO_STAGE[(p.status as string) ?? "idea"] ?? "opportunity";
     items.push({
       id: p.id as string,
       title: (p.title as string) ?? (p.keywords as string) ?? "(untitled)",
-      stageKind: PIPE_TO_STAGE[(p.status as string) ?? "idea"] ?? "opportunity",
+      stageKind: baseStage === "approve" && readiness?.ready ? "ready" : baseStage,
+      ...(readiness && !readiness.ready
+        ? { notReady: readiness.items.filter((i) => !i.pass).map((i) => `${i.label}: ${i.reasons[0] ?? "fails"}`) }
+        : {}),
       tab: "new",
       source: "pipeline",
       pillarId: null,

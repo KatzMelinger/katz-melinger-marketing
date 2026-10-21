@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
 import { ANTI_AI_VOICE_RULES } from "@/lib/anti-ai-voice";
 import {
@@ -274,6 +275,12 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
+  }
+
+  // Oct 20 spec, Task A3: one live draft per primary keyword.
+  if (isWebContent && primaryKeyword) {
+    const live = await findLiveDraftFor({ tenantId: await resolveTenantId(), keyword: primaryKeyword });
+    if (live) return NextResponse.json(liveDraftConflictBody(live), { status: 409 });
   }
 
   if (isWebContent) {
@@ -722,6 +729,7 @@ ${readabilityPromptBlock(
     // Sept 28 spec section 5: correct what has one known answer before the
     // draft is saved, with every change logged in Changes made.
     let fixLog: Record<string, unknown> | null = null;
+    let frameMeta: Record<string, unknown> | null = null;
     if (isWebContent) {
       const grounded = await groundAndFix({
         tenantId: await resolveTenantId(),
@@ -731,9 +739,11 @@ ${readabilityPromptBlock(
         practiceArea,
         format: draftFormat,
         language: normalizeLanguage(o.language),
+        pillarId: kmBrief?.pillarId ?? null,
       });
       body = grounded.body;
       fixLog = grounded.fixLog;
+      frameMeta = grounded.frameMeta;
     }
     const draftId = await autosave(
       draftFormat,
@@ -742,6 +752,7 @@ ${readabilityPromptBlock(
       {
         ...(kmBrief ? { km_brief: kmBrief } : {}),
         ...(fixLog ? { legal_fix_log: fixLog } : {}),
+        ...(frameMeta ?? {}),
         ...(keywordSelection ? { keyword_selection: keywordSelection } : {}),
       },
       kmBrief

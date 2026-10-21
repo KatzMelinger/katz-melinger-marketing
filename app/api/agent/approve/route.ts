@@ -28,6 +28,8 @@ import { logEvent } from "@/lib/telemetry";
 import { analysisStaleness, type AnalysisFingerprint } from "@/lib/analysis-fingerprint";
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { notifyDraftBlocked, notifyLegalReview } from "@/lib/content-notifications";
+import { isFramedFormat } from "@/lib/draft-frame";
+import { readinessForDraft } from "@/lib/draft-readiness-server";
 import { runLegalCheck, runLegalFactChecks } from "@/lib/legal-verify";
 import { runTrapCheck } from "@/lib/trap-gate";
 import { runKbChecks } from "@/lib/legal-kb";
@@ -124,6 +126,32 @@ async function approveContent(
     );
   }
 
+  // Oct 20 spec, Task A4: one definition of Ready. A website draft is
+  // approved only when every checklist item passes; the response names each
+  // failing item, the same list the review screen and the board show.
+  if (isFramedFormat((draft.format as string | null) ?? null)) {
+    const readiness = await readinessForDraft(tenantId, {
+      id,
+      body: typeof draft.body === "string" ? draft.body : "",
+      title: (draft.title as string | null) ?? null,
+      topic: (draft.topic as string | null) ?? null,
+      format: (draft.format as string | null) ?? null,
+      practice_area: (draft.practice_area as string | null) ?? null,
+      metadata: (draft.metadata as Record<string, unknown> | null) ?? null,
+    });
+    if (readiness && !readiness.ready) {
+      const failing = readiness.items.filter((i) => !i.pass);
+      logEvent("approve_blocked_not_ready", { draftId: id, failing: readiness.failing });
+      return NextResponse.json(
+        {
+          error: `Not ready to publish: ${failing.map((i) => `${i.label} (${i.reasons[0] ?? "fails"})`).join("; ")}.`,
+          readiness,
+        },
+        { status: 422 },
+      );
+    }
+  }
+
   // Sept 28 spec, sections 6, 7 and 10.2: a blog or web page must carry its
   // title, H1, label, CTA, disclaimer and three internal links, and no
   // placeholder or pasted schema code, before it can be approved. Checked
@@ -160,6 +188,7 @@ async function approveContent(
       title: (draft.title as string | null) ?? null,
       cta: await closingCtaFor(tenantId),
       neverInContentPhones: (await getOperatingBrief(tenantId)).neverInContentPhones,
+      format: (draft.format as string | null) ?? null,
     });
     if (missing.length > 0) {
       logEvent("approve_blocked_required_elements", { draftId: id, missing: missing.map((m) => m.code) });

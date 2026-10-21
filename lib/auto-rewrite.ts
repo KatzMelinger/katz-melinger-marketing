@@ -48,6 +48,12 @@ export type RewriteInput = {
   format?: string | null;
   /** metadata.language; "es" leaves the ending alone (no approved Spanish CTA yet). */
   language?: string | null;
+  /**
+   * The draft is a website draft in the Oct 20 frame (lib/draft-frame.ts): the
+   * label, byline, CTA and disclaimer are the frame's, so the byline and
+   * ending steps here are skipped and the caller re-frames afterwards.
+   */
+  framed?: boolean;
   cta: { phone: string; offerPhrase: string };
   /** Knowledge base findings from runLegalFactChecks (constant_mismatch etc.). */
   kbFindings?: NormalizedFinding[];
@@ -262,8 +268,8 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
     }
   }
 
-  // 4. Author byline.
-  const expected = expectedAuthor(ctx);
+  // 4. Author byline (a framed draft's byline is the frame's, Task A2).
+  const expected = input.framed ? null : expectedAuthor(ctx);
   if (expected) {
     const byline = bylineFor(expected);
     const m = ed.body.match(/^\s*[*_]*\s*By\s+\[?[A-Z][^\n]*$/m);
@@ -419,7 +425,9 @@ export async function autoRewrite(input: RewriteInput): Promise<RewriteResult> {
   // 10. The ending last, so the CTA and disclaimer close the page. The
   //     normalizer removes every CTA, disclaimer and label wherever it sits
   //     and adds back exactly one of each (Oct 6 spec, Task 2).
-  const ending = normalizeEnding(ed.body, { cta: input.cta, language: input.language });
+  const ending = input.framed
+    ? { body: ed.body, changes: [] as ReturnType<typeof normalizeEnding>["changes"] }
+    : normalizeEnding(ed.body, { cta: input.cta, language: input.language });
   if (ending.changes.length > 0) {
     ed.body = ending.body;
     for (const c of ending.changes) {

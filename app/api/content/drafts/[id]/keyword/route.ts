@@ -18,6 +18,7 @@ import { keywordProblem } from "@/lib/keyword-guard";
 import { selectKeyword } from "@/lib/keyword-selection-data";
 import { getCurrentUser } from "@/lib/supabase-route";
 import { getTenantClient } from "@/lib/tenant-db";
+import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,6 +69,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const keyword = input.keyword.trim().toLowerCase();
   const problem = keywordProblem(keyword);
   if (!keyword || problem) return NextResponse.json({ error: `Not a search keyword: ${problem ?? "empty"}.` }, { status: 400 });
+  // Oct 20 spec, Task A3: one live draft per primary keyword.
+  const live = await findLiveDraftFor({ tenantId, keyword, excludeId: id });
+  if (live) return NextResponse.json(liveDraftConflictBody(live), { status: 409 });
 
   const km = { ...((meta.km_brief as Obj | null) ?? {}) };
   if (Object.keys(km).length) {

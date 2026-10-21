@@ -22,6 +22,9 @@ import { clearTextCertifications } from "./draft-certifications";
 import { recordAuditEvent } from "./content-findings-store";
 import { hasWebPage } from "./draft-metadata";
 import { learnedCorrections, loadLearned } from "./legal-learned";
+import { isFramedFormat, readContent } from "./draft-frame";
+import { frameDraftWith, rebuildChange } from "./draft-frame-server";
+import { getOperatingBrief } from "./social-operating-brief";
 
 export const REWRITE_FORMATS = new Set(["blog", "km_blog_post", "km_page_update", "km_practice_page"]);
 
@@ -72,12 +75,14 @@ export async function fixDraft(args: {
   }
 
   const body = (draft.body as string | null) ?? "";
-  const [kbFindings, statutes, cta, traps, learned] = await Promise.all([
+  const framedFormat = isFramedFormat(format);
+  const [kbFindings, statutes, cta, traps, learned, brief] = await Promise.all([
     runLegalFactChecks(body, { tenantId: args.tenantId }).catch(() => []),
     loadStatuteTable(args.tenantId),
     closingCtaFor(args.tenantId),
     loadEnabledTraps(args.tenantId),
     loadLearned(args.tenantId),
+    getOperatingBrief(args.tenantId),
   ]);
 
   const result = await autoRewrite({
@@ -98,7 +103,29 @@ export async function fixDraft(args: {
     },
     noModel: args.noModel,
     learnedCorrections: learnedCorrections(learned),
+    framed: framedFormat,
   });
+
+  // Oct 20 spec, Task A1: a website draft leaves in its frame. Its first
+  // framing is one "Changes made" entry listing what was removed.
+  const storedMeta = (draft.metadata as Record<string, unknown> | null) ?? {};
+  const framed = framedFormat
+    ? frameDraftWith(
+        {
+          body: result.body,
+          title: result.title,
+          topic: (draft.topic as string | null) ?? null,
+          format,
+          practice_area: (draft.practice_area as string | null) ?? null,
+          metadata: storedMeta,
+        },
+        brief,
+      )
+    : null;
+  if (framed && framed.body !== result.body && !readContent(storedMeta)) {
+    result.changes.push(rebuildChange(result.body, framed.body, framed.removed));
+  }
+  const nextBody = framed?.body ?? result.body;
 
   const outcome: FixDraftOutcome = {
     ...base,
@@ -108,22 +135,21 @@ export async function fixDraft(args: {
     result,
   };
   if (args.dryRun) return outcome;
-  if (result.changes.length === 0 && !result.fullRedraft) return outcome;
+  if (result.changes.length === 0 && !result.fullRedraft && nextBody === body) return outcome;
 
-  const storedMeta = (draft.metadata as Record<string, unknown> | null) ?? {};
   const log = appendRun(readFixLog(storedMeta), {
     previousTitle: (draft.title as string | null) ?? null,
     previousBody: body,
     changes: result.changes,
     fullRedraft: result.fullRedraft,
   });
-  let meta: Record<string, unknown> = { ...storedMeta, legal_fix_log: log };
+  let meta: Record<string, unknown> = { ...(framed?.metadata ?? storedMeta), legal_fix_log: log };
   if (result.changes.length > 0) meta = clearTextCertifications(meta).meta;
 
   const { error: upd } = await sb
     .from("content_drafts")
     .update({
-      body: result.body,
+      body: nextBody,
       title: result.title,
       metadata: meta,
       updated_at: new Date().toISOString(),

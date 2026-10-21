@@ -111,8 +111,11 @@ export function firmFactFindings(body: string, ctx: Ctx = {}): NormalizedFinding
     }
   }
 
-  // Author byline by practice area.
-  const expected = expectedAuthor(ctx);
+  // Author byline by practice area. A framed draft's byline is the frame's
+  // ("Pending attorney review: ..." / "Reviewed by ..., Esq.", Oct 20 spec,
+  // Task A2), chosen by the same practice-area rule, so it is not re-checked.
+  const framedByline = /^\s*[*_]*\s*(?:Pending attorney review:|Reviewed by\s)/m.test(body);
+  const expected = framedByline ? null : expectedAuthor(ctx);
   if (expected) {
     const m = body.match(BYLINE_RE);
     if (m) {

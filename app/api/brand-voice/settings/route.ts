@@ -13,13 +13,16 @@
  * brand constant can be restored from Rules history.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { FRAME_SETTING_KEYS, reassembleOpenDrafts } from "@/lib/draft-frame-server";
 import { IDENTITY_TO_COLUMN } from "@/lib/brand-settings";
 import { recordRuleChange } from "@/lib/rule-changes";
 import { getCurrentUser, guardUser } from "@/lib/supabase-route";
 import { getTenantClient, getTenantDb } from "@/lib/tenant-db";
 
 export const runtime = "nodejs";
+// Saving a frame setting re-assembles every open website draft in after().
+export const maxDuration = 120;
 
 const MAX_VALUE_LENGTH = 40000;
 
@@ -128,9 +131,11 @@ export async function PUT(req: NextRequest) {
     }
 
     const { tenantId } = await getTenantClient();
+    let frameChanged = false;
     for (const r of rows) {
       const old = before.get(r.key);
       if (old === r.value || (old === undefined && r.value === "")) continue;
+      if (FRAME_SETTING_KEYS.has(r.key)) frameChanged = true;
       await recordRuleChange(tenantId, {
         kind: "brand",
         ref: r.key,
@@ -158,6 +163,16 @@ export async function PUT(req: NextRequest) {
         // Non-fatal: brand_voice_settings already saved. Log and continue.
         console.error("[brand-voice/settings PUT] tenant_settings sync failed:", tsError.message);
       }
+    }
+
+    // Oct 20 spec, Task A1: the phone, offer phrase, Spanish disclaimer link
+    // and reviewers feed the frame of every open website draft, so a change
+    // re-assembles them now, without a rescan.
+    if (frameChanged) {
+      after(async () => {
+        const r = await reassembleOpenDrafts(tenantId);
+        if (r.errors.length) console.error("[brand-voice/settings] reassemble:", r.errors.slice(0, 5).join("; "));
+      });
     }
 
     // Return the full updated set so the client can swap state in one go.

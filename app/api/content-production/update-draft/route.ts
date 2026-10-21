@@ -14,6 +14,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
 import {
   cachedSystemPrompt,
@@ -96,6 +97,13 @@ export async function POST(req: Request) {
   const supabase = getSupabaseServer();
   if (!supabase) {
     return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
+  }
+
+  // Oct 20 spec, Task A3: one live draft per target URL. A second Redraft of
+  // the same page used to create a second draft and repoint the board row.
+  {
+    const live = await findLiveDraftFor({ tenantId, targetUrl: url });
+    if (live) return NextResponse.json(liveDraftConflictBody(live), { status: 409 });
   }
 
   // 1. What's live today — the thing we're updating, not replacing blind. We
@@ -217,7 +225,8 @@ export async function POST(req: Request) {
     `\n\n${renderAuthorDirective(contentAuthor)}` +
     keywordBlock +
     linkBlock +
-    `\n\nOutput: the full updated page in Markdown only. Start with the H1.`;
+    `\n\nDo not write a disclaimer, call to action, phone number, byline, author section, contact details or SEO notes (keywords, meta title, meta description, slug, search intent). The system adds them (Oct 20 spec, Task A1).` +
+    `\n\nOutput: the full updated page in Markdown only. Start with the H1, then one bold paragraph of 60 words or fewer that answers the H1 question.`;
 
   const tenantConfig = await getTenantConfig(tenantId);
 
@@ -340,6 +349,7 @@ export async function POST(req: Request) {
     topic: title || url,
     practiceArea,
     format: "km_page_update",
+    pillarId: pillarId || null,
   });
   updatedBody = grounded.body;
 
@@ -402,6 +412,7 @@ export async function POST(req: Request) {
         origin_source: "page_update",
         source_url: url,
         ...(grounded.fixLog ? { legal_fix_log: grounded.fixLog } : {}),
+        ...(grounded.frameMeta ?? {}),
         update_keywords: keywords,
         update_target_url: url,
         ...(body.keywordSelection && typeof body.keywordSelection === "object" ? { keyword_selection: body.keywordSelection } : {}),

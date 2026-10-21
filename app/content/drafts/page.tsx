@@ -20,6 +20,8 @@ import {
 import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
 import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
+import { ReadinessChecklist } from "@/components/readiness-checklist";
+import type { Readiness } from "@/lib/draft-readiness";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import { DRAFT_STATUSES, type DraftStatus } from "@/lib/content-status";
@@ -288,6 +290,8 @@ export default function DraftsPage() {
   const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
   const [composing, setComposing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  // Oct 20 spec, Task A4: the Ready checklist, the same one Approve enforces.
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
   // Whether `analysis` still measures the current body under the current
   // engine. Server-computed, so this screen and the approval gate agree.
   const [staleness, setStaleness] = useState<{ stale: boolean; message: string } | null>(null);
@@ -428,6 +432,25 @@ export default function DraftsPage() {
         setEditBody(data.draft?.body ?? "");
       });
   }, [selectedId]);
+
+  const readinessKey = `${selectedDraft?.id ?? ""}|${selectedDraft?.body?.length ?? 0}|${selectedDraft?.body?.slice(-200) ?? ""}|${
+    ((selectedDraft?.metadata as { review?: { cleared_at?: string } } | null)?.review?.cleared_at) ?? ""
+  }|${findingsCounts.total}|${findingsCounts.critical}`;
+  useEffect(() => {
+    if (!selectedDraft?.id) {
+      setReadiness(null);
+      return;
+    }
+    let live = true;
+    fetch(`/api/content/drafts/${selectedDraft.id}/readiness`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => live && setReadiness((j?.readiness as Readiness | null) ?? null))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readinessKey]);
 
   const filtered = useMemo(() => {
     // Website = imported "blog"-format drafts + KM-generated km_* formats,
@@ -830,6 +853,11 @@ export default function DraftsPage() {
                     }}
                   />
                 </div>
+                {readiness?.applicable && (
+                  <div className="mt-3">
+                    <ReadinessChecklist readiness={readiness} />
+                  </div>
+                )}
                 {findingsCounts.critical > 0 && (
                   <div className="mt-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2">
                     <div className="text-sm font-semibold text-rose-900">

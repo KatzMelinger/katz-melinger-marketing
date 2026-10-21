@@ -29,6 +29,11 @@ import { getTenantClient } from "@/lib/tenant-db";
 import { DRAFT_CERTIFICATION_KEYS } from "@/lib/draft-certifications";
 import { readFixLog, unreviewedChanges } from "@/lib/legal-fix-log";
 import { openCriticalFindings, recordAuditEvent } from "@/lib/content-findings-store";
+import { canClearLegalHold } from "@/lib/legal-reviewers";
+import { AUTHORS } from "@/lib/authors";
+import { isFramedFormat } from "@/lib/draft-frame";
+import { frameDraft, reviewAreaForDraft, type DraftReview } from "@/lib/draft-frame-server";
+import { getOperatingBrief } from "@/lib/social-operating-brief";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,11 +82,21 @@ export async function POST(
 
   const { data: draft, error } = await supabase
     .from("content_drafts")
-    .select("id, metadata")
+    .select("id, metadata, body, title, topic, format, practice_area")
     .eq("id", id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!draft) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Oct 20 spec, Task A2: legal review is the attorney's clearance, and it
+  // puts their name on the page ("Reviewed by ..., Esq."). Only the three
+  // reviewing attorneys may give it (any of them, as backup for each other).
+  if (key === "legal_review" && value && !canClearLegalHold(user.email ?? "")) {
+    return NextResponse.json(
+      { error: "Only a reviewing attorney (Nicole Grunfeld, Adam Sackowitz or Kenneth Katz) can clear legal review." },
+      { status: 403 },
+    );
+  }
 
   // Refuse the legal tick while the automated compliance check is failing. Read
   // from the stored analysis rather than re-running the gate: this is a click,
@@ -152,9 +167,59 @@ export async function POST(
     delete certifications[key];
   }
 
+  // The clearance record and the byline (Task A2). A website draft is
+  // re-assembled from its stored article, so only the byline line changes.
+  let nextMeta: Record<string, unknown> = { ...metadata, certifications };
+  let nextBody: string | null = null;
+  if (key === "legal_review" && isFramedFormat((draft.format as string | null) ?? null)) {
+    if (value) {
+      const brief = await getOperatingBrief(tenantId);
+      const area = reviewAreaForDraft({
+        title: (draft.title as string | null) ?? null,
+        topic: (draft.topic as string | null) ?? null,
+        practice_area: (draft.practice_area as string | null) ?? null,
+        metadata,
+      });
+      const author = AUTHORS.find((a) => a.email?.trim().toLowerCase() === (user.email ?? "").trim().toLowerCase());
+      const assigned = area ? brief.reviewersByPractice[area] : null;
+      const shortName = author ? author.name.replace(/\s+[A-Z]\.\s+/, " ") : (user.email ?? "");
+      // The byline names the attorney who actually cleared it; the Brand
+      // settings entry supplies the bio link when that is the assigned one.
+      const useAssigned = !!assigned && assigned.name.toLowerCase() === shortName.toLowerCase();
+      const review: DraftReview = {
+        attorney: useAssigned ? assigned!.name : shortName,
+        bio_url: useAssigned ? assigned!.bio_url : (author?.bioPageUrl ?? null),
+        area,
+        cleared_at: new Date().toISOString(),
+        cleared_by_user: user.email ?? "",
+      };
+      nextMeta = { ...nextMeta, review };
+    } else {
+      const { review: _dropped, ...rest } = nextMeta;
+      void _dropped;
+      nextMeta = rest;
+    }
+    const framed = await frameDraft(
+      tenantId,
+      {
+        body: (draft.body as string | null) ?? "",
+        title: (draft.title as string | null) ?? null,
+        topic: (draft.topic as string | null) ?? null,
+        format: (draft.format as string | null) ?? null,
+        practice_area: (draft.practice_area as string | null) ?? null,
+        metadata: nextMeta,
+      },
+      { fromContent: true },
+    );
+    if (framed) {
+      nextMeta = framed.metadata;
+      nextBody = framed.body;
+    }
+  }
+
   const { error: updateError } = await supabase
     .from("content_drafts")
-    .update({ metadata: { ...metadata, certifications } })
+    .update({ metadata: nextMeta, ...(nextBody !== null && nextBody !== draft.body ? { body: nextBody } : {}) })
     .eq("id", id)
     .eq("tenant_id", tenantId);
   if (updateError) {
@@ -170,5 +235,5 @@ export async function POST(
     detail: { key },
   });
 
-  return NextResponse.json({ id, certifications });
+  return NextResponse.json({ id, certifications, review: nextMeta.review ?? null, bodyChanged: nextBody !== null && nextBody !== draft.body });
 }

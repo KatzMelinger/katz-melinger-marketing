@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev",
-    "build": "cross-env NODE_OPTIONS=--max-old-space-size=6144 next build",
+    "build": "npm run test:regression && cross-env NODE_OPTIONS=--max-old-space-size=6144 next build",
     "build:low-mem": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next build",
     "start": "node scripts/start-server.js",
     "lint": "eslint",
-    "eval:legal": "node scripts/run.mjs scripts/eval-legal-layer.ts"
+    "eval:legal": "node scripts/run.mjs scripts/eval-legal-layer.ts",
+    "test:regression": "node scripts/run.mjs scripts/regression.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
