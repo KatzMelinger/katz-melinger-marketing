@@ -76,23 +76,30 @@ const { data: rows, error: rowsErr } = await sb.from("content_known_traps").sele
 if (rowsErr) throw new Error(rowsErr.message);
 const byLabel = (label: string) => (rows ?? []).find((r) => String(r.label).toLowerCase() === label.toLowerCase());
 
-// 1. Trap 27 / 27es.
-for (const n of ["27", "27es"]) {
+// 1. Traps whose source changed on 2026-10-20: 27 / 27es (free consultation
+//    banned), 20 (the FDCPA acronym, Task A6), 31 (the frame's byline, Task A2).
+const WHY: Record<string, string> = {
+  "27": "free consultation banned",
+  "27es": "consulta gratuita banned",
+  "20": "matches the FDCPA acronym too",
+  "31": "accepts the Pending attorney review / Reviewed by byline",
+};
+for (const n of ["27", "27es", "20", "31"]) {
   const t = OCT6_TRAPS.find((x) => x.number === n)!;
   const row = byLabel(t.label);
   if (!row) {
     console.log(`!! trap ${n} "${t.label}" not found`);
     continue;
   }
-  if (row.pattern === t.pattern && row.note === t.note) {
+  if (row.pattern === t.pattern && row.note === t.note && row.match_type === t.matchType) {
     console.log(`=  trap ${n} already current`);
     continue;
   }
-  console.log(`~  trap ${n}: pattern and note updated (free consultation banned)`);
+  console.log(`~  trap ${n}: updated (${WHY[n]})`);
   if (apply) {
     const { data, error } = await sb
       .from("content_known_traps")
-      .update({ pattern: t.pattern, note: t.note, updated_at: now() })
+      .update({ pattern: t.pattern, note: t.note, match_type: t.matchType, unless: t.unless, updated_at: now() })
       .eq("id", row.id)
       .select()
       .maybeSingle();

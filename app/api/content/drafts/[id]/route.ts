@@ -17,6 +17,9 @@ import { getReadabilityConfig } from "@/lib/readability-config-store";
 import { clearTextCertifications, dequeueWp, mergeClientMetadata } from "@/lib/draft-certifications";
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { getCurrentUser } from "@/lib/supabase-route";
+import { isFramedFormat } from "@/lib/draft-frame";
+import { frameDraft } from "@/lib/draft-frame-server";
+import { readinessForDraft } from "@/lib/draft-readiness-server";
 
 export const runtime = "nodejs";
 
@@ -62,10 +65,25 @@ export async function GET(
     recheckInBackground(id, draftBody, data as Record<string, unknown>, tenantId);
   }
 
+  // Oct 20 spec, Task A4: the Ready checklist, the same one Approve enforces.
+  const d = data as Record<string, unknown>;
+  const readiness = isFramedFormat((d.format as string | null) ?? null)
+    ? await readinessForDraft(tenantId, {
+        id,
+        body: draftBody,
+        title: (d.title as string | null) ?? null,
+        topic: (d.topic as string | null) ?? null,
+        format: (d.format as string | null) ?? null,
+        practice_area: (d.practice_area as string | null) ?? null,
+        metadata: (d.metadata as Record<string, unknown> | null) ?? null,
+      }).catch(() => null)
+    : null;
+
   return NextResponse.json({
     draft: data,
     latest_analysis: latest,
     analysis_staleness: staleness,
+    readiness,
   });
 }
 
@@ -132,12 +150,16 @@ export async function PATCH(
 
   const { data: existing, error: readError } = await supabase
     .from("content_drafts")
-    .select("metadata, body, title, status")
+    .select("metadata, body, title, status, format, topic, practice_area")
     .eq("id", id)
     .maybeSingle();
   if (readError) return NextResponse.json({ error: readError.message }, { status: 500 });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const storedMeta = (existing.metadata as Record<string, unknown> | null) ?? {};
+  // Archived drafts are read only (Oct 20 spec, Task A3); Restore is the way back.
+  if (existing.status === "archived" && ("body" in (body ?? {}) || "title" in (body ?? {}) || "status" in (body ?? {}))) {
+    return NextResponse.json({ error: "This draft is archived and read only. Restore it first." }, { status: 409 });
+  }
 
   // wp_publish and certifications are server-owned (publish / certify routes).
   // A client metadata write keeps the stored values, so a PATCH can neither
@@ -148,6 +170,36 @@ export async function PATCH(
       : storedMeta;
   let metaChanged = "metadata" in (body ?? {});
   const events: Array<{ event: string; detail: Record<string, unknown> }> = [];
+
+  // Oct 20 spec, Task A1: an edited website draft is put back in its frame.
+  // The article is read out of the edited body and the label, byline, CTA and
+  // disclaimer are rebuilt from Brand settings, so an edit can change the
+  // article but never the frame.
+  if (typeof body?.body === "string" && body.body !== existing.body && isFramedFormat(existing.format as string | null)) {
+    const input = {
+      body: body.body,
+      title: typeof body.title === "string" ? body.title : ((existing.title as string | null) ?? null),
+      topic: (existing.topic as string | null) ?? null,
+      format: existing.format as string | null,
+      practice_area: (existing.practice_area as string | null) ?? null,
+      metadata: meta,
+    };
+    let framed = await frameDraft(tenantId, input);
+    // A real edit to the article ends the attorney's clearance (Task A2): the
+    // byline goes back to "Pending attorney review". An edit that only touched
+    // frame lines reframes to the stored body and keeps it.
+    if (framed && framed.body !== existing.body && meta.review) {
+      const { review: _cleared, ...rest } = meta;
+      void _cleared;
+      framed = await frameDraft(tenantId, { ...input, metadata: rest });
+    }
+    if (framed) {
+      body.body = framed.body;
+      patch.body = framed.body;
+      meta = framed.metadata;
+      metaChanged = true;
+    }
+  }
 
   const textChanged =
     (typeof body?.body === "string" && body.body !== existing.body) ||

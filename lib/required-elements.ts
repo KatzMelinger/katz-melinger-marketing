@@ -24,6 +24,7 @@ import {
   hasGeneralLegalDisclaimer,
   plainText,
 } from "./legal-disclaimers";
+import { frameCtaLine } from "./draft-frame";
 import { findNeverInContentPhones } from "./social-operating-brief";
 import { fingerprintFinding, type NormalizedFinding } from "./content-findings";
 
@@ -103,6 +104,8 @@ export function checkRequiredElements(args: {
   cta: { phone: string; offerPhrase: string };
   /** Numbers never printed in content (brand settings); any one is a blocker. */
   neverInContentPhones?: string[];
+  /** km_practice_page carries up to three frame CTAs (Kenneth, 2026-10-20). */
+  format?: string | null;
 }): MissingElement[] {
   const { body, title, cta } = args;
   const missing: MissingElement[] = [];
@@ -121,18 +124,21 @@ export function checkRequiredElements(args: {
   }
   const ctaCount = countClosingCtas(body);
   const ctaLine = `**${closingCta(cta.phone, cta.offerPhrase)}**`;
+  // The frame's CTA links the number (Oct 20 spec, Part 2 item 10); both are the locked wording.
+  const framedCta = frameCtaLine({ language: "en", phone: cta.phone, offerPhrase: cta.offerPhrase, offerPhraseEs: "" });
+  const maxCtas = args.format === "km_practice_page" ? 3 : 1;
   if (!hasClosingCta(body, cta.phone, cta.offerPhrase)) {
     missing.push({
       code: "cta",
       label: `Closing CTA is missing ("Call today at ${cta.phone} for a ${cta.offerPhrase}.")`,
       autoFixable: true,
     });
-  } else if (ctaCount !== 1 || !body.split("\n").some((l) => l.trim() === ctaLine)) {
+  } else if (ctaCount < 1 || ctaCount > maxCtas || !body.split("\n").some((l) => l.trim() === ctaLine || l.trim() === framedCta)) {
     missing.push({
       code: "cta_count",
       label:
-        ctaCount > 1
-          ? `The body has ${ctaCount} closing CTAs; it must have exactly one, in the locked wording`
+        ctaCount > maxCtas
+          ? `The body has ${ctaCount} closing CTAs; it must have ${maxCtas === 1 ? "exactly one" : `at most ${maxCtas}`}, in the locked wording`
           : "The closing CTA is not in the locked wording",
       autoFixable: true,
     });

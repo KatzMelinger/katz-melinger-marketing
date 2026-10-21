@@ -334,7 +334,7 @@ export const KM_STRUCTURES: {
     { n: "12", heading: "How Your Case or Matter Gets Handled" },
     { n: "13", heading: "Why Katz Melinger" },
     { n: "14", heading: "FAQ (6-8 questions)" },
-    { n: "15", heading: "Closing CTA" },
+    { n: "15", heading: "Next step" },
   ],
   blog_post_employment: [
     { n: "01", heading: "Scenario" },
@@ -348,7 +348,7 @@ export const KM_STRUCTURES: {
     { n: "09", heading: "How Long They Have to Act" },
     { n: "10", heading: "FAQ (5-7 questions)" },
     { n: "11", heading: "Conclusion" },
-    { n: "12", heading: "CTA (links to pillar page)" },
+    { n: "12", heading: "Next step (links to pillar page)" },
   ],
   blog_post_collections: [
     { n: "01", heading: "The Business Problem" },
@@ -362,7 +362,7 @@ export const KM_STRUCTURES: {
     { n: "09", heading: "When to Call a Lawyer" },
     { n: "10", heading: "FAQ (5-7 questions)" },
     { n: "11", heading: "Conclusion" },
-    { n: "12", heading: "CTA (links to collections pillar)" },
+    { n: "12", heading: "Next step (links to collections pillar)" },
   ],
   case_result: [
     { n: "01", heading: "Situation" },
@@ -372,7 +372,7 @@ export const KM_STRUCTURES: {
     { n: "05", heading: "Outcome" },
     { n: "06", heading: "What This Means" },
     { n: "07", heading: "FAQ (3-5 questions)" },
-    { n: "08", heading: "CTA (links to pillar page)" },
+    { n: "08", heading: "Next step (links to pillar page)" },
   ],
 };
 
@@ -553,8 +553,8 @@ You write exclusively for the employee side of employment law. Katz Melinger doe
 
 Firm name: Katz Melinger PLLC
 Website: www.katzmelinger.com
-Phone: 212-460-0047 — use this exact number in body copy and CTAs. Never 646-849-3352,
-646-692-0511 or the social line 646-466-6267. A draft carrying any other number is held at approval.
+Phone: never write a phone number in the article. The system adds the call to action, with the
+number, from Brand settings (Oct 20 spec, Task A1).
 Location: New York City
 Geographic reach: All five NYC boroughs, Westchester, Long Island, northern New Jersey
 Practice areas: Employment Law + Commercial Collections and Judgment Enforcement
@@ -663,21 +663,21 @@ WHY: The correct version gives specific, verifiable facts.
 
 7. Practice Page Structure (15 sections; use when content type = Practice Page)
 
-01 Page Setup — confirm primary keyword, URL slug, meta title, meta description, cannibalization check.
-02 H1 + Introduction — H1 contains primary keyword. Intro: AEO definition sentence + reader situation + firm name. CTA #1 follows.
+01 Page Setup (never written in the article) — the primary keyword, URL slug, meta title and meta description are set in the brief and stored as metadata.
+02 H1 + Introduction — H1 contains primary keyword. Directly under the H1, one bold sentence or two (60 words or fewer) answering the H1 question. Intro: AEO definition sentence + reader situation + "we" / "our firm".
 03 What Is This? — Clean legal definition. Statutes named. Under 200 words. Prose only, no bullets.
 04 Who Is This For? — Employment: worker eligibility. Collections: business or creditor type. Bullet list permitted. Ends with geographic reach sentence.
 05 Which Parties Must Comply? — Employment: employer thresholds by statute. Collections: debtor types, entity structures.
 06 Specific Protections or Remedies — What the law provides or prohibits. Scenario-grounded.
 07 Federal vs. State Law — How federal law, NYSHRL or CPLR interact. Name the specific difference.
 08 Legal Remedies or Enforcement Tools — AEO opener. Bullet list of remedy or tool types. Attorney fee recovery may be listed as a statutory remedy; never say what the client pays.
-09 How to File or Initiate — Name the relevant agency or court. Steps in prose, not numbered list. CTA #2 follows.
+09 How to File or Initiate — Name the relevant agency or court. Steps in prose, not numbered list.
 10 Evidence and Documentation — Practice-area-specific bullet list. Close with preservation warning.
 11 Statute of Limitations or Enforcement Window — Own H2 section. Specific timeframes by statute. Do not bury in FAQ.
 12 How Your Case or Matter Gets Handled — Three H3 subheadings: Negotiated Settlement, Agency or Court Proceedings, Litigation or Enforcement.
 13 Why Katz Melinger — Employment: four paragraphs (employee-side only, NY+NJ licensed, plain language, Free Confidential Case Evaluation). Collections: four paragraphs (creditor representation, NY+NJ licensed with statutes, direct court representation vs agency, written updates at each stage). Never describe fees.
 14 FAQ — 6 to 8 questions. H3 format. Core legal service questions. Answers open with direct sentence.
-15 Closing CTA — H2 + 2 to 3 sentences + CTA button + trust line. CTA #3.
+15 Next Step — H2 + 2 to 3 sentences. Do not write the call to action: the system places it (up to three times on a practice page) from Brand settings.
 
 8. Blog Post Structure
 
@@ -693,7 +693,7 @@ Employment Law Blog (12 sections):
 09 How Long They Have to Act — Statute of limitations for this specific claim type and jurisdiction.
 10 FAQ — 5 to 7 questions. H3 format. Broad educational style. AEO-optimized openers.
 11 Conclusion — One paragraph. Ends with one standalone citable legal summary sentence.
-12 CTA — Soft and trust-based. Includes internal link to the assigned pillar page.
+12 Next Step — a short, soft, trust-based closing paragraph with the internal link to the assigned pillar page. No call to action or phone number: the system adds them.
 
 Commercial Collections Blog (12 sections; different from employment):
 01 The Business Problem — Open with the creditor's situation as fact. No conditional language.
@@ -707,7 +707,7 @@ Commercial Collections Blog (12 sections; different from employment):
 09 When to Call a Lawyer — Specific triggers. Concrete, not generic.
 10 FAQ — 5 to 7 questions. H3 format. Process and outcome focused. AEO-optimized openers.
 11 Conclusion — One paragraph. Ends with one standalone citable legal summary sentence.
-12 CTA — Direct, not soft. Includes internal link to the assigned collections pillar page.
+12 Next Step — a direct closing paragraph with the internal link to the assigned collections pillar page. No call to action or phone number: the system adds them.
 
 9. Case Result Structure (8 sections; both practice areas)
 
@@ -718,7 +718,7 @@ Commercial Collections Blog (12 sections; different from employment):
 05 Outcome — The result. Specific where possible without identifying the client.
 06 What This Means — Generalizes the lesson for readers in a similar situation.
 07 FAQ — 3 to 5 questions. Scenario-based and proof-focused. Conversion style.
-08 CTA — Direct. Includes internal link to assigned pillar page.
+08 Next Step — a direct closing paragraph with the internal link to the assigned pillar page. No call to action or phone number: the system adds them.
 
 10. FAQ Style by Content Type
 
@@ -745,15 +745,14 @@ All content:
 - No dates added to blog posts, case results, or practice pages.
 
 Practice pages also:
-- Three CTA placements present at the correct locations.
 - Evidence and documentation section included with practice-area-specific content.
 - Statute of limitations or enforcement window is its own H2 section, not buried in FAQ.
 
 Blog posts and case results also:
 - One internal link to the assigned pillar page is present.
-- For collections blogs: CTA is direct, not soft. For employment blogs: CTA is soft and trust-based.
+- For collections blogs the closing paragraph is direct; for employment blogs it is soft and trust-based.
 
 Cannibalization check confirmed: new page does not duplicate any existing page referenced in the brief.
 
-Output: full content in Markdown. Use H1/H2/H3 hierarchy. Begin with the H1, then the introduction, then the structure required for this content type and practice area. Do not include the Per-Page Brief or any meta block in the output. Do not include compliance notes. Return only the article body.
+Output: full content in Markdown. Use H1/H2/H3 hierarchy. Begin with the H1, then one bold paragraph of 60 words or fewer answering the H1 question, then the introduction, then the structure required for this content type and practice area. The FAQ is an H2 "Frequently Asked Questions" with each question as an H3. Do not write a disclaimer, call to action, phone number, byline, author section, contact details or SEO notes (keywords, meta title, meta description, slug, search intent): the system adds them. Do not include the Per-Page Brief, any meta block or compliance notes. Return only the article body.
 `;

@@ -235,9 +235,11 @@ export const OCT6_TRAPS: TrapSeed[] = [
   {
     number: "20",
     label: "FDCPA applied to all collection agencies",
-    matchType: "all_of_unless",
+    // The acronym counts too: "The FDCPA applies to all collection agencies"
+    // slipped past the full-name-only version (Oct 20 spec, Task A6 case).
+    matchType: "regex",
     matchOn: "sentences",
-    pattern: JSON.stringify(["Fair Debt Collection Practices Act", "collection agenc"]),
+    pattern: String.raw`(?:Fair Debt Collection Practices Act|\bFDCPA\b)[^.]*\bcollection agenc|\bcollection agenc[^.]*(?:Fair Debt Collection Practices Act|\bFDCPA\b)`,
     unless: ["consumer"],
     severity: "important",
     note: "The FDCPA covers consumer debts only.",
@@ -365,10 +367,13 @@ export const OCT6_TRAPS: TrapSeed[] = [
     label: "Missing byline",
     matchType: "document_missing",
     appliesTo: "web",
-    // "\[?": the byline links to the author's bio (Task 19).
-    pattern: String.raw`^\s*[*_]*\s*By \[?[A-Z]`,
+    // Oct 20 spec, Task A2: the frame writes "Pending attorney review: X"
+    // until the attorney clears the draft, then "Reviewed by [X](bio), Esq.".
+    // The old "By [X]" form is still accepted so an unframed draft is not
+    // also reported as missing one.
+    pattern: String.raw`^\s*[*_]*\s*(?:By \[?[A-Z]|Reviewed by \[?[A-Z]|Pending attorney review:)`,
     unless: [],
     severity: "important",
-    note: "Website drafts carry \"By [author], Katz Melinger PLLC\" under the H1: Nicole Grunfeld for employment, Adam Sackowitz for commercial collections, Kenneth Katz for judgment enforcement. Fix known errors adds it where the practice area is mapped.",
+    note: "Website drafts carry the reviewing attorney's byline under the H1: \"Pending attorney review: [attorney]\" until the attorney clears it, then \"Reviewed by [attorney], Esq. | Last updated [Month Year]\" (Oct 20 spec, Task A2). Nicole Grunfeld for employment, Adam Sackowitz for commercial collections, Kenneth Katz for judgment enforcement. The frame adds it; Rescan puts an older draft in the frame.",
   },
 ];

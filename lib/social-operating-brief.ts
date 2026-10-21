@@ -57,6 +57,17 @@ export type OperatingBrief = {
   neverInContentPhones: string[];
   /** People a draft may name as firm attorneys (Trap 23). */
   approvedPeople: string[];
+  /**
+   * Where the Spanish "Aviso Legal" links (Kenneth, 2026-10-20): the English
+   * disclaimer page until a Spanish one exists. One setting, so the swap is
+   * one edit and every open Spanish draft follows (lib/draft-frame.ts).
+   */
+  spanishDisclaimerUrl: string;
+  /**
+   * The reviewing attorney per practice area, for the "Reviewed by" byline
+   * (Oct 20 spec, Task A2). Brand setting `reviewersByPractice` (JSON).
+   */
+  reviewersByPractice: Record<"employment" | "commercial_collections" | "judgment_enforcement", { name: string; bio_url: string }>;
 };
 
 // The offer phrase is a LOCKED string, not a paraphrase target: generation and
@@ -79,7 +90,31 @@ const DEFAULTS: OperatingBrief = {
   disclaimerUrl: "/disclaimer/",
   neverInContentPhones: ["646-849-3352"],
   approvedPeople: ["Kenneth Katz", "Kenneth J. Katz", "Nicole Grunfeld", "Adam Sackowitz"],
+  spanishDisclaimerUrl: "https://katzmelinger.com/disclaimer/",
+  reviewersByPractice: {
+    employment: { name: "Nicole Grunfeld", bio_url: "https://katzmelinger.com/attorney/nicole-d-grunfeld/" },
+    commercial_collections: { name: "Adam Sackowitz", bio_url: "https://katzmelinger.com/attorney/adam-j-sackowitz/" },
+    judgment_enforcement: { name: "Kenneth Katz", bio_url: "https://katzmelinger.com/attorney/kenneth-j-katz/" },
+  },
 };
+
+/** A reviewers setting with all three areas, each a name and an https bio URL; else null. */
+function reviewersSetting(value: string | undefined): OperatingBrief["reviewersByPractice"] | null {
+  if (!value?.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as Record<string, { name?: unknown; bio_url?: unknown }>;
+    const out = { ...DEFAULTS.reviewersByPractice };
+    for (const k of Object.keys(out) as (keyof typeof out)[]) {
+      const r = parsed?.[k];
+      if (r && typeof r.name === "string" && r.name.trim() && typeof r.bio_url === "string" && /^https:\/\//.test(r.bio_url)) {
+        out[k] = { name: r.name.trim(), bio_url: r.bio_url.trim() };
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The offer phrase is a PHRASE ("Free Confidential Case Evaluation"), which
@@ -136,6 +171,8 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
         "socialDisclaimerUrl",
         "neverInContentPhones",
         "approvedPeople",
+        "spanishDisclaimerUrl",
+        "reviewersByPractice",
       ]);
     const settings: Record<string, string> = {};
     for (const row of data ?? []) {
@@ -153,6 +190,8 @@ export async function getOperatingBrief(tenantId?: string): Promise<OperatingBri
       disclaimerUrl: settings.socialDisclaimerUrl || DEFAULTS.disclaimerUrl,
       neverInContentPhones: listSetting(settings.neverInContentPhones) ?? DEFAULTS.neverInContentPhones,
       approvedPeople: listSetting(settings.approvedPeople) ?? DEFAULTS.approvedPeople,
+      spanishDisclaimerUrl: /^https:\/\//.test(settings.spanishDisclaimerUrl ?? "") ? settings.spanishDisclaimerUrl : DEFAULTS.spanishDisclaimerUrl,
+      reviewersByPractice: reviewersSetting(settings.reviewersByPractice) ?? DEFAULTS.reviewersByPractice,
     };
   } catch {
     return DEFAULTS;

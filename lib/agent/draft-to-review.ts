@@ -130,6 +130,7 @@ export async function draftTopicToReview(args: {
   // (social, email, video) are checked by their own separate compliance path.
   let body = draft.body;
   let fixLog: Record<string, unknown> | null = null;
+  let frameMeta: Record<string, unknown> | null = null;
   if (format === "blog") {
     body = applyRequiredDisclaimers(body, { cta: await closingCtaFor(tenantId) }).body;
     // Sept 28 spec section 5: correct what has one known answer before the
@@ -144,6 +145,7 @@ export async function draftTopicToReview(args: {
     });
     body = grounded.body;
     fixLog = grounded.fixLog;
+    frameMeta = grounded.frameMeta;
   }
 
   // 2. Analyze — full scorecard (persists to content_analyses internally).
@@ -204,6 +206,7 @@ export async function draftTopicToReview(args: {
     legal_review_required: legalReviewRequired,
     compliance: complianceSummary,
     ...(fixLog ? { legal_fix_log: fixLog } : {}),
+    ...(frameMeta ?? {}),
   };
 
   const { error: updErr } = await db.raw

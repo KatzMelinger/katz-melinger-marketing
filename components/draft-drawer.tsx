@@ -38,6 +38,8 @@ import { ALL_KM_PILLARS } from "@/lib/km-content-system";
 import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
 import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
+import { ReadinessChecklist } from "@/components/readiness-checklist";
+import type { Readiness } from "@/lib/draft-readiness";
 import { READABILITY_FLOOR, READABILITY_TARGET } from "@/lib/readability";
 import {
   CANNIBALIZATION_LABEL,
@@ -473,6 +475,29 @@ export function DraftDrawer({
   const [certMsg, setCertMsg] = useState<string | null>(null);
   const legalReview = !!certs.legal_review;
   const proofread = !!certs.proofread;
+  // Oct 20 spec, Task A4: the Ready checklist for a website draft, the same
+  // one Approve enforces. Re-read whenever the text, the clearance or the
+  // findings change.
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const readinessKey = `${draft?.id ?? ""}|${draft?.body?.length ?? 0}|${draft?.body?.slice(-200) ?? ""}|${
+    ((draft as { metadata?: { review?: { cleared_at?: string } } } | null)?.metadata?.review?.cleared_at) ?? ""
+  }|${findingsCounts.total}|${findingsCounts.critical}|${unreviewedChanges}`;
+  useEffect(() => {
+    if (!draft?.id) {
+      setReadiness(null);
+      return;
+    }
+    let live = true;
+    fetch(`/api/content/drafts/${draft.id}/readiness`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => live && setReadiness((j?.readiness as Readiness | null) ?? null))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readinessKey]);
+  const framedReadiness = readiness?.applicable ? readiness : null;
   const [msg, setMsg] = useState<string | null>(null);
   // When the row has no draft yet (brief stage), we load the linked brief so
   // the reviewer still sees the brief they built — not "Draft not found".
@@ -699,6 +724,8 @@ export function DraftDrawer({
       return;
     }
     setCerts(data.certifications ?? {});
+    // The clearance re-signs the byline (Task A2): show the new body.
+    if (data.bodyChanged) void reloadDraft(draftId);
   };
 
   async function runAnalysis(d: DraftRow) {
@@ -1106,8 +1133,16 @@ export function DraftDrawer({
       setMsg("No draft to approve yet.");
       return;
     }
-    // HARD QA gate: required completeness checks must pass unless overridden.
-    if (!qaGatePassed && !qaOverride) {
+    // A website draft is gated by the Ready checklist alone (Oct 20 spec,
+    // Task A4); the server enforces the same list. The older client checks
+    // below still apply to every other format.
+    if (framedReadiness) {
+      if (!framedReadiness.ready) {
+        setMsg("Not ready yet: resolve the items in the checklist first.");
+        return;
+      }
+    } else if (!qaGatePassed && !qaOverride) {
+      // HARD QA gate: required completeness checks must pass unless overridden.
       setMsg(
         `QA checklist incomplete: ${qaFailed.map((c) => c.label).join(", ")}. ` +
           `Fix these, or tick "Approve despite QA" to override.`,
@@ -1117,7 +1152,7 @@ export function DraftDrawer({
     // HARD gate for time-sensitive figures — NOT overridable (unlike the QA
     // checklist): a refresh must not carry stale wage rates / thresholds forward.
     // Resolve each figure (apply the current value or mark verified) to proceed.
-    if (outstandingFresh.length > 0) {
+    if (!framedReadiness && outstandingFresh.length > 0) {
       const nOut = outstandingFresh.filter((f) => freshStatus(f) === "outdated").length;
       const nVer = outstandingFresh.length - nOut;
       const parts = [nOut ? `${nOut} to update` : "", nVer ? `${nVer} to verify` : ""].filter(Boolean);
@@ -1128,7 +1163,7 @@ export function DraftDrawer({
       return;
     }
     // Soft quality gate: warn (don't block) if SEO/AEO/CASH are below target.
-    const short = qualityShortfall(analysis);
+    const short = framedReadiness ? [] : qualityShortfall(analysis);
     if (short.length > 0) {
       const lines = short.map((s) => `  • ${s.label} ${s.score} (target ${QUALITY_MIN[s.label.toLowerCase() as "seo" | "aeo" | "cash"]})`);
       const ok = window.confirm(
@@ -1619,6 +1654,13 @@ export function DraftDrawer({
                     </div>
                   ) : editing ? (
                     <div className="relative">
+                      {framedReadiness && (
+                        // Oct 20 spec, Task A1: the frame is locked.
+                        <p className="border-b border-slate-200 bg-slate-50 px-4 py-1.5 text-[11px] text-slate-500">
+                          Edit the article. The &quot;Attorney Advertising&quot; label, byline, call to action and
+                          disclaimer are managed in Brand settings; changes to them are not kept when you save.
+                        </p>
+                      )}
                       <textarea
                         value={editBody}
                         onChange={(e) => setEditBody(e.target.value)}
@@ -1822,6 +1864,27 @@ export function DraftDrawer({
                         </p>
                       </div>
                     )
+                  ) : framedReadiness ? (
+                    // Oct 20 spec, Task A4: a website draft shows the Ready
+                    // checklist, and only the checklist decides Approve.
+                    // Scores, QA ticks and style notes are information only.
+                    <div>
+                      <ReadinessChecklist readiness={framedReadiness} />
+                      <button
+                        onClick={approve}
+                        disabled={approving || !framedReadiness.ready}
+                        className="mt-2 w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={framedReadiness.ready ? undefined : "Every checklist item must pass first"}
+                      >
+                        {approving ? "Checking compliance…" : "Approve"}
+                      </button>
+                      <button
+                        onClick={() => setDraftStage("draft", "Sent back to draft.")}
+                        className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Send back to draft
+                      </button>
+                    </div>
                   ) : (
                     <div
                       className={`rounded-lg border p-3 ${
@@ -2107,7 +2170,14 @@ export function DraftDrawer({
                   <div className="mt-1 space-y-1">
                     {(
                       [
-                        { key: "legal_review", label: "Legal review complete" },
+                        {
+                          key: "legal_review",
+                          // Task A2: on a website draft this is the attorney's
+                          // clearance, and it signs the byline.
+                          label: framedReadiness
+                            ? "Attorney clearance (signs \"Reviewed by\" on the page; attorneys only)"
+                            : "Legal review complete",
+                        },
                         { key: "proofread", label: "Proofread and on-brand" },
                       ] as const
                     ).map(({ key, label }) => {

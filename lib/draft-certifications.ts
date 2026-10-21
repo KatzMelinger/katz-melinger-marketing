@@ -22,8 +22,12 @@ export const DRAFT_CERTIFICATION_KEYS = [
 /** Certifications that describe the TEXT, and so die with an edit. */
 const TEXT_BOUND: readonly string[] = ["legal_review", "proofread"];
 
-/** Metadata keys a generic PATCH may not write. */
-const SERVER_OWNED = ["wp_publish", "certifications"] as const;
+/**
+ * Metadata keys a generic PATCH may not write. `review` is the attorney's
+ * clearance (Oct 20 spec, Task A2); `content` and `frame` are the article and
+ * frame record that the frame code derives from the body (Task A1).
+ */
+const SERVER_OWNED = ["wp_publish", "certifications", "review", "content", "frame"] as const;
 
 type Meta = Record<string, unknown>;
 
@@ -40,14 +44,24 @@ export function mergeClientMetadata(stored: Meta | null, incoming: Meta | null):
   return out;
 }
 
-/** Drop the text-bound certifications. Returns the keys that were removed. */
+/**
+ * Drop the text-bound certifications, and the attorney's clearance with them:
+ * a later edit returns the byline to "Pending attorney review" (Oct 20 spec,
+ * Task A2). Returns the keys that were removed.
+ */
 export function clearTextCertifications(meta: Meta): { meta: Meta; cleared: string[] } {
   const certs = (meta.certifications as Record<string, unknown> | undefined) ?? {};
   const cleared = TEXT_BOUND.filter((k) => k in certs);
-  if (cleared.length === 0) return { meta, cleared };
+  const hadReview = meta.review != null;
+  if (cleared.length === 0 && !hadReview) return { meta, cleared };
   const next = { ...certs };
   for (const k of cleared) delete next[k];
-  return { meta: { ...meta, certifications: next }, cleared };
+  const out: Meta = { ...meta, certifications: next };
+  if (hadReview) {
+    delete out.review;
+    cleared.push("review");
+  }
+  return { meta: out, cleared };
 }
 
 /** Take a draft out of the WordPress queue. */

@@ -1182,6 +1182,7 @@ export async function analyzeDraft(args: {
         title,
         cta: { phone: brief.webPhone, offerPhrase: brief.offerPhrase },
         neverInContentPhones: brief.neverInContentPhones,
+        format,
       });
       return { ran: true, findings: [...firm, ...required] };
     })(),

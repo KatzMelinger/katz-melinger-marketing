@@ -15,6 +15,7 @@
  * source content_sources row when repurposing.
  */
 
+import { frameDraft } from "./draft-frame-server";
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
 import { recordVendorUsage } from "./usage-meter";
@@ -470,6 +471,25 @@ ${readabilityPromptBlock("social", readabilityRulesEngineEnabled())}`,
     metadata.generation_model = LONG_FORM_FORMATS.includes(format)
       ? CONTENT_LONG_FORM_MODEL
       : CONTENT_SHORT_FORM_MODEL;
+    // Oct 20 spec, Task A1: a blog is saved in its frame (label, byline,
+    // CTA, disclaimer from Brand settings), whatever the model wrote. The
+    // batch path had no ending at all before this.
+    if (format === "blog") {
+      const framed = await frameDraft(tid, {
+        body: cleanBody,
+        title: cleanTitle ?? null,
+        topic: args.topic,
+        format,
+        practice_area: args.practiceArea ?? null,
+        metadata,
+      });
+      if (framed) {
+        cleanBody = framed.body;
+        metadata.content = framed.metadata.content;
+        metadata.frame = framed.metadata.frame;
+        metadata.schema_jsonld = framed.metadata.schema_jsonld;
+      }
+    }
 
     const { data: draft, error: dErr } = await supabase
       .from("content_drafts")
