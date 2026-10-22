@@ -26,11 +26,16 @@ export function adminEmails(): string[] {
 }
 
 /** Best-effort fan-out; a failed send to one address never blocks the rest. */
-export async function sendEmails(to: string[], subject: string, body: string): Promise<number> {
+export async function sendEmails(
+  to: string[],
+  subject: string,
+  body: string,
+  attachments?: { filename: string; content: string }[],
+): Promise<number> {
   let sent = 0;
   for (const address of to) {
     try {
-      const result = await dispatch("email", { to: address, subject, body });
+      const result = await dispatch("email", { to: address, subject, body, ...(attachments?.length ? { attachments } : {}) });
       if (result.status !== "failed") sent += 1;
       else console.warn(`[notify] email to ${address} failed:`, result.error);
     } catch (e) {

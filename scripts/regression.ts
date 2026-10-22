@@ -51,6 +51,7 @@ const SUITE = [
   "check-readability-autobreak",
   "check-rule-changes",
   "check-linkedin-mapping",
+  "check-callback-export",
 ];
 
 const CONCURRENCY = 4;

@@ -242,6 +242,19 @@ const SETTING_FIELDS: {
     multiline: true,
   },
   {
+    key: "monthlyAiBudgetUsd",
+    label: "Monthly AI budget (USD)",
+    placeholder: "150",
+    help: "System health shows AI spend against this. Past it, automatic Improve to Ready runs pause and an email goes to the Admins (Oct 20 spec, Task A17). Empty means no limit.",
+  },
+  {
+    key: "callbackEmailRecipients",
+    label: "Daily callback email recipients",
+    placeholder: "intake@katzmelinger.com",
+    help: "Emails, one per line or comma separated. Every day at 8:00 AM New York time they get the Needs callback list as a PDF, new callers first (Oct 20 spec, Task A19). Empty turns the email off.",
+    multiline: true,
+  },
+  {
     key: "lawChanges",
     label: "Law changes to watch",
     multiline: true,
