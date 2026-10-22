@@ -25,6 +25,7 @@ import { learnedCorrections, loadLearned } from "./legal-learned";
 import { isFramedFormat, readContent } from "./draft-frame";
 import { frameDraftWith, rebuildChange } from "./draft-frame-server";
 import { getOperatingBrief } from "./social-operating-brief";
+import { saveVersion } from "./draft-versions";
 
 export const REWRITE_FORMATS = new Set(["blog", "km_blog_post", "km_page_update", "km_practice_page"]);
 
@@ -145,6 +146,9 @@ export async function fixDraft(args: {
   });
   let meta: Record<string, unknown> = { ...(framed?.metadata ?? storedMeta), legal_fix_log: log };
   if (result.changes.length > 0) meta = clearTextCertifications(meta).meta;
+
+  // Task A17: the version before the fix is kept.
+  await saveVersion({ tenantId: args.tenantId, draftId: args.draftId, title: (draft.title as string | null) ?? null, body, content: storedMeta.content, reason: "before Fix known errors", by: args.actor?.email ?? null });
 
   const { error: upd } = await sb
     .from("content_drafts")

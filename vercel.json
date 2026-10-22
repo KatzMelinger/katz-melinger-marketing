@@ -84,6 +84,10 @@
     {
       "path": "/api/legal/questions/reminders",
       "schedule": "0 13 * * 1-5"
+    },
+    {
+      "path": "/api/system/watchdog",
+      "schedule": "5 * * * *"
     }
   ]
 }

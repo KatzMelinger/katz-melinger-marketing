@@ -199,6 +199,7 @@ export const DEPARTMENTS: Department[] = [
     defaultOpen: false,
     items: [
       { label: "Integrations", href: "/integrations", icon: "🔌", status: "active", adminOnly: true },
+      { label: "System Health", href: "/system/health", icon: "🩺", status: "active" },
       { label: "Users", href: "/admin/users", icon: "👥", status: "active", adminOnly: true },
       { label: "Settings", href: "/settings", icon: "⚙", status: "active", adminOnly: true },
     ],
@@ -354,6 +355,7 @@ export const SIDEBAR_SECTIONS: Department[] = [
     defaultOpen: false,
     items: [
       { label: "Integrations", href: "/integrations", icon: "🔌", status: "active", adminOnly: true },
+      { label: "System Health", href: "/system/health", icon: "🩺", status: "active" },
       { label: "Users", href: "/admin/users", icon: "👥", status: "active", adminOnly: true },
       { label: "Settings", href: "/settings", icon: "⚙", status: "active", adminOnly: true },
     ],

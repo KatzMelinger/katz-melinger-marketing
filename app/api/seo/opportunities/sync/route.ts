@@ -42,6 +42,7 @@ import { getKeywordDifficulty } from "@/lib/dataforseo";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { getTenantJobDb, listTenantIds } from "@/lib/tenant-db";
 import { guardUser } from "@/lib/supabase-route";
+import { withJobRun } from "@/lib/job-runs";
 
 /** Intent → KM content type (Practice Page / Blog / Case Result). */
 function contentTypeFromIntent(intent: KMSearchIntent): KMContentType {
@@ -113,7 +114,7 @@ function isAuthorizedCron(req: NextRequest): boolean {
   return (req.headers.get("authorization") ?? "") === `Bearer ${expected}`;
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -404,4 +405,9 @@ async function runSyncForTenant(tenantId: string) {
     await logPipeline(db, step, "failed", msg, counts, startedAt);
     return { error: msg };
   }
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/seo/opportunities/sync", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

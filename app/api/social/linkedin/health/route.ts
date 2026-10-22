@@ -17,6 +17,7 @@ import { writeAlert } from "@/lib/alerts-engine";
 import { checkLinkedInHealth, RENEWAL_STEPS, type LinkedInHealth } from "@/lib/linkedin-health";
 import { guardUser } from "@/lib/supabase-route";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
+import { withJobRun } from "@/lib/job-runs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -96,7 +97,7 @@ async function raiseIfNeeded(health: LinkedInHealth, tenantId: string): Promise<
   );
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -111,4 +112,9 @@ export async function POST() {
   const health = await checkLinkedInHealth();
   const alerted = await raiseIfNeeded(health, await resolveTenantId());
   return NextResponse.json({ ...health, alerted });
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/social/linkedin/health", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

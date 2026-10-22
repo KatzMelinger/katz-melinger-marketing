@@ -31,6 +31,7 @@ import { loadPublishers } from "./publish-permission";
 import { readinessForDraft } from "./draft-readiness-server";
 import { recordAuditEvent } from "./content-findings-store";
 import type { ReviewArea } from "./legal-reviewers";
+import { saveVersion } from "./draft-versions";
 
 export type AttorneyQuestion = {
   draftId: string;
@@ -223,6 +224,8 @@ export async function answerQuestion(args: {
     await learnCorrection({ tenantId: args.tenantId, from: entry.sentence, to, by: args.by.email, draftId: d.id, rule: "source_check" });
     await learnApproval({ tenantId: args.tenantId, sentence: to, by: args.by.email, draftId: d.id, rule: "source_check" });
     const entries = record.entries.filter((e) => e.hash !== args.hash);
+    // Task A17: the version before the attorney's replacement is kept.
+    await saveVersion({ tenantId: args.tenantId, draftId: d.id, title: d.title, body: d.body, content: meta.content, reason: "before an attorney's replacement", by: args.by.email });
     await sb
       .from("content_drafts")
       .update({ body: framed.body, metadata: { ...framed.metadata, legal_fix_log: log, source_check: { ...record, entries } }, updated_at: now })

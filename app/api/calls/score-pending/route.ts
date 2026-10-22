@@ -20,6 +20,7 @@ import { collectScoringBatches, submitScoringBatch } from "@/lib/call-score-batc
 import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
+import { withJobRun } from "@/lib/job-runs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,7 +44,7 @@ function errorResponse(e: unknown) {
   return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -70,4 +71,9 @@ export async function POST() {
   } catch (e) {
     return errorResponse(e);
   }
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/calls/score-pending", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

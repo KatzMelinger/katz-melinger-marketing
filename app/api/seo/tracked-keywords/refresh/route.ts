@@ -33,6 +33,7 @@ import {
   getPhraseMetrics,
   type DataForSeoKeywordRow,
 } from "@/lib/dataforseo";
+import { withJobRun } from "@/lib/job-runs";
 
 export const runtime = "nodejs";
 // This run does up to ~100 live (paid) SERP calls per tenant plus per-row DB
@@ -52,7 +53,7 @@ function isAuthorizedCron(req: NextRequest): boolean {
   return auth === `Bearer ${expected}`;
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -462,4 +463,9 @@ async function refreshTrackedKeywords(tenantId: string) {
     );
     return { error: "Failed to refresh keyword rankings" };
   }
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/seo/tracked-keywords/refresh", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

@@ -20,6 +20,7 @@ import { getCurrentUser } from "@/lib/supabase-route";
 import { isFramedFormat } from "@/lib/draft-frame";
 import { frameDraft } from "@/lib/draft-frame-server";
 import { readinessForDraft } from "@/lib/draft-readiness-server";
+import { saveVersion } from "@/lib/draft-versions";
 
 export const runtime = "nodejs";
 
@@ -249,6 +250,19 @@ export async function PATCH(
 
   if (metaChanged) patch.metadata = meta;
   else delete patch.metadata;
+
+  // Task A17: the version before the edit is kept.
+  if (textChanged) {
+    await saveVersion({
+      tenantId,
+      draftId: id,
+      title: (existing.title as string | null) ?? null,
+      body: (existing.body as string | null) ?? null,
+      content: storedMeta.content,
+      reason: "before an edit",
+      by: (await getCurrentUser())?.email ?? null,
+    });
+  }
 
   const { data, error } = await supabase
     .from("content_drafts")

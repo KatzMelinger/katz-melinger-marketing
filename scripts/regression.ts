@@ -22,6 +22,7 @@ const SUITE = [
   "check-improve-to-ready",
   "check-publish",
   "check-attorney-questions",
+  "check-system-health",
   "check-draft-frame",
   "check-draft-readiness",
   "check-known-traps-oct6",

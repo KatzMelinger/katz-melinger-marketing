@@ -11,6 +11,7 @@ import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import { verifyClaimAgainst } from "./legal-verify";
 import { safeFetch } from "./url-safety";
 import { readContent } from "./draft-frame";
+import { recordAiCost } from "./ai-cost";
 import { retrieveAuthority } from "./legal-retrieval";
 import type { ParsedCitation } from "./legal-citation";
 import type { StatuteRow } from "./legal-statute-table";
@@ -83,14 +84,18 @@ async function fetchSource(url: string, tenantId: string): Promise<{ ok: true; t
   }
 }
 
-async function ask(system: string, user: string): Promise<string> {
-  const res = await getAnthropic().messages.create({
-    model: KEYWORD_RESEARCH_MODEL,
-    max_tokens: 700,
-    system,
-    messages: [{ role: "user", content: user }],
-  });
-  return res.content[0]?.type === "text" ? res.content[0].text : "";
+/** The model call, with its cost written to the ledger against the draft (Task A17). */
+function makeAsk(tenantId: string, draftId: string | null) {
+  return async (system: string, user: string): Promise<string> => {
+    const res = await getAnthropic().messages.create({
+      model: KEYWORD_RESEARCH_MODEL,
+      max_tokens: 700,
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+    void recordAiCost({ tenantId, draftId, endpoint: "source-check", model: KEYWORD_RESEARCH_MODEL, usage: res.usage });
+    return res.content[0]?.type === "text" ? res.content[0].text : "";
+  };
 }
 
 async function confirmContradiction(sentence: string, text: string): Promise<boolean> {
@@ -116,7 +121,13 @@ export async function loadSourceCheckInputs(tenantId: string): Promise<SourceChe
   return { thresholds, statutes: statutes.ok ? statutes.rows : [], approved: approvedKeys(learned) };
 }
 
-async function checkOne(tenantId: string, claim: SourceClaim, inputs: SourceCheckInputs, pages: Map<string, Promise<Awaited<ReturnType<typeof fetchSource>>>>): Promise<SourceCheckEntry> {
+async function checkOne(
+  tenantId: string,
+  claim: SourceClaim,
+  inputs: SourceCheckInputs,
+  pages: Map<string, Promise<Awaited<ReturnType<typeof fetchSource>>>>,
+  draftId: string | null = null,
+): Promise<SourceCheckEntry> {
   const match = matchEntry(claim, inputs.thresholds, inputs.statutes);
   const base = {
     hash: claimHash(claim.sentence, match),
@@ -139,18 +150,18 @@ async function checkOne(tenantId: string, claim: SourceClaim, inputs: SourceChec
   if (!page.ok) {
     return { ...base, reproduction: standing === "reproduction", quote: null, verdict: "not_found", reason: `Not checked: ${page.reason}.` };
   }
-  const j = await judgeClaim(claim.sentence, page.text, ask, confirmContradiction);
+  const j = await judgeClaim(claim.sentence, page.text, makeAsk(tenantId, draftId), confirmContradiction);
   return { ...base, reproduction: standing === "reproduction", quote: j.quote, verdict: j.verdict, reason: j.reason, closest: j.closest };
 }
 
 /** Check a list of claims (no storage): used by runSourceCheck and by Improve to Ready's guard. */
-export async function checkClaims(tenantId: string, claims: SourceClaim[], inputs: SourceCheckInputs): Promise<SourceCheckEntry[]> {
+export async function checkClaims(tenantId: string, claims: SourceClaim[], inputs: SourceCheckInputs, draftId: string | null = null): Promise<SourceCheckEntry[]> {
   const pages = new Map<string, Promise<Awaited<ReturnType<typeof fetchSource>>>>();
   const out: SourceCheckEntry[] = [];
   const queue = [...claims];
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
-      for (let c = queue.shift(); c; c = queue.shift()) out.push(await checkOne(tenantId, c, inputs, pages));
+      for (let c = queue.shift(); c; c = queue.shift()) out.push(await checkOne(tenantId, c, inputs, pages, draftId));
     }),
   );
   return out;
@@ -188,7 +199,7 @@ export async function runSourceCheck(tenantId: string, draftId: string, opts: { 
   const queue = [...status.unchecked];
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
-      for (let c = queue.shift(); c; c = queue.shift()) fresh.push(await checkOne(tenantId, c, inputs, pages));
+      for (let c = queue.shift(); c; c = queue.shift()) fresh.push(await checkOne(tenantId, c, inputs, pages, draftId));
     }),
   );
 

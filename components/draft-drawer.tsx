@@ -40,6 +40,7 @@ import { ChangesMadePanel } from "@/components/changes-made-panel";
 import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
 import { ReadinessChecklist } from "@/components/readiness-checklist";
 import { WordPressPublishPanel } from "@/components/wordpress-publish-panel";
+import { VersionsPanel } from "@/components/versions-panel";
 import { SourcesPanel } from "@/components/sources-panel";
 import { ImprovementSummary } from "@/components/improvement-summary";
 import { readImprovement } from "@/lib/improve-to-ready-shared";
@@ -2337,6 +2338,10 @@ export function DraftDrawer({
                     <SourcesPanel draftId={draft.id} nonce={findingsNonce} onChecked={() => void reloadDraft(draft.id)} />
                   </div>
                 )}
+                {/* Oct 20 spec, Task A17: every saved version, restorable. */}
+                <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                  <VersionsPanel draftId={draft.id} nonce={findingsNonce} onRestored={() => void reloadDraft(draft.id)} />
+                </div>
               </div>
             )}
             {draft && (

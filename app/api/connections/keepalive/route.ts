@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardUser } from "@/lib/supabase-route";
 import { keepAliveConnections } from "@/lib/connections";
+import { withJobRun } from "@/lib/job-runs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ function isCronAuthorized(req: NextRequest): boolean {
   return req.headers.get("authorization") === `Bearer ${expected}`;
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isCronAuthorized(req)) {
     // Not the cron — allow an authenticated user to trigger it manually.
     const denied = await guardUser();
@@ -33,4 +34,9 @@ export async function GET(req: NextRequest) {
 
   const results = await keepAliveConnections();
   return NextResponse.json({ ok: true, results, ran_at: new Date().toISOString() });
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/connections/keepalive", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

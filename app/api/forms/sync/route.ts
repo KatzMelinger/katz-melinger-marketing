@@ -16,6 +16,7 @@ import { guardUser } from "@/lib/supabase-route";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { DEFAULT_TENANT_ID, resolveTenantId } from "@/lib/tenant-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { withJobRun } from "@/lib/job-runs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -85,7 +86,7 @@ export async function POST() {
   return runFormsSync(supabase, await resolveTenantId());
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -94,4 +95,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Supabase service-role client not configured" }, { status: 503 });
   }
   return runFormsSync(supabase, DEFAULT_TENANT_ID);
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/forms/sync", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }
