@@ -568,13 +568,15 @@ export async function getOrganicCompetitors(
 export async function getRelatedKeywords(
   seed: string,
   limit: number = 30,
+  /** "es" for Spanish content (Oct 20 spec, Task A13). */
+  languageCode: string = DATAFORSEO_LANGUAGE_CODE,
 ): Promise<Array<{ keyword: string; searchVolume: number; trendScore: number }>> {
   const json = await cachedDataForSeoPost(
     "dataforseo_labs/google/related_keywords/live",
     {
       keyword: seed,
       location_code: DATAFORSEO_LOCATION_CODE,
-      language_code: DATAFORSEO_LANGUAGE_CODE,
+      language_code: languageCode,
       limit: Math.min(Math.max(limit, 1), 1000),
       depth: 1,
     },
@@ -596,13 +598,14 @@ export async function getRelatedKeywords(
 export async function getKeywordSuggestions(
   seed: string,
   limit: number = 30,
+  languageCode: string = DATAFORSEO_LANGUAGE_CODE,
 ): Promise<Array<{ keyword: string; searchVolume: number }>> {
   const json = await cachedDataForSeoPost(
     "dataforseo_labs/google/keyword_suggestions/live",
     {
       keyword: seed,
       location_code: DATAFORSEO_LOCATION_CODE,
-      language_code: DATAFORSEO_LANGUAGE_CODE,
+      language_code: languageCode,
       limit: Math.min(Math.max(limit, 1), 1000),
     },
   );
@@ -648,7 +651,7 @@ function fetchedAtOf(json: unknown): string {
  * keyword_overview call per 700 phrases (US). Phrases DataForSEO has no data
  * for are left out of the map: a missing number is never estimated.
  */
-export async function getKeywordMetrics(phrases: string[]): Promise<Map<string, KeywordMetrics>> {
+export async function getKeywordMetrics(phrases: string[], languageCode: string = DATAFORSEO_LANGUAGE_CODE): Promise<Map<string, KeywordMetrics>> {
   const out = new Map<string, KeywordMetrics>();
   const unique = [...new Set(phrases.map((p) => p.toLowerCase().trim()).filter(Boolean))];
   for (let i = 0; i < unique.length; i += 700) {
@@ -657,7 +660,7 @@ export async function getKeywordMetrics(phrases: string[]): Promise<Map<string, 
       const json = await cachedDataForSeoPost("dataforseo_labs/google/keyword_overview/live", {
         keywords: chunk,
         location_code: DATAFORSEO_LOCATION_CODE,
-        language_code: DATAFORSEO_LANGUAGE_CODE,
+        language_code: languageCode,
       });
       const fetchedAt = fetchedAtOf(json);
       for (const item of extractItems(json)) {

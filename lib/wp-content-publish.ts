@@ -70,6 +70,9 @@ export type WpContentItem = {
   featured_image_name: string | null;
   /** 301 redirects this page replaces (merged or older pages), for the plugin to create. */
   redirects: { from: string; to: string }[];
+  /** "en" or "es" (Task A13), and the other-language version, for the hreflang tags. */
+  language?: "en" | "es";
+  hreflang_pair?: { language: "en" | "es"; wp_post_id: number | null; url: string | null } | null;
 };
 
 /** "0.7.0" >= "0.7.0". A plugin that sends no version is treated as 0.6. */
@@ -197,6 +200,16 @@ export async function listApprovedWpContent(args: {
     return actionItems;
   }
 
+  // Task A13: the other-language version of each paired draft, for hreflang.
+  const pairIds = queuedRows
+    .map((d) => ((d.metadata as Record<string, unknown> | null)?.language_pair as { draft_id?: string } | undefined)?.draft_id)
+    .filter((x): x is string => typeof x === "string");
+  const pairs = new Map<string, Record<string, unknown>>();
+  if (pairIds.length) {
+    const { data: pr } = await getSupabaseAdmin().from("content_drafts").select("id, metadata").eq("tenant_id", args.tenantId).in("id", pairIds);
+    for (const p of pr ?? []) pairs.set(p.id as string, (p.metadata as Record<string, unknown> | null) ?? {});
+  }
+
   const out: WpContentItem[] = [];
   for (const d of queuedRows) {
     const metadata = (d.metadata as Record<string, unknown> | null) ?? null;
@@ -257,12 +270,30 @@ export async function listApprovedWpContent(args: {
       featured_image_url:
         typeof metadata?.featured_image_url === "string" ? metadata.featured_image_url : null,
       ...publishFields(metadata, seoBrief, title, pillarId, d.practice_area as string | null),
+      ...hreflangFields(metadata, pairs),
     });
   }
   return [...actionItems, ...out];
 }
 
 /** The Task A12 fields for a create item. */
+/** Language and the paired version's WordPress post (Oct 20 spec, Task A13). */
+export function hreflangFields(metadata: Record<string, unknown> | null, pairs: Map<string, Record<string, unknown>>): Pick<WpContentItem, "language" | "hreflang_pair"> {
+  const language = String(metadata?.language ?? "").toLowerCase().startsWith("es") ? "es" : "en";
+  const pairId = (metadata?.language_pair as { draft_id?: string } | undefined)?.draft_id;
+  const pm = pairId ? pairs.get(pairId) : undefined;
+  if (!pm) return { language, hreflang_pair: null };
+  const wp = (pm.wp_publish as Record<string, unknown> | undefined) ?? {};
+  return {
+    language,
+    hreflang_pair: {
+      language: language === "es" ? "en" : "es",
+      wp_post_id: typeof wp.wp_post_id === "number" ? wp.wp_post_id : null,
+      url: typeof wp.url === "string" ? wp.url : null,
+    },
+  };
+}
+
 function publishFields(
   metadata: Record<string, unknown> | null,
   seoBrief: Record<string, unknown> | null,

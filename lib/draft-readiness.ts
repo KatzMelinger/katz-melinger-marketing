@@ -23,6 +23,7 @@
 import { assembleDraft, frameCtaLine, isFramedFormat, readContent } from "./draft-frame";
 import { bylineForDraft, draftLanguage, frameBrandFrom, readReview, reviewAreaForDraft, type DraftForFrame } from "./draft-frame-server";
 import { findFeeLanguage } from "./fee-language";
+import { spanishCheckStatus } from "./spanish-check-status";
 import { keywordProblem } from "./keyword-guard";
 import { internalLinks, MIN_INTERNAL_LINKS } from "./required-elements";
 import type { OperatingBrief } from "./social-operating-brief";
@@ -158,12 +159,21 @@ export function isReady(
 
   // 5. No open critical finding on the current text.
   const critical = openFindings.filter((f) => f.severity === "critical");
-  item(
-    "checks",
-    critical.slice(0, 5).map((f) => `${f.title}${f.excerpt ? `: "${quote(f.excerpt, 80)}"` : ""}`).concat(
-      critical.length > 5 ? [`and ${critical.length - 5} more`] : [],
-    ),
+  const checkReasons = critical.slice(0, 5).map((f) => `${f.title}${f.excerpt ? `: "${quote(f.excerpt, 80)}"` : ""}`).concat(
+    critical.length > 5 ? [`and ${critical.length - 5} more`] : [],
   );
+  // Task A13: a Spanish draft is also checked through its English reading;
+  // until that has run on this version, it does not pass.
+  if (language === "es" && content) {
+    const es = spanishCheckStatus(meta, content);
+    if (!es.current) checkReasons.push("The Spanish checks have not run on this version. Press Improve to Ready (or Check sources).");
+    else {
+      for (const f of es.findings.filter((x) => x.severity === "critical").slice(0, 3)) {
+        checkReasons.push(`${f.title}: "${quote(f.es || f.en, 90)}"`);
+      }
+    }
+  }
+  item("checks", checkReasons);
 
   // 6. Fee rule; the offer only in the CTA (Part 2 item 2).
   const cta = frameCtaLine(brand);

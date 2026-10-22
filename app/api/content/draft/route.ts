@@ -255,6 +255,7 @@ export async function POST(req: Request) {
       tenantId: await resolveTenantId(),
       title: topic,
       incoming: primaryKeyword,
+      language: normalizeLanguage(o.language),
     }).catch(() => null);
     if (keywordProblem(primaryKeyword) && keywordSelection) {
       const replacement =

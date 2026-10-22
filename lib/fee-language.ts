@@ -113,6 +113,21 @@ const BANNED: { rule: string; re: RegExp }[] = [
     rule: "Billing model",
     re: /\bflat[-\s]fees?\b|\bbill(?:s|ed|ing)?\s+(?:by\s+the\s+hour|hourly)\b|\bhourly\s+(?:billing|fees?|basis)\b|\bretainer\b/gi,
   },
+  // Spanish (Oct 20 spec, Task A13): a Spanish draft never passes because the
+  // rule only read English. The same closed set of claims, in Spanish.
+  { rule: "Contingency fee", re: /\b(?:honorarios|tarifas?)\s+(?:de\s+|por\s+)?contingencia\b|\ba\s+contingencia\b|\bcuota\s+litis\b/gi },
+  {
+    rule: "No fee unless you win",
+    re: /\b(?:no\s+(?:cobramos|cobra|paga|pagas?|tiene\s+que\s+pagar)(?:\s+nada)?|sin\s+(?:costo|cargo|honorarios))\s+(?:a\s+menos\s+que|salvo\s+que|si\s+no)\s+(?:ganemos|gane|ganamos|recuperemos)\b/gi,
+  },
+  { rule: "Only pay if we win", re: /\bs[oó]lo\s+(?:paga|pagas|cobramos)\s+si\s+(?:ganamos|ganemos|gana)\b/gi },
+  {
+    rule: "Percentage of recovery",
+    re: /\b(?:\d{1,2}\s*(?:%|por\s+ciento)|porcentaje)\s+de\s+(?:su|la|cualquier)\s+(?:recuperaci[oó]n|indemnizaci[oó]n|compensaci[oó]n|acuerdo)\b/gi,
+  },
+  { rule: "No upfront cost", re: /\bsin\s+(?:costo|pago|honorarios)s?\s+(?:por\s+adelantado|inicial(?:es)?|de\s+su\s+bolsillo)\b/gi },
+  { rule: "At no cost", re: /\bsin\s+(?:ning[uú]n\s+)?costo\s+(?:alguno|para\s+usted)\b/gi },
+  { rule: "Billing model", re: /\b(?:tarifa|honorarios?)\s+fij[oa]s?\b|\bcobr(?:a|amos|an)\s+por\s+hora\b|\banticipo\s+de\s+honorarios\b/gi },
 ];
 
 /**
@@ -121,7 +136,11 @@ const BANNED: { rule: string; re: RegExp }[] = [
  * which the ending normalizer replaces). It lives in the same neighbourhood
  * of words as the banned patterns.
  */
-const ALLOWED = [/\bfree\s+(?:confidential\s+)?case\s+(?:evaluation|review)\b/gi];
+const ALLOWED = [
+  /\bfree\s+(?:confidential\s+)?case\s+(?:evaluation|review)\b/gi,
+  // The Spanish offer, in the Spanish CTA (Kenneth, 2026-10-20).
+  /\bevaluaci[oó]n\s+gratuita\s+y\s+confidencial\s+de\s+su\s+caso\b/gi,
+];
 
 function sentenceAround(body: string, index: number): string {
   const start = body.lastIndexOf(".", index);

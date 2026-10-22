@@ -27,7 +27,7 @@ const TEXT_BOUND: readonly string[] = ["legal_review", "proofread"];
  * clearance (Oct 20 spec, Task A2); `content` and `frame` are the article and
  * frame record that the frame code derives from the body (Task A1).
  */
-const SERVER_OWNED = ["wp_publish", "certifications", "review", "content", "frame", "source_check", "improvement", "quality_serp", "results"] as const;
+const SERVER_OWNED = ["wp_publish", "certifications", "review", "content", "frame", "source_check", "improvement", "quality_serp", "results", "spanish_check", "language_pair"] as const;
 
 type Meta = Record<string, unknown>;
 

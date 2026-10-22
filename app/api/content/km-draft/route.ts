@@ -211,6 +211,7 @@ export async function POST(req: Request) {
       tenantId: await resolveTenantId(),
       title: brief.h1 || brief.primaryKeyword,
       incoming: brief.primaryKeyword,
+      language,
     }).catch(() => null);
   }
   if (keywordProblem(brief.primaryKeyword) && keywordSelection) {

@@ -41,6 +41,7 @@ import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
 import { ReadinessChecklist } from "@/components/readiness-checklist";
 import { WordPressPublishPanel } from "@/components/wordpress-publish-panel";
 import { VersionsPanel } from "@/components/versions-panel";
+import { LanguagePairPanel } from "@/components/language-pair-panel";
 import { SourcesPanel } from "@/components/sources-panel";
 import { ImprovementSummary } from "@/components/improvement-summary";
 import { readImprovement } from "@/lib/improve-to-ready-shared";
@@ -2341,6 +2342,10 @@ export function DraftDrawer({
                 {/* Oct 20 spec, Task A17: every saved version, restorable. */}
                 <div className="mt-3 rounded-lg border border-slate-200 p-3">
                   <VersionsPanel draftId={draft.id} nonce={findingsNonce} onRestored={() => void reloadDraft(draft.id)} />
+                </div>
+                {/* Oct 20 spec, Task A13: the English and Spanish versions, paired for hreflang. */}
+                <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                  <LanguagePairPanel draftId={draft.id} />
                 </div>
               </div>
             )}

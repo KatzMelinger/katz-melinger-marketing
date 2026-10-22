@@ -10,6 +10,7 @@
  * the keyword everywhere primaryKeyword() and the analysis read it.
  * RLS-scoped client, so another tenant's draft is not found.
  */
+import { draftLanguage } from "@/lib/draft-frame-server";
 import { NextRequest, NextResponse } from "next/server";
 
 import { recordAuditEvent } from "@/lib/content-findings-store";
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         title: (d.title as string) || (d.topic as string) || current,
         incoming: current || null,
         excludeDraftId: id,
+        language: draftLanguage(meta),
       });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });

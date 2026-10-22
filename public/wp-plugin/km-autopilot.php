@@ -3,7 +3,7 @@
  * Plugin Name:       KM AutoPilot
  * Plugin URI:        https://katzmelinger.com
  * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates new posts OR updates an existing page in place (Redraft) from approved, compliance-cleared drafts.
- * Version:           0.7.0
+ * Version:           0.7.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Katz Melinger
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('KM_AUTOPILOT_VERSION', '0.7.0');
+define('KM_AUTOPILOT_VERSION', '0.7.1');
 define('KM_AUTOPILOT_OPTION', 'km_autopilot_settings');
 define('KM_AUTOPILOT_LOG_OPTION', 'km_autopilot_log');
 define('KM_AUTOPILOT_CRON_HOOK', 'km_autopilot_sync_cron');
@@ -556,6 +556,19 @@ function km_autopilot_apply_item_meta($post_id, $item) {
     if (!empty($item['tags']) && is_array($item['tags'])) {
         wp_set_post_tags($post_id, array_map('sanitize_text_field', $item['tags']), false);
     }
+    // Oct 20 spec, Task A13: English and Spanish versions point at each other (hreflang).
+    if (!empty($item['language']) && in_array($item['language'], ['en', 'es'], true)) {
+        update_post_meta($post_id, '_km_lang', $item['language']);
+        $pair = isset($item['hreflang_pair']) && is_array($item['hreflang_pair']) ? $item['hreflang_pair'] : null;
+        if ($pair && !empty($pair['wp_post_id']) && get_post((int) $pair['wp_post_id'])) {
+            $pair_id = (int) $pair['wp_post_id'];
+            update_post_meta($post_id, '_km_hreflang_pair', $pair_id);
+            update_post_meta($pair_id, '_km_hreflang_pair', (int) $post_id);
+            if (!empty($pair['language']) && in_array($pair['language'], ['en', 'es'], true)) {
+                update_post_meta($pair_id, '_km_lang', $pair['language']);
+            }
+        }
+    }
     if (!empty($item['redirects']) && is_array($item['redirects'])) {
         $map = get_option('km_autopilot_redirects', []);
         foreach ($item['redirects'] as $r) {
@@ -840,3 +853,24 @@ function km_autopilot_render_settings_page() {
     </div>
     <?php
 }
+
+/**
+ * hreflang (Oct 20 spec, Task A13): a page with an English or Spanish version
+ * names both, so Google shows each reader the right one.
+ */
+add_action('wp_head', function () {
+    if (!is_singular()) {
+        return;
+    }
+    $id = get_queried_object_id();
+    $lang = get_post_meta($id, '_km_lang', true);
+    $pair_id = (int) get_post_meta($id, '_km_hreflang_pair', true);
+    if (!$lang || !$pair_id || get_post_status($pair_id) !== 'publish') {
+        return;
+    }
+    $pair_lang = get_post_meta($pair_id, '_km_lang', true) ?: ($lang === 'es' ? 'en' : 'es');
+    $en = $lang === 'en' ? $id : $pair_id;
+    printf("<link rel=\"alternate\" hreflang=\"%s\" href=\"%s\" />\n", esc_attr($lang), esc_url(get_permalink($id)));
+    printf("<link rel=\"alternate\" hreflang=\"%s\" href=\"%s\" />\n", esc_attr($pair_lang), esc_url(get_permalink($pair_id)));
+    printf("<link rel=\"alternate\" hreflang=\"x-default\" href=\"%s\" />\n", esc_url(get_permalink($en)));
+}, 5);

@@ -53,6 +53,7 @@ const SUITE = [
   "check-linkedin-mapping",
   "check-callback-export",
   "check-learn-results",
+  "check-spanish",
 ];
 
 const CONCURRENCY = 4;

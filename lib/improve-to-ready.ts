@@ -245,7 +245,7 @@ export async function improveToReady(args: {
     const kwOk = kw && !keywordProblem(kw) && sel?.status === "selected" && sel.chosen?.volume != null && sel.chosen.keyword?.toLowerCase() === kw.toLowerCase();
     if (!kwOk && pass === 1) {
       try {
-        const decision = await selectKeyword({ tenantId, title: d.title ?? d.topic ?? kw ?? "", incoming: kw, excludeDraftId: draftId });
+        const decision = await selectKeyword({ tenantId, title: d.title ?? d.topic ?? kw ?? "", incoming: kw, excludeDraftId: draftId, language: draftLanguage(meta) });
         meta = { ...meta, keyword_selection: decision };
         const chosen = decision.status === "selected" ? decision.chosen : null;
         if (chosen?.keyword && chosen.volume != null) {
