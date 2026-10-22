@@ -55,6 +55,7 @@ const SUITE = [
   "check-learn-results",
   "check-spanish",
   "check-social-video",
+  "check-score-breakdown",
 ];
 
 const CONCURRENCY = 4;

@@ -27,6 +27,7 @@ import {
   type ReadabilityConfig,
   formatReadabilityFindings,
   readabilityContentType,
+  READABILITY_RULES,
 } from "./readability-rules";
 import {
   readabilityRulesEngineEnabled,
@@ -123,6 +124,9 @@ export type SuggestedImage = {
   altText: string;
 };
 
+/** One point lost on a score (Oct 20 spec, Task A11): how many, why, and the check that fixes it. */
+export type ScoreDeduction = { points: number; reason: string; check: string | null };
+
 export type ComplianceStatus = "compliant" | "needs_changes" | "non_compliant";
 
 export type ContentAnalysis = {
@@ -149,6 +153,11 @@ export type ContentAnalysis = {
   seo_findings: string[];
   linkability_score: number | null;
   linkability_findings: string[];
+  /** Task A11: itemized points lost, where the scorer knows them. */
+  aeo_deductions?: ScoreDeduction[];
+  brand_voice_deductions?: ScoreDeduction[];
+  linkability_deductions?: ScoreDeduction[];
+  readability_rules?: { applicable: number; failed: { id: string; label: string }[] };
   outreach_angles: OutreachAngle[];
   // Attorney-advertising compliance (advisory). Null score = couldn't compute.
   compliance_score: number | null;
@@ -271,8 +280,20 @@ function targetHits(body: string, targets: string[]): Record<string, number> {
   return out;
 }
 
-function heuristicAEO(body: string): { score: number; findings: string[] } {
+/** A model's itemized deductions, kept only when well formed. */
+function modelDeductions(raw: unknown, check: string): ScoreDeduction[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw
+    .map((d) => ({ points: Math.round(Number((d as { points?: unknown })?.points)), reason: String((d as { reason?: unknown })?.reason ?? "").trim() }))
+    .filter((d) => Number.isFinite(d.points) && d.points > 0 && d.reason)
+    .map((d) => ({ ...d, check }));
+  return out.length ? out : undefined;
+}
+
+export function heuristicAEO(body: string): { score: number; findings: string[]; deductions: ScoreDeduction[] } {
   const findings: string[] = [];
+  // Oct 20 spec, Task A11: each point lost, with its reason and check.
+  const deductions: ScoreDeduction[] = [];
   let score = 50;
 
   const hasFAQ = /\bq:\s|\bquestion:|\?\s*\n/i.test(body) || /<faq|^##\s+faq/im.test(body);
@@ -280,6 +301,7 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
     score += 12;
   } else {
     findings.push("No FAQ-style block detected. AI engines reach for explicit Q&A when summarizing.");
+    deductions.push({ points: 12, reason: "No FAQ block", check: "faq" });
   }
 
   const hasStats = /\d+%|\$[\d,]+|\d+\s*(?:million|billion|thousand)|\d+\s*employees|\d+\s*workers/i.test(body);
@@ -287,6 +309,7 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
     score += 8;
   } else {
     findings.push("No statistics or specific numbers. AI tends to cite sources that quantify claims.");
+    deductions.push({ points: 8, reason: "No statistics or specific numbers", check: "direct_answer" });
   }
 
   const hasDefinitions = /\bis defined as\b|\bmeans that\b|\brefers to\b|\bin other words\b/i.test(body);
@@ -294,6 +317,7 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
     score += 6;
   } else {
     findings.push("No explicit definitions. Lines like 'X is defined as…' make extractable answers.");
+    deductions.push({ points: 6, reason: "No explicit definitions", check: "direct_answer" });
   }
 
   const hasLists = /\n\s*[-*]\s+|\n\s*\d+\.\s+/.test(body);
@@ -301,6 +325,7 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
     score += 6;
   } else {
     findings.push("No bullet or numbered lists. Lists are quoted verbatim by AI more than prose.");
+    deductions.push({ points: 6, reason: "No bullet or numbered lists", check: "signs" });
   }
 
   const hasHeadings = /^#{1,3}\s+/m.test(body);
@@ -308,6 +333,7 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
     score += 6;
   } else {
     findings.push("No markdown headings. Section headers help AI segment your content for citation.");
+    deductions.push({ points: 6, reason: "No section headings", check: "topic_coverage" });
   }
 
   const hasCitation = /\bsource:|according to\b|\bstudy\b|\breport\b/i.test(body);
@@ -315,17 +341,23 @@ function heuristicAEO(body: string): { score: number; findings: string[] } {
     score += 6;
   } else {
     findings.push("No external source references. Citing studies/reports raises citation-worthiness.");
+    deductions.push({ points: 6, reason: "No external source references", check: "sources" });
   }
 
   const wordCount = body.split(/\s+/).filter(Boolean).length;
   if (wordCount < 300) {
     score -= 8;
     findings.push(`Only ${wordCount} words — too short to surface as an authoritative answer.`);
+    deductions.push({ points: 12, reason: `Only ${wordCount} words (under 300)`, check: "topic_coverage" });
   } else if (wordCount > 800) {
     score += 4;
+  } else {
+    deductions.push({ points: 4, reason: `${wordCount} words (800+ earns the depth points)`, check: "topic_coverage" });
   }
+  // The heuristic tops out at 98: two points no feature can earn.
+  deductions.push({ points: 2, reason: "Not reachable by the heuristic (its maximum is 98)", check: null });
 
-  return { score: Math.max(0, Math.min(100, score)), findings };
+  return { score: Math.max(0, Math.min(100, score)), findings, deductions };
 }
 
 /**
@@ -641,7 +673,7 @@ async function linkabilityScore(args: {
   body: string;
   topic: string;
   title: string | null;
-}): Promise<{ score: number | null; findings: string[]; angles: OutreachAngle[] }> {
+}): Promise<{ score: number | null; findings: string[]; angles: OutreachAngle[]; deductions?: ScoreDeduction[] }> {
   const truncated = args.body.slice(0, 6000);
   const titleLine = args.title ? `Title: ${args.title}\n` : "";
 
@@ -657,6 +689,7 @@ ${truncated}
 Score the linkability and produce concrete outreach angles. Return JSON only:
 {
   "linkability_score": <0-100>,
+  "deductions": [{ "points": <integer>, "reason": "what cost these points, one short line" }],
   "findings": [
     "3-5 specific observations about what makes this linkable or not. Mention what kind of evidence / data / unique angle is present or missing."
   ],
@@ -668,7 +701,8 @@ Score the linkability and produce concrete outreach angles. Return JSON only:
   ]
 }
 
-3-5 outreach angles. Each must be specific and actionable — no generic "share on social media" suggestions.`;
+3-5 outreach angles. Each must be specific and actionable — no generic "share on social media" suggestions.
+The deductions list every point below 100: their points add up to 100 minus linkability_score.`;
 
   try {
     const resp = await getAnthropic().messages.create({
@@ -680,11 +714,13 @@ Score the linkability and produce concrete outreach angles. Return JSON only:
     const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
     const parsed = extractJSON<{
       linkability_score: number;
+      deductions?: { points?: unknown; reason?: unknown }[];
       findings: string[];
       outreach_angles: OutreachAngle[];
     }>(text);
     return {
       score: Math.max(0, Math.min(100, parsed.linkability_score ?? 0)),
+      deductions: modelDeductions(parsed.deductions, "linkability"),
       findings: Array.isArray(parsed.findings) ? parsed.findings : [],
       angles: Array.isArray(parsed.outreach_angles)
         ? parsed.outreach_angles.filter(
@@ -857,7 +893,7 @@ ${facts}
   }
 }
 
-async function brandVoiceMatch(body: string, tenantId?: string): Promise<{ score: number | null; findings: string[]; summary: string }> {
+async function brandVoiceMatch(body: string, tenantId?: string): Promise<{ score: number | null; findings: string[]; summary: string; deductions?: ScoreDeduction[] }> {
   const firm = await getFirmContext(tenantId);
   const truncated = body.slice(0, 6000); // keep prompt small
 
@@ -874,8 +910,10 @@ Return JSON only:
 {
   "brand_voice_score": <0-100>,
   "brand_voice_findings": ["finding 1", "finding 2", ...],
+  "deductions": [{ "points": <integer>, "reason": "what cost these points, one short line" }],
   "summary": "One sentence: is this on-brand? What's the headline issue?"
-}`;
+}
+The deductions list every point below 100: their points add up to 100 minus brand_voice_score.`;
 
   try {
     const resp = await getAnthropic().messages.create({
@@ -888,10 +926,12 @@ Return JSON only:
     const parsed = extractJSON<{
       brand_voice_score: number;
       brand_voice_findings: string[];
+      deductions?: { points?: unknown; reason?: unknown }[];
       summary: string;
     }>(text);
     return {
       score: Math.max(0, Math.min(100, parsed.brand_voice_score ?? 0)),
+      deductions: modelDeductions(parsed.deductions, "brand_voice"),
       findings: parsed.brand_voice_findings ?? [],
       summary: parsed.summary ?? "",
     };
@@ -1297,6 +1337,17 @@ export async function analyzeDraft(args: {
     linkability_score: linkability.score,
     linkability_findings: linkability.findings,
     outreach_angles: linkability.angles,
+    aeo_deductions: aeo.deductions,
+    ...(brand.deductions ? { brand_voice_deductions: brand.deductions } : {}),
+    ...(linkability.deductions ? { linkability_deductions: linkability.deductions } : {}),
+    ...(ruleResult
+      ? {
+          readability_rules: {
+            applicable: ruleResult.rulesApplicable,
+            failed: ruleResult.failedRuleIds.map((id) => ({ id, label: READABILITY_RULES.find((r) => r.id === id)?.description ?? id })),
+          },
+        }
+      : {}),
     compliance_score: compliance ? compliance.score : null,
     compliance_status: compliance ? compliance.status : null,
     compliance_violations: compliance ? compliance.violations : [],
