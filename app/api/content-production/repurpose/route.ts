@@ -27,6 +27,10 @@ import {
   repurposeIdempotencyKey,
 } from "@/lib/repurpose-idempotency";
 import type { SocialFormatKey } from "@/lib/social-format-rules";
+import { ensureVideoDisclosure, isVideoFormat, repurposeSourceProblem } from "@/lib/social-from-content";
+import { readinessForDraft } from "@/lib/draft-readiness-server";
+import { getOperatingBrief } from "@/lib/social-operating-brief";
+import type { DraftForFrame } from "@/lib/draft-frame-server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -56,6 +60,16 @@ export async function POST(req: Request) {
   }
 
   const db = await getTenantDb();
+
+  // Oct 20 spec, Task A16: only a published page or a Ready draft is repurposed,
+  // so every post starts from claims that were already verified.
+  const sourceProblem = await repurposeSourceProblem({
+    tenantId: db.tenantId,
+    sourceDraftId,
+    url: url || null,
+    isReady: async (d) => (await readinessForDraft(db.tenantId, d as unknown as DraftForFrame & { id: string }))?.ready === true,
+  });
+  if (sourceProblem) return NextResponse.json({ error: sourceProblem }, { status: 422 });
 
   // Ground the variations in the live page. Social generation is source-required
   // (Rule 1): the source is the page being repurposed, so we need its text. Use
@@ -154,6 +168,17 @@ export async function POST(req: Request) {
 
   if (!gen.drafts.length) {
     return NextResponse.json({ error: "The model returned no usable variations." }, { status: 502 });
+  }
+
+  // Task A16: every video caption carries the AI-performer disclosure and the disclaimer link.
+  const { disclaimerUrl } = await getOperatingBrief(db.tenantId);
+  for (const d of gen.drafts) {
+    if (!isVideoFormat(d.format)) continue;
+    const next = ensureVideoDisclosure(d.body, disclaimerUrl);
+    if (next !== d.body) {
+      d.body = next;
+      await db.from("content_drafts").update({ body: next }).eq("id", d.id);
+    }
   }
 
   return NextResponse.json({

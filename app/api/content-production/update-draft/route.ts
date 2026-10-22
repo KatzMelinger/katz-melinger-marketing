@@ -15,6 +15,7 @@
 
 import { after, NextResponse } from "next/server";
 import { requestImproveToReady } from "@/lib/improve-trigger";
+import { isCronCall } from "@/lib/job-runs";
 import { isFramedFormat } from "@/lib/draft-frame";
 import { findLiveDraftFor, liveDraftConflictBody } from "@/lib/draft-uniqueness";
 
@@ -77,8 +78,12 @@ function str(v: unknown): string {
 }
 
 export async function POST(req: Request) {
-  const denied = await guardUser();
-  if (denied) return denied;
+  // Oct 20 spec, Task A15: a knowledge base change opens refresh drafts from
+  // a scheduled job, which carries the cron secret instead of a session.
+  if (!isCronCall(req)) {
+    const denied = await guardUser();
+    if (denied) return denied;
+  }
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 503 });
   }
@@ -417,6 +422,7 @@ export async function POST(req: Request) {
         ...(grounded.frameMeta ?? {}),
         update_keywords: keywords,
         update_target_url: url,
+        ...(str(body.refreshReason) ? { refresh_reason: str(body.refreshReason) } : {}),
         ...(body.keywordSelection && typeof body.keywordSelection === "object" ? { keyword_selection: body.keywordSelection } : {}),
         pillar_id: resolvedPillar,
         // Section-structure check (H1/H2/H3 scaffold) so the drawer's QA gate

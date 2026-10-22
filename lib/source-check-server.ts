@@ -11,6 +11,9 @@ import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
 import { verifyClaimAgainst } from "./legal-verify";
 import { safeFetch } from "./url-safety";
 import { readContent } from "./draft-frame";
+import { recordAiCost } from "./ai-cost";
+import { readSpanishCheck, runSpanishChecks } from "./spanish-checks";
+import { englishFor } from "./spanish-check-status";
 import { retrieveAuthority } from "./legal-retrieval";
 import type { ParsedCitation } from "./legal-citation";
 import type { StatuteRow } from "./legal-statute-table";
@@ -27,6 +30,11 @@ import {
 } from "./source-check";
 
 const CONCURRENCY = 3;
+
+function draftLanguageOf(meta: Record<string, unknown>): "en" | "es" {
+  const v = meta.language; // the same rule as draftLanguage in lib/draft-frame-server.ts
+  return typeof v === "string" && v.toLowerCase().startsWith("es") ? "es" : "en";
+}
 
 /** HTML to readable text: scripts, styles and tags out, entities decoded. */
 export function htmlToText(html: string): string {
@@ -83,14 +91,18 @@ async function fetchSource(url: string, tenantId: string): Promise<{ ok: true; t
   }
 }
 
-async function ask(system: string, user: string): Promise<string> {
-  const res = await getAnthropic().messages.create({
-    model: KEYWORD_RESEARCH_MODEL,
-    max_tokens: 700,
-    system,
-    messages: [{ role: "user", content: user }],
-  });
-  return res.content[0]?.type === "text" ? res.content[0].text : "";
+/** The model call, with its cost written to the ledger against the draft (Task A17). */
+function makeAsk(tenantId: string, draftId: string | null) {
+  return async (system: string, user: string): Promise<string> => {
+    const res = await getAnthropic().messages.create({
+      model: KEYWORD_RESEARCH_MODEL,
+      max_tokens: 700,
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+    void recordAiCost({ tenantId, draftId, endpoint: "source-check", model: KEYWORD_RESEARCH_MODEL, usage: res.usage });
+    return res.content[0]?.type === "text" ? res.content[0].text : "";
+  };
 }
 
 async function confirmContradiction(sentence: string, text: string): Promise<boolean> {
@@ -116,10 +128,20 @@ export async function loadSourceCheckInputs(tenantId: string): Promise<SourceChe
   return { thresholds, statutes: statutes.ok ? statutes.rows : [], approved: approvedKeys(learned) };
 }
 
-async function checkOne(tenantId: string, claim: SourceClaim, inputs: SourceCheckInputs, pages: Map<string, Promise<Awaited<ReturnType<typeof fetchSource>>>>): Promise<SourceCheckEntry> {
-  const match = matchEntry(claim, inputs.thresholds, inputs.statutes);
+async function checkOne(
+  tenantId: string,
+  claim: SourceClaim,
+  inputs: SourceCheckInputs,
+  pages: Map<string, Promise<Awaited<ReturnType<typeof fetchSource>>>>,
+  draftId: string | null = null,
+  /** The claim in English, for a Spanish draft (Task A13): the knowledge base's match keywords are English. */
+  english: string | null = null,
+): Promise<SourceCheckEntry> {
+  const direct = matchEntry(claim, inputs.thresholds, inputs.statutes);
+  const match = direct ?? (english ? matchEntry({ ...claim, sentence: english }, inputs.thresholds, inputs.statutes) : null);
   const base = {
-    hash: claimHash(claim.sentence, match),
+    // Hashed on the sentence's own match, so sourceStatus finds it again without the translation.
+    hash: claimHash(claim.sentence, direct),
     sentence: claim.sentence,
     type: claim.type,
     kb_key: match?.key ?? null,
@@ -139,24 +161,31 @@ async function checkOne(tenantId: string, claim: SourceClaim, inputs: SourceChec
   if (!page.ok) {
     return { ...base, reproduction: standing === "reproduction", quote: null, verdict: "not_found", reason: `Not checked: ${page.reason}.` };
   }
-  const j = await judgeClaim(claim.sentence, page.text, ask, confirmContradiction);
+  const j = await judgeClaim(claim.sentence, page.text, makeAsk(tenantId, draftId), confirmContradiction);
   return { ...base, reproduction: standing === "reproduction", quote: j.quote, verdict: j.verdict, reason: j.reason, closest: j.closest };
 }
 
 /** Check a list of claims (no storage): used by runSourceCheck and by Improve to Ready's guard. */
-export async function checkClaims(tenantId: string, claims: SourceClaim[], inputs: SourceCheckInputs): Promise<SourceCheckEntry[]> {
+export async function checkClaims(tenantId: string, claims: SourceClaim[], inputs: SourceCheckInputs, draftId: string | null = null): Promise<SourceCheckEntry[]> {
   const pages = new Map<string, Promise<Awaited<ReturnType<typeof fetchSource>>>>();
   const out: SourceCheckEntry[] = [];
   const queue = [...claims];
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
-      for (let c = queue.shift(); c; c = queue.shift()) out.push(await checkOne(tenantId, c, inputs, pages));
+      for (let c = queue.shift(); c; c = queue.shift()) out.push(await checkOne(tenantId, c, inputs, pages, draftId));
     }),
   );
   return out;
 }
 
-export type SourceCheckRun = { record: SourceCheckRecord; checked: number; reused: number; claims: number };
+export type SourceCheckRun = {
+  record: SourceCheckRecord;
+  checked: number;
+  reused: number;
+  claims: number;
+  /** Claims this run turned into attorney questions (Task A14 emails them). */
+  newQuestionHashes: string[];
+};
 
 /** Check the draft's unchecked claims and save metadata.source_check. */
 export async function runSourceCheck(tenantId: string, draftId: string, opts: { inputs?: SourceCheckInputs } = {}): Promise<SourceCheckRun> {
@@ -176,12 +205,16 @@ export async function runSourceCheck(tenantId: string, draftId: string, opts: { 
   const stored = readSourceCheck(meta);
   const status = sourceStatus(content, stored, inputs.thresholds, inputs.statutes, inputs.approved, sentenceKey);
 
+  // Task A13: a Spanish draft is also read in English (traps, and matching its claims to the knowledge base).
+  const spanish = draftLanguageOf(meta) === "es" ? await runSpanishChecks(tenantId, draftId, content, readSpanishCheck(meta)) : null;
+  const englishOf = (sentence: string) => (spanish ? englishFor(spanish.pairs, sentence) : null);
+
   const pages = new Map<string, Promise<Awaited<ReturnType<typeof fetchSource>>>>();
   const fresh: SourceCheckEntry[] = [];
   const queue = [...status.unchecked];
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
-      for (let c = queue.shift(); c; c = queue.shift()) fresh.push(await checkOne(tenantId, c, inputs, pages));
+      for (let c = queue.shift(); c; c = queue.shift()) fresh.push(await checkOne(tenantId, c, inputs, pages, draftId, englishOf(c.sentence)));
     }),
   );
 
@@ -195,9 +228,15 @@ export async function runSourceCheck(tenantId: string, draftId: string, opts: { 
   const latest = ((now?.metadata as Record<string, unknown> | null) ?? meta) as Record<string, unknown>;
   const { error: upd } = await sb
     .from("content_drafts")
-    .update({ metadata: { ...latest, source_check: record } })
+    .update({ metadata: { ...latest, source_check: record, ...(spanish ? { spanish_check: spanish } : {}) } })
     .eq("tenant_id", tenantId)
     .eq("id", draftId);
   if (upd) throw new Error(upd.message);
-  return { record, checked: fresh.length, reused: status.current.length, claims: status.claims };
+  return {
+    record,
+    checked: fresh.length,
+    reused: status.current.length,
+    claims: status.claims,
+    newQuestionHashes: fresh.filter((e) => e.verdict === "not_found" || e.verdict === "no_entry" || e.verdict === "contradicted").map((e) => e.hash),
+  };
 }

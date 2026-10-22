@@ -94,7 +94,11 @@ export default function CallsPage() {
   const router = useRouter();
   const [initialRange] = useState(() => monthToDate(Date.now()));
   const [calls, setCalls] = useState<CallRow[]>([]);
-  const [recovery, setRecovery] = useState<Map<string, RecoveryRow>>(new Map());
+  const [recovery, setRecovery] = useState<Map<string, RecoveryRow & { notes?: string | null }>>(new Map());
+  const [outcomes, setOutcomes] = useState<{ called_back: number; reached: number; dead: number; consultation: number } | null>(null);
+  const [cbResult, setCbResult] = useState<"all" | "missed" | "voicemail">("all");
+  const [cbCaller, setCbCaller] = useState<"all" | "first" | "repeat">("all");
+  const [emailMsg, setEmailMsg] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -140,8 +144,8 @@ export default function CallsPage() {
   const loadRecovery = useCallback(async () => {
     try {
       const res = await fetch("/api/leads/recovery", { cache: "no-store" });
-      const j = (await res.json()) as { rows?: RecoveryRow[] };
-      const m = new Map<string, RecoveryRow>();
+      const j = (await res.json()) as { rows?: (RecoveryRow & { notes?: string | null })[] };
+      const m = new Map<string, RecoveryRow & { notes?: string | null }>();
       for (const r of j.rows ?? []) m.set(r.phone, r);
       setRecovery(m);
     } catch {
@@ -158,6 +162,18 @@ export default function CallsPage() {
   useEffect(() => {
     void loadRecovery();
   }, [loadRecovery]);
+
+  // Oct 20 spec, Task A19: how the follow-up went in these dates.
+  useEffect(() => {
+    if ((from && !isIsoDate(from)) || (to && !isIsoDate(to))) return;
+    const p = new URLSearchParams();
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    fetch(`/api/calls/needs-callback/outcomes?${p.toString()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setOutcomes(j?.outcomes ?? null))
+      .catch(() => setOutcomes(null));
+  }, [from, to, recovery]);
 
   async function reloadAll() {
     await Promise.all([load(from, to), loadRecovery()]);
@@ -257,6 +273,45 @@ export default function CallsPage() {
     }
   }
 
+  /** A note or a booked consultation on a caller (Task A19). */
+  async function saveRecovery(phone: string, patch: { notes?: string; consultation?: boolean }, lastTry: string) {
+    const hadRow = recovery.has(phone);
+    try {
+      const res = await fetch("/api/leads/recovery", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone, ...patch, ...(hadRow ? {} : { first_lost_at: lastTry }) }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      setError("Couldn’t save — check connection");
+    }
+    void loadRecovery();
+  }
+
+  function exportUrl(format: "pdf" | "csv") {
+    const p = new URLSearchParams({ format });
+    const r = loadedRange ?? { from: from || initialRange.from, to: to || initialRange.to };
+    p.set("from", r.from);
+    p.set("to", r.to);
+    if (src !== "all") p.set("source", src);
+    if (language !== "all") p.set("language", language);
+    if (cbResult !== "all") p.set("result", cbResult);
+    if (cbCaller !== "all") p.set("caller", cbCaller);
+    return `/api/calls/needs-callback/export?${p.toString()}`;
+  }
+
+  async function emailNow() {
+    setEmailMsg("Sending…");
+    try {
+      const res = await fetch("/api/calls/needs-callback/email", { method: "POST" });
+      const j = (await res.json().catch(() => ({}))) as { sent?: number; skipped?: string; error?: string };
+      setEmailMsg(j.error ?? (j.skipped ? `Not sent: ${j.skipped}.` : `Sent to ${j.sent} recipient${j.sent === 1 ? "" : "s"}.`));
+    } catch {
+      setEmailMsg("Couldn’t send — check connection");
+    }
+  }
+
   const sources = useMemo(() => {
     const m = new Set<string>();
     for (const c of calls) m.add(sourceLabel(c));
@@ -287,10 +342,24 @@ export default function CallsPage() {
   const sourceTable = useMemo(() => bySource(calls, nowMs), [calls, nowMs]);
   // Oct 6 spec, Task 10: the callback list follows the selected date range
   // (default: this month to date), the same range as everything else here.
-  const callbacks = useMemo(
-    () => needsCallback(calls, recovery, nowMs),
-    [calls, recovery, nowMs],
-  );
+  // The list follows the page's source and language filters, plus its own
+  // result and caller filters, and the export uses the same ones (Task A19).
+  const callbacks = useMemo(() => {
+    const lang = new Map<string, string>();
+    for (const c of calls) {
+      const p = (c.customer_phone_number ?? "").replace(/\D/g, "").slice(-10);
+      if (p && !lang.has(p)) lang.set(p, c.transcription_language ?? "unknown");
+    }
+    return needsCallback(calls, recovery, nowMs).filter((cb) => {
+      if (src !== "all" && cb.source !== src) return false;
+      if (language !== "all" && (lang.get(cb.phone) ?? "unknown") !== language) return false;
+      if (cbResult === "missed" && cb.lastStatus !== "Missed") return false;
+      if (cbResult === "voicemail" && cb.lastStatus !== "Voicemail") return false;
+      if (cbCaller === "first" && !cb.firstTime) return false;
+      if (cbCaller === "repeat" && cb.firstTime) return false;
+      return true;
+    });
+  }, [calls, recovery, nowMs, src, language, cbResult, cbCaller]);
   const missedCount = useMemo(() => missedLeads(calls, nowMs).length, [calls, nowMs]);
 
   const totalCalls = stats.total;
@@ -465,13 +534,55 @@ export default function CallsPage() {
             </Link>{" "}
             worklist).
           </p>
+          {outcomes ? (
+            <p className="mt-2 text-xs text-slate-600">
+              Follow-up in these dates: {outcomes.called_back} called back · {outcomes.reached} reached ·{" "}
+              {outcomes.dead} dead · {outcomes.consultation} consultation{outcomes.consultation === 1 ? "" : "s"} booked
+            </p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={cbResult}
+              onChange={(e) => setCbResult(e.target.value as typeof cbResult)}
+              className="rounded-md border border-[#e2e8f0] px-2 py-1"
+              aria-label="Result of the last try"
+            >
+              <option value="all">Missed and voicemail</option>
+              <option value="missed">Missed only</option>
+              <option value="voicemail">Voicemail only</option>
+            </select>
+            <select
+              value={cbCaller}
+              onChange={(e) => setCbCaller(e.target.value as typeof cbCaller)}
+              className="rounded-md border border-[#e2e8f0] px-2 py-1"
+              aria-label="First-time or repeat caller"
+            >
+              <option value="all">All callers</option>
+              <option value="first">First-time callers</option>
+              <option value="repeat">Repeat callers</option>
+            </select>
+            <a href={exportUrl("pdf")} target="_blank" rel="noreferrer" className="rounded-md border border-[#e2e8f0] px-2 py-1 text-slate-700 hover:bg-slate-50">
+              Download PDF
+            </a>
+            <a href={exportUrl("csv")} className="rounded-md border border-[#e2e8f0] px-2 py-1 text-slate-700 hover:bg-slate-50">
+              Download CSV
+            </a>
+            <button onClick={() => void emailNow()} className="rounded-md border border-[#e2e8f0] px-2 py-1 text-slate-700 hover:bg-slate-50">
+              Email the list now
+            </button>
+            {emailMsg ? <span className="text-slate-500">{emailMsg}</span> : null}
+            <span className="text-slate-400">
+              The source and language filters above apply here too. The daily 8:00 AM email goes to the recipients in{" "}
+              <Link href="/brand-voice" className="text-brand hover:underline">Brand settings</Link>.
+            </span>
+          </div>
           {loading && calls.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">Loading…</p>
           ) : callbacks.length === 0 ? (
             <p className="mt-4 text-sm text-emerald-700">Nobody is waiting on a callback.</p>
           ) : (
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[1020px] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-[#e2e8f0] text-slate-500">
                     <th className="pb-3 pr-4 font-medium">Name</th>
@@ -480,7 +591,8 @@ export default function CallsPage() {
                     <th className="pb-3 pr-4 font-medium">Tries</th>
                     <th className="pb-3 pr-4 font-medium">Source</th>
                     <th className="pb-3 pr-4 font-medium">Caller</th>
-                    <th className="pb-3 font-medium">Mark as worked</th>
+                    <th className="pb-3 pr-4 font-medium">Mark as worked</th>
+                    <th className="pb-3 font-medium">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="text-slate-700">
@@ -518,6 +630,24 @@ export default function CallsPage() {
                               Was {RECOVERY_LABEL[current].toLowerCase()} before this call
                             </p>
                           ) : null}
+                          <button
+                            onClick={() => void saveRecovery(cb.phone, { consultation: true }, cb.lastTry)}
+                            className="mt-1 text-xs text-brand hover:underline"
+                          >
+                            Consultation booked
+                          </button>
+                        </td>
+                        <td className="py-3">
+                          <input
+                            key={`${cb.phone}:${recovery.get(cb.phone)?.notes ?? ""}`}
+                            defaultValue={recovery.get(cb.phone)?.notes ?? ""}
+                            placeholder="Add a note"
+                            onBlur={(e) => {
+                              const v = e.currentTarget.value;
+                              if (v !== (recovery.get(cb.phone)?.notes ?? "")) void saveRecovery(cb.phone, { notes: v }, cb.lastTry);
+                            }}
+                            className="w-40 rounded-md border border-[#e2e8f0] px-2 py-1 text-xs"
+                          />
                         </td>
                       </tr>
                     );
@@ -576,7 +706,7 @@ export default function CallsPage() {
             Showing {filtered.length} of {totalCalls} calls in range
           </p>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[1020px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-[#e2e8f0] text-slate-500">
                   <th className="pb-3 pr-4 font-medium">Caller</th>

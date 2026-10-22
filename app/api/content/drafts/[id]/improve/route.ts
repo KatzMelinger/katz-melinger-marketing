@@ -11,6 +11,7 @@ import { getTenantClient } from "@/lib/tenant-db";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getCurrentUser } from "@/lib/supabase-route";
 import { improveToReady } from "@/lib/improve-to-ready";
+import { overBudget } from "@/lib/ai-cost";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // The automatic run answers at once and works in after(), so the request
     // that started it is never kept waiting.
     const tid = data.tenant_id as string;
+    // Task A17: over the monthly AI budget, automatic runs pause (the button
+    // still works); the watchdog emails Kenneth.
+    if (await overBudget(tid)) return NextResponse.json({ skipped: "over the monthly AI budget" }, { status: 202 });
     after(async () => {
       try {
         await improveToReady({ tenantId: tid, draftId: id, actor });

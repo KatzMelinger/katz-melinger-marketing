@@ -69,6 +69,8 @@ export const DEPARTMENTS: Department[] = [
       // sidebar tab instead of five.
       { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
       { label: "Refresh Queue", href: "/content/refresh", icon: "♻", status: "active" },
+      { label: "Results", href: "/content/results", icon: "📈", status: "active" },
+      { label: "Operating Guide", href: "/content/operating-guide", icon: "🧾", status: "active" },
       { label: "Cluster Map", href: "/content/site-map", icon: "🗺", status: "active" },
       { label: "Drafts", href: "/content/drafts", icon: "📝", status: "active" },
       { label: "Sources", href: "/content/sources", icon: "📥", status: "active" },
@@ -199,6 +201,7 @@ export const DEPARTMENTS: Department[] = [
     defaultOpen: false,
     items: [
       { label: "Integrations", href: "/integrations", icon: "🔌", status: "active", adminOnly: true },
+      { label: "System Health", href: "/system/health", icon: "🩺", status: "active" },
       { label: "Users", href: "/admin/users", icon: "👥", status: "active", adminOnly: true },
       { label: "Settings", href: "/settings", icon: "⚙", status: "active", adminOnly: true },
     ],
@@ -354,6 +357,7 @@ export const SIDEBAR_SECTIONS: Department[] = [
     defaultOpen: false,
     items: [
       { label: "Integrations", href: "/integrations", icon: "🔌", status: "active", adminOnly: true },
+      { label: "System Health", href: "/system/health", icon: "🩺", status: "active" },
       { label: "Users", href: "/admin/users", icon: "👥", status: "active", adminOnly: true },
       { label: "Settings", href: "/settings", icon: "⚙", status: "active", adminOnly: true },
     ],

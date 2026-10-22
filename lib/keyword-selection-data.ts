@@ -15,19 +15,31 @@ const GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
 /** How many candidates get a New York volume (one Google Ads call). */
 const NY_TOP = 15;
 
-/** Real candidates for a seed: related keywords, suggestions and local variants. */
-export async function gatherCandidates(seed: string, incoming?: string | null): Promise<KeywordCandidate[]> {
+/**
+ * Real candidates for a seed: related keywords, suggestions and local variants.
+ * Spanish content (Oct 20 spec, Task A13) uses DataForSEO's Spanish data and
+ * adds the Spanish queries the site already gets in Search Console.
+ */
+export async function gatherCandidates(
+  seed: string,
+  incoming?: string | null,
+  language: "en" | "es" = "en",
+  spanishQueries: string[] = [],
+): Promise<KeywordCandidate[]> {
   const s = seed.trim().toLowerCase();
   if (!s) return [];
   const [related, suggestions] = await Promise.all([
-    getRelatedKeywords(s, 40).catch(() => []),
-    getKeywordSuggestions(s, 40).catch(() => []),
+    getRelatedKeywords(s, 40, language).catch(() => []),
+    getKeywordSuggestions(s, 40, language).catch(() => []),
   ]);
-  const phrases = new Set<string>([s, `${s} ny`, `${s} in ny`, `${s} new york`]);
+  const phrases = new Set<string>(
+    language === "es" ? [s, `${s} nueva york`, `${s} en nueva york`, `abogado ${s}`] : [s, `${s} ny`, `${s} in ny`, `${s} new york`],
+  );
   if (incoming && !keywordProblem(incoming)) phrases.add(incoming.trim().toLowerCase());
   for (const r of [...related, ...suggestions]) if (r.keyword) phrases.add(r.keyword.toLowerCase().trim());
+  for (const q of spanishQueries) phrases.add(q.toLowerCase().trim());
   const usable = [...phrases].filter((p) => !keywordProblem(p)).slice(0, 120);
-  const metrics = await getKeywordMetrics(usable);
+  const metrics = await getKeywordMetrics(usable, language);
   const out: KeywordCandidate[] = [...metrics.values()].map((m) => ({ ...m }));
   // Keep the phrases DataForSEO knows nothing about too, so the decision can
   // say "no search volume" rather than silently dropping them.
@@ -80,6 +92,27 @@ async function rankingQueries(tenantId: string): Promise<{ query: string; page: 
   }
 }
 
+const SPANISH_WORDS = /\b(?:abogad[oa]s?|despido|injustificado|salarios?|horas|extras?|trabajo|trabajador(?:es)?|empleador|empleados?|acoso|discriminaci[oó]n|demanda|derechos|sueldo|pago|cobro|deuda|nueva|de|del|en|por|para|que|mi|me)\b/gi;
+
+/** A query written in Spanish: two or more Spanish words, or one Spanish letter. */
+export function isSpanishQuery(q: string): boolean {
+  return /[ñáéíóú¿¡]/i.test(q) || (q.match(SPANISH_WORDS) ?? []).length >= 2;
+}
+
+/**
+ * Spanish Search Console queries that share a word with the seed (October 2
+ * example: "abogado de despido injustificado", 167 impressions, position 5.5).
+ */
+export function spanishQueriesFor(seed: string, rows: { query: string }[]): string[] {
+  const words = seed.toLowerCase().match(/[a-záéíóúñ]{4,}/g) ?? [];
+  const out = new Set<string>();
+  for (const r of rows) {
+    const q = r.query.toLowerCase();
+    if (isSpanishQuery(q) && words.some((w) => q.includes(w))) out.add(q);
+  }
+  return [...out].slice(0, 30);
+}
+
 /** Everything that already targets a keyword, from the four sources. */
 export async function loadExistingTargets(tenantId: string, excludeDraftId?: string | null): Promise<ExistingTarget[]> {
   const sb = getSupabaseAdmin();
@@ -112,10 +145,14 @@ export async function selectKeyword(args: {
   title: string;
   incoming?: string | null;
   excludeDraftId?: string | null;
+  /** Spanish drafts choose from Spanish data (Task A13). */
+  language?: "en" | "es";
 }): Promise<KeywordDecision> {
   const seed = args.incoming && !keywordProblem(args.incoming) ? args.incoming : seedFromTitle(args.title);
+  const language = args.language ?? "en";
+  const spanish = language === "es" ? spanishQueriesFor(seed, await rankingQueries(args.tenantId)) : [];
   const [candidates, existing] = await Promise.all([
-    gatherCandidates(seed, args.incoming),
+    gatherCandidates(seed, args.incoming, language, spanish),
     loadExistingTargets(args.tenantId, args.excludeDraftId),
   ]);
   return chooseKeyword({ title: args.title, incoming: args.incoming, candidates, existing });

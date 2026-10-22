@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { scoreSitePages } from "@/lib/site-page-scoring";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantClient, listTenantIds } from "@/lib/tenant-db";
+import { withJobRun } from "@/lib/job-runs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -22,7 +23,7 @@ function isAuthorizedCron(req: NextRequest): boolean {
   return req.headers.get("authorization") === `Bearer ${expected}`;
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -53,4 +54,9 @@ export async function POST() {
       { status: 500 },
     );
   }
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/content/site-inventory/score", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

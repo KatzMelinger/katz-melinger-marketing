@@ -3,7 +3,7 @@
  * Plugin Name:       KM AutoPilot
  * Plugin URI:        https://katzmelinger.com
  * Description:       Pulls approved on-page SEO fixes (meta titles, descriptions, canonicals, OG tags, JSON-LD) AND approved long-form content from the marketing dashboard and applies them. On-page fixes only touch Yoast/RankMath fields or post meta; content publishing (opt-in) creates new posts OR updates an existing page in place (Redraft) from approved, compliance-cleared drafts.
- * Version:           0.6.0
+ * Version:           0.7.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Katz Melinger
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('KM_AUTOPILOT_VERSION', '0.6.0');
+define('KM_AUTOPILOT_VERSION', '0.7.1');
 define('KM_AUTOPILOT_OPTION', 'km_autopilot_settings');
 define('KM_AUTOPILOT_LOG_OPTION', 'km_autopilot_log');
 define('KM_AUTOPILOT_CRON_HOOK', 'km_autopilot_sync_cron');
@@ -102,6 +102,7 @@ function km_autopilot_http_request($method, $path, $body = null) {
         'timeout' => 30,
         'headers' => [
             'X-KM-AutoPilot-Token' => $settings['token'],
+            'X-KM-AutoPilot-Version' => KM_AUTOPILOT_VERSION,
             'Content-Type'         => 'application/json',
             'Accept'               => 'application/json',
         ],
@@ -174,7 +175,7 @@ function km_autopilot_apply_meta_field($post_id, $value, $yoast_key, $rankmath_k
  * post doesn't already have one. Never fatal — a failure just means no
  * featured image this round; logged and swallowed by the caller.
  */
-function km_autopilot_set_featured_image($post_id, $image_url) {
+function km_autopilot_set_featured_image($post_id, $image_url, $alt = '', $name = '') {
     if (empty($image_url) || has_post_thumbnail($post_id)) {
         return;
     }
@@ -191,6 +192,13 @@ function km_autopilot_set_featured_image($post_id, $image_url) {
         return;
     }
     set_post_thumbnail($post_id, $attachment_id);
+    // Oct 20 spec, Task A12: descriptive alt text and file title.
+    if ($alt !== '') {
+        update_post_meta($attachment_id, '_wp_attachment_image_alt', sanitize_text_field($alt));
+    }
+    if ($name !== '') {
+        wp_update_post(['ID' => $attachment_id, 'post_title' => sanitize_text_field($name), 'post_name' => sanitize_title($name)]);
+    }
 }
 
 function km_autopilot_apply_one($rec) {
@@ -267,6 +275,17 @@ add_action('wp_head', function () {
 // not installed (the filter simply never fires).
 add_filter('wpseo_schema_article', function ($data) {
     if (!is_array($data)) {
+        return $data;
+    }
+    // Oct 20 spec, Task A2: the attorney who reviewed THIS page first.
+    $post_id = get_queried_object_id();
+    $page = $post_id ? json_decode(get_post_meta($post_id, '_km_reviewed_by', true), true) : null;
+    if (is_array($page) && !empty($page['name'])) {
+        $reviewer = ['@type' => 'Person', 'name' => $page['name']];
+        if (!empty($page['url'])) {
+            $reviewer['url'] = $page['url'];
+        }
+        $data['reviewedBy'] = $reviewer;
         return $data;
     }
     $settings = km_autopilot_get_settings();
@@ -406,145 +425,274 @@ function km_autopilot_publish_content() {
     }
 
     $items = isset($resp['items']) && is_array($resp['items']) ? $resp['items'] : [];
-    $post_status = ($settings['content_status'] === 'publish') ? 'publish' : 'draft';
-    $published = 0;
-    $failed    = 0;
+    $done   = 0;
+    $failed = 0;
 
     foreach ($items as $item) {
         if (empty($item['id'])) {
             continue;
         }
-        $postarr = [
-            'post_title'   => isset($item['title']) ? wp_strip_all_tags($item['title']) : 'Untitled',
-            'post_content' => isset($item['content_html']) ? wp_kses_post($item['content_html']) : '',
-            'post_status'  => $post_status,
-            'post_type'    => 'post',
-        ];
-        if (!empty($item['slug'])) {
-            $postarr['post_name'] = sanitize_title($item['slug']);
+        $action = isset($item['action']) ? $item['action'] : 'create';
+        if ($action === 'go_live') {
+            $r = km_autopilot_go_live($item);
+        } elseif ($action === 'rollback') {
+            $r = km_autopilot_rollback($item);
+        } else {
+            $r = km_autopilot_save_draft($item);
         }
-        if (!empty($item['meta_description'])) {
-            $postarr['post_excerpt'] = sanitize_text_field($item['meta_description']);
+        if (is_wp_error($r)) {
+            $failed++;
+            km_autopilot_log_event($action . ' failed for ' . $item['id'] . ': ' . $r->get_error_message(), ['draft_id' => $item['id']]);
+        } else {
+            $done++;
         }
-
-        // A Redraft carries the source page URL — update THAT page in place
-        // rather than creating a new post.
-        $update_url = !empty($item['update_url']) ? $item['update_url'] : '';
-
-        // Idempotency: reuse a post we already created/updated for this draft
-        // (e.g. when a prior confirm failed) instead of acting twice on retry.
-        $existing = get_posts([
-            'post_type'   => 'any',
-            'post_status' => 'any',
-            'numberposts' => 1,
-            'fields'      => 'ids',
-            'meta_key'    => '_km_autopilot_draft_id',
-            'meta_value'  => $item['id'],
-        ]);
-        $post_id = !empty($existing) ? (int) $existing[0] : 0;
-
-        // Redraft (not yet handled): resolve the source URL to the live post and
-        // UPDATE it in place. We deliberately do NOT change post_status (the page
-        // stays live — forcing 'draft' would pull it offline) or post_name (keep
-        // the same URL). Only the body + SEO meta change.
-        if (!$post_id && $update_url) {
-            $resolved = url_to_postid($update_url);
-            if ($resolved) {
-                $post_id = (int) $resolved;
-                $update_arr = [
-                    'ID'           => $post_id,
-                    'post_title'   => $postarr['post_title'],
-                    'post_content' => $postarr['post_content'],
-                ];
-                if (!empty($postarr['post_excerpt'])) {
-                    $update_arr['post_excerpt'] = $postarr['post_excerpt'];
-                }
-                $res = wp_update_post($update_arr, true);
-                if (is_wp_error($res) || !$res) {
-                    $failed++;
-                    km_autopilot_log_event(
-                        'Content update failed for ' . $item['id'] . ' (post ' . $post_id . '): '
-                            . (is_wp_error($res) ? $res->get_error_message() : 'unknown'),
-                        ['draft_id' => $item['id'], 'wp_post_id' => $post_id, 'update_url' => $update_url]
-                    );
-                    continue;
-                }
-                update_post_meta($post_id, '_km_autopilot_draft_id', $item['id']);
-                if (!empty($item['meta_title'])) {
-                    km_autopilot_apply_meta_field($post_id, $item['meta_title'], '_yoast_wpseo_title', 'rank_math_title');
-                }
-                if (!empty($item['meta_description'])) {
-                    km_autopilot_apply_meta_field($post_id, $item['meta_description'], '_yoast_wpseo_metadesc', 'rank_math_description');
-                }
-                km_autopilot_log_event(
-                    'Updated existing page in place for ' . $item['id'] . ' (post ' . $post_id . ')',
-                    ['draft_id' => $item['id'], 'wp_post_id' => $post_id, 'update_url' => $update_url]
-                );
-            } else {
-                // Couldn't map the URL to a post — fail loudly rather than
-                // silently creating a duplicate at a new URL.
-                $failed++;
-                km_autopilot_log_event(
-                    'Redraft update skipped for ' . $item['id'] . ': could not resolve ' . $update_url . ' to a post.',
-                    ['draft_id' => $item['id'], 'update_url' => $update_url]
-                );
-                continue;
-            }
-        }
-
-        // New post: no existing draft-linked post and not an update-in-place.
-        if (!$post_id) {
-            $post_id = wp_insert_post($postarr, true);
-            if (is_wp_error($post_id) || !$post_id) {
-                $failed++;
-                km_autopilot_log_event(
-                    'Content create failed for ' . $item['id'] . ': '
-                        . (is_wp_error($post_id) ? $post_id->get_error_message() : 'unknown'),
-                    ['draft_id' => $item['id']]
-                );
-                continue;
-            }
-            update_post_meta($post_id, '_km_autopilot_draft_id', $item['id']);
-
-            // Best-effort SEO meta, same handler precedence as on-page fixes.
-            if (!empty($item['meta_title'])) {
-                km_autopilot_apply_meta_field($post_id, $item['meta_title'], '_yoast_wpseo_title', 'rank_math_title');
-            }
-            if (!empty($item['meta_description'])) {
-                km_autopilot_apply_meta_field($post_id, $item['meta_description'], '_yoast_wpseo_metadesc', 'rank_math_description');
-            }
-            if (!empty($item['featured_image_url'])) {
-                km_autopilot_set_featured_image($post_id, $item['featured_image_url']);
-            }
-        }
-
-        $url = get_permalink($post_id);
-        $confirm = km_autopilot_http_request('POST', '/api/wp/content/applied', [
-            'id'         => $item['id'],
-            'wp_post_id' => $post_id,
-            'url'        => $url,
-        ]);
-        if (is_wp_error($confirm)) {
-            // Post exists locally; the dashboard row stays 'approved' and the
-            // next sync would re-fetch it — so avoid duplicates by leaving the
-            // created post in place and letting a marketer reconcile. Logged.
-            km_autopilot_log_event(
-                'Content created (post ' . $post_id . ') but confirm failed for ' . $item['id'] . ': '
-                    . $confirm->get_error_message(),
-                ['draft_id' => $item['id'], 'wp_post_id' => $post_id]
-            );
-            continue;
-        }
-
-        $published++;
-        km_autopilot_log_event(
-            'Published content "' . $item['title'] . '" as post ' . $post_id . ' (' . $post_status . ')',
-            ['draft_id' => $item['id'], 'wp_post_id' => $post_id]
-        );
     }
 
-    return ['published' => $published, 'failed' => $failed, 'fetched' => count($items)];
+    return ['done' => $done, 'failed' => $failed, 'fetched' => count($items)];
 }
+
+/**
+ * Oct 20 spec, Task A12: draft first. A new post is saved as a WordPress
+ * draft; an update of a live page keeps the live page untouched and stores
+ * the new version as pending, viewable at a token preview link. Either way
+ * the dashboard gets a preview link, and "Publish live" is a separate step.
+ */
+function km_autopilot_save_draft($item) {
+    $title   = isset($item['title']) ? wp_strip_all_tags($item['title']) : 'Untitled';
+    $content = isset($item['content_html']) ? wp_kses_post($item['content_html']) : '';
+    $update_url = !empty($item['update_url']) ? $item['update_url'] : '';
+
+    // Idempotency: the post already made for this draft, if any.
+    $existing = get_posts([
+        'post_type'   => 'any',
+        'post_status' => 'any',
+        'numberposts' => 1,
+        'fields'      => 'ids',
+        'meta_key'    => '_km_autopilot_draft_id',
+        'meta_value'  => $item['id'],
+    ]);
+    $post_id = !empty($existing) ? (int) $existing[0] : 0;
+
+    if ($update_url) {
+        // A live page: never change it here. Store the new version as pending.
+        if (!$post_id) {
+            $post_id = (int) url_to_postid($update_url);
+        }
+        if (!$post_id) {
+            return new WP_Error('km_autopilot_no_post', 'Could not resolve ' . $update_url . ' to a post; nothing was changed.');
+        }
+        update_post_meta($post_id, '_km_autopilot_draft_id', $item['id']);
+        update_post_meta($post_id, '_km_pending_title', $title);
+        update_post_meta($post_id, '_km_pending_content', $content);
+        update_post_meta($post_id, '_km_pending_item', wp_slash(wp_json_encode($item)));
+        $token = wp_generate_password(24, false);
+        update_post_meta($post_id, '_km_preview_token', $token);
+        $preview = add_query_arg('km_preview', $token, get_permalink($post_id));
+        return km_autopilot_confirm($item['id'], $post_id, get_permalink($post_id), 'wp_draft', $preview);
+    }
+
+    $postarr = [
+        'post_title'   => $title,
+        'post_content' => $content,
+        'post_status'  => 'draft',
+        'post_type'    => 'post',
+    ];
+    if (!empty($item['slug'])) {
+        $postarr['post_name'] = sanitize_title($item['slug']);
+    }
+    if (!empty($item['meta_description'])) {
+        $postarr['post_excerpt'] = sanitize_text_field($item['meta_description']);
+    }
+    if ($post_id) {
+        $postarr['ID'] = $post_id;
+        $res = wp_update_post($postarr, true);
+    } else {
+        $res = wp_insert_post($postarr, true);
+    }
+    if (is_wp_error($res) || !$res) {
+        return is_wp_error($res) ? $res : new WP_Error('km_autopilot_insert', 'Could not save the post.');
+    }
+    $post_id = (int) $res;
+    update_post_meta($post_id, '_km_autopilot_draft_id', $item['id']);
+    km_autopilot_apply_item_meta($post_id, $item);
+    if (!empty($item['author']['login'])) {
+        $user = get_user_by('login', $item['author']['login']);
+        if ($user) {
+            wp_update_post(['ID' => $post_id, 'post_author' => $user->ID]);
+        }
+    }
+    if (!empty($item['featured_image_url'])) {
+        km_autopilot_set_featured_image($post_id, $item['featured_image_url'], isset($item['featured_image_alt']) ? $item['featured_image_alt'] : '', isset($item['featured_image_name']) ? $item['featured_image_name'] : '');
+    }
+    return km_autopilot_confirm($item['id'], $post_id, get_permalink($post_id), 'wp_draft', get_preview_post_link($post_id));
+}
+
+/** SEO fields, schema, reviewer, category, tags and redirects for a post. */
+function km_autopilot_apply_item_meta($post_id, $item) {
+    if (!empty($item['meta_title'])) {
+        km_autopilot_apply_meta_field($post_id, $item['meta_title'], '_yoast_wpseo_title', 'rank_math_title');
+    }
+    if (!empty($item['meta_description'])) {
+        km_autopilot_apply_meta_field($post_id, $item['meta_description'], '_yoast_wpseo_metadesc', 'rank_math_description');
+    }
+    if (!empty($item['focus_keyphrase'])) {
+        km_autopilot_apply_meta_field($post_id, $item['focus_keyphrase'], '_yoast_wpseo_focuskw', 'rank_math_focus_keyword');
+    }
+    if (!empty($item['schema_jsonld'])) {
+        update_post_meta($post_id, '_km_autopilot_schema_jsonld', wp_slash($item['schema_jsonld']));
+    }
+    if (!empty($item['reviewed_by']['name'])) {
+        update_post_meta($post_id, '_km_reviewed_by', wp_slash(wp_json_encode($item['reviewed_by'])));
+    }
+    if (!empty($item['category'])) {
+        $cat = get_cat_ID($item['category']);
+        if (!$cat) {
+            $cat = wp_create_category($item['category']);
+        }
+        if ($cat) {
+            wp_set_post_categories($post_id, [(int) $cat], false);
+        }
+    }
+    if (!empty($item['tags']) && is_array($item['tags'])) {
+        wp_set_post_tags($post_id, array_map('sanitize_text_field', $item['tags']), false);
+    }
+    // Oct 20 spec, Task A13: English and Spanish versions point at each other (hreflang).
+    if (!empty($item['language']) && in_array($item['language'], ['en', 'es'], true)) {
+        update_post_meta($post_id, '_km_lang', $item['language']);
+        $pair = isset($item['hreflang_pair']) && is_array($item['hreflang_pair']) ? $item['hreflang_pair'] : null;
+        if ($pair && !empty($pair['wp_post_id']) && get_post((int) $pair['wp_post_id'])) {
+            $pair_id = (int) $pair['wp_post_id'];
+            update_post_meta($post_id, '_km_hreflang_pair', $pair_id);
+            update_post_meta($pair_id, '_km_hreflang_pair', (int) $post_id);
+            if (!empty($pair['language']) && in_array($pair['language'], ['en', 'es'], true)) {
+                update_post_meta($pair_id, '_km_lang', $pair['language']);
+            }
+        }
+    }
+    if (!empty($item['redirects']) && is_array($item['redirects'])) {
+        $map = get_option('km_autopilot_redirects', []);
+        foreach ($item['redirects'] as $r) {
+            if (!empty($r['from']) && !empty($r['to'])) {
+                $from = untrailingslashit(wp_parse_url($r['from'], PHP_URL_PATH) ?: '');
+                if ($from) {
+                    $map[$from] = esc_url_raw($r['to']);
+                }
+            }
+        }
+        update_option('km_autopilot_redirects', $map, false);
+    }
+}
+
+/** Publish what was saved: the draft post, or the pending version of a live page. */
+function km_autopilot_go_live($item) {
+    $post_id = isset($item['wp_post_id']) ? (int) $item['wp_post_id'] : 0;
+    if (!$post_id || !get_post($post_id)) {
+        return new WP_Error('km_autopilot_no_post', 'The WordPress post for this draft no longer exists.');
+    }
+    $pending = get_post_meta($post_id, '_km_pending_content', true);
+    if ($pending !== '') {
+        // Keep the live version for a one-click rollback, then swap in the new one.
+        $post = get_post($post_id);
+        update_post_meta($post_id, '_km_previous_title', wp_slash($post->post_title));
+        update_post_meta($post_id, '_km_previous_content', wp_slash($post->post_content));
+        $res = wp_update_post([
+            'ID'           => $post_id,
+            'post_title'   => get_post_meta($post_id, '_km_pending_title', true),
+            'post_content' => $pending,
+        ], true);
+        if (is_wp_error($res)) {
+            return $res;
+        }
+        $saved = json_decode(get_post_meta($post_id, '_km_pending_item', true), true);
+        if (is_array($saved)) {
+            km_autopilot_apply_item_meta($post_id, $saved);
+        }
+        delete_post_meta($post_id, '_km_pending_content');
+        delete_post_meta($post_id, '_km_pending_title');
+        delete_post_meta($post_id, '_km_pending_item');
+        delete_post_meta($post_id, '_km_preview_token');
+    } else {
+        update_post_meta($post_id, '_km_previous_status', 'draft');
+        wp_publish_post($post_id);
+    }
+    return km_autopilot_confirm($item['id'], $post_id, get_permalink($post_id), 'published', null);
+}
+
+/** Restore the previous version (an update) or take a new post back to draft. */
+function km_autopilot_rollback($item) {
+    $post_id = isset($item['wp_post_id']) ? (int) $item['wp_post_id'] : 0;
+    if (!$post_id || !get_post($post_id)) {
+        return new WP_Error('km_autopilot_no_post', 'The WordPress post for this draft no longer exists.');
+    }
+    $prev = get_post_meta($post_id, '_km_previous_content', true);
+    if ($prev !== '') {
+        $res = wp_update_post([
+            'ID'           => $post_id,
+            'post_title'   => get_post_meta($post_id, '_km_previous_title', true),
+            'post_content' => $prev,
+        ], true);
+        if (is_wp_error($res)) {
+            return $res;
+        }
+        delete_post_meta($post_id, '_km_previous_content');
+        delete_post_meta($post_id, '_km_previous_title');
+    } else {
+        wp_update_post(['ID' => $post_id, 'post_status' => 'draft']);
+    }
+    return km_autopilot_confirm($item['id'], $post_id, get_permalink($post_id), 'rolled_back', null);
+}
+
+function km_autopilot_confirm($draft_id, $post_id, $url, $state, $preview_url) {
+    $confirm = km_autopilot_http_request('POST', '/api/wp/content/applied', [
+        'id'          => $draft_id,
+        'wp_post_id'  => $post_id,
+        'url'         => $url,
+        'state'       => $state,
+        'preview_url' => $preview_url,
+    ]);
+    if (is_wp_error($confirm)) {
+        km_autopilot_log_event('Saved post ' . $post_id . ' (' . $state . ') but the dashboard confirm failed for ' . $draft_id . ': ' . $confirm->get_error_message(), ['draft_id' => $draft_id, 'wp_post_id' => $post_id]);
+        return $confirm;
+    }
+    km_autopilot_log_event('Post ' . $post_id . ' is now ' . $state . ' for draft ' . $draft_id, ['draft_id' => $draft_id, 'wp_post_id' => $post_id]);
+    return true;
+}
+
+// The pending version of a live page, shown only with its preview token.
+add_filter('the_content', function ($content) {
+    if (empty($_GET['km_preview']) || !is_singular()) {
+        return $content;
+    }
+    $post_id = get_queried_object_id();
+    $token = get_post_meta($post_id, '_km_preview_token', true);
+    if ($token && hash_equals($token, sanitize_text_field(wp_unslash($_GET['km_preview'])))) {
+        $pending = get_post_meta($post_id, '_km_pending_content', true);
+        if ($pending !== '') {
+            return $pending;
+        }
+    }
+    return $content;
+}, 1);
+
+// A preview must never be indexed.
+add_action('wp_head', function () {
+    if (!empty($_GET['km_preview'])) {
+        echo '<meta name="robots" content="noindex,nofollow">' . "\n";
+    }
+}, 1);
+
+// 301 redirects for pages a published draft replaces.
+add_action('template_redirect', function () {
+    $map = get_option('km_autopilot_redirects', []);
+    if (empty($map) || !is_array($map)) {
+        return;
+    }
+    $path = untrailingslashit(wp_parse_url(isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '', PHP_URL_PATH) ?: '');
+    if ($path && isset($map[$path])) {
+        wp_redirect($map[$path], 301);
+        exit;
+    }
+}, 1);
 
 add_action(KM_AUTOPILOT_CRON_HOOK, 'km_autopilot_run_sync');
 
@@ -705,3 +853,24 @@ function km_autopilot_render_settings_page() {
     </div>
     <?php
 }
+
+/**
+ * hreflang (Oct 20 spec, Task A13): a page with an English or Spanish version
+ * names both, so Google shows each reader the right one.
+ */
+add_action('wp_head', function () {
+    if (!is_singular()) {
+        return;
+    }
+    $id = get_queried_object_id();
+    $lang = get_post_meta($id, '_km_lang', true);
+    $pair_id = (int) get_post_meta($id, '_km_hreflang_pair', true);
+    if (!$lang || !$pair_id || get_post_status($pair_id) !== 'publish') {
+        return;
+    }
+    $pair_lang = get_post_meta($pair_id, '_km_lang', true) ?: ($lang === 'es' ? 'en' : 'es');
+    $en = $lang === 'en' ? $id : $pair_id;
+    printf("<link rel=\"alternate\" hreflang=\"%s\" href=\"%s\" />\n", esc_attr($lang), esc_url(get_permalink($id)));
+    printf("<link rel=\"alternate\" hreflang=\"%s\" href=\"%s\" />\n", esc_attr($pair_lang), esc_url(get_permalink($pair_id)));
+    printf("<link rel=\"alternate\" hreflang=\"x-default\" href=\"%s\" />\n", esc_url(get_permalink($en)));
+}, 5);

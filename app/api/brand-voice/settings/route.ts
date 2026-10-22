@@ -121,6 +121,13 @@ export async function PUT(req: NextRequest) {
       .in("key", rows.map((r) => r.key));
     const before = new Map((beforeRows ?? []).map((r) => [r.key as string, (r.value as string | null) ?? ""]));
 
+    // Who may publish is an Admin's call (Kenneth, 2026-10-20): anyone else
+    // saving the page leaves the list as it is.
+    const publishersRow = rows.find((r) => r.key === "publishers");
+    if (publishersRow && user.role !== "admin" && (before.get("publishers") ?? "") !== publishersRow.value) {
+      return NextResponse.json({ error: "Only an Admin can change who may publish." }, { status: 403 });
+    }
+
     const { error } = await db.upsert("brand_voice_settings", rows, {
       onConflict: "tenant_id,key",
     });

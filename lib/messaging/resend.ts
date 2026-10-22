@@ -73,6 +73,7 @@ export const resendAdapter: MessagingAdapter = {
           subject: message.subject ?? "A quick favor",
           html: toHtml(message.body),
           text: message.body,
+          ...(message.attachments?.length ? { attachments: message.attachments } : {}),
         }),
       });
 

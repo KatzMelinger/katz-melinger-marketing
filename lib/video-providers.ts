@@ -25,6 +25,13 @@ export type RenderOptions = {
   avatarId?: string;
   aspectRatio?: "9:16" | "16:9" | "1:1";
   captions?: boolean;
+  /**
+   * Text shown on screen for the whole video. Always set by startRender to the
+   * AI-performer disclosure (Oct 20 spec, Task A16); an adapter that cannot
+   * overlay it must fail the job.
+   */
+  onScreenText?: string | false;
+  onScreenTextPersistent?: boolean;
   [key: string]: unknown;
 };
 

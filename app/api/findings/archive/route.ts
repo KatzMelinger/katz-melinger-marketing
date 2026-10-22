@@ -11,13 +11,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { withJobRun } from "@/lib/job-runs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DAYS = 30;
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -25,4 +26,9 @@ export async function GET(req: NextRequest) {
   const { data, error } = await getSupabaseAdmin().rpc("archive_closed_findings", { p_days: DAYS });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ archived: data ?? 0, olderThanDays: DAYS });
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/findings/archive", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

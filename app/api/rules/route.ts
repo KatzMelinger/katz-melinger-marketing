@@ -22,7 +22,8 @@
  *        { action: "toggle_learned", id, enabled }  attorneys only: switch a
  *            learned approval or correction off or on.
  */
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { openRefreshDrafts } from "@/lib/live-page-scan";
 
 import { writeBrandSetting } from "@/lib/brand-settings";
 import { canClearLegalHold, reviewerFor } from "@/lib/legal-reviewers";
@@ -215,6 +216,17 @@ export async function POST(req: NextRequest) {
             );
           }
           await applyKbRow(tenantId, row, user.email);
+          // Oct 20 spec, Task A15: every live page citing the entry gets a refresh draft.
+          const origin = new URL(req.url).origin;
+          after(() =>
+            openRefreshDrafts({
+              tenantId,
+              kbKey: row.key,
+              reason: `change:${change.id}`,
+              origin,
+              note: `Knowledge base entry "${row.label}" changed, approved by ${user.email} (Task A15). Correct this page to the new entry.`,
+            }).catch((e) => console.warn("[rules] refresh drafts failed:", e)),
+          );
         }
         const { error } = await sb
           .from("rule_changes")

@@ -16,6 +16,7 @@ import { resolveTenantId } from "@/lib/tenant-context";
 import { listTenantIds } from "@/lib/tenant-db";
 import { runAuthorityWatch } from "@/lib/legal-authority-watch";
 import { guardUser } from "@/lib/supabase-route";
+import { withJobRun } from "@/lib/job-runs";
 
 export const runtime = "nodejs";
 // One live fetch per cached citation, across every tenant — give the fleet
@@ -29,7 +30,7 @@ function isAuthorizedCron(req: NextRequest): boolean {
   return auth === `Bearer ${expected}`;
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -52,4 +53,9 @@ export async function POST() {
   const tenantId = await resolveTenantId();
   const result = await runAuthorityWatch(tenantId);
   return NextResponse.json(result);
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/legal/authority-watch", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

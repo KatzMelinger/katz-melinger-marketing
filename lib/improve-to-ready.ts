@@ -48,6 +48,9 @@ import { blockingAdHits, findAdTerms } from "./ad-terms";
 import { articleText, extractSourceClaims } from "./source-check";
 import { checkClaims, loadSourceCheckInputs, runSourceCheck } from "./source-check-server";
 import { readinessForDraft } from "./draft-readiness-server";
+import { notifyNewQuestions } from "./attorney-questions";
+import { recordAiCost } from "./ai-cost";
+import { saveVersion } from "./draft-versions";
 import { appendRun, changeId, readFixLog, type FixChange } from "./legal-fix-log";
 import { clearTextCertifications } from "./draft-certifications";
 import { recordAuditEvent } from "./content-findings-store";
@@ -104,6 +107,7 @@ export async function writePieces(
   practice: "employment" | "collections" | null,
   want: { directAnswer: boolean; faq: number; signs: boolean },
   paa: string[] = [],
+  cost?: { tenantId: string; draftId: string },
 ): Promise<Pieces> {
   const article = [
     `# ${content.h1}`,
@@ -132,6 +136,7 @@ export async function writePieces(
     system: WRITER,
     messages: [{ role: "user", content: `ARTICLE:\n"""\n${article}\n"""\n\nWrite these pieces:\n- ${asks.join("\n- ")}` }],
   });
+  if (cost) void recordAiCost({ ...cost, endpoint: "improve-to-ready", model: CONTENT_LONG_FORM_MODEL, usage: res.usage });
   const text = res.content[0]?.type === "text" ? res.content[0].text : "";
   try {
     return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as Pieces;
@@ -178,6 +183,8 @@ function applyKeywordMeta(meta: Record<string, unknown>, keyword: string): Recor
 }
 
 async function save(tenantId: string, d: Row, content: DraftContent, meta: Record<string, unknown>, changes: FixChange[], brief: OperatingBrief, previousBody: string) {
+  // Task A17: the version before the improvement is kept.
+  if (changes.length) await saveVersion({ tenantId, draftId: d.id, title: d.title, body: previousBody, content: (d.metadata ?? {}).content, reason: "before Improve to Ready" });
   const body = assembleDraft(content, frameBrandFrom(brief, draftLanguage(meta)), { format: d.format, byline: bylineForDraft({ ...d, metadata: meta }, brief) });
   let next: Record<string, unknown> = { ...meta, content };
   if (changes.length) {
@@ -238,7 +245,7 @@ export async function improveToReady(args: {
     const kwOk = kw && !keywordProblem(kw) && sel?.status === "selected" && sel.chosen?.volume != null && sel.chosen.keyword?.toLowerCase() === kw.toLowerCase();
     if (!kwOk && pass === 1) {
       try {
-        const decision = await selectKeyword({ tenantId, title: d.title ?? d.topic ?? kw ?? "", incoming: kw, excludeDraftId: draftId });
+        const decision = await selectKeyword({ tenantId, title: d.title ?? d.topic ?? kw ?? "", incoming: kw, excludeDraftId: draftId, language: draftLanguage(meta) });
         meta = { ...meta, keyword_selection: decision };
         const chosen = decision.status === "selected" ? decision.chosen : null;
         if (chosen?.keyword && chosen.volume != null) {
@@ -307,7 +314,7 @@ export async function improveToReady(args: {
     };
     if (want.directAnswer || want.faq || want.signs) {
       const practice = practiceOf(d);
-      const pieces = await writePieces(content, draftPrimaryKeyword(meta), practice, want, paaToAnswer).catch(() => ({}) as Pieces);
+      const pieces = await writePieces(content, draftPrimaryKeyword(meta), practice, want, paaToAnswer, { tenantId, draftId }).catch(() => ({}) as Pieces);
       // A piece that states a legal claim keeps it only if the source check supports it.
       const verified = async (text: string, label: string): Promise<boolean> => {
         const problem = pieceProblem(text);
@@ -322,7 +329,7 @@ export async function improveToReady(args: {
         }
         const claims = extractSourceClaims(text);
         if (!claims.length) return true;
-        const results = await checkClaims(tenantId, claims, sourceInputs);
+        const results = await checkClaims(tenantId, claims, sourceInputs, draftId);
         const bad = results.filter((r) => r.verdict !== "supported");
         if (bad.length) {
           human.add(`Attorney: the new ${label} stated "${bad[0].sentence}", which no source supports, so it was not kept.`);
@@ -375,6 +382,8 @@ export async function improveToReady(args: {
       return null;
     });
     if (sc?.checked) improved.push({ what: `Checked ${sc.checked} legal claim${sc.checked === 1 ? "" : "s"} against their primary sources`, source: "knowledge base sources" });
+    // Task A14: each new question goes to its attorney by email.
+    if (sc?.newQuestionHashes.length) await notifyNewQuestions(tenantId, draftId, sc.newQuestionHashes).catch(() => 0);
 
     d = await load(tenantId, draftId);
     readiness = await readinessForDraft(tenantId, d);

@@ -5,7 +5,9 @@
  *   normalized phone, so the lead-response page can overlay follow-up status on
  *   the lost-lead list.
  * POST /api/leads/recovery — upsert one lead's follow-up status.
- *   Body: { phone, status?, notes?, assigned_to?, first_lost_at? }
+ *   Body: { phone, status?, notes?, assigned_to?, first_lost_at?, consultation? }
+ *   consultation: true records a booked consultation (Oct 20 spec, Task A19;
+ *   needs supabase/calls_followup_a19.sql, and is skipped until it is run).
  */
 
 import { NextResponse } from "next/server";
@@ -67,12 +69,21 @@ export async function POST(req: Request) {
   if (notes !== undefined) row.notes = notes;
   if (assignedTo !== undefined) row.assigned_to = assignedTo;
   if (firstLostAt !== undefined) row.first_lost_at = firstLostAt;
+  if (typeof body.consultation === "boolean") row.consultation_at = body.consultation ? new Date().toISOString() : null;
 
-  const { data, error } = await supabase
-    .from("lead_recovery")
-    .upsert(row, { onConflict: "tenant_id,phone" })
-    .select("phone, status, assigned_to, notes, first_lost_at, last_action_at")
-    .single();
+  const save = (r: Json) =>
+    supabase
+      .from("lead_recovery")
+      .upsert(r, { onConflict: "tenant_id,phone" })
+      .select("phone, status, assigned_to, notes, first_lost_at, last_action_at")
+      .single();
+  let { data, error } = await save(row);
+  if (error && "consultation_at" in row && /consultation_at/.test(error.message)) {
+    // The column arrives with supabase/calls_followup_a19.sql; save the rest meanwhile.
+    const { consultation_at: _skip, ...rest } = row;
+    void _skip;
+    ({ data, error } = await save(rest));
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ row: data });
 }

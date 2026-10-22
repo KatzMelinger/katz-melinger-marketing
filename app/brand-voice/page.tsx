@@ -221,6 +221,40 @@ const SETTING_FIELDS: {
     help: "Every social post must carry the Attorney Advertising label and link here. Instagram is exempt from the link only — captions can't render one.",
   },
   {
+    key: "publishers",
+    label: "Publishers (who may press Publish)",
+    placeholder: "diana@katzmelinger.com",
+    help: "Emails, one per line or comma separated. Admins can always publish; the people listed here can too, without being Admins. Only an Admin can change this list (Kenneth, 2026-10-20).",
+    multiline: true,
+  },
+  {
+    key: "spanishDisclaimerUrl",
+    label: "Spanish disclaimer page link",
+    placeholder: "https://katzmelinger.com/disclaimer/",
+    help: "Where \"Aviso Legal\" links on Spanish pages. The English disclaimer page until a Spanish one exists; changing it updates every open Spanish draft.",
+  },
+  {
+    key: "reviewersByPractice",
+    label: "Reviewing attorney by practice area",
+    placeholder:
+      '{"employment":{"name":"Nicole Grunfeld","bio_url":"https://katzmelinger.com/attorney/nicole-d-grunfeld/"},"commercial_collections":{"name":"Adam Sackowitz","bio_url":"https://katzmelinger.com/attorney/adam-j-sackowitz/"},"judgment_enforcement":{"name":"Kenneth Katz","bio_url":"https://katzmelinger.com/attorney/kenneth-j-katz/"}}',
+    help: "Who \"Pending attorney review\" names and who signs \"Reviewed by\" (Oct 20 spec, Task A2). JSON with employment, commercial_collections and judgment_enforcement, each a name and an https bio_url. Leave empty for these defaults. Changing it updates every open draft's byline.",
+    multiline: true,
+  },
+  {
+    key: "monthlyAiBudgetUsd",
+    label: "Monthly AI budget (USD)",
+    placeholder: "150",
+    help: "System health shows AI spend against this. Past it, automatic Improve to Ready runs pause and an email goes to the Admins (Oct 20 spec, Task A17). Empty means no limit.",
+  },
+  {
+    key: "callbackEmailRecipients",
+    label: "Daily callback email recipients",
+    placeholder: "intake@katzmelinger.com",
+    help: "Emails, one per line or comma separated. Every day at 8:00 AM New York time they get the Needs callback list as a PDF, new callers first (Oct 20 spec, Task A19). Empty turns the email off.",
+    multiline: true,
+  },
+  {
     key: "lawChanges",
     label: "Law changes to watch",
     multiline: true,

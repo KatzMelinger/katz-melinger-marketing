@@ -22,6 +22,7 @@ import {
 } from "@/components/dashboard-ui";
 import { READABILITY_TARGET } from "@/lib/readability";
 import { SCORE_TARGET, scoreNote, humanSubScoreNote } from "@/lib/score-targets";
+import { scoreBreakdowns, type ScoreDeduction, type ScoreKey } from "@/lib/score-breakdown";
 
 export type Analysis = {
   readability_score: number;
@@ -60,6 +61,11 @@ export type Analysis = {
   linkability_score: number | null;
   linkability_findings?: string[];
   outreach_angles?: { audience: string; pitch: string }[];
+  // Oct 20 spec, Task A11: itemized points lost (absent on older analyses).
+  aeo_deductions?: ScoreDeduction[];
+  brand_voice_deductions?: ScoreDeduction[];
+  linkability_deductions?: ScoreDeduction[];
+  readability_rules?: { applicable: number; failed: { id: string; label: string }[] };
   // Attorney-advertising compliance (advisory). Optional so older analyses
   // loaded from the DB before the migration don't fail the type check.
   compliance_score?: number | null;
@@ -172,6 +178,10 @@ export function AnalysisCard({
   };
   const cash = analysis.cash_breakdown;
   const seoBreakdown = analysis.seo_breakdown;
+  // Task A11: which score's breakdown is open.
+  const [openScore, setOpenScore] = useState<ScoreKey | null>(null);
+  const breakdowns = useMemo(() => scoreBreakdowns(analysis), [analysis]);
+  const toggle = (k: ScoreKey) => () => setOpenScore((cur) => (cur === k ? null : k));
   const hasMissingScores =
     analysis.brand_voice_score === null ||
     analysis.cash_score === null ||
@@ -273,23 +283,29 @@ export function AnalysisCard({
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
-        <ScoreTile label="Readability" value={analysis.readability_score} />
+        <ScoreTile label="Readability" value={analysis.readability_score} onOpen={toggle("readability")} open={openScore === "readability"} />
         <ScoreTile
           label="SEO"
           value={analysis.seo_score ?? 0}
           hint="Title / headings / keyword placement / authority links / depth / schema"
+          onOpen={toggle("seo")}
+          open={openScore === "seo"}
         />
-        <ScoreTile label="AEO" value={analysis.aeo_score} />
+        <ScoreTile label="AEO" value={analysis.aeo_score} onOpen={toggle("aeo")} open={openScore === "aeo"} />
         <ScoreTile
           label="CASH (AI cite)"
           value={analysis.cash_score}
           hint="Conversational Authority / Answer / Source / Human"
+          onOpen={toggle("cash")}
+          open={openScore === "cash"}
         />
-        <ScoreTile label="Brand voice" value={analysis.brand_voice_score} />
+        <ScoreTile label="Brand voice" value={analysis.brand_voice_score} onOpen={toggle("brand_voice")} open={openScore === "brand_voice"} />
         <ScoreTile
           label="Linkability"
           value={analysis.linkability_score}
           hint="How earnable backlinks to this piece are"
+          onOpen={toggle("linkability")}
+          open={openScore === "linkability"}
         />
         <ScoreTile
           label="Compliance"
@@ -304,6 +320,37 @@ export function AnalysisCard({
           retrying={rerunning}
         />
       </div>
+      {openScore && (() => {
+        const b = breakdowns.find((x) => x.key === openScore);
+        if (!b) return null;
+        return (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 text-xs">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-slate-800">{b.label} {b.score ?? "n/a"}: where the points went</div>
+              <button type="button" onClick={() => setOpenScore(null)} className="text-slate-500 hover:text-slate-800">
+                Close
+              </button>
+            </div>
+            {b.summary && <p className="mt-1 text-slate-600">{b.summary}</p>}
+            {b.lines.length === 0 ? (
+              <p className="mt-2 text-slate-500">No points lost.</p>
+            ) : (
+              <ul className="mt-2 space-y-1">
+                {b.lines.map((l, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="w-14 shrink-0 font-semibold tabular-nums text-red-700">minus {Math.round(l.points)}</span>
+                    <span className="text-slate-700">
+                      {l.reason}
+                      {l.checkLabel ? <span className="ml-1 text-slate-500">({l.checkLabel}{l.fixable ? ", Improve to Ready fixes this" : ""})</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-2 text-[11px] text-slate-500">Scores are information only. The monthly results report checks whether each one predicts results.</p>
+          </div>
+        );
+      })()}
       <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
         <Tile label="Words" value={analysis.word_count} />
       </div>
@@ -1287,6 +1334,8 @@ function ScoreTile({
   error,
   onRetry,
   retrying,
+  onOpen,
+  open,
 }: {
   label: string;
   value: number | null;
@@ -1301,6 +1350,9 @@ function ScoreTile({
    *  reviewer doesn't have to go hunting for the top-level button. */
   onRetry?: () => void;
   retrying?: boolean;
+  /** Task A11: opens this score's breakdown. */
+  onOpen?: () => void;
+  open?: boolean;
 }) {
   // null means "couldn't compute" (Claude failure). Render an obvious "n/a"
   // rather than a red 0 that misrepresents the content.
@@ -1335,11 +1387,18 @@ function ScoreTile({
   const tone = value >= 70 ? "emerald" : value >= 40 ? "amber" : "red";
   const color = tone === "emerald" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : "text-red-700";
   return (
-    <div className="rounded-lg border border-slate-200 p-3" title={hint}>
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!onOpen}
+      aria-expanded={onOpen ? !!open : undefined}
+      className={`rounded-lg border p-3 text-left ${open ? "border-brand ring-1 ring-brand/30" : "border-slate-200"} ${onOpen ? "hover:bg-slate-50" : ""}`}
+      title={onOpen ? `${hint ? `${hint}. ` : ""}Click for the breakdown.` : hint}
+    >
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
       <div className="text-xs text-slate-500 mt-1">{label}</div>
       <div className="mt-2"><DashBar pct={value} tone={tone === "emerald" ? "self" : "blue"} /></div>
-    </div>
+    </button>
   );
 }
 

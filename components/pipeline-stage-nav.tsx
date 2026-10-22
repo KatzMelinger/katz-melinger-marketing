@@ -17,8 +17,12 @@ const STAGES: { href: string; label: string }[] = [
   // Between Approve and QA, because that is where a held draft actually sits:
   // the gate stopped it on the way to approved.
   { href: "/content/legal-review", label: "Legal" },
+  // Oct 20 spec, Task A14: each attorney's open questions.
+  { href: "/content/attorney-questions", label: "Attorney questions" },
   { href: "/content/publishing-qa", label: "QA" },
   { href: "/content-production", label: "Published" },
+  // Oct 20 spec, Tasks A10 and A15: what happened after publishing.
+  { href: "/content/results", label: "Results" },
 ];
 
 export function PipelineStageNav() {

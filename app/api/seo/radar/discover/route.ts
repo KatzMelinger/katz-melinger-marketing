@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { guardUser } from "@/lib/supabase-route";
 import { resolveTenantId } from "@/lib/tenant-context";
 import { listTenantIds } from "@/lib/tenant-db";
+import { withJobRun } from "@/lib/job-runs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ async function runAndLog(tenantId: string) {
   }
 }
 
-export async function GET(req: NextRequest) {
+async function runScheduled(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -57,4 +58,9 @@ export async function POST() {
   if (denied) return denied;
   const out = await runAndLog(await resolveTenantId());
   return NextResponse.json(out, { status: "error" in out ? 500 : 200 });
+}
+
+/** Oct 20 spec, Task A17: a scheduled run is recorded for System health and the watchdog. */
+export async function GET(...args: Parameters<typeof runScheduled>) {
+  return withJobRun("/api/seo/radar/discover", (args as unknown[])[0] as Request | undefined, () => runScheduled(...args));
 }

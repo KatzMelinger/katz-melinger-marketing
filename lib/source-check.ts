@@ -127,8 +127,16 @@ export function sourceStanding(url: string | null): "primary" | "reproduction" |
 /* ------------------------------------------------------------------------- */
 
 const DOLLAR = /\$\s?\d/;
-const DEADLINE = /\b(?:\d[\d,]*|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|sixty|ninety)\s+(?:calendar\s+|business\s+)?(?:days?|months?|years?)\b/i;
-const EMPLOYEES = /\b(?:\d[\d,]*|one|two|three|four|five|six|ten|fifteen|twenty|fifty)\s*\+?\s*(?:or\s+more\s+|or\s+fewer\s+)?employees?\b|\ball employers\b|\bany size\b|\bregardless of (?:their )?size\b/i;
+// English and Spanish (Oct 20 spec, Task A13): a Spanish draft's claims are
+// found and checked the same way.
+const DEADLINE =
+  /\b(?:\d[\d,]*|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|sixty|ninety)\s+(?:calendar\s+|business\s+)?(?:days?|months?|years?)\b|\b(?:\d[\d,]*|un|una|dos|tres|cuatro|cinco|seis|diez|doce|quince|veinte|treinta|sesenta|noventa)\s+(?:d[ií]as?|meses|mes|a[nñ]os?)(?:\s+(?:calendario|h[aá]biles))?\b/i;
+const EMPLOYEES =
+  /\b(?:\d[\d,]*|one|two|three|four|five|six|ten|fifteen|twenty|fifty)\s*\+?\s*(?:or\s+more\s+|or\s+fewer\s+)?employees?\b|\ball employers\b|\bany size\b|\bregardless of (?:their )?size\b|\b(?:\d[\d,]*|cuatro|cinco|quince|veinte|cincuenta)\s*(?:o\s+m[aá]s\s+|o\s+menos\s+)?emplead[oa]s\b|\btodos\s+los\s+empleadores\b/i;
+const DEADLINE_CONTEXT =
+  /\b(?:file|filing|deadline|sue|lawsuit|complaint|charge|statute of limitations|limitations period|enforce|enforceable|years? to|days? to|presentar|demanda|demandar|plazo|queja|reclamo|prescripci[oó]n|cargo)\b/i;
+const EMPLOYEES_CONTEXT =
+  /\b(?:law|act|title vii|ada|adea|fmla|nyshrl|nychrl|njlad|flsa|covers?|applies|apply|ley|aplica|cubre|t[ií]tulo vii)\b/i;
 const CASE_NAME = /\b[A-Z][A-Za-z.&'-]+(?:\s+[A-Z][A-Za-z.&'-]+)*\s+v\.\s+[A-Z][A-Za-z.&'-]+/;
 
 const NOT_A_CLAIM =
@@ -168,9 +176,9 @@ export function extractSourceClaims(text: string): SourceClaim[] {
     // a claim for an attorney.
     const scoped = inLegalScope(sentence);
     if (CASE_NAME.test(sentence)) type = "case";
-    else if (scoped && DEADLINE.test(sentence) && /\b(?:file|filing|deadline|sue|lawsuit|complaint|charge|statute of limitations|limitations period|enforce|enforceable|years? to|days? to)\b/i.test(sentence)) type = "deadline";
+    else if (scoped && DEADLINE.test(sentence) && DEADLINE_CONTEXT.test(sentence)) type = "deadline";
     else if (scoped && DOLLAR.test(sentence)) type = "dollar";
-    else if (scoped && EMPLOYEES.test(sentence) && /\b(?:law|act|title vii|ada|adea|fmla|nyshrl|nychrl|njlad|flsa|covers?|applies|apply)\b/i.test(sentence)) type = "employee_count";
+    else if (scoped && EMPLOYEES.test(sentence) && EMPLOYEES_CONTEXT.test(sentence)) type = "employee_count";
     else if (citations.length > 0) type = "statute";
     if (!type) continue;
     seen.add(sentence);

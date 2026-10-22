@@ -39,6 +39,9 @@ import { FindingsPanel } from "@/components/findings-panel";
 import { ChangesMadePanel } from "@/components/changes-made-panel";
 import { ArchiveBanner, ArchivedDraftView } from "@/components/archive-banner";
 import { ReadinessChecklist } from "@/components/readiness-checklist";
+import { WordPressPublishPanel } from "@/components/wordpress-publish-panel";
+import { VersionsPanel } from "@/components/versions-panel";
+import { LanguagePairPanel } from "@/components/language-pair-panel";
 import { SourcesPanel } from "@/components/sources-panel";
 import { ImprovementSummary } from "@/components/improvement-summary";
 import { readImprovement } from "@/lib/improve-to-ready-shared";
@@ -501,6 +504,14 @@ export function DraftDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readinessKey]);
   const framedReadiness = readiness?.applicable ? readiness : null;
+  // Who may press Publish (Kenneth, 2026-10-20); the server enforces it too.
+  const [mayPublish, setMayPublish] = useState(false);
+  useEffect(() => {
+    fetch("/api/content/publish-permission", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setMayPublish(!!j?.canPublish))
+      .catch(() => {});
+  }, []);
   const [msg, setMsg] = useState<string | null>(null);
   // When the row has no draft yet (brief stage), we load the linked brief so
   // the reviewer still sees the brief they built — not "Draft not found".
@@ -1315,6 +1326,7 @@ export function DraftDrawer({
 
   // A long-form draft handed to the WordPress plugin (queued just now, or still
   // queued from a prior Publish click) sits in approved until the plugin confirms.
+  const wpState = ((draft?.metadata as Record<string, unknown> | undefined)?.wp_publish as { state?: string } | undefined)?.state;
   const isQueuedForWp =
     queuedForWp ||
     ((draft?.metadata as Record<string, unknown> | undefined)?.wp_publish as
@@ -1836,6 +1848,18 @@ export function DraftDrawer({
                       <p className="mt-0.5 text-xs text-emerald-700">
                         This draft is marked published.
                       </p>
+                      {draft && (
+                        // Oct 20 spec, Task A12: the live page check and Roll back.
+                        <div className="mt-2">
+                          <WordPressPublishPanel
+                            draftId={draft.id}
+                            status="published"
+                            metadata={(draft as { metadata?: Record<string, unknown> }).metadata ?? null}
+                            canPublish={mayPublish}
+                            onChanged={() => void reloadDraft(draft.id)}
+                          />
+                        </div>
+                      )}
                       <button
                         onClick={() => setDraftStage("draft", "Sent back to draft.")}
                         className="mt-2 w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
@@ -1844,7 +1868,16 @@ export function DraftDrawer({
                       </button>
                     </div>
                   ) : status === "approved" ? (
-                    isQueuedForWp ? (
+                    draft && wpState === "wp_draft" ? (
+                      // Oct 20 spec, Task A12: saved on WordPress; preview, then Publish live.
+                      <WordPressPublishPanel
+                        draftId={draft.id}
+                        status="approved"
+                        metadata={(draft as { metadata?: Record<string, unknown> }).metadata ?? null}
+                        canPublish={mayPublish}
+                        onChanged={() => void reloadDraft(draft.id)}
+                      />
+                    ) : isQueuedForWp ? (
                       <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
                         <div className="text-sm font-semibold text-sky-900">Queued for WordPress</div>
                         <p className="mt-0.5 text-xs text-sky-700">
@@ -1864,7 +1897,8 @@ export function DraftDrawer({
                         <p className="mt-0.5 text-xs text-emerald-700">Signed off and compliance-cleared.</p>
                         <button
                           onClick={publish}
-                          disabled={publishing}
+                          disabled={publishing || !mayPublish}
+                          title={mayPublish ? undefined : "Publishing permission required (an Admin adds you to Publishers in Brand settings)"}
                           className="mt-2 w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {publishing ? "Publishing…" : "Publish"}
@@ -2305,6 +2339,14 @@ export function DraftDrawer({
                     <SourcesPanel draftId={draft.id} nonce={findingsNonce} onChecked={() => void reloadDraft(draft.id)} />
                   </div>
                 )}
+                {/* Oct 20 spec, Task A17: every saved version, restorable. */}
+                <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                  <VersionsPanel draftId={draft.id} nonce={findingsNonce} onRestored={() => void reloadDraft(draft.id)} />
+                </div>
+                {/* Oct 20 spec, Task A13: the English and Spanish versions, paired for hreflang. */}
+                <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                  <LanguagePairPanel draftId={draft.id} />
+                </div>
               </div>
             )}
             {draft && (

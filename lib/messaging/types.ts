@@ -17,6 +17,8 @@ export type SendMessage = {
   body: string;
   /** Override the default From. Falls back to the channel's env-configured sender. */
   from?: string;
+  /** Email attachments, content base64-encoded (the daily callback PDF, Task A19). */
+  attachments?: { filename: string; content: string }[];
 };
 
 export type SendStatus =

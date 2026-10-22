@@ -20,6 +20,9 @@ const SUITE = [
   "check-oct20-regressions",
   "check-source-check",
   "check-improve-to-ready",
+  "check-publish",
+  "check-attorney-questions",
+  "check-system-health",
   "check-draft-frame",
   "check-draft-readiness",
   "check-known-traps-oct6",
@@ -48,6 +51,11 @@ const SUITE = [
   "check-readability-autobreak",
   "check-rule-changes",
   "check-linkedin-mapping",
+  "check-callback-export",
+  "check-learn-results",
+  "check-spanish",
+  "check-social-video",
+  "check-score-breakdown",
 ];
 
 const CONCURRENCY = 4;

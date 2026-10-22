@@ -17,6 +17,7 @@ import { recordAuditEvent } from "@/lib/content-findings-store";
 import { scheduleDraftAnalysis } from "@/lib/auto-analyze";
 import { isFramedFormat } from "@/lib/draft-frame";
 import { frameDraft } from "@/lib/draft-frame-server";
+import { saveVersion } from "@/lib/draft-versions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +96,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         nextMeta = framed.metadata;
       }
     }
+    // Task A17: the version before the undo is kept.
+    await saveVersion({ tenantId, draftId: id, title: (draft.title as string | null) ?? null, body: (draft.body as string | null) ?? null, content: meta.content, reason: "before an Undo", by: user.email });
     const { error: upd } = await supabase
       .from("content_drafts")
       .update({ body: res.body, title: res.title, metadata: nextMeta, updated_at: now })
