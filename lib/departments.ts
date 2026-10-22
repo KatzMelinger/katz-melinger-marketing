@@ -69,6 +69,7 @@ export const DEPARTMENTS: Department[] = [
       // sidebar tab instead of five.
       { label: "Production Board", href: "/content-production", icon: "🗂", status: "active" },
       { label: "Refresh Queue", href: "/content/refresh", icon: "♻", status: "active" },
+      { label: "Results", href: "/content/results", icon: "📈", status: "active" },
       { label: "Cluster Map", href: "/content/site-map", icon: "🗺", status: "active" },
       { label: "Drafts", href: "/content/drafts", icon: "📝", status: "active" },
       { label: "Sources", href: "/content/sources", icon: "📥", status: "active" },

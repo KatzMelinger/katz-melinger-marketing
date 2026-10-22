@@ -92,6 +92,18 @@
     {
       "path": "/api/calls/needs-callback/email",
       "schedule": "0 12,13 * * *"
+    },
+    {
+      "path": "/api/content/results/run",
+      "schedule": "30 10 * * *"
+    },
+    {
+      "path": "/api/legal/live-scan",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/legal/kb-refresh",
+      "schedule": "20 */2 * * *"
     }
   ]
 }

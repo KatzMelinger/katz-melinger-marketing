@@ -7,7 +7,7 @@
  */
 import { getSupabaseAdmin } from "./supabase-server";
 
-function isCronCall(req: Request | undefined): boolean {
+export function isCronCall(req: Request | undefined): boolean {
   const s = process.env.CRON_SECRET?.trim();
   return !!s && !!req && req.headers.get("authorization") === `Bearer ${s}`;
 }

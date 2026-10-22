@@ -24,6 +24,7 @@ import { frameDraftWith, reviewAreaForDraft, type DraftForFrame } from "./draft-
 import { readSourceCheck, sourceStatus, decisionQuestion, type SourceCheckEntry, type SourceCheckRecord } from "./source-check";
 import { loadSourceCheckInputs, type SourceCheckInputs } from "./source-check-server";
 import { learnApproval, learnCorrection, sentenceKey } from "./legal-learned";
+import { recordCorrections } from "./regression-cases";
 import { appendRun, changeId, readFixLog } from "./legal-fix-log";
 import { AUTHORS } from "./authors";
 import { adminEmails, sendEmails } from "./notify-shared";
@@ -223,6 +224,8 @@ export async function answerQuestion(args: {
     // The attorney's own sentence is approved; the old one is corrected wherever it appears.
     await learnCorrection({ tenantId: args.tenantId, from: entry.sentence, to, by: args.by.email, draftId: d.id, rule: "source_check" });
     await learnApproval({ tenantId: args.tenantId, sentence: to, by: args.by.email, draftId: d.id, rule: "source_check" });
+    // Task A10: the replacement is also a regression case.
+    await recordCorrections({ tenantId: args.tenantId, draftId: d.id, oldText: "", newText: "", by: args.by.email, role: "attorney", pairs: [{ before: entry.sentence, after: to }] });
     const entries = record.entries.filter((e) => e.hash !== args.hash);
     // Task A17: the version before the attorney's replacement is kept.
     await saveVersion({ tenantId: args.tenantId, draftId: d.id, title: d.title, body: d.body, content: meta.content, reason: "before an attorney's replacement", by: args.by.email });

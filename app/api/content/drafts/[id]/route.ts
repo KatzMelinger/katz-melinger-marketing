@@ -21,6 +21,8 @@ import { isFramedFormat } from "@/lib/draft-frame";
 import { frameDraft } from "@/lib/draft-frame-server";
 import { readinessForDraft } from "@/lib/draft-readiness-server";
 import { saveVersion } from "@/lib/draft-versions";
+import { recordCorrections } from "@/lib/regression-cases";
+import { canClearLegalHold } from "@/lib/legal-reviewers";
 
 export const runtime = "nodejs";
 
@@ -275,6 +277,20 @@ export async function PATCH(
   // Task 7: a saved text change is re-checked at once (compliance included).
   if (typeof body?.body === "string" && body.body !== existing.body && body.body.trim()) {
     recheckInBackground(id, body.body, data as Record<string, unknown>, tenantId);
+    // Oct 20 spec, Task A10: a correction made by hand becomes a regression case.
+    const editor = await getCurrentUser();
+    const oldText = (existing.body as string | null) ?? "";
+    const newText = body.body;
+    after(() =>
+      recordCorrections({
+        tenantId,
+        draftId: id,
+        oldText,
+        newText,
+        by: editor?.email ?? null,
+        role: editor?.email && canClearLegalHold(editor.email) ? "attorney" : "editor",
+      }).catch((e) => console.warn("[drafts PATCH] regression case failed:", e)),
+    );
   }
 
   if (events.length > 0) {

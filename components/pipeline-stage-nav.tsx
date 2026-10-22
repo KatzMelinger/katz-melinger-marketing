@@ -21,6 +21,8 @@ const STAGES: { href: string; label: string }[] = [
   { href: "/content/attorney-questions", label: "Attorney questions" },
   { href: "/content/publishing-qa", label: "QA" },
   { href: "/content-production", label: "Published" },
+  // Oct 20 spec, Tasks A10 and A15: what happened after publishing.
+  { href: "/content/results", label: "Results" },
 ];
 
 export function PipelineStageNav() {

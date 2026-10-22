@@ -52,6 +52,7 @@ const SUITE = [
   "check-rule-changes",
   "check-linkedin-mapping",
   "check-callback-export",
+  "check-learn-results",
 ];
 
 const CONCURRENCY = 4;
