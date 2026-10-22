@@ -38,6 +38,7 @@ import { getTenantClient } from "@/lib/tenant-db";
 import { recordAuditEvent } from "@/lib/content-findings-store";
 import { notifyDraftBlocked } from "@/lib/content-notifications";
 import { getTenantConfig } from "@/lib/tenant-config";
+import { canPublish, withPublishLog } from "@/lib/publish-permission";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,15 @@ export async function POST(
 
   const publisher = await getCurrentUser();
   const { supabase, tenantId } = await getTenantClient();
+
+  // Only Admins and the people in Brand settings "publishers" may publish
+  // (Kenneth, 2026-10-20); every publish is logged with who and when.
+  if (!(await canPublish(publisher, tenantId))) {
+    return NextResponse.json(
+      { error: "You do not have permission to publish. An Admin can add you to Publishers in Brand settings." },
+      { status: 403 },
+    );
+  }
 
   const { data: draft, error } = await supabase
     .from("content_drafts")
@@ -225,11 +235,17 @@ export async function POST(
       });
     }
 
-    const queuedMetadata = {
-      ...prevMeta,
-      ...(featuredImageUrl ? { featured_image_url: featuredImageUrl } : {}),
-      wp_publish: { queued: true, queued_at: new Date().toISOString() },
-    };
+    const queuedMetadata = withPublishLog(
+      {
+        ...prevMeta,
+        ...(featuredImageUrl ? { featured_image_url: featuredImageUrl } : {}),
+        // Oct 20 spec, Task A12: the plugin first saves a WordPress draft (or,
+        // for a live page, a pending version) and reports a preview link;
+        // "Publish live" is a second, separate step.
+        wp_publish: { queued: true, queued_at: new Date().toISOString(), state: "queued", queued_by: publisher?.email ?? null },
+      },
+      { action: "queued", by: publisher?.email ?? "unknown", at: new Date().toISOString() },
+    );
     await supabase
       .from("content_drafts")
       .update({ metadata: queuedMetadata })
@@ -264,11 +280,14 @@ export async function POST(
     });
   }
 
-  const mergedMetadata = {
-    ...((draft.metadata as Record<string, unknown> | null) ?? {}),
-    ...(publishedUrl ? { publishedUrl } : {}),
-    publish: { channel, at: new Date().toISOString(), postUrls },
-  };
+  const mergedMetadata = withPublishLog(
+    {
+      ...((draft.metadata as Record<string, unknown> | null) ?? {}),
+      ...(publishedUrl ? { publishedUrl } : {}),
+      publish: { channel, at: new Date().toISOString(), postUrls, by: publisher?.email ?? null },
+    },
+    { action: "published", by: publisher?.email ?? "unknown", at: new Date().toISOString() },
+  );
   await supabase
     .from("content_drafts")
     .update({ status: "published", metadata: mergedMetadata })

@@ -30,7 +30,11 @@ export async function GET(req: NextRequest) {
     : 50;
 
   try {
-    const items = await listApprovedWpContent({ tenantId: auth.tenantId, limit });
+    const items = await listApprovedWpContent({
+      tenantId: auth.tenantId,
+      limit,
+      pluginVersion: req.headers.get("x-km-autopilot-version"),
+    });
     return NextResponse.json({
       domain: auth.domain,
       status: "approved",

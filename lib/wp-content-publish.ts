@@ -48,7 +48,37 @@ export type WpContentItem = {
   /** Public URL of an auto-generated featured image, when one was generated at
    *  queue time (new posts only — see app/api/content/drafts/[id]/publish). */
   featured_image_url: string | null;
+  /*
+   * Oct 20 spec, Task A12 (plugin 0.7+; older plugins ignore these fields).
+   */
+  /** create: save as a WordPress draft (or, for a live page, a pending version) and report a preview link.
+   *  go_live: publish what was saved. rollback: restore the previous version. */
+  action: "create" | "go_live" | "rollback";
+  /** The WordPress post, once created (go_live and rollback). */
+  wp_post_id: number | null;
+  /** The SEO plugin's focus keyphrase. */
+  focus_keyphrase: string | null;
+  /** FAQPage JSON-LD for the page head (Yoast already emits Article). */
+  schema_jsonld: string | null;
+  /** The reviewing attorney, for "reviewedBy" on Yoast's Article (Task A2). */
+  reviewed_by: { name: string; url: string | null } | null;
+  /** WordPress category from the pillar's practice area, and tags from the secondary keywords. */
+  category: string | null;
+  tags: string[];
+  /** Descriptive alt text and file name for the featured image. */
+  featured_image_alt: string | null;
+  featured_image_name: string | null;
+  /** 301 redirects this page replaces (merged or older pages), for the plugin to create. */
+  redirects: { from: string; to: string }[];
 };
+
+/** "0.7.0" >= "0.7.0". A plugin that sends no version is treated as 0.6. */
+export function pluginAtLeast(version: string | null | undefined, want: string): boolean {
+  const a = (version ?? "0.6.0").split(".").map((n) => Number(n) || 0);
+  const b = want.split(".").map((n) => Number(n) || 0);
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return true;
+}
 
 /** KM wizard long-form formats — pages/articles that publish to WordPress. */
 const KM_WORDPRESS_FORMATS = new Set([
@@ -100,20 +130,60 @@ function pickMeta(
 export async function listApprovedWpContent(args: {
   tenantId: string;
   limit?: number;
+  /** The plugin's version (X-KM-AutoPilot-Version); 0.7+ also gets go_live and rollback. */
+  pluginVersion?: string | null;
 }): Promise<WpContentItem[]> {
   const sb = getSupabaseAdmin();
+  const actions = pluginAtLeast(args.pluginVersion, "0.7.0");
   const { data, error } = await sb
     .from("content_drafts")
-    .select("id, title, topic, body, format, metadata, seo_brief, practice_area")
+    .select("id, status, title, topic, body, format, metadata, seo_brief, practice_area")
     .eq("tenant_id", args.tenantId)
-    .eq("status", "approved")
+    .in("status", actions ? ["approved", "published"] : ["approved"])
     .order("updated_at", { ascending: false })
     .limit(args.limit ?? 50);
   if (error) throw new Error(error.message);
 
+  // Oct 20 spec, Task A12: a "Publish live" or "Roll back" request goes to a
+  // 0.7+ plugin as its own action; no gates re-run for those (the content
+  // already passed them when it was queued, and a rollback must never wait).
+  const wpOf = (d: { metadata: unknown }) => ((d.metadata as Record<string, unknown> | null)?.wp_publish ?? {}) as Record<string, unknown>;
+  const actionItems: WpContentItem[] = [];
+  if (actions) {
+    for (const d of data ?? []) {
+      const wp = wpOf(d);
+      const postId = typeof wp.wp_post_id === "number" ? wp.wp_post_id : null;
+      if (!postId) continue;
+      const action = d.status === "approved" && wp.go_live_requested === true ? "go_live" : d.status === "published" && wp.rollback_requested === true ? "rollback" : null;
+      if (!action) continue;
+      actionItems.push({
+        id: d.id as string,
+        title: (d.title as string | null) ?? "Untitled",
+        slug: "",
+        content_html: "",
+        meta_title: "",
+        meta_description: "",
+        format: ((d.format as string | null) ?? "blog").toLowerCase(),
+        practice_area: (d.practice_area as string | null) ?? null,
+        author: null,
+        update_url: null,
+        featured_image_url: null,
+        action,
+        wp_post_id: postId,
+        focus_keyphrase: null,
+        schema_jsonld: null,
+        reviewed_by: null,
+        category: null,
+        tags: [],
+        featured_image_alt: null,
+        featured_image_name: null,
+        redirects: [],
+      });
+    }
+  }
+
   const queuedRows = (data ?? []).filter((d) => {
-    const metadata = (d.metadata as Record<string, unknown> | null) ?? null;
-    const queued = (metadata?.wp_publish as { queued?: unknown } | undefined)?.queued === true;
+    const queued = d.status === "approved" && wpOf(d).queued === true;
     return queued && isWordPressFormat(d.format as string | null);
   });
 
@@ -123,8 +193,8 @@ export async function listApprovedWpContent(args: {
   // fails, nothing is served: an unverifiable draft does not go live.
   const critical = await openCriticalFindings(queuedRows.map((d) => d.id as string));
   if (critical === null) {
-    console.warn("[wp-publish] could not read open findings; serving nothing this pull.");
-    return [];
+    console.warn("[wp-publish] could not read open findings; serving nothing new this pull.");
+    return actionItems;
   }
 
   const out: WpContentItem[] = [];
@@ -152,9 +222,7 @@ export async function listApprovedWpContent(args: {
 
     // A Redraft carries the source page URL — that's the page to update in place.
     const updateUrl =
-      typeof metadata?.source_url === "string" && metadata.source_url.trim()
-        ? metadata.source_url.trim()
-        : null;
+      [metadata?.update_target_url, metadata?.source_url].find((u): u is string => typeof u === "string" && !!u.trim())?.trim() ?? null;
 
     // Resolve the authoring attorney by practice area + pillar (same rule the
     // byline uses), so the plugin can set post_author. Pillar lives on the brief.
@@ -188,9 +256,121 @@ export async function listApprovedWpContent(args: {
       update_url: updateUrl,
       featured_image_url:
         typeof metadata?.featured_image_url === "string" ? metadata.featured_image_url : null,
+      ...publishFields(metadata, seoBrief, title, pillarId, d.practice_area as string | null),
     });
   }
-  return out;
+  return [...actionItems, ...out];
+}
+
+/** The Task A12 fields for a create item. */
+function publishFields(
+  metadata: Record<string, unknown> | null,
+  seoBrief: Record<string, unknown> | null,
+  title: string,
+  pillarId: string,
+  practiceArea: string | null,
+): Pick<
+  WpContentItem,
+  "action" | "wp_post_id" | "focus_keyphrase" | "schema_jsonld" | "reviewed_by" | "category" | "tags" | "featured_image_alt" | "featured_image_name" | "redirects"
+> {
+  const m = metadata ?? {};
+  const km = (m.km_brief as Record<string, unknown> | undefined) ?? {};
+  const keyword =
+    [m.primaryKeyword, m.primary_keyword, km.primaryKeyword, seoBrief?.primaryKeyword].find((k): k is string => typeof k === "string" && !!k.trim())?.trim() ?? null;
+  const secondary = [m.secondary_keywords, km.secondaryKeywords, seoBrief?.targetKeywords]
+    .find((v): v is unknown[] => Array.isArray(v))
+    ?.filter((k): k is string => typeof k === "string" && !!k.trim() && k.trim().toLowerCase() !== keyword?.toLowerCase())
+    .slice(0, 8) ?? [];
+  const review = m.review as { attorney?: string; bio_url?: string | null } | undefined;
+  const schema = m.schema_jsonld && typeof m.schema_jsonld === "object" ? JSON.stringify(m.schema_jsonld) : null;
+  const area = (practiceArea ?? "").toLowerCase();
+  const category = /judgment|enforcement|domestica/i.test(pillarId)
+    ? "Judgment Enforcement"
+    : area.includes("collect")
+      ? "Commercial Collections"
+      : area.includes("employ")
+        ? "Employment Law"
+        : null;
+  const wp = (m.wp_publish as Record<string, unknown> | undefined) ?? {};
+  const redirects = Array.isArray(m.redirects)
+    ? (m.redirects as { from?: unknown; to?: unknown }[]).filter((r) => typeof r.from === "string" && typeof r.to === "string").map((r) => ({ from: r.from as string, to: r.to as string }))
+    : [];
+  return {
+    action: "create",
+    wp_post_id: typeof wp.wp_post_id === "number" ? wp.wp_post_id : null,
+    focus_keyphrase: keyword,
+    schema_jsonld: schema,
+    reviewed_by: review?.attorney ? { name: `${review.attorney}, Esq.`, url: review.bio_url ?? null } : null,
+    category,
+    tags: secondary,
+    // Descriptive alt text and file name from the H1 and keyword (Task A12).
+    featured_image_alt: keyword ? `${title} (${keyword})` : title,
+    featured_image_name: slugify(keyword || title),
+    redirects,
+  };
+}
+
+/**
+ * What the plugin reports (Oct 20 spec, Task A12):
+ *   wp_draft     saved as a WordPress draft / pending version; preview_url to read it
+ *   published    live (also what a pre-0.7 plugin means by any confirmation)
+ *   rolled_back  the previous version is back; the draft returns to review
+ */
+export async function confirmWpContent(args: {
+  id: string;
+  tenantId: string;
+  wpPostId?: number | null;
+  url?: string | null;
+  state?: string | null;
+  previewUrl?: string | null;
+}): Promise<{ id: string; status: string; url: string | null; state: string }> {
+  const state = args.state === "wp_draft" || args.state === "rolled_back" ? args.state : "published";
+  if (state === "published") {
+    const r = await markWpContentPublished(args);
+    return { ...r, state };
+  }
+  const sb = getSupabaseAdmin();
+  const { data: draft, error } = await sb
+    .from("content_drafts")
+    .select("id, status, metadata")
+    .eq("tenant_id", args.tenantId)
+    .eq("id", args.id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!draft) throw new Error("draft not found");
+  const meta = (draft.metadata as Record<string, unknown> | null) ?? {};
+  const wp = (meta.wp_publish as Record<string, unknown> | undefined) ?? {};
+  const now = new Date().toISOString();
+  if (state === "wp_draft") {
+    if (draft.status !== "approved") throw new Error(`cannot save a WordPress draft for status='${draft.status}' — must be 'approved'`);
+    const next = {
+      ...meta,
+      wp_post_id: args.wpPostId ?? meta.wp_post_id ?? null,
+      wp_publish: {
+        ...wp,
+        queued: false,
+        state: "wp_draft",
+        wp_post_id: args.wpPostId ?? wp.wp_post_id ?? null,
+        preview_url: args.previewUrl ?? null,
+        url: args.url ?? wp.url ?? null,
+        drafted_at: now,
+      },
+    };
+    const { error: e } = await sb.from("content_drafts").update({ metadata: next }).eq("tenant_id", args.tenantId).eq("id", args.id);
+    if (e) throw new Error(e.message);
+    return { id: args.id, status: "approved", url: args.url ?? null, state };
+  }
+  // rolled_back
+  if (draft.status !== "published") throw new Error(`cannot roll back status='${draft.status}' — must be 'published'`);
+  const next = {
+    ...meta,
+    wp_publish: { ...wp, state: "rolled_back", rollback_requested: false, rolled_back_at: now },
+    publish_log: [...(Array.isArray(meta.publish_log) ? (meta.publish_log as unknown[]) : []), { action: "rollback", by: String(wp.rollback_by ?? "unknown"), at: now }].slice(-50),
+  };
+  const { error: e } = await sb.from("content_drafts").update({ status: "review", metadata: next }).eq("tenant_id", args.tenantId).eq("id", args.id);
+  if (e) throw new Error(e.message);
+  await sb.from("content_pipeline").update({ status: "review" }).eq("tenant_id", args.tenantId).eq("draft_id", args.id);
+  return { id: args.id, status: "review", url: args.url ?? null, state };
 }
 
 /**
@@ -232,9 +412,11 @@ export async function markWpContentPublished(args: {
     wp_publish: {
       ...prevWpPublish,
       queued: false,
+      state: "published",
+      go_live_requested: false,
       published_at: new Date().toISOString(),
-      wp_post_id: args.wpPostId ?? null,
-      url,
+      wp_post_id: args.wpPostId ?? prevWpPublish.wp_post_id ?? null,
+      url: url ?? (prevWpPublish.url as string | null | undefined) ?? null,
     },
   };
 

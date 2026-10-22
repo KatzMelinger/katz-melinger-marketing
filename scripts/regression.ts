@@ -20,6 +20,7 @@ const SUITE = [
   "check-oct20-regressions",
   "check-source-check",
   "check-improve-to-ready",
+  "check-publish",
   "check-draft-frame",
   "check-draft-readiness",
   "check-known-traps-oct6",
