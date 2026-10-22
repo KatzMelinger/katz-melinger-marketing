@@ -156,7 +156,14 @@ export async function checkClaims(tenantId: string, claims: SourceClaim[], input
   return out;
 }
 
-export type SourceCheckRun = { record: SourceCheckRecord; checked: number; reused: number; claims: number };
+export type SourceCheckRun = {
+  record: SourceCheckRecord;
+  checked: number;
+  reused: number;
+  claims: number;
+  /** Claims this run turned into attorney questions (Task A14 emails them). */
+  newQuestionHashes: string[];
+};
 
 /** Check the draft's unchecked claims and save metadata.source_check. */
 export async function runSourceCheck(tenantId: string, draftId: string, opts: { inputs?: SourceCheckInputs } = {}): Promise<SourceCheckRun> {
@@ -199,5 +206,11 @@ export async function runSourceCheck(tenantId: string, draftId: string, opts: { 
     .eq("tenant_id", tenantId)
     .eq("id", draftId);
   if (upd) throw new Error(upd.message);
-  return { record, checked: fresh.length, reused: status.current.length, claims: status.claims };
+  return {
+    record,
+    checked: fresh.length,
+    reused: status.current.length,
+    claims: status.claims,
+    newQuestionHashes: fresh.filter((e) => e.verdict === "not_found" || e.verdict === "no_entry" || e.verdict === "contradicted").map((e) => e.hash),
+  };
 }

@@ -14,6 +14,7 @@ import { sentenceKey } from "@/lib/legal-learned";
 import { decisionQuestion, readSourceCheck, sourceStanding, sourceStatus } from "@/lib/source-check";
 import { loadSourceCheckInputs, runSourceCheck } from "@/lib/source-check-server";
 import { recordAuditEvent } from "@/lib/content-findings-store";
+import { notifyNewQuestions } from "@/lib/attorney-questions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +61,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (!d) return NextResponse.json({ error: "Not found" }, { status: 404 });
   try {
     const run = await runSourceCheck(tenantId, id);
+    // Task A14: each new question goes to its attorney by email.
+    await notifyNewQuestions(tenantId, id, run.newQuestionHashes).catch(() => 0);
     await recordAuditEvent({
       tenantId,
       draftId: id,

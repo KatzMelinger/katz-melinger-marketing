@@ -21,6 +21,7 @@ const SUITE = [
   "check-source-check",
   "check-improve-to-ready",
   "check-publish",
+  "check-attorney-questions",
   "check-draft-frame",
   "check-draft-readiness",
   "check-known-traps-oct6",

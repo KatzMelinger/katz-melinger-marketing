@@ -48,6 +48,7 @@ import { blockingAdHits, findAdTerms } from "./ad-terms";
 import { articleText, extractSourceClaims } from "./source-check";
 import { checkClaims, loadSourceCheckInputs, runSourceCheck } from "./source-check-server";
 import { readinessForDraft } from "./draft-readiness-server";
+import { notifyNewQuestions } from "./attorney-questions";
 import { appendRun, changeId, readFixLog, type FixChange } from "./legal-fix-log";
 import { clearTextCertifications } from "./draft-certifications";
 import { recordAuditEvent } from "./content-findings-store";
@@ -375,6 +376,8 @@ export async function improveToReady(args: {
       return null;
     });
     if (sc?.checked) improved.push({ what: `Checked ${sc.checked} legal claim${sc.checked === 1 ? "" : "s"} against their primary sources`, source: "knowledge base sources" });
+    // Task A14: each new question goes to its attorney by email.
+    if (sc?.newQuestionHashes.length) await notifyNewQuestions(tenantId, draftId, sc.newQuestionHashes).catch(() => 0);
 
     d = await load(tenantId, draftId);
     readiness = await readinessForDraft(tenantId, d);
