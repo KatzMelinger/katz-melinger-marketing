@@ -20,6 +20,7 @@ import {
   type RenderOptions,
   type RenderStatus,
 } from "./video-providers";
+import { AI_PERFORMER_DISCLOSURE } from "./social-from-content";
 
 const BUCKET = "video-renders";
 const SIGNED_URL_TTL = 60 * 60 * 24 * 365; // private bucket → long-lived signed URLs
@@ -55,7 +56,14 @@ export async function startRender(args: {
   options?: RenderOptions;
 }): Promise<VideoRender> {
   const sb = getSupabaseAdmin();
-  const options = args.options ?? {};
+  // Oct 20 spec, Task A16 (Kenneth, 2026-10-20; NY GBL 396-b): every video
+  // shows the AI-performer disclosure on screen for its whole length. A
+  // provider adapter reads onScreenText; one that cannot overlay text must
+  // refuse the job rather than render without it.
+  if (args.options?.onScreenText === false) {
+    throw new RenderError(`Every video carries "${AI_PERFORMER_DISCLOSURE}" on screen; it cannot be turned off.`, 400);
+  }
+  const options: RenderOptions = { ...(args.options ?? {}), onScreenText: AI_PERFORMER_DISCLOSURE, onScreenTextPersistent: true };
 
   const { data: draft, error: draftErr } = await sb
     .from("content_drafts")

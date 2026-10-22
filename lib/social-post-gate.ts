@@ -19,6 +19,7 @@ import { legalAccuracyEnabled } from "./feature-flags";
 import { notifySocialLegalAlert } from "./content-notifications";
 import { checkLinksResolve, recommendsFirstComment } from "./social-links";
 import { findSourceContradictions } from "./social-source-consistency";
+import { isVideoFormat, newClaimsCheck, videoDisclosureProblems } from "./social-from-content";
 import type { NormalizedFinding } from "./content-findings";
 import type { OperatingBrief } from "./social-operating-brief";
 import type { getTenantDb } from "./tenant-db";
@@ -347,6 +348,17 @@ export async function gateSocialPost(args: {
   // can't silently shift what this destructure reads. The advisory-only
   // checks are still started here (not after) to run alongside the blocking
   // ones rather than sequentially behind them.
+  // Oct 20 spec, Task A16: a new legal claim (not inherited from the source
+  // blog's verified claims) goes through the source check; every video caption
+  // carries the AI-performer disclosure and the disclaimer link.
+  const newClaimsPromise = newClaimsCheck({ tenantId: args.tenantId, content: args.content, sourceBlogId: resolved.sourceBlogId ?? null, draftId: args.draftId }).catch(
+    (e) => {
+      console.warn(`[social-post-gate] new-claims check failed (draft ${args.draftId}):`, e);
+      return ["The source check on this post's new claims could not run"];
+    },
+  );
+  const videoReasons = isVideoFormat(args.format) ? videoDisclosureProblems(args.content, args.operatingBrief.disclaimerUrl) : [];
+
   const legalPromise = legalCheck();
   const trapPromise = trapCheck();
   const factPromise = factCheck();
@@ -364,6 +376,7 @@ export async function gateSocialPost(args: {
     sourceConsistencyPromise,
   ]);
   await Promise.all([currencyPromise, linkAdvisoryPromise]);
+  const newClaimReasons = await newClaimsPromise;
 
   // ONE sync for both legal producers, scoped to `legal`.
   //
@@ -395,6 +408,8 @@ export async function gateSocialPost(args: {
     ...inheritedReasons.map((t) => `Source blog unresolved: ${t}`),
     ...linkReasons,
     ...contradictionReasons,
+    ...newClaimReasons,
+    ...videoReasons,
   ];
   return {
     flagged: reasons.length > 0,
