@@ -161,9 +161,23 @@ export const GUIDE_ENTRIES: Record<string, GuideEntry> = {
   },
   "/content/refresh": {
     whatItIs:
-      "The Refresh Queue — pages flagged as decay candidates (often positions 11–30, the highest ROI to refresh).",
+      "The Refresh Queue — pages flagged as decay candidates (often positions 11–30, the highest ROI to refresh), and pages underperforming 90 days after publishing.",
     howToUse:
       "Approve a refresh to send the page back into the content pipeline as a brief for the writing team.",
+  },
+  "/content/results": {
+    whatItIs:
+      "How each published page did at 30 and 90 days (Search Console, AI answers, calls and forms), which content checks predict results, the corrections made by hand that the system now checks, and the quarterly scan of every live page.",
+    howToUse:
+      "Look here after publishing. Attorneys confirm Diana's fact corrections here; Admins can look up a knowledge base entry and open refresh drafts for every page that cites it.",
+  },
+  "/content/operating-guide": {
+    whatItIs: "One page for Diana: from Ready for Diana to a checked live page, and what to do when a job alert arrives.",
+    howToUse: "Read it once; come back when an alert email arrives.",
+  },
+  "/system/health": {
+    whatItIs: "Every background job with its last success, last error and next run, plus AI cost against the monthly budget.",
+    howToUse: "Open it when a job alert arrives. A failed job is retried once automatically; one that keeps failing goes to Kenneth.",
   },
   "/content": {
     whatItIs:
