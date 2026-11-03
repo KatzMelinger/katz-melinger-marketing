@@ -15,6 +15,8 @@ import {
   cachedSystemPrompt,
   extractJSON,
   getAnthropic,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import {
   COMMON_FAILURE_MODES,
@@ -103,13 +105,14 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
 
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 4096,
     system: cachedSystemPrompt(systemPrompt, KEYWORD_RESEARCH_MODEL),
     messages: [{ role: "user", content: userPrompt }],
   });
 
   const text =
-    response.content[0]?.type === "text" ? response.content[0].text : "";
+    responseText(response);
 
   return extractJSON<ComplianceResult>(text);
 }

@@ -13,7 +13,7 @@
  * Used by /api/content/site-inventory/crawl (manual + daily cron).
  */
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import { safeFetch } from "@/lib/url-safety";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { resolveTenantId } from "@/lib/tenant-context";
@@ -254,8 +254,9 @@ async function classifyPillars(
       .join("\n");
 
     try {
-      const resp = await getAnthropic().messages.create({
+      const resp = await createWithTool(getAnthropic(), {
         model: KEYWORD_RESEARCH_MODEL,
+        ...lowEffort(KEYWORD_RESEARCH_MODEL),
         max_tokens: 4096,
         system: `You classify a law firm's web pages into content pillars. The firm's pillars:\n${pillarList}\n\nFor each page, pick the single best matching pillar id (or null if none fit), the practice_area ('employment' or 'collections' or null), and 1-4 short topic tags drawn from the page title. Be precise — only assign a pillar when the page is clearly about it.`,
         tools: [
@@ -283,14 +284,13 @@ async function classifyPillars(
             },
           },
         ],
-        tool_choice: { type: "tool", name: "return_classifications" },
         messages: [
           {
             role: "user",
             content: `Classify these ${batch.length} pages:\n${listing}`,
           },
         ],
-      });
+      }, "return_classifications");
       const toolUse = resp.content.find((b) => b.type === "tool_use");
       if (toolUse && toolUse.type === "tool_use") {
         const input = toolUse.input as {

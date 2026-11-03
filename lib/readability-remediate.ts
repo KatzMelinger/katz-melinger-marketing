@@ -32,7 +32,7 @@
  * never self-corrected at all.
  */
 
-import { CONTENT_LONG_FORM_MODEL, getAnthropic, cachedSystemBlocks, cachedSystemPrompt } from "./anthropic";
+import { CONTENT_LONG_FORM_MODEL, getAnthropic, cachedSystemBlocks, cachedSystemPrompt, lowEffort } from "./anthropic";
 import { stripEmDashes } from "./sanitize-content";
 import {
   readabilityForGenerator,
@@ -92,6 +92,7 @@ export async function remediateReadability(args: RemediateArgs): Promise<Remedia
         `===== ARTICLE =====\n${text}`;
       const res = await getAnthropic().messages.create({
         model: args.model ?? CONTENT_LONG_FORM_MODEL,
+        ...lowEffort(args.model ?? CONTENT_LONG_FORM_MODEL),
         max_tokens: args.maxTokens ?? 8192,
         ...(args.system
           ? { system: typeof args.system === "string" ? cachedSystemPrompt(args.system) : args.system }

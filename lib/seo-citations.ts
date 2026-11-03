@@ -20,6 +20,8 @@ import {
   KEYWORD_RESEARCH_MODEL,
   extractJSON,
   getAnthropic,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -382,12 +384,13 @@ Return ONLY the JSON object.`;
 
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 4000,
     system: AUDIT_SYSTEM,
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  const out = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const out = responseText(response);
   const parsed = extractJSON<{ findings?: CitationFinding[] }>(out);
   const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
   return { canonical, findings };
@@ -461,11 +464,12 @@ ${truncated}
 Return ONLY the JSON object.`;
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 1000,
     system: LINK_AUDIT_SYSTEM,
     messages: [{ role: "user", content: user }],
   });
-  const out = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const out = responseText(response);
   const parsed = extractJSON<{
     nameFound?: string | null;
     addressFound?: string | null;

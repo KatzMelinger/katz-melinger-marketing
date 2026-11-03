@@ -10,18 +10,20 @@ import Anthropic from "@anthropic-ai/sdk";
 // Update this single constant when bumping models across the keyword research
 // feature.
 //
-// NOTE: an earlier comment here claimed `claude-sonnet-4-6` "is not a valid
-// public model ID". It is. Newer Sonnet/Opus models also have a much lower
-// prompt-cache minimum than the snapshot below (see CACHE_MIN_TOKENS), so a
-// model bump is the single biggest lever on cache hit rate. Bumping is a
-// behavioral change with its own migration checklist (tokenizer, sampling
-// params, thinking config) — decide it deliberately, don't drift into it.
-export const KEYWORD_RESEARCH_MODEL = "claude-sonnet-4-5-20250929";
+// Sonnet 4.5 was retired 2026-11-30; this moved to Sonnet 5.5. A bump is a
+// behavioral change with its own migration checklist, not a string swap. On
+// Sonnet 5.5 specifically:
+//   - forced tool_choice ("tool"/"any") is a 400 — use createWithTool below;
+//   - thinking is on by default and counts toward max_tokens — pass
+//     lowEffort(model) so short structured calls don't think their budget away;
+//   - a response can START with a thinking block — read it with responseText,
+//     never content[0].
+export const KEYWORD_RESEARCH_MODEL = "claude-sonnet-5-5";
 
 // Long-form content (blog posts, email newsletters, podcast scripts) and
 // anything where the output style or factual accuracy materially matters.
-// Same Sonnet snapshot as keyword research today.
-export const CONTENT_LONG_FORM_MODEL = "claude-sonnet-4-5-20250929";
+// Same Sonnet model as keyword research today.
+export const CONTENT_LONG_FORM_MODEL = "claude-sonnet-5-5";
 
 // Short-form content (LinkedIn, Twitter/X, Facebook, Instagram captions).
 // Haiku is ~4× cheaper than Sonnet on output and is plenty for short social
@@ -44,7 +46,7 @@ export const CONTENT_SHORT_FORM_MODEL = "claude-haiku-4-5-20251001";
  * at all. Newer models drop as low as 512.
  */
 export const CACHE_MIN_TOKENS: Record<string, number> = {
-  "claude-sonnet-4-5-20250929": 1024,
+  "claude-sonnet-5-5": 512,
   "claude-haiku-4-5-20251001": 4096,
 };
 
@@ -139,6 +141,72 @@ export function logCacheUsage(
   console.log(
     `[anthropic:cache] ${label} read=${read} wrote=${wrote} uncached=${fresh}` +
       (read === 0 && wrote === 0 ? " (NOT CACHING — prefix below the model minimum?)" : ""),
+  );
+}
+
+/**
+ * Retired model IDs and what replaces them. Saved prompts (ai_prompts.model)
+ * can still name a retired model; run them on the replacement instead of
+ * failing with a 404.
+ */
+const RETIRED_MODELS: Record<string, string> = {
+  "claude-sonnet-4-5-20250929": "claude-sonnet-5-5",
+  "claude-sonnet-4-5": "claude-sonnet-5-5",
+};
+
+export function currentModel(model: string): string {
+  return RETIRED_MODELS[model] ?? model;
+}
+
+/**
+ * `output_config.effort: "low"` for models that take an effort level, nothing
+ * for those that reject it (Haiku 4.5). Spread it into a create() call:
+ * `...lowEffort(model)`. Low is Anthropic's starting point for content,
+ * extraction and classification on Sonnet 5.5, where the default (high) thinks
+ * before almost every reply and that thinking counts toward max_tokens.
+ */
+export function lowEffort(model: string): { output_config?: { effort: "low" } } {
+  return /haiku-4|sonnet-4|opus-4-[015]/.test(model) ? {} : { output_config: { effort: "low" } };
+}
+
+/**
+ * All the text a response returned, joined. Use this instead of content[0]:
+ * with thinking on, a response can begin with a thinking block, and content[0]
+ * then reads as an empty answer.
+ */
+export function responseText(resp: { content: Anthropic.ContentBlock[] }): string {
+  return resp.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+}
+
+/**
+ * messages.create for a call that must answer through one tool. Sonnet 5.5
+ * rejects a forced tool_choice, so this asks with "auto" and, if the model
+ * answered in prose instead, asks once more (appending, so the cached prefix
+ * holds). Returns the response; callers find the tool_use block as before.
+ */
+export async function createWithTool(
+  client: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+  toolName: string,
+  options?: Anthropic.RequestOptions,
+): Promise<Anthropic.Message> {
+  const ask = { ...params, tool_choice: { type: "auto" as const } };
+  const first = await client.messages.create(ask, options);
+  if (first.content.some((b) => b.type === "tool_use" && b.name === toolName)) return first;
+  if (first.stop_reason === "refusal" || first.stop_reason === "max_tokens") return first;
+  return client.messages.create(
+    {
+      ...ask,
+      messages: [
+        ...params.messages,
+        { role: "assistant", content: first.content },
+        { role: "user", content: `Give your answer by calling the ${toolName} tool.` },
+      ],
+    },
+    options,
   );
 }
 

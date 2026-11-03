@@ -16,7 +16,7 @@
  * list view.
  */
 
-import { getAnthropic, extractJSON, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, extractJSON, KEYWORD_RESEARCH_MODEL, lowEffort } from "@/lib/anthropic";
 import {
   INTENT_TO_CONTENT_TYPE,
   isCompoundKeyword,
@@ -139,6 +139,7 @@ Return ONLY JSON in this exact shape:
     const anthropic = getAnthropic();
     const res = await anthropic.messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 4000,
       messages: [{ role: "user", content: prompt }],
     });

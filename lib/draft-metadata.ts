@@ -21,7 +21,7 @@
  */
 
 import { getSupabaseAdmin } from "./supabase-server";
-import { extractJSON, getAnthropic, CONTENT_SHORT_FORM_MODEL } from "./anthropic";
+import { extractJSON, getAnthropic, CONTENT_SHORT_FORM_MODEL, responseText } from "./anthropic";
 import { getTenantConfig } from "./tenant-config";
 // The shared rule. This file had its own copy until the same check was needed
 // on social captions and GBP replies; three copies of a regulatory rule is
@@ -194,7 +194,7 @@ Your previous attempt used ${args.priorViolations
       max_tokens: 400,
       messages: [{ role: "user", content: prompt }],
     });
-    const text = res.content[0]?.type === "text" ? res.content[0].text : "";
+    const text = responseText(res);
     const parsed = extractJSON<{ metaTitle?: string; metaDescription?: string }>(text);
     const metaTitle = (parsed?.metaTitle ?? "").trim();
     const metaDescription = (parsed?.metaDescription ?? "").trim();

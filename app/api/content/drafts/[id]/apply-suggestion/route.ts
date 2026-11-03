@@ -31,6 +31,8 @@ import {
   CONTENT_LONG_FORM_MODEL,
   cachedSystemPrompt,
   getAnthropic,
+  lowEffort,
+  createWithTool,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { PROTECTED_TERMS } from "@/lib/readability";
@@ -156,8 +158,9 @@ ${passBody}
 Call the apply_edit tool with the complete updated body, a short summary of what changed${multi ? " (and which items, if any, you skipped and why)" : ""}, and the no_change flag.`;
 
   try {
-    const resp = await getAnthropic().messages.create({
+    const resp = await createWithTool(getAnthropic(), {
       model: CONTENT_LONG_FORM_MODEL,
+      ...lowEffort(CONTENT_LONG_FORM_MODEL),
       max_tokens: 8000,
       system: cachedSystemPrompt(system, CONTENT_LONG_FORM_MODEL),
       tools: [
@@ -188,12 +191,11 @@ Call the apply_edit tool with the complete updated body, a short summary of what
           },
         },
       ],
-      tool_choice: { type: "tool", name: "apply_edit" },
       messages: [{ role: "user", content: user }],
-    });
+    }, "apply_edit");
 
-    // tool_choice forces a tool_use block — but the SDK still types content
-    // as a union, so we narrow defensively.
+    // createWithTool asks for (and retries once for) a tool_use block — but it
+    // can still be missing, and the SDK types content as a union, so narrow.
     const toolUse = resp.content.find((b) => b.type === "tool_use");
     const parsed =
       toolUse && toolUse.type === "tool_use"

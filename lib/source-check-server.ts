@@ -7,7 +7,7 @@ import { getSupabaseAdmin } from "./supabase-server";
 import { getThresholds, type KbThresholdEntry } from "./legal-knowledge-base";
 import { loadStatuteTable } from "./legal-statute-check";
 import { approvedKeys, loadLearned, sentenceKey } from "./legal-learned";
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "./anthropic";
 import { verifyClaimAgainst } from "./legal-verify";
 import { safeFetch } from "./url-safety";
 import { readContent } from "./draft-frame";
@@ -96,12 +96,13 @@ function makeAsk(tenantId: string, draftId: string | null) {
   return async (system: string, user: string): Promise<string> => {
     const res = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 700,
       system,
       messages: [{ role: "user", content: user }],
     });
     void recordAiCost({ tenantId, draftId, endpoint: "source-check", model: KEYWORD_RESEARCH_MODEL, usage: res.usage });
-    return res.content[0]?.type === "text" ? res.content[0].text : "";
+    return responseText(res);
   };
 }
 

@@ -21,6 +21,7 @@ import {
   extractJSON,
   getAnthropic,
   logCacheUsage,
+  responseText,
 } from "./anthropic";
 import { recordVendorUsage } from "./usage-meter";
 import { languageDirective } from "./content-language";
@@ -42,7 +43,7 @@ async function callSpanish(system: string, user: string): Promise<string> {
     units: (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0),
     detail: CONTENT_SHORT_FORM_MODEL,
   });
-  const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+  const text = responseText(resp);
   try {
     return extractJSON<{ body?: string }>(text).body ?? "";
   } catch {

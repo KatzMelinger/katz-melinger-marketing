@@ -20,6 +20,8 @@ import {
   extractJSON,
   getAnthropic,
   logCacheUsage,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import {
   COMMON_FAILURE_MODES,
@@ -246,6 +248,7 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
   // ANTHROPIC_LOG_CACHE to see which side of the line a tenant falls on.
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 4096,
     system: cachedSystemPrompt(systemPrompt, KEYWORD_RESEARCH_MODEL),
     messages: [{ role: "user", content: userPrompt }],
@@ -253,7 +256,7 @@ Return ONLY the JSON object — no preamble, no markdown fences. Be strict on su
   logCacheUsage("content-compliance", response.usage);
 
   const text =
-    response.content[0]?.type === "text" ? response.content[0].text : "";
+    responseText(response);
 
   const raw = extractJSON<Partial<ContentComplianceResult>>(text);
   return applyFirmRules({ raw, content, surface: input.surface, brief });

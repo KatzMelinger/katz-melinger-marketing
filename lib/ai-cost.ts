@@ -14,6 +14,7 @@ import { recordUsage } from "./usage-meter";
 const PRICE: { re: RegExp; input: number; output: number }[] = [
   { re: /haiku/i, input: 1, output: 5 },
   { re: /opus/i, input: 15, output: 75 },
+  { re: /sonnet-5/i, input: 2, output: 10 },
   { re: /sonnet|fable/i, input: 3, output: 15 },
 ];
 

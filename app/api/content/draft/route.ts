@@ -10,6 +10,7 @@ import {
   CONTENT_SHORT_FORM_MODEL,
   extractJSON,
   getAnthropic,
+  lowEffort,
 } from "@/lib/anthropic";
 import {
   getBrandVoiceContext,
@@ -530,6 +531,7 @@ ${readabilityPromptBlock(
       contentType === "social" ? CONTENT_SHORT_FORM_MODEL : CONTENT_LONG_FORM_MODEL;
     const msg = await getAnthropic().messages.create({
       model,
+      ...lowEffort(model),
       max_tokens: contentType === "blog" && length === "long" ? 8192 : 4096,
       system,
       messages: [{ role: "user", content: userPrompt }],

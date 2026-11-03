@@ -41,6 +41,8 @@ import {
   extractJSON,
   getAnthropic,
   logCacheUsage,
+  responseText,
+  lowEffort,
 } from "./anthropic";
 import { AD_TERMS_RULE } from "@/lib/ad-terms";
 import { renderFirmFactsBlock } from "@/lib/firm-facts";
@@ -204,6 +206,7 @@ async function callClaudeForFormats(args: {
   // often a no-op despite looking cached. ANTHROPIC_LOG_CACHE shows which.
   const resp = await getAnthropic().messages.create({
     model: args.model,
+    ...lowEffort(args.model),
     max_tokens: 8192,
     system: cachedSystemBlocks(args.system.stable, args.system.perRequest, args.model),
     messages: [{ role: "user", content: args.user }],
@@ -216,7 +219,7 @@ async function callClaudeForFormats(args: {
     units: (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0),
     detail: args.model,
   });
-  const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+  const text = responseText(resp);
   try {
     return extractJSON<ClaudeMultiOutput>(text);
   } catch {

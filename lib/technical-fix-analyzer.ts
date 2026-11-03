@@ -10,7 +10,7 @@
  * skipped because the plugin currently logs-and-skips those.
  */
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { snapshotPage, type PageSnapshot } from "@/lib/page-snapshot";
 
@@ -90,8 +90,9 @@ Rules:
     `\nCall the return_fixes tool with the list of fixes you want to apply. Skip any fix_type where the current value is already good. Maximum 6 fixes.`,
   );
 
-  const resp = await getAnthropic().messages.create({
+  const resp = await createWithTool(getAnthropic(), {
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 4096,
     system,
     tools: [
@@ -143,9 +144,8 @@ Rules:
         },
       },
     ],
-    tool_choice: { type: "tool", name: "return_fixes" },
     messages: [{ role: "user", content: userParts.join("\n") }],
-  });
+  }, "return_fixes");
 
   const toolUse = resp.content.find((b) => b.type === "tool_use");
   if (!toolUse || toolUse.type !== "tool_use") {

@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { guardUser } from "@/lib/supabase-route";
 
@@ -111,11 +111,12 @@ export async function POST(req: NextRequest) {
   try {
     const res = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 2048,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = res.content[0]?.type === "text" ? res.content[0].text : "";
+    const text = responseText(res);
     if (kind === "trends") {
       const parsed = extractJSON<TrendsResult>(text);
       return NextResponse.json({ result: parsed });

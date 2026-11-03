@@ -20,6 +20,7 @@ import {
   CONTENT_LONG_FORM_MODEL,
   extractJSON,
   getAnthropic,
+  lowEffort,
 } from "@/lib/anthropic";
 import {
   ALL_KM_PILLARS,
@@ -427,6 +428,7 @@ Return the JSON object.`;
 
     const msg = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
+      ...lowEffort(CONTENT_LONG_FORM_MODEL),
       max_tokens: 600,
       system: cachedSystemPrompt(CLAUDE_JUDGE_SYSTEM),
       messages: [{ role: "user", content: user }],

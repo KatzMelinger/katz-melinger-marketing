@@ -12,7 +12,7 @@
  *     local attorney. Mention NY/NJ jurisdiction explicitly when relevant.
  */
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "./anthropic";
 import {
   checkContentCompliance,
   type ContentComplianceResult,
@@ -89,11 +89,12 @@ Draft a response that follows the etiquette above for the ${args.platform} platf
 
   const resp = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 1500,
     system: sys,
     messages: [{ role: "user", content: user }],
   });
-  const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
+  const text = responseText(resp).trim();
 
   // Advisory compliance pass on the suggested reply. Never let it fail the
   // suggestion — degrade to null (the UI keeps the static etiquette warning).

@@ -22,6 +22,8 @@ import {
   getAnthropic,
   KEYWORD_RESEARCH_MODEL,
   extractJSON,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 
 export type JobType = "discover" | "expand" | "competitor-gaps";
@@ -149,13 +151,14 @@ export async function runAnthropicJob(args: {
     const anthropic = getAnthropic();
     const response = await anthropic.messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     });
 
     const text =
-      response.content[0]?.type === "text" ? response.content[0].text : "";
+      responseText(response);
 
     let parsed: unknown;
     try {

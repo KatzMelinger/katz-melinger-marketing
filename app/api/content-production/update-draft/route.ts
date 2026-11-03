@@ -23,6 +23,7 @@ import {
   cachedSystemPrompt,
   CONTENT_LONG_FORM_MODEL,
   getAnthropic,
+  lowEffort,
 } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
 import { stripEmDashes } from "@/lib/sanitize-content";
@@ -241,6 +242,7 @@ export async function POST(req: Request) {
   try {
     const msg = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
+      ...lowEffort(CONTENT_LONG_FORM_MODEL),
       max_tokens: 8192,
       system: cachedSystemPrompt(tenantConfig.systemPrompt),
       messages: [{ role: "user", content: userPrompt }],
@@ -282,6 +284,7 @@ export async function POST(req: Request) {
         `===== CURRENT PAGE =====\n${updatedBody}`;
       const repair = await getAnthropic().messages.create({
         model: CONTENT_LONG_FORM_MODEL,
+        ...lowEffort(CONTENT_LONG_FORM_MODEL),
         max_tokens: 8192,
         system: cachedSystemPrompt(tenantConfig.systemPrompt),
         messages: [{ role: "user", content: repairPrompt }],
@@ -318,6 +321,7 @@ export async function POST(req: Request) {
           `===== ARTICLE =====\n${updatedBody}`;
         const rw = await getAnthropic().messages.create({
           model: CONTENT_LONG_FORM_MODEL,
+          ...lowEffort(CONTENT_LONG_FORM_MODEL),
           max_tokens: 8192,
           system: cachedSystemPrompt(tenantConfig.systemPrompt),
           messages: [{ role: "user", content: rwPrompt }],

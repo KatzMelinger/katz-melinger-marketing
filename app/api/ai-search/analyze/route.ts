@@ -13,6 +13,8 @@ import {
   KEYWORD_RESEARCH_MODEL,
   extractJSON,
   getAnthropic,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import type { AISiteCrawlResult } from "@/lib/ai-crawler";
 import { getSupabaseServer } from "@/lib/supabase-server";
@@ -143,13 +145,14 @@ Provide your analysis in JSON format:
 
     const response = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 8192,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     });
 
     const text =
-      response.content[0]?.type === "text" ? response.content[0].text : "";
+      responseText(response);
 
     let analysis: { overallScore?: number } | null = null;
     try {

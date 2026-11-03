@@ -14,6 +14,8 @@ import {
   extractJSON,
   getAnthropic,
   KEYWORD_RESEARCH_MODEL,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -102,11 +104,12 @@ Return JSON only:
 
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 8192,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const strategy = extractJSON(text);
 
     return NextResponse.json({ profile, strategy });

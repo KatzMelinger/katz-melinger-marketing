@@ -14,6 +14,8 @@ import {
   KEYWORD_RESEARCH_MODEL,
   extractJSON,
   getAnthropic,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { getSupabaseAdmin, getSupabaseServer } from "@/lib/supabase-server";
@@ -186,6 +188,7 @@ export async function suggestDirectories(
 
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 4000,
     system: SUGGEST_SYSTEM,
     messages: [
@@ -196,7 +199,7 @@ export async function suggestDirectories(
     ],
   });
 
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const text = responseText(response);
   const parsed = extractJSON<{ directories?: SuggestedDirectory[] }>(text);
   return Array.isArray(parsed.directories) ? parsed.directories : [];
 }

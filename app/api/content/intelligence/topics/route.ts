@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getFirmContext } from "@/lib/firm-context";
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
@@ -67,11 +67,12 @@ Return JSON only:
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 4096,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{ topics?: unknown[] }>(text);
     const topics = Array.isArray(parsed.topics) ? parsed.topics : [];
     return NextResponse.json({ topics });
