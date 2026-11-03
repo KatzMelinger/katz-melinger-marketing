@@ -9,7 +9,7 @@
  * can record a per-run cost estimate. Cost is priced PER MODEL — see PRICING.
  */
 
-import { getAnthropic } from "./anthropic";
+import { getAnthropic, responseText, lowEffort, currentModel } from "./anthropic";
 
 /**
  * $/MTok list pricing, keyed by the exact model id stored on the prompt.
@@ -26,7 +26,7 @@ import { getAnthropic } from "./anthropic";
  * table WILL fall behind the picker the next time a model is added there.
  */
 const PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number }> = {
-  "claude-sonnet-4-5-20250929": { inputPerMillion: 3, outputPerMillion: 15 },
+  "claude-sonnet-5-5": { inputPerMillion: 2, outputPerMillion: 10 },
   "claude-haiku-4-5-20251001": { inputPerMillion: 1, outputPerMillion: 5 },
   "claude-opus-4-7": { inputPerMillion: 5, outputPerMillion: 25 },
 };
@@ -89,9 +89,12 @@ export async function runPrompt(args: {
   const renderedSystem = args.systemPrompt ? renderTemplate(args.systemPrompt, args.variables) : null;
   const renderedUser = renderTemplate(args.userPrompt, args.variables);
 
+  // A saved prompt can name a retired model; run it on the replacement.
+  const model = currentModel(args.model);
   const started = Date.now();
   const resp = await getAnthropic().messages.create({
-    model: args.model,
+    model,
+    ...lowEffort(model),
     max_tokens: args.maxTokens,
     system: renderedSystem ?? undefined,
     messages: [{ role: "user", content: renderedUser }],
@@ -99,7 +102,7 @@ export async function runPrompt(args: {
   const latencyMs = Date.now() - started;
 
   const text =
-    resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    responseText(resp);
 
   const inputTokens = resp.usage?.input_tokens ?? 0;
   const outputTokens = resp.usage?.output_tokens ?? 0;
@@ -108,7 +111,7 @@ export async function runPrompt(args: {
     output: text,
     inputTokens,
     outputTokens,
-    costEstimate: priceRun(args.model, inputTokens, outputTokens),
+    costEstimate: priceRun(model, inputTokens, outputTokens),
     latencyMs,
     rendered: { system: renderedSystem, user: renderedUser },
   };

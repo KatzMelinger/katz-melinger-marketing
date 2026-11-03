@@ -33,7 +33,7 @@
  * AND an interpretation goes to a human, even though the number is checkable.
  */
 
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "./anthropic";
 import { findFeeLanguage } from "./fee-language";
 import { findFirmFactClaims } from "./firm-facts";
 import { findCitations, type ParsedCitation } from "./legal-citation";
@@ -262,11 +262,12 @@ async function classifyWithModel(
   try {
     const res = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 2000,
       system: SYSTEM,
       messages: [{ role: "user", content: `Classify each claim:\n\n${listed}` }],
     });
-    const text = res.content[0]?.type === "text" ? res.content[0].text : "";
+    const text = responseText(res);
     const parsed = extractJSON<{
       claims: { index: number; type: string; reason: string }[];
     }>(text);

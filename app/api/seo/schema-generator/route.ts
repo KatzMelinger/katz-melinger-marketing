@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { findTemplate } from "@/lib/schema-templates";
 import { guardUser } from "@/lib/supabase-route";
@@ -90,8 +90,9 @@ ${paramsBlock || "(none beyond pageUrl)"}
 Call the return_schema tool with the JSON-LD as a JSON object plus a one-sentence rationale the marketer will see when this is queued for AutoPilot.`;
 
   try {
-    const resp = await getAnthropic().messages.create({
+    const resp = await createWithTool(getAnthropic(), {
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 4096,
       system,
       tools: [
@@ -117,9 +118,8 @@ Call the return_schema tool with the JSON-LD as a JSON object plus a one-sentenc
           },
         },
       ],
-      tool_choice: { type: "tool", name: "return_schema" },
       messages: [{ role: "user", content: user }],
-    });
+    }, "return_schema");
 
     const toolUse = resp.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {

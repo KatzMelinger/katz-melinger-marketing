@@ -12,7 +12,7 @@
  * (Option A) and never needs to run this.
  */
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { resolveTenantId } from "@/lib/tenant-context";
 
@@ -51,6 +51,7 @@ export async function generateSystemPrompt(tenantId?: string): Promise<string> {
 
   const msg = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 2000,
     messages: [{ role: "user", content: `${META_PROMPT}${firmProfile}` }],
   });

@@ -27,7 +27,7 @@ check(/Missed/.test(scheduledHealth("/api/calls/sync", "0 * * * *", [run({ start
 check(/failed/.test(scheduledHealth("/api/calls/sync", "0 * * * *", [run({ status: "failed", error: "504" })], at).problem ?? ""), "a failed last run is a problem");
 check(/2 hours/.test(scheduledHealth("/api/calls/sync", "0 * * * *", [run({ status: "running", started_at: "2026-10-21T07:00:00Z" })], at).problem ?? ""), "running over 2 hours is a problem");
 
-check(estimateCents("claude-sonnet-4-5", { input_tokens: 1_000_000, output_tokens: 0 }) === 300, "Sonnet input: $3 per million tokens");
+check(estimateCents("claude-sonnet-5-5", { input_tokens: 1_000_000, output_tokens: 0 }) === 200, "Sonnet 5.5 input: $2 per million tokens");
 check(estimateCents("claude-haiku-4-5", { input_tokens: 0, output_tokens: 1_000_000 }) === 500, "Haiku output: $5 per million tokens");
 
 console.log(failed === 0 ? "\nall passed" : `\n${failed} FAILED`);

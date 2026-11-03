@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { getTenantConfig } from "@/lib/tenant-config";
 import { guardUser } from "@/lib/supabase-route";
@@ -97,11 +97,12 @@ Return JSON only:
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 8192,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{ results?: ScreenResult[] }>(text);
     const results: ScreenResult[] = Array.isArray(parsed.results) ? parsed.results : [];
     return NextResponse.json({ results });

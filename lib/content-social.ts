@@ -32,6 +32,7 @@ import {
   extractJSON,
   getAnthropic,
   logCacheUsage,
+  responseText,
 } from "./anthropic";
 import { stripEmDashes, hasEmDash } from "./sanitize-content";
 import { isSensitiveTopic, sensitiveToneBlock } from "./sensitive-topic";
@@ -182,7 +183,7 @@ async function callSocial(system: string, user: string): Promise<SocialClaudeOut
     units: (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0),
     detail: CONTENT_SHORT_FORM_MODEL,
   });
-  const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+  const text = responseText(resp);
   try {
     return extractJSON<SocialClaudeOutput>(text);
   } catch {

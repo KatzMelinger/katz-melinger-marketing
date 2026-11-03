@@ -11,7 +11,7 @@
  * without rewriting what already works (the additive behavior 1.5 specifies).
  */
 
-import { getAnthropic, CONTENT_SHORT_FORM_MODEL, extractJSON } from "./anthropic";
+import { getAnthropic, CONTENT_SHORT_FORM_MODEL, extractJSON, responseText } from "./anthropic";
 import type { KMContentType } from "./km-content-system";
 import type { PageOutline } from "./page-optimizer";
 
@@ -81,7 +81,7 @@ async function claudeClassify(text: string, url: string): Promise<KMContentType>
         },
       ],
     });
-    const t = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const t = responseText(resp);
     const parsed = extractJSON<{ contentType?: string }>(t);
     const ct = parsed?.contentType;
     if (ct === "blog_post" || ct === "practice_page" || ct === "case_result") return ct;

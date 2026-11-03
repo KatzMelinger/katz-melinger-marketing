@@ -15,7 +15,7 @@
  * Until it exists for the current version, the readiness checklist does not
  * pass a Spanish draft.
  */
-import { getAnthropic, CONTENT_SHORT_FORM_MODEL } from "./anthropic";
+import { getAnthropic, CONTENT_SHORT_FORM_MODEL, responseText } from "./anthropic";
 import { recordAiCost } from "./ai-cost";
 import { splitSentences } from "./legal-classifier";
 import { articleText } from "./source-check";
@@ -44,7 +44,7 @@ async function translate(tenantId: string, draftId: string, sentences: string[])
       messages: [{ role: "user", content: chunk.map((s, j) => `${j + 1}. ${s}`).join("\n") }],
     });
     void recordAiCost({ tenantId, draftId, endpoint: "spanish-check", model: CONTENT_SHORT_FORM_MODEL, usage: res.usage });
-    const text = res.content[0]?.type === "text" ? res.content[0].text : "";
+    const text = responseText(res);
     const lines = parseTranslation(text, chunk.length);
     if (!lines) throw new Error("The Spanish translation for the checks came back incomplete. Run it again.");
     out.push(...lines);

@@ -28,6 +28,8 @@ import {
   extractJSON,
   getAnthropic,
   logCacheUsage,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 
 export type AuditPlatform =
@@ -176,6 +178,7 @@ Return ONLY the JSON object. Cite real numbers from the report. ${
   // 1024-token cache minimum, so every audit after the first reads it back.
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 6000,
     system: cachedSystemPrompt(SYSTEM_PROMPT, KEYWORD_RESEARCH_MODEL),
     messages: [{ role: "user", content: userPrompt }],
@@ -183,7 +186,7 @@ Return ONLY the JSON object. Cite real numbers from the report. ${
   logCacheUsage("ads-audit", response.usage);
 
   const text =
-    response.content[0]?.type === "text" ? response.content[0].text : "";
+    responseText(response);
 
   const result = extractJSON<AdsAuditResult>(text);
 

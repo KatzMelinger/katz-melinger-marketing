@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import {
   insertStateRulesIfMissing,
   listStateRules,
@@ -122,14 +122,14 @@ async function draftBatch(
 
 ${list}`;
 
-  const resp = await getAnthropic().messages.create({
+  const resp = await createWithTool(getAnthropic(), {
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 8192,
     system: SYSTEM,
     messages: [{ role: "user", content: user }],
     tools: [TOOL],
-    tool_choice: { type: "tool", name: TOOL.name },
-  });
+  }, TOOL.name);
 
   const block = resp.content.find((b) => b.type === "tool_use");
   const input = (block && block.type === "tool_use"

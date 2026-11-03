@@ -24,6 +24,7 @@ import {
   cachedSystemPrompt,
   CONTENT_LONG_FORM_MODEL,
   getAnthropic,
+  lowEffort,
 } from "@/lib/anthropic";
 import {
   buildBriefUserPrompt,
@@ -433,6 +434,7 @@ ${renderFirmFactsBlock()}`);
   try {
     const msg = await getAnthropic().messages.create({
       model: CONTENT_LONG_FORM_MODEL,
+      ...lowEffort(CONTENT_LONG_FORM_MODEL),
       max_tokens: maxTokens,
       system: kmSystem,
       messages: [{ role: "user", content: userPrompt }],
@@ -465,6 +467,7 @@ ${renderFirmFactsBlock()}`);
           `===== CURRENT DRAFT =====\n${text}`;
         const repair = await getAnthropic().messages.create({
           model: CONTENT_LONG_FORM_MODEL,
+          ...lowEffort(CONTENT_LONG_FORM_MODEL),
           max_tokens: maxTokens,
           system: kmSystem,
           messages: [{ role: "user", content: repairPrompt }],
@@ -502,6 +505,7 @@ ${renderFirmFactsBlock()}`);
           `===== ARTICLE =====\n${text}`;
         const rw = await getAnthropic().messages.create({
           model: CONTENT_LONG_FORM_MODEL,
+          ...lowEffort(CONTENT_LONG_FORM_MODEL),
           max_tokens: maxTokens,
           system: kmSystem,
           messages: [{ role: "user", content: rwPrompt }],

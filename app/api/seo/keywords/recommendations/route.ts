@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { guardUser } from "@/lib/supabase-route";
 
@@ -80,11 +80,12 @@ Return JSON only:
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 4096,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{ ideas?: unknown[] }>(text);
     const ideas: TopicIdea[] = Array.isArray(parsed.ideas)
       ? (parsed.ideas.filter((i) => i && typeof i === "object") as TopicIdea[])

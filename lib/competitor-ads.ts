@@ -23,6 +23,8 @@ import {
   cachedSystemPrompt,
   extractJSON,
   getAnthropic,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import { cachedDataForSeoPost, isDataForSeoOk } from "@/lib/dataforseo-cache";
 import { getTenantConfig } from "@/lib/tenant-config";
@@ -262,12 +264,13 @@ Analyze the competitive paid landscape and return ONLY the JSON object.`;
 
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 4096,
     system: cachedSystemPrompt(STRATEGY_SYSTEM_PROMPT),
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const text = responseText(response);
   let result: CompetitorStrategy;
   try {
     result = extractJSON<CompetitorStrategy>(text);

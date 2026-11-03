@@ -38,7 +38,7 @@
 
 import { ruleCovers, statesLegalClaim, loadClaimCoverage, type ClaimCoverage } from "./legal-claim-routing";
 import { isAnchored } from "./legal-scope";
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "./anthropic";
 import { focusedExcerpt, quoteRelatesToClaim } from "./authority-excerpt";
 import { fingerprintFinding, RETIRED_CLAIM_TYPES, type NormalizedFinding } from "./content-findings";
 import { classifyLegalClaims, type LegalClaim } from "./legal-classifier";
@@ -104,6 +104,7 @@ async function askOnce(
 ): Promise<{ verdict: Verdict; quote: string; reason: string }> {
   const res = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 700,
     system: SYSTEM,
     messages: [
@@ -113,7 +114,7 @@ async function askOnce(
       },
     ],
   });
-  const text = res.content[0]?.type === "text" ? res.content[0].text : "";
+  const text = responseText(res);
   const parsed = extractJSON<{ verdict?: string; quote?: string; reason?: string }>(text);
   const v = parsed?.verdict;
   const verdict: Verdict =

@@ -32,7 +32,7 @@
  * summary card at the top of the review screen.
  */
 import { getSupabaseAdmin } from "./supabase-server";
-import { getAnthropic, CONTENT_LONG_FORM_MODEL } from "./anthropic";
+import { getAnthropic, CONTENT_LONG_FORM_MODEL, responseText, lowEffort } from "./anthropic";
 import { fixDraft } from "./auto-fix-draft";
 import { assembleDraft, readContent, isFramedFormat, type DraftContent } from "./draft-frame";
 import { bylineForDraft, draftLanguage, frameBrandFrom, reviewAreaForDraft, type DraftForFrame } from "./draft-frame-server";
@@ -132,12 +132,13 @@ export async function writePieces(
   }
   const res = await getAnthropic().messages.create({
     model: CONTENT_LONG_FORM_MODEL,
+    ...lowEffort(CONTENT_LONG_FORM_MODEL),
     max_tokens: 2500,
     system: WRITER,
     messages: [{ role: "user", content: `ARTICLE:\n"""\n${article}\n"""\n\nWrite these pieces:\n- ${asks.join("\n- ")}` }],
   });
   if (cost) void recordAiCost({ ...cost, endpoint: "improve-to-ready", model: CONTENT_LONG_FORM_MODEL, usage: res.usage });
-  const text = res.content[0]?.type === "text" ? res.content[0].text : "";
+  const text = responseText(res);
   try {
     return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as Pieces;
   } catch {

@@ -13,7 +13,7 @@
  *      auto-fill from.
  */
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { getTenantClient } from "@/lib/tenant-db";
 import {
@@ -182,8 +182,9 @@ Call return_packet with the synthesized packet.`;
   let confidence = baselineConfidence;
 
   try {
-    const resp = await getAnthropic().messages.create({
+    const resp = await createWithTool(getAnthropic(), {
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 3000,
       system,
       tools: [
@@ -230,9 +231,8 @@ Call return_packet with the synthesized packet.`;
           },
         },
       ],
-      tool_choice: { type: "tool", name: "return_packet" },
       messages: [{ role: "user", content: user }],
-    });
+    }, "return_packet");
     const toolUse = resp.content.find((b) => b.type === "tool_use");
     if (toolUse && toolUse.type === "tool_use") {
       const input = toolUse.input as {

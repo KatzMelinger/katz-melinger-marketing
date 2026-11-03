@@ -101,7 +101,10 @@ Today is ${today}.`;
       resp = await anthropic.messages.create(
         {
           model: KEYWORD_RESEARCH_MODEL,
-          max_tokens: 2048,
+          // Multistep tool use: medium is the Sonnet 5.5 starting point. Thinking
+          // counts toward max_tokens, hence the headroom over the old 2048.
+          output_config: { effort: "medium" },
+          max_tokens: 8192,
           system: cachedSystemPrompt(system),
           tools: TOOLS,
           messages,

@@ -22,6 +22,7 @@ import {
   CONTENT_SHORT_FORM_MODEL,
   cachedSystemPrompt,
   extractJSON,
+  responseText,
 } from "@/lib/anthropic";
 import { stripEmDashes } from "@/lib/sanitize-content";
 import { recordVendorUsage } from "@/lib/usage-meter";
@@ -87,7 +88,7 @@ Return JSON only: { "hook": "...", "body": "...", "cta": "..." }`;
       units: (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0),
       detail: CONTENT_SHORT_FORM_MODEL,
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     out = extractJSON<ScriptOut>(text);
   } catch (e) {
     return NextResponse.json(

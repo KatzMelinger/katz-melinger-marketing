@@ -50,7 +50,7 @@ create table if not exists public.ai_prompts (
   variables       text[] not null default '{}',
   system_prompt   text,
   user_prompt     text not null,
-  model           text not null default 'claude-sonnet-4-5-20250929',
+  model           text not null default 'claude-sonnet-5-5',
   max_tokens      integer not null default 4096,
   tags            text[] not null default '{}',
   created_at      timestamptz not null default now(),

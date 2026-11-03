@@ -16,7 +16,7 @@
  * GEMINI_API_KEY enables the corresponding provider with no code change.
  */
 
-import { getAnthropic } from "./anthropic";
+import { getAnthropic, responseText, lowEffort } from "./anthropic";
 import { logger } from "./logger";
 
 export type AEOProviderId = "claude" | "openai" | "perplexity" | "gemini";
@@ -79,7 +79,7 @@ export function domainOf(url: string): string | null {
 // Claude
 // ---------------------------------------------------------------------------
 
-const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
+const CLAUDE_MODEL = "claude-sonnet-5-5";
 
 const claudeProvider: AEOProvider = {
   id: "claude",
@@ -90,6 +90,7 @@ const claudeProvider: AEOProvider = {
     const started = Date.now();
     const response = await getAnthropic().messages.create({
       model: CLAUDE_MODEL,
+      ...lowEffort(CLAUDE_MODEL),
       max_tokens: 1024,
       system:
         "You are a helpful assistant answering buyer-intent questions. " +
@@ -100,7 +101,7 @@ const claudeProvider: AEOProvider = {
       messages: [{ role: "user", content: prompt }],
     });
     const text =
-      response.content[0]?.type === "text" ? response.content[0].text : "";
+      responseText(response);
     return {
       provider: "claude",
       model: CLAUDE_MODEL,

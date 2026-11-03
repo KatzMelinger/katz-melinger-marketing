@@ -56,3 +56,6 @@ next-env.d.ts
 # Local reports written by maintenance scripts (--out)
 backfill-report*.md
 scripts/out/
+
+# Google service-account keys - never commit
+km-marketing-dashboard-replit-*.json

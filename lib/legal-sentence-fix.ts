@@ -17,7 +17,7 @@
  * An attorney's own replacement goes through guardSentence too, but only as a
  * warning: the attorney decides.
  */
-import { getAnthropic, CONTENT_LONG_FORM_MODEL } from "./anthropic";
+import { getAnthropic, CONTENT_LONG_FORM_MODEL, lowEffort, createWithTool } from "./anthropic";
 import { findFeeLanguage } from "./fee-language";
 import { blockingAdHits, findAdTerms } from "./ad-terms";
 import { matchTrap, type KnownTrap, type TrapContext } from "./known-traps";
@@ -77,8 +77,9 @@ export async function proposeFix(args: {
   fix: string | null;
 }): Promise<string | null> {
   const instruction = [args.fix, args.note].filter(Boolean).join("\n");
-  const resp = await getAnthropic().messages.create({
+  const resp = await createWithTool(getAnthropic(), {
     model: CONTENT_LONG_FORM_MODEL,
+    ...lowEffort(CONTENT_LONG_FORM_MODEL),
     max_tokens: 1200,
     system:
       "You correct one sentence of legal marketing copy for Katz Melinger PLLC, a New York and New Jersey employee-side employment and creditor-side collections firm. " +
@@ -96,14 +97,13 @@ export async function proposeFix(args: {
         },
       },
     ],
-    tool_choice: { type: "tool", name: "corrected_sentence" },
     messages: [
       {
         role: "user",
         content: `Problem: ${args.title}\nCorrect statement and instructions: ${instruction || "(see problem)"}\n\nSentence:\n${args.sentence}`,
       },
     ],
-  });
+  }, "corrected_sentence");
   const tool = resp.content.find((c) => c.type === "tool_use");
   const out = tool && "input" in tool ? String((tool.input as { sentence?: unknown }).sentence ?? "").trim() : "";
   if (!out || out === args.sentence.trim()) return null;

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       variables,
       system_prompt: body?.system_prompt ?? null,
       user_prompt: userPrompt,
-      model: body?.model ?? "claude-sonnet-4-5-20250929",
+      model: body?.model ?? "claude-sonnet-5-5",
       max_tokens: Number(body?.max_tokens ?? 4096),
       tags: Array.isArray(body?.tags) ? body.tags : [],
       tenant_id: await resolveTenantId(),

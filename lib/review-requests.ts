@@ -20,6 +20,8 @@ import {
   cachedSystemPrompt,
   getAnthropic,
   KEYWORD_RESEARCH_MODEL,
+  responseText,
+  lowEffort,
 } from "@/lib/anthropic";
 import {
   checkContentCompliance,
@@ -156,11 +158,12 @@ Draft the ${isSms ? "SMS" : "email"}.`;
 
   const resp = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 700,
     system: cachedSystemPrompt(system),
     messages: [{ role: "user", content: user }],
   });
-  const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+  const text = responseText(resp);
 
   let subject: string | null = null;
   let body: string;

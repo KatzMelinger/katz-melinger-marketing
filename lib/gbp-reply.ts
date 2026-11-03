@@ -15,6 +15,8 @@ import {
   cachedSystemPrompt,
   getAnthropic,
   KEYWORD_RESEARCH_MODEL,
+  responseText,
+  lowEffort,
 } from "./anthropic";
 import {
   checkContentCompliance,
@@ -81,11 +83,12 @@ Draft the public reply.`;
   const anthropic = getAnthropic();
   const resp = await anthropic.messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 800,
     system: cachedSystemPrompt(system),
     messages: [{ role: "user", content: user }],
   });
-  const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+  const text = responseText(resp);
   const cleaned = text.trim().replace(/^["']|["']$/g, "");
   const reply = cleaned.slice(0, MAX_REPLY_CHARS);
 

@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { extractJSON, getAnthropic } from "@/lib/anthropic";
+import { extractJSON, getAnthropic, responseText, KEYWORD_RESEARCH_MODEL, lowEffort } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { guardUser } from "@/lib/supabase-route";
 
@@ -116,14 +116,15 @@ Limit to 3-4 content ideas, 3-5 schema items, 2-4 citation opportunities, and on
 
     const anthropic = getAnthropic();
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 2500,
       system,
       messages: [{ role: "user", content: userPrompt }],
     });
 
     const text =
-      response.content[0]?.type === "text" ? response.content[0].text : "";
+      responseText(response);
     if (!text.trim()) {
       return NextResponse.json(
         { error: "Empty response from Claude" },

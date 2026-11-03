@@ -15,7 +15,7 @@
 
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "./anthropic";
 import { extractText } from "./document-extract";
 
 const USER_AGENT = "KMDashboard-ContentImporter/1.0";
@@ -91,11 +91,12 @@ Return JSON only:
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 2000,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const txt = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const txt = responseText(resp);
     return extractJSON<SourceReview>(txt);
   } catch {
     return null;

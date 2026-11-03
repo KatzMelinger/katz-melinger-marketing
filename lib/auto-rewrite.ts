@@ -25,7 +25,7 @@
  * it is used: it must not add fee language or an ad term, and must stay close
  * to the original's length.
  */
-import { getAnthropic, CONTENT_LONG_FORM_MODEL } from "./anthropic";
+import { getAnthropic, CONTENT_LONG_FORM_MODEL, lowEffort, createWithTool } from "./anthropic";
 import { findFeeLanguage } from "./fee-language";
 import { blockingAdHits, findAdTerms } from "./ad-terms";
 import { normalizeEnding } from "./legal-disclaimers";
@@ -548,8 +548,9 @@ async function applyModelEdits(
   const items = edits.map((e, i) => ({ id: i, sentence: e.sentence, instruction: e.instruction }));
   let results: { id: number; new_sentence: string }[] = [];
   try {
-    const resp = await getAnthropic().messages.create({
+    const resp = await createWithTool(getAnthropic(), {
       model: CONTENT_LONG_FORM_MODEL,
+      ...lowEffort(CONTENT_LONG_FORM_MODEL),
       max_tokens: 4000,
       system:
         "You correct individual sentences in legal marketing copy for Katz Melinger PLLC. For each item, apply ONLY the instruction to the sentence and return the corrected sentence. " +
@@ -575,9 +576,8 @@ async function applyModelEdits(
           },
         },
       ],
-      tool_choice: { type: "tool", name: "corrected_sentences" },
       messages: [{ role: "user", content: JSON.stringify(items, null, 2) }],
-    });
+    }, "corrected_sentences");
     const tool = resp.content.find((c) => c.type === "tool_use");
     const input = (tool && "input" in tool ? (tool.input as { items?: unknown }) : {}) ?? {};
     results = Array.isArray(input.items) ? (input.items as typeof results) : [];

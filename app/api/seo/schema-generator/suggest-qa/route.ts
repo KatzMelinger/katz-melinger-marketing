@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import { getFirmContext } from "@/lib/firm-context";
 import { snapshotPage } from "@/lib/page-snapshot";
 import { guardUser } from "@/lib/supabase-route";
@@ -88,8 +88,9 @@ ${bodyText.slice(0, 6000)}
 Call the return_qa tool with 5-8 grounded Q&A pairs based on this page.`;
 
   try {
-    const resp = await getAnthropic().messages.create({
+    const resp = await createWithTool(getAnthropic(), {
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 3000,
       system,
       tools: [
@@ -126,9 +127,8 @@ Call the return_qa tool with 5-8 grounded Q&A pairs based on this page.`;
           },
         },
       ],
-      tool_choice: { type: "tool", name: "return_qa" },
       messages: [{ role: "user", content: user }],
-    });
+    }, "return_qa");
 
     const toolUse = resp.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {

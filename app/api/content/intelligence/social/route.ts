@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getFirmContext } from "@/lib/firm-context";
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
@@ -97,8 +97,9 @@ Platform: ${platform}
 Generate a complete social media playbook for this topic on ${platform}. Call the return_playbook tool with the full result.`;
 
   try {
-    const resp = await getAnthropic().messages.create({
+    const resp = await createWithTool(getAnthropic(), {
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 4096,
       system,
       tools: [
@@ -168,9 +169,8 @@ Generate a complete social media playbook for this topic on ${platform}. Call th
           },
         },
       ],
-      tool_choice: { type: "tool", name: "return_playbook" },
       messages: [{ role: "user", content: user }],
-    });
+    }, "return_playbook");
 
     const toolUse = resp.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {

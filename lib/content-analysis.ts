@@ -14,7 +14,7 @@
 import { getSupabaseAdmin } from "./supabase-server";
 import { resolveTenantId } from "./tenant-context";
 import { getFirmContext } from "./firm-context";
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "./anthropic";
 import { checkContentCompliance, type ContentSurface } from "./content-compliance";
 import type { ComplianceViolation } from "./compliance-core";
 import {
@@ -407,11 +407,12 @@ Each finding must start with [C], [A], [S], or [H] to tag which pillar it applie
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 1200,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{
       conversationalAuthority: number;
       answerCompleteness: number;
@@ -707,11 +708,12 @@ The deductions list every point below 100: their points add up to 100 minus link
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 1200,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{
       linkability_score: number;
       deductions?: { points?: unknown; reason?: unknown }[];
@@ -859,11 +861,12 @@ ${facts}
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 1500,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{
       titles?: string[];
       images?: Array<Partial<SuggestedImage>>;
@@ -918,11 +921,12 @@ The deductions list every point below 100: their points add up to 100 minus bran
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 800,
       system,
       messages: [{ role: "user", content: user }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{
       brand_voice_score: number;
       brand_voice_findings: string[];

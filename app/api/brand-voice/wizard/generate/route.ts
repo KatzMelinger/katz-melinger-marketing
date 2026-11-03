@@ -27,7 +27,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getAnthropic, KEYWORD_RESEARCH_MODEL } from "@/lib/anthropic";
+import { getAnthropic, KEYWORD_RESEARCH_MODEL, lowEffort, createWithTool } from "@/lib/anthropic";
 import { guardUser } from "@/lib/supabase-route";
 
 export const runtime = "nodejs";
@@ -291,16 +291,16 @@ export async function POST(req: NextRequest) {
   const { user, tool } = buildRequest(target, intake);
 
   try {
-    const resp = await getAnthropic().messages.create({
+    const resp = await createWithTool(getAnthropic(), {
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       // Generous headroom: the voice guide / avatar set / direction set can run
       // long, and truncation drops whichever fields the model emits last.
       max_tokens: 8192,
       system: SYSTEM,
       messages: [{ role: "user", content: user }],
       tools: [tool],
-      tool_choice: { type: "tool", name: tool.name },
-    });
+    }, tool.name);
 
     const block = resp.content.find((b) => b.type === "tool_use");
     const input = (block && block.type === "tool_use"

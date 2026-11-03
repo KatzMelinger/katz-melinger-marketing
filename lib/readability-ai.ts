@@ -9,7 +9,7 @@
  * rules until the next run.
  */
 
-import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL } from "./anthropic";
+import { extractJSON, getAnthropic, KEYWORD_RESEARCH_MODEL, responseText, lowEffort } from "./anthropic";
 import { rule, type ReadabilityFinding, type RuleId } from "./readability-rules";
 
 export const AI_RULE_IDS: RuleId[] = ["08", "11", "12", "13", "14"];
@@ -47,11 +47,12 @@ export async function evaluateAiReadabilityRules(
   try {
     const resp = await getAnthropic().messages.create({
       model: KEYWORD_RESEARCH_MODEL,
+      ...lowEffort(KEYWORD_RESEARCH_MODEL),
       max_tokens: 1500,
       system: SYSTEM,
       messages: [{ role: "user", content: buildPrompt(body) }],
     });
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const text = responseText(resp);
     const parsed = extractJSON<{ findings?: RawFinding[] }>(text);
     const findings: ReadabilityFinding[] = [];
     const seen = new Set<string>();

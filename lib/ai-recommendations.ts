@@ -16,6 +16,8 @@ import {
   KEYWORD_RESEARCH_MODEL,
   extractJSON,
   getAnthropic,
+  responseText,
+  lowEffort,
 } from "./anthropic";
 
 export type Recommendation = {
@@ -209,13 +211,14 @@ Produce 6–12 recommendations. Each must point at concrete evidence above. Retu
 
   const response = await getAnthropic().messages.create({
     model: KEYWORD_RESEARCH_MODEL,
+    ...lowEffort(KEYWORD_RESEARCH_MODEL),
     max_tokens: 4096,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
   });
 
   const text =
-    response.content[0]?.type === "text" ? response.content[0].text : "";
+    responseText(response);
   const parsed = extractJSON<{ recommendations: Recommendation[] }>(text);
 
   return {
